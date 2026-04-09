@@ -53,7 +53,7 @@ export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelP
 
   const updateTask = useMutation({
     mutationFn: async (updates: Record<string, any>) => {
-      const { error } = await supabase.from('tasks').update(updates).eq('id', task.id);
+      const { error } = await supabase.from('tasks').update(updates as any).eq('id', task.id);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),

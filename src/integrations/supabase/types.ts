@@ -713,34 +713,52 @@ export type Database = {
       }
       platform_connections: {
         Row: {
+          access_token: string | null
+          account_id: string | null
+          account_name: string | null
           client_id: string
           created_at: string
           id: string
+          metadata: Json | null
           platform: string
           refresh_token: string | null
+          selected_ad_account: Json | null
           status: string
           token_expires_at: string | null
           updated_at: string
+          user_id: string | null
         }
         Insert: {
+          access_token?: string | null
+          account_id?: string | null
+          account_name?: string | null
           client_id: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           platform: string
           refresh_token?: string | null
+          selected_ad_account?: Json | null
           status?: string
           token_expires_at?: string | null
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
+          access_token?: string | null
+          account_id?: string | null
+          account_name?: string | null
           client_id?: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           platform?: string
           refresh_token?: string | null
+          selected_ad_account?: Json | null
           status?: string
           token_expires_at?: string | null
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {

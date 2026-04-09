@@ -6,7 +6,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Link2, Slack, Mail, Phone, FileText, BarChart3, Loader2, CheckCircle2 } from 'lucide-react';
+import { Loader2, CheckCircle2 } from 'lucide-react';
+import { GoogleAdsIcon, MetaIcon, SlackIcon, TeamsIcon, GmailIcon, FathomIcon, GoogleDriveIcon } from '@/components/icons/BrandIcons';
 import { toast } from 'sonner';
 
 type Integration = {
@@ -17,13 +18,13 @@ type Integration = {
 };
 
 const INTEGRATIONS: Integration[] = [
-  { name: 'Google Ads', icon: BarChart3, description: 'Campaign performance data', platform: 'google' },
-  { name: 'Meta Ads', icon: BarChart3, description: 'Campaign performance data', platform: 'meta' },
-  { name: 'Slack', icon: Slack, description: 'Channel messages for client communication' },
-  { name: 'Microsoft Teams', icon: Link2, description: 'Teams channel messages' },
-  { name: 'Gmail', icon: Mail, description: 'Email threads tagged per client' },
-  { name: 'Fathom', icon: Phone, description: 'Call recordings & transcripts' },
-  { name: 'Google Drive', icon: FileText, description: 'Shared folders and documents' },
+  { name: 'Google Ads', icon: GoogleAdsIcon, description: 'Campaign performance data', platform: 'google' },
+  { name: 'Meta Ads', icon: MetaIcon, description: 'Campaign performance data', platform: 'meta' },
+  { name: 'Slack', icon: SlackIcon, description: 'Channel messages for client communication' },
+  { name: 'Microsoft Teams', icon: TeamsIcon, description: 'Teams channel messages' },
+  { name: 'Gmail', icon: GmailIcon, description: 'Email threads tagged per client' },
+  { name: 'Fathom', icon: FathomIcon, description: 'Call recordings & transcripts' },
+  { name: 'Google Drive', icon: GoogleDriveIcon, description: 'Shared folders and documents' },
 ];
 
 export default function SettingsPage() {

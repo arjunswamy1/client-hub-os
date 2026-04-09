@@ -214,6 +214,338 @@ export type Database = {
         }
         Relationships: []
       }
+      context_items: {
+        Row: {
+          client_id: string
+          content: string | null
+          content_type: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          occurred_at: string
+          participants: string[] | null
+          source: string
+          source_id: string | null
+          title: string | null
+        }
+        Insert: {
+          client_id: string
+          content?: string | null
+          content_type: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          occurred_at?: string
+          participants?: string[] | null
+          source: string
+          source_id?: string | null
+          title?: string | null
+        }
+        Update: {
+          client_id?: string
+          content?: string | null
+          content_type?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          occurred_at?: string
+          participants?: string[] | null
+          source?: string
+          source_id?: string | null
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_items_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_sync_log: {
+        Row: {
+          client_id: string
+          created_at: string
+          error_message: string | null
+          id: string
+          items_synced: number | null
+          last_sync_at: string | null
+          source: string
+          status: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          items_synced?: number | null
+          last_sync_at?: string | null
+          source: string
+          status?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          items_synced?: number | null
+          last_sync_at?: string | null
+          source?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_sync_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creative_briefs: {
+        Row: {
+          assigned_to_id: string | null
+          brand_guidelines_url: string | null
+          client_id: string
+          copy_suggestions: Json | null
+          created_at: string
+          created_by_id: string | null
+          creative_type: string
+          due_date: string | null
+          id: string
+          key_message: string | null
+          notes: string | null
+          objective: string | null
+          platforms: string[] | null
+          priority: string
+          reference_assets: Json | null
+          status: string
+          target_audience: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to_id?: string | null
+          brand_guidelines_url?: string | null
+          client_id: string
+          copy_suggestions?: Json | null
+          created_at?: string
+          created_by_id?: string | null
+          creative_type?: string
+          due_date?: string | null
+          id?: string
+          key_message?: string | null
+          notes?: string | null
+          objective?: string | null
+          platforms?: string[] | null
+          priority?: string
+          reference_assets?: Json | null
+          status?: string
+          target_audience?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to_id?: string | null
+          brand_guidelines_url?: string | null
+          client_id?: string
+          copy_suggestions?: Json | null
+          created_at?: string
+          created_by_id?: string | null
+          creative_type?: string
+          due_date?: string | null
+          id?: string
+          key_message?: string | null
+          notes?: string | null
+          objective?: string | null
+          platforms?: string[] | null
+          priority?: string
+          reference_assets?: Json | null
+          status?: string
+          target_audience?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_briefs_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_briefs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_briefs_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creative_deliverables: {
+        Row: {
+          brief_id: string
+          drive_url: string | null
+          file_name: string
+          file_size: number | null
+          file_type: string | null
+          file_url: string
+          id: string
+          uploaded_at: string
+          uploaded_by_id: string | null
+          version: number
+        }
+        Insert: {
+          brief_id: string
+          drive_url?: string | null
+          file_name: string
+          file_size?: number | null
+          file_type?: string | null
+          file_url: string
+          id?: string
+          uploaded_at?: string
+          uploaded_by_id?: string | null
+          version?: number
+        }
+        Update: {
+          brief_id?: string
+          drive_url?: string | null
+          file_name?: string
+          file_size?: number | null
+          file_type?: string | null
+          file_url?: string
+          id?: string
+          uploaded_at?: string
+          uploaded_by_id?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_deliverables_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_deliverables_uploaded_by_id_fkey"
+            columns: ["uploaded_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creative_reviews: {
+        Row: {
+          action: string
+          brief_id: string
+          comments: string | null
+          created_at: string
+          id: string
+          reviewer_id: string
+        }
+        Insert: {
+          action: string
+          brief_id: string
+          comments?: string | null
+          created_at?: string
+          id?: string
+          reviewer_id: string
+        }
+        Update: {
+          action?: string
+          brief_id?: string
+          comments?: string | null
+          created_at?: string
+          id?: string
+          reviewer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_reviews_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_reviews_reviewer_id_fkey"
+            columns: ["reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landing_pages: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          id: string
+          notes: string | null
+          platform_source: string | null
+          staging_url: string | null
+          status: string
+          title: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          notes?: string | null
+          platform_source?: string | null
+          staging_url?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          notes?: string | null
+          platform_source?: string | null
+          staging_url?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landing_pages_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "landing_pages_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_comments: {
         Row: {
           author_id: string

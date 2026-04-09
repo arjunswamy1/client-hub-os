@@ -217,7 +217,7 @@ export default function AgendasPage() {
               <CardHeader><CardTitle className="text-base">Agenda</CardTitle></CardHeader>
               <CardContent>
                 <AgendaEditor
-                  content={selected.agenda_content || []}
+                  content={(selected.agenda_content as any[]) || []}
                   onChange={(content) => updateContent.mutate({ id: selected.id, field: 'agenda_content', value: content })}
                   readOnly={selected.status === 'completed'}
                 />
@@ -229,7 +229,7 @@ export default function AgendasPage() {
               <CardHeader><CardTitle className="text-base">Meeting Notes</CardTitle></CardHeader>
               <CardContent>
                 <AgendaEditor
-                  content={selected.notes_content || []}
+                  content={(selected.notes_content as any[]) || []}
                   onChange={(content) => updateContent.mutate({ id: selected.id, field: 'notes_content', value: content })}
                   readOnly={selected.status !== 'completed' && selected.status !== 'published'}
                 />

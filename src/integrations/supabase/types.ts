@@ -14,6 +14,130 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_campaigns: {
+        Row: {
+          bid_strategy_details: Json | null
+          bidding_strategy_type: string | null
+          campaign_name: string
+          campaign_type: string | null
+          clicks: number
+          client_id: string
+          conversions: number
+          created_at: string
+          daily_budget: number | null
+          date: string
+          id: string
+          impression_share: number | null
+          impressions: number
+          platform: string
+          revenue: number
+          roas: number | null
+          spend: number
+          status: string | null
+        }
+        Insert: {
+          bid_strategy_details?: Json | null
+          bidding_strategy_type?: string | null
+          campaign_name: string
+          campaign_type?: string | null
+          clicks?: number
+          client_id: string
+          conversions?: number
+          created_at?: string
+          daily_budget?: number | null
+          date: string
+          id?: string
+          impression_share?: number | null
+          impressions?: number
+          platform: string
+          revenue?: number
+          roas?: number | null
+          spend?: number
+          status?: string | null
+        }
+        Update: {
+          bid_strategy_details?: Json | null
+          bidding_strategy_type?: string | null
+          campaign_name?: string
+          campaign_type?: string | null
+          clicks?: number
+          client_id?: string
+          conversions?: number
+          created_at?: string
+          daily_budget?: number | null
+          date?: string
+          id?: string
+          impression_share?: number | null
+          impressions?: number
+          platform?: string
+          revenue?: number
+          roas?: number | null
+          spend?: number
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_campaigns_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_daily_metrics: {
+        Row: {
+          add_to_cart: number
+          clicks: number
+          client_id: string
+          conversions: number
+          cost_per_conversion: number | null
+          created_at: string
+          date: string
+          id: string
+          impressions: number
+          platform: string
+          revenue: number
+          spend: number
+        }
+        Insert: {
+          add_to_cart?: number
+          clicks?: number
+          client_id: string
+          conversions?: number
+          cost_per_conversion?: number | null
+          created_at?: string
+          date: string
+          id?: string
+          impressions?: number
+          platform: string
+          revenue?: number
+          spend?: number
+        }
+        Update: {
+          add_to_cart?: number
+          clicks?: number
+          client_id?: string
+          conversions?: number
+          cost_per_conversion?: number | null
+          created_at?: string
+          date?: string
+          id?: string
+          impressions?: number
+          platform?: string
+          revenue?: number
+          spend?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_daily_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_action_items: {
         Row: {
           assignee_id: string | null
@@ -489,6 +613,47 @@ export type Database = {
           },
         ]
       }
+      dashboard_configs: {
+        Row: {
+          client_id: string
+          created_at: string
+          custom_metrics: Json | null
+          enabled_kpis: string[]
+          enabled_platforms: string[]
+          id: string
+          revenue_source: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          custom_metrics?: Json | null
+          enabled_kpis?: string[]
+          enabled_platforms?: string[]
+          id?: string
+          revenue_source?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          custom_metrics?: Json | null
+          enabled_kpis?: string[]
+          enabled_platforms?: string[]
+          id?: string
+          revenue_source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboard_configs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_pages: {
         Row: {
           client_id: string
@@ -542,6 +707,47 @@ export type Database = {
             columns: ["created_by_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_connections: {
+        Row: {
+          client_id: string
+          created_at: string
+          id: string
+          platform: string
+          refresh_token: string | null
+          status: string
+          token_expires_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          id?: string
+          platform: string
+          refresh_token?: string | null
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          id?: string
+          platform?: string
+          refresh_token?: string | null
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_connections_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]

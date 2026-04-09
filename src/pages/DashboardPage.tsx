@@ -1,11 +1,14 @@
 import { useClient } from '@/contexts/ClientContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { CheckSquare, Phone, AlertTriangle, Clock } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DateRangeProvider } from '@/contexts/DateRangeContext';
+import CrossChannelView from '@/components/dashboard/CrossChannelView';
+import GoogleDashboard from '@/components/dashboard/GoogleDashboard';
+import MetaDashboard from '@/components/dashboard/MetaDashboard';
+import DateRangePicker from '@/components/dashboard/DateRangePicker';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { BarChart3, Chrome, Facebook } from 'lucide-react';
 
-export default function DashboardPage() {
+function DashboardContent() {
   const { activeClient } = useClient();
-  const { teamMember } = useAuth();
 
   if (!activeClient) {
     return (
@@ -15,59 +18,50 @@ export default function DashboardPage() {
     );
   }
 
-  const stats = [
-    { label: 'Active Tasks', value: '—', icon: CheckSquare, color: 'text-primary' },
-    { label: 'Overdue', value: '—', icon: AlertTriangle, color: 'text-destructive' },
-    { label: 'Pending Approvals', value: '—', icon: Clock, color: 'text-warning' },
-    { label: 'Hours This Week', value: '—', icon: Clock, color: 'text-success' },
-  ];
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{activeClient.name}</h1>
-        <p className="text-sm text-muted-foreground">Client overview and recent activity</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{activeClient.name}</h1>
+          <p className="text-sm text-muted-foreground">Ad performance & analytics</p>
+        </div>
+        <DateRangePicker />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className={`rounded-lg bg-accent p-2.5 ${stat.color}`}>
-                <stat.icon className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{stat.value}</p>
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Tabs defaultValue="cross-channel" className="space-y-4">
+        <TabsList className="bg-secondary/50">
+          <TabsTrigger value="cross-channel" className="gap-1.5 text-xs">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Cross-Channel
+          </TabsTrigger>
+          <TabsTrigger value="google" className="gap-1.5 text-xs">
+            <Chrome className="h-3.5 w-3.5" />
+            Google Ads
+          </TabsTrigger>
+          <TabsTrigger value="meta" className="gap-1.5 text-xs">
+            <Facebook className="h-3.5 w-3.5" />
+            Meta Ads
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Activity feed will populate as you start creating tasks, agendas, and briefs.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Upcoming</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Upcoming deadlines and scheduled calls will appear here.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+        <TabsContent value="cross-channel">
+          <CrossChannelView />
+        </TabsContent>
+        <TabsContent value="google">
+          <GoogleDashboard />
+        </TabsContent>
+        <TabsContent value="meta">
+          <MetaDashboard />
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <DateRangeProvider>
+      <DashboardContent />
+    </DateRangeProvider>
   );
 }

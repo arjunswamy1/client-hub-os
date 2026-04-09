@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Link2, Loader2, CheckCircle2 } from 'lucide-react';
+import { LinkIcon, Loader2, CheckCircle2 } from 'lucide-react';
 import { GoogleAdsIcon, MetaIcon, SlackIcon, TeamsIcon, GmailIcon, FathomIcon, GoogleDriveIcon } from '@/components/icons/BrandIcons';
 import { toast } from 'sonner';
 
@@ -129,7 +129,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Link2 className="h-4 w-4" /> Integrations
+            <LinkIcon className="h-4 w-4" /> Integrations
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">

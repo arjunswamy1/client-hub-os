@@ -770,6 +770,68 @@ export type Database = {
           },
         ]
       }
+      ringba_calls: {
+        Row: {
+          call_date: string
+          call_id: string
+          caller_number: string | null
+          campaign_name: string | null
+          client_id: string
+          connected: boolean | null
+          converted: boolean | null
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          inbound_number: string | null
+          metadata: Json | null
+          payout: number
+          revenue: number
+          target_name: string | null
+        }
+        Insert: {
+          call_date: string
+          call_id: string
+          caller_number?: string | null
+          campaign_name?: string | null
+          client_id: string
+          connected?: boolean | null
+          converted?: boolean | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          inbound_number?: string | null
+          metadata?: Json | null
+          payout?: number
+          revenue?: number
+          target_name?: string | null
+        }
+        Update: {
+          call_date?: string
+          call_id?: string
+          caller_number?: string | null
+          campaign_name?: string | null
+          client_id?: string
+          connected?: boolean | null
+          converted?: boolean | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          inbound_number?: string | null
+          metadata?: Json | null
+          payout?: number
+          revenue?: number
+          target_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ringba_calls_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_comments: {
         Row: {
           author_id: string

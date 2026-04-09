@@ -50,9 +50,7 @@ export default function AuthPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <span className="text-lg font-bold text-primary-foreground">C</span>
-          </div>
+          <img src="/logo.png" alt="Connect Paid Media" className="mx-auto mb-3 h-14 w-14 object-contain" />
           <CardTitle className="text-xl">Connect Paid Media</CardTitle>
           <CardDescription>
             {isSignUp ? 'Create your account' : 'Sign in to your account'}

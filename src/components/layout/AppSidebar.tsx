@@ -40,19 +40,15 @@ export function AppSidebar() {
       <SidebarHeader className="px-3 py-4">
         {!collapsed ? (
           <div className="flex items-center gap-2.5 px-1">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-              <span className="text-sm font-bold text-sidebar-primary-foreground">C</span>
-            </div>
+            <img src="/logo.png" alt="Connect Paid Media" className="h-8 w-8 rounded-lg object-contain" />
             <div className="flex flex-col">
-              <span className="text-sm font-semibold text-sidebar-accent-foreground">Connect PM</span>
+              <span className="text-sm font-semibold text-sidebar-accent-foreground">Connect Paid Media</span>
               <span className="text-[11px] text-sidebar-muted">Client Hub</span>
             </div>
           </div>
         ) : (
           <div className="flex justify-center">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-              <span className="text-sm font-bold text-sidebar-primary-foreground">C</span>
-            </div>
+            <img src="/logo.png" alt="CPM" className="h-8 w-8 rounded-lg object-contain" />
           </div>
         )}
       </SidebarHeader>

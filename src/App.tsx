@@ -9,9 +9,15 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
 import TasksPage from "./pages/TasksPage";
+import AgendasPage from "./pages/AgendasPage";
+import CreativePage from "./pages/CreativePage";
+import ContextPage from "./pages/ContextPage";
+import AIAssistantPage from "./pages/AIAssistantPage";
+import LandingPagesPage from "./pages/LandingPagesPage";
+import SettingsPage from "./pages/SettingsPage";
+import TeamPage from "./pages/TeamPage";
 import AdminPage from "./pages/AdminPage";
 import AMHomePage from "./pages/AMHomePage";
-import PlaceholderPage from "./pages/PlaceholderPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,13 +44,13 @@ function ProtectedRoutes() {
           } />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/agendas" element={<PlaceholderPage title="Call Agendas & Notes" />} />
-          <Route path="/creative" element={<PlaceholderPage title="Creative Briefing" />} />
-          <Route path="/landing-pages" element={<PlaceholderPage title="Landing Pages" />} />
-          <Route path="/context" element={<PlaceholderPage title="Context Feed" />} />
-          <Route path="/ai" element={<PlaceholderPage title="AI Assistant" />} />
-          <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
-          <Route path="/team" element={<PlaceholderPage title="Team" />} />
+          <Route path="/agendas" element={<AgendasPage />} />
+          <Route path="/creative" element={<CreativePage />} />
+          <Route path="/landing-pages" element={<LandingPagesPage />} />
+          <Route path="/context" element={<ContextPage />} />
+          <Route path="/ai" element={<AIAssistantPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}
           <Route path="*" element={<NotFound />} />
         </Routes>

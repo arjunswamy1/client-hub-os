@@ -311,7 +311,10 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
       if (afs.images?.length > 1) creativeType = "carousel";
     }
 
-    if (creative.video_id) creativeType = "video";
+    if (creative.video_id && !videoUrl) {
+      creativeType = "video";
+      videoUrl = creative.video_id;
+    }
 
     const vertical = classifyVertical(campaignName);
     const spend = perf?.spend || 0;
@@ -336,7 +339,7 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
       description: descriptionText || null,
       cta: ctaText ? formatCTA(ctaText) : null,
       link_url: linkUrl || null,
-      video_url: videoUrl,
+      video_url: videoUrl, // temporarily holds video_id, resolved below
       vertical,
       spend, impressions, clicks, conversions, revenue,
       ctr: impressions > 0 ? (clicks / impressions) * 100 : null,
@@ -346,6 +349,30 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
       date_from: perf?.dateFrom || null,
       date_to: perf?.dateTo || null,
     });
+  }
+
+  // Resolve video_ids to actual playable source URLs
+  const videoIds = [...new Set(batch.filter(b => b.creative_type === "video" && b.video_url && !b.video_url.startsWith("http")).map(b => b.video_url))];
+  const videoSourceMap = new Map<string, string>();
+  for (let i = 0; i < videoIds.length; i += 5) {
+    const chunk = videoIds.slice(i, i + 5);
+    await Promise.all(chunk.map(async (vid) => {
+      try {
+        const res = await fetch(`https://graph.facebook.com/v21.0/${vid}?fields=source&access_token=${accessToken}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.source) videoSourceMap.set(vid, data.source);
+        }
+      } catch { /* skip */ }
+    }));
+  }
+  // Replace video_id with actual source URL
+  for (const item of batch) {
+    if (item.video_url && videoSourceMap.has(item.video_url)) {
+      item.video_url = videoSourceMap.get(item.video_url)!;
+    } else if (item.video_url && !item.video_url.startsWith("http")) {
+      item.video_url = null; // couldn't resolve, clear it
+    }
   }
 
   if (batch.length > 0) {

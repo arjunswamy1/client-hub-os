@@ -206,8 +206,8 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
   }
 
   console.log(`Fetched ${ads.length} ads from account ${accountId}`);
-  const campaignIds = [...new Set(ads.map((a: any) => a.campaign_id))];
-  console.log(`Unique campaign IDs: ${campaignIds.length}`, campaignIds.slice(0, 20));
+  const uniqueCampaigns = [...new Set(ads.map((a: any) => a.campaign_id))];
+  console.log(`Unique campaign IDs: ${uniqueCampaigns.length}`, uniqueCampaigns.slice(0, 20));
   if (ads.length === 0) return 0;
 
   // Step 2: Get campaign names and adset names

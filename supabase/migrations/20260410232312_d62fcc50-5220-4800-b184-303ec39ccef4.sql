@@ -1,0 +1,1 @@
+ALTER TABLE public.creative_briefs ADD COLUMN video_scripts jsonb DEFAULT '[]'::jsonb;

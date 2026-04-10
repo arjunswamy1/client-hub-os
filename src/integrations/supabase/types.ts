@@ -979,6 +979,7 @@ export type Database = {
           trafficked_at: string | null
           trafficked_by_id: string | null
           updated_at: string
+          video_scripts: Json | null
         }
         Insert: {
           approved_at?: string | null
@@ -1014,6 +1015,7 @@ export type Database = {
           trafficked_at?: string | null
           trafficked_by_id?: string | null
           updated_at?: string
+          video_scripts?: Json | null
         }
         Update: {
           approved_at?: string | null
@@ -1049,6 +1051,7 @@ export type Database = {
           trafficked_at?: string | null
           trafficked_by_id?: string | null
           updated_at?: string
+          video_scripts?: Json | null
         }
         Relationships: [
           {

@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Plus, Minus, Save, FileUp } from 'lucide-react';
+import { VideoScriptEditor, VideoScript } from '@/components/creative/VideoScriptEditor';
 import { toast } from 'sonner';
 import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset, getRelevantSizeGroups } from '@/types/creative';
 
@@ -40,6 +41,7 @@ interface BriefFormData {
   notes: string;
   custom_width: string;
   custom_height: string;
+  video_scripts: VideoScript[];
 }
 
 const SPECIAL_CLIENT_OPTIONS = [
@@ -53,7 +55,7 @@ const INITIAL_FORM: BriefFormData = {
   copy_suggestions: [{ primary_text: '', headline: '', description: '' }],
   target_audience: '', tone_style: '', dos_and_donts: '', reference_urls: '',
   due_date: '', priority: 'medium', assigned_to_id: '', notes: '',
-  custom_width: '', custom_height: '',
+  custom_width: '', custom_height: '', video_scripts: [],
 };
 
 interface Props {
@@ -201,6 +203,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         objective: form.objective || null,
         key_message: form.key_message || null,
         copy_suggestions: form.copy_suggestions.filter(c => c.primary_text || c.headline || c.description),
+        video_scripts: form.video_scripts.length > 0 ? form.video_scripts : [],
         target_audience: form.target_audience || null,
         tone_style: form.tone_style || null,
         dos_and_donts: form.dos_and_donts || null,
@@ -517,6 +520,15 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                 <Label>Do's and Don'ts</Label>
                 <Textarea value={form.dos_and_donts} onChange={e => set('dos_and_donts', e.target.value)} rows={2} placeholder="Don't use red backgrounds. Must include promo code." />
               </div>
+
+              {/* Video Scripts */}
+              <VideoScriptEditor
+                scripts={form.video_scripts}
+                onChange={(scripts) => set('video_scripts', scripts)}
+                objective={form.objective}
+                targetAudience={form.target_audience}
+                toneStyle={form.tone_style}
+              />
             </>
           )}
 

@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function HoursDashboard({ teamMemberId }: Props) {
-  const { teamMember, isAdmin } = useAuth();
+  const { teamMember } = useAuth();
   const targetId = teamMemberId || teamMember?.id;
   const { data: cap } = useDesignerCap(targetId || null);
   const { data: entries = [] } = useTimeEntries(null, targetId);

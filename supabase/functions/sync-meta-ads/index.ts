@@ -388,9 +388,9 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
 // Classify campaign into a vertical based on naming patterns
 function classifyVertical(campaignName: string): string {
   const name = campaignName.toLowerCase();
-  if (name.includes("pest") || name.includes("bug") || name.includes("roach") || name.includes("termite") || name.includes("rodent") || name.includes("ant control") || name.includes("bed bug") || name.includes("cockroach")) return "pest_control";
+  if (name.includes("pest") || name.includes("bug") || name.includes("roach") || name.includes("termite") || name.includes("rodent") || name.includes("ant control") || name.includes("bed bug") || name.includes("cockroach") || name.includes("attila")) return "pest_control";
   if (name.includes("flight") || name.includes("premflight")) return "flights";
-  if (name.includes("porta potty") || name.includes("portapotty")) return "porta_potty";
+  if (name.includes("porta") || name.includes("portapotty")) return "porta_potty";
   if (name.includes("siding")) return "siding";
   if (name.includes("bath")) return "bathroom";
   if (name.includes("moving") || name.includes("movers")) return "moving";

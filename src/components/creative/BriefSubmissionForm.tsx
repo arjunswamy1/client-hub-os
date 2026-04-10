@@ -203,6 +203,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         objective: form.objective || null,
         key_message: form.key_message || null,
         copy_suggestions: form.copy_suggestions.filter(c => c.primary_text || c.headline || c.description),
+        video_scripts: form.video_scripts.length > 0 ? form.video_scripts : [],
         target_audience: form.target_audience || null,
         tone_style: form.tone_style || null,
         dos_and_donts: form.dos_and_donts || null,
@@ -519,6 +520,15 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                 <Label>Do's and Don'ts</Label>
                 <Textarea value={form.dos_and_donts} onChange={e => set('dos_and_donts', e.target.value)} rows={2} placeholder="Don't use red backgrounds. Must include promo code." />
               </div>
+
+              {/* Video Scripts */}
+              <VideoScriptEditor
+                scripts={form.video_scripts}
+                onChange={(scripts) => set('video_scripts', scripts)}
+                objective={form.objective}
+                targetAudience={form.target_audience}
+                toneStyle={form.tone_style}
+              />
             </>
           )}
 

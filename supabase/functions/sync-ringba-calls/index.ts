@@ -79,34 +79,32 @@ Deno.serve(async (req) => {
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     // Fetch call logs from Ringba API
-    const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
+    // Ringba supports GET with query params for call logs
+    const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs?startDate=${formatDate(startDate)}&endDate=${formatDate(endDate)}&pageSize=1000&page=1`;
     
     console.log(`Fetching Ringba calls from ${formatDate(startDate)} to ${formatDate(endDate)}`);
+    console.log(`Ringba URL: ${ringbaUrl}`);
+    console.log(`Token prefix: ${RINGBA_API_TOKEN.substring(0, 8)}...`);
 
     const response = await fetch(ringbaUrl, {
-      method: "POST",
+      method: "GET",
       headers: {
         Authorization: `Token ${RINGBA_API_TOKEN}`,
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        startDate: formatDate(startDate),
-        endDate: formatDate(endDate),
-        pageSize: 1000,
-        page: 1,
-      }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`Ringba response headers:`, JSON.stringify(Object.fromEntries(response.headers.entries())));
       throw new Error(`Ringba API error [${response.status}]: ${errorText}`);
     }
 
     const ringbaData = await response.json();
-    const calls = ringbaData.calls || ringbaData.data || ringbaData || [];
+    console.log("Ringba response keys:", JSON.stringify(Object.keys(ringbaData)));
+    const calls = ringbaData.calls || ringbaData.callLogs || ringbaData.data || [];
 
     if (!Array.isArray(calls)) {
-      console.log("Ringba response shape:", JSON.stringify(Object.keys(ringbaData)));
+      console.log("Ringba full response:", JSON.stringify(ringbaData).substring(0, 500));
       throw new Error("Unexpected Ringba response format");
     }
 

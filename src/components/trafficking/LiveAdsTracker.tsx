@@ -4,8 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDateRange } from '@/contexts/DateRangeContext';
-import { useState } from 'react';
-import { Chrome, Facebook, Image, Video, LayoutGrid, Search, ExternalLink } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Chrome, Facebook, Image, Video, LayoutGrid, Search, ExternalLink, Play, Pause } from 'lucide-react';
 
 interface Props {
   clientId: string;

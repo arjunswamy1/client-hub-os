@@ -65,8 +65,17 @@ interface Props {
 export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
   const queryClient = useQueryClient();
   const { teamMember } = useAuth();
-  const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM });
+  const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM, client_id: clientId });
   const [step, setStep] = useState(0);
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients_for_brief'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name, color').eq('status', 'active').order('name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
   const { data: teamMembers = [] } = useQuery({
     queryKey: ['team_members'],

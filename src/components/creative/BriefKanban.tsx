@@ -71,7 +71,12 @@ function BriefCard({ brief, onClick }: { brief: any; onClick: () => void }) {
             <div className="rounded bg-accent p-1">
               <TypeIcon className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium truncate">{brief.title}</p>
+            <div className="min-w-0">
+              {brief.client_name && (
+                <p className="text-[9px] text-muted-foreground font-medium">{brief.client_name}</p>
+              )}
+              <p className="text-sm font-medium truncate">{brief.title}</p>
+            </div>
           </div>
           <Badge variant="secondary" className={`text-[9px] shrink-0 ${priorityConf.color}`}>
             {priorityConf.label}

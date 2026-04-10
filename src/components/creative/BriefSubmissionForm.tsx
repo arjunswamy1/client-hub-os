@@ -61,13 +61,13 @@ const INITIAL_FORM: BriefFormData = {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  clientId: string;
+  clientId?: string;
 }
 
 export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
   const queryClient = useQueryClient();
   const { teamMember } = useAuth();
-  const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM, client_id: clientId });
+  const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM, client_id: clientId || '' });
   const [step, setStep] = useState(0);
 
   const { data: clients = [] } = useQuery({
@@ -124,6 +124,10 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
       }));
     }
   };
+
+  const INTERNAL_OPTIONS = [
+    { id: '__internal__', name: '🏢 Internal / Marketing', color: '#6366f1' },
+  ];
 
   const addCopyVariation = () => {
     setForm(f => ({
@@ -185,8 +189,9 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         : [];
 
       const isSpecialClient = form.client_id.startsWith('__');
-      const specialLabel = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id)?.name;
-      const resolvedClientId = isSpecialClient ? clientId : form.client_id;
+      const specialLabel = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id)?.name || INTERNAL_OPTIONS.find(o => o.id === form.client_id)?.name;
+      const isInternal = form.client_id === '__internal__' || !form.client_id;
+      const resolvedClientId = isInternal ? null : (isSpecialClient ? (clientId || null) : form.client_id);
       const notesWithTag = isSpecialClient
         ? `[${specialLabel}] ${form.notes || ''}`.trim()
         : form.notes || null;
@@ -309,6 +314,14 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                       </SelectItem>
                     ))}
                     {SPECIAL_CLIENT_OPTIONS.map(opt => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
+                          {opt.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                    {INTERNAL_OPTIONS.map(opt => (
                       <SelectItem key={opt.id} value={opt.id}>
                         <span className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />

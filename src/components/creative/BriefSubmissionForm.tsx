@@ -516,6 +516,12 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
               <div className="rounded-lg border bg-accent/50 p-4 space-y-2">
                 <h4 className="text-sm font-medium">Brief Summary</h4>
                 <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="text-muted-foreground">Client:</span> {(() => {
+                    const special = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id);
+                    if (special) return special.name;
+                    const c = clients.find((c: any) => c.id === form.client_id);
+                    return c ? c.name : '—';
+                  })()}</div>
                   <div><span className="text-muted-foreground">Title:</span> {form.title || '—'}</div>
                   <div><span className="text-muted-foreground">Priority:</span> {form.priority}</div>
                   <div><span className="text-muted-foreground">Types:</span> {form.creative_types.join(', ') || '—'}</div>

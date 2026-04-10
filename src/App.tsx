@@ -14,6 +14,7 @@ import CreativePage from "./pages/CreativePage";
 import ContextPage from "./pages/ContextPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
 import LandingPagesPage from "./pages/LandingPagesPage";
+import TraffickingPage from "./pages/TraffickingPage";
 import SettingsPage from "./pages/SettingsPage";
 import TeamPage from "./pages/TeamPage";
 import AdminPage from "./pages/AdminPage";
@@ -47,6 +48,7 @@ function ProtectedRoutes() {
           <Route path="/agendas" element={<AgendasPage />} />
           <Route path="/creative" element={<CreativePage />} />
           <Route path="/landing-pages" element={<LandingPagesPage />} />
+          <Route path="/trafficking" element={<TraffickingPage />} />
           <Route path="/context" element={<ContextPage />} />
           <Route path="/ai" element={<AIAssistantPage />} />
           <Route path="/settings" element={<SettingsPage />} />

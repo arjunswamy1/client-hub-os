@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+import {} from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -144,9 +144,9 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
       const { error } = await supabase.from('creative_brief_templates').insert({
         name,
         created_by_id: teamMember?.id,
-        template_data: templateData,
+        template_data: templateData as any,
         is_global: false,
-      });
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {

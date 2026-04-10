@@ -5,7 +5,7 @@ import { useClient } from '@/contexts/ClientContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Download, ExternalLink } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useBriefMutations } from '@/hooks/useCreativeBriefs';
 
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function TraffickingQueue({ allClients }: Props) {
-  const { activeClient, clients } = useClient();
+  const { activeClient } = useClient();
   const { updateStatus } = useBriefMutations();
 
   const { data: briefs = [] } = useQuery({

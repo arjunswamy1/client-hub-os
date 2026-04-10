@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, Clock, CheckCircle2, AlertCircle, Send, Image as ImageIcon } from 'lucide-react';
+import { X, CheckCircle2, Send, Image as ImageIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations } from '@/hooks/useCreativeBriefs';

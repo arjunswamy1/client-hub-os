@@ -2,7 +2,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
+
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Image, Video, LayoutGrid, Film } from 'lucide-react';
 import { format, differenceInDays, isPast } from 'date-fns';
@@ -19,7 +19,7 @@ interface Props {
   onStatusChange: (briefId: string, status: string) => void;
 }
 
-export function BriefKanban({ briefs, onBriefClick, onStatusChange }: Props) {
+export function BriefKanban({ briefs, onBriefClick, onStatusChange: _onStatusChange }: Props) {
   return (
     <ScrollArea className="w-full">
       <div className="flex gap-4 pb-4 min-w-max">

@@ -1,14 +1,11 @@
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { startOfMonth, endOfMonth, format, eachDayOfInterval, isSameDay } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, AlertTriangle } from 'lucide-react';
+import { Download } from 'lucide-react';
 
 interface Props {
   teamMemberId?: string;

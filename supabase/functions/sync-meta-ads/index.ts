@@ -296,7 +296,8 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
       linkUrl = linkData.link || "";
       if (oss.video_data) {
         creativeType = "video";
-        videoUrl = oss.video_data.video_id ? `https://graph.facebook.com/v21.0/${oss.video_data.video_id}/thumbnails` : null;
+        // Store video_id for later batch resolution
+        videoUrl = oss.video_data.video_id || null;
       }
     }
 

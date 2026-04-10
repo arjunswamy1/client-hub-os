@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function CreateAdDialog({ open, onOpenChange, clientId }: Props) {
-  const { teamMemberId } = useAuth();
+  const { teamMember } = useAuth();
   const { createAd } = useTraffickingAdMutations(clientId);
   const { data: campaigns = [] } = useCampaigns(clientId);
 
@@ -41,7 +41,7 @@ export function CreateAdDialog({ open, onOpenChange, clientId }: Props) {
       campaign_id: form.campaign_id || null,
       launch_target: form.launch_target || null,
       creative_deadline: form.creative_deadline || null,
-      created_by_id: teamMemberId,
+      created_by_id: teamMember?.id || null,
       launch_checklist: DEFAULT_LAUNCH_CHECKLIST.map(item => ({
         ...item,
         checked: false,

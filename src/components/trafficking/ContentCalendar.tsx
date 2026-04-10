@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Plus, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, addMonths, subMonths, startOfWeek, addWeeks, isBefore, isAfter } from 'date-fns';
+import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, addMonths, subMonths, startOfWeek, addWeeks, isBefore } from 'date-fns';
 import { useContentCalendar, useContentCalendarMutations } from '@/hooks/useTrafficking';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -27,7 +27,7 @@ export function ContentCalendar({ clientId }: Props) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [editEntry, setEditEntry] = useState<any>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const { teamMemberId } = useAuth();
+  const { teamMember } = useAuth();
   const { data: entries = [] } = useContentCalendar(clientId);
   const { upsertEntry } = useContentCalendarMutations(clientId);
 
@@ -60,7 +60,7 @@ export function ContentCalendar({ clientId }: Props) {
       launch_target: null,
       status: 'planning',
       notes: '',
-      created_by_id: teamMemberId,
+      created_by_id: teamMember?.id || null,
     });
     setIsDialogOpen(true);
   };

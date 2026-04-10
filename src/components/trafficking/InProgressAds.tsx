@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Sparkles, Eye, CheckCircle2 } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { useTraffickingAds, useTraffickingAdMutations } from '@/hooks/useTrafficking';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -26,7 +26,7 @@ interface Props {
 
 export function InProgressAds({ clientId }: Props) {
   const { data: ads = [] } = useTraffickingAds(clientId, IN_PROGRESS_STATUSES);
-  const { updateAd } = useTraffickingAdMutations(clientId);
+  useTraffickingAdMutations(clientId);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedAdId, setSelectedAdId] = useState<string | null>(null);
   const [aiCopyAdId, setAiCopyAdId] = useState<string | null>(null);

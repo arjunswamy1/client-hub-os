@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { useTraffickingAdMutations } from '@/hooks/useTrafficking';
 import { useAuth } from '@/contexts/AuthContext';
 import { AttachCreativeModal } from './AttachCreativeModal';
@@ -21,7 +21,7 @@ interface Props {
 
 export function AdDetailPanel({ ad, onClose, clientId }: Props) {
   const { updateAd } = useTraffickingAdMutations(clientId);
-  const { teamMemberId } = useAuth();
+  const { teamMember } = useAuth();
   const [attachOpen, setAttachOpen] = useState(false);
 
   const checklist = ad.launch_checklist || [];
@@ -33,7 +33,7 @@ export function AdDetailPanel({ ad, onClose, clientId }: Props) {
     updated[idx] = {
       ...updated[idx],
       checked: !updated[idx].checked,
-      checked_by: !updated[idx].checked ? teamMemberId : null,
+      checked_by: !updated[idx].checked ? teamMember?.id : null,
       checked_at: !updated[idx].checked ? new Date().toISOString() : null,
     };
     updateAd.mutate({ id: ad.id, launch_checklist: updated });
@@ -43,7 +43,7 @@ export function AdDetailPanel({ ad, onClose, clientId }: Props) {
     if (status === 'approved' && !canApprove) return;
     const updates: any = { id: ad.id, status };
     if (status === 'approved') {
-      updates.approved_by_id = teamMemberId;
+      updates.approved_by_id = teamMember?.id;
       updates.approved_at = new Date().toISOString();
     }
     updateAd.mutate(updates);

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { differenceInDays, format, parseISO, addDays, eachDayOfInterval } from 'date-fns';
+import { differenceInDays, format, parseISO, eachDayOfInterval } from 'date-fns';
 
 interface Props {
   campaign: { start_date: string; end_date: string; name: string };
@@ -26,7 +26,7 @@ export function BudgetGantt({ campaign, phases }: Props) {
   const end = parseISO(campaign.end_date);
   const totalDays = differenceInDays(end, start) + 1;
 
-  const days = useMemo(() => eachDayOfInterval({ start, end }), [campaign.start_date, campaign.end_date]);
+  const days = useMemo(() => eachDayOfInterval({ start, end }), [start, end]);
 
   // Show week labels if > 14 days, otherwise daily
   const showWeekly = totalDays > 21;

@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function CreateCampaignDialog({ open, onOpenChange, clientId }: Props) {
-  const { teamMemberId } = useAuth();
+  const { teamMember } = useAuth();
   const { createCampaign } = useCampaignMutations(clientId);
   const [form, setForm] = useState({
     name: '',
@@ -32,7 +32,7 @@ export function CreateCampaignDialog({ open, onOpenChange, clientId }: Props) {
       total_budget: form.total_budget ? parseFloat(form.total_budget) : null,
       start_date: form.start_date || null,
       end_date: form.end_date || null,
-      created_by_id: teamMemberId,
+      created_by_id: teamMember?.id || null,
     }, {
       onSuccess: () => {
         onOpenChange(false);

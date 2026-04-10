@@ -21,6 +21,7 @@ import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset } fr
 
 interface BriefFormData {
   title: string;
+  client_id: string;
   creative_types: string[];
   platforms: string[];
   sizes: SizePreset[];
@@ -40,6 +41,11 @@ interface BriefFormData {
   custom_width: string;
   custom_height: string;
 }
+
+const SPECIAL_CLIENT_OPTIONS = [
+  { id: '__new_business__', name: 'New Business', color: '#6366f1' },
+  { id: '__other__', name: 'Other / Ad Hoc', color: '#94a3b8' },
+];
 
 const INITIAL_FORM: BriefFormData = {
   title: '', creative_types: [], platforms: [], sizes: [],

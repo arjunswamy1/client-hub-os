@@ -45,7 +45,7 @@ function fmtDec(n: number, digits = 2) {
 }
 
 export function LiveAdsTracker({ clientId }: Props) {
-  const { dateRange } = useDateRange();
+  const _dateRange = useDateRange(); // keep context requirement
   const [vertical, setVertical] = useState('all');
 
   const { data: ads = [], isLoading } = useQuery({

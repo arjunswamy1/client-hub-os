@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, CheckCircle2, Send, Image as ImageIcon } from 'lucide-react';
+import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations } from '@/hooks/useCreativeBriefs';
@@ -110,6 +110,34 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                     {c.primary_text && <div><span className="text-muted-foreground">Primary:</span> {c.primary_text}</div>}
                     {c.headline && <div><span className="text-muted-foreground">Headline:</span> {c.headline}</div>}
                     {c.description && <div><span className="text-muted-foreground">Description:</span> {c.description}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Video Scripts */}
+            {brief.video_scripts && Array.isArray(brief.video_scripts) && brief.video_scripts.length > 0 && (
+              <div>
+                <span className="text-xs text-muted-foreground block mb-2">Video Scripts ({brief.video_scripts.length})</span>
+                {brief.video_scripts.map((s: any, i: number) => (
+                  <div key={s.id || i} className="rounded-lg border p-3 mb-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{s.title || `Script ${i + 1}`}</span>
+                      <Badge variant="outline" className="text-[10px]">{s.platform}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{s.duration}</Badge>
+                      {s.enhanced_text && (
+                        <Badge className="text-[10px] bg-purple-100 text-purple-700">
+                          <Sparkles className="h-2.5 w-2.5 mr-0.5" /> AI Enhanced
+                        </Badge>
+                      )}
+                    </div>
+                    <pre className="text-xs whitespace-pre-wrap text-foreground/80">{s.script_text}</pre>
+                    {s.enhanced_text && (
+                      <details className="mt-1">
+                        <summary className="text-xs text-purple-600 cursor-pointer">View AI-Enhanced Version</summary>
+                        <pre className="text-xs whitespace-pre-wrap text-foreground/70 mt-1 p-2 rounded bg-purple-50/50 border border-purple-100">{s.enhanced_text}</pre>
+                      </details>
+                    )}
                   </div>
                 ))}
               </div>

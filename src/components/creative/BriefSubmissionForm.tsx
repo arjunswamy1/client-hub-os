@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Minus, Save, FileUp } from 'lucide-react';
 import { toast } from 'sonner';
-import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset } from '@/types/creative';
+import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset, getRelevantSizeGroups } from '@/types/creative';
 
 interface BriefFormData {
   title: string;

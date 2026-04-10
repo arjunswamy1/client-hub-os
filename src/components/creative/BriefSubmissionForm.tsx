@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Plus, Minus, Save, FileUp } from 'lucide-react';
+import { VideoScriptEditor, VideoScript } from '@/components/creative/VideoScriptEditor';
 import { toast } from 'sonner';
 import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset, getRelevantSizeGroups } from '@/types/creative';
 
@@ -40,6 +41,7 @@ interface BriefFormData {
   notes: string;
   custom_width: string;
   custom_height: string;
+  video_scripts: VideoScript[];
 }
 
 const SPECIAL_CLIENT_OPTIONS = [

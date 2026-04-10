@@ -49,7 +49,6 @@ Deno.serve(async (req) => {
     }
     targetConnections = conns;
   } else {
-    // Cron mode — sync all connections
     const { data: connections } = await supabaseAdmin
       .from("platform_connections")
       .select("user_id, access_token, refresh_token, metadata, token_expires_at, client_id")
@@ -241,7 +240,6 @@ async function syncGoogleForUser(supabase: any, userId: string, accessToken: str
               WHERE segments.date BETWEEN '${since}' AND '${until}'
             `, loginCustomerId);
 
-            // Fetch budget amounts
             let budgetMap = new Map();
             try {
               const budgetRows = await queryGoogleAds(cid, accessToken, developerToken, `
@@ -292,6 +290,16 @@ async function syncGoogleForUser(supabase: any, userId: string, accessToken: str
             console.error(`Campaign metrics error for ${cid} ${since}-${until}:`, err);
           }
         }
+
+        // === NEW: Ad-level data for search ads ===
+        if (hasTimeBudget()) {
+          try {
+            const adRecords = await syncGoogleAdCreatives(supabase, cid, accessToken, developerToken, loginCustomerId, clientId, formatDate(startDate), formatDate(endDate));
+            totalRecords += adRecords;
+          } catch (err) {
+            console.error(`Ad creative sync error for ${cid}:`, err);
+          }
+        }
       }
     }
 
@@ -300,6 +308,123 @@ async function syncGoogleForUser(supabase: any, userId: string, accessToken: str
     console.error("Google sync error:", err);
     return { error: err.message };
   }
+}
+
+async function syncGoogleAdCreatives(supabase: any, customerId: string, accessToken: string, developerToken: string, loginCustomerId: string, clientId: string | null, since: string, until: string): Promise<number> {
+  // Query ad-level data with ad text assets and performance
+  const adRows = await queryGoogleAds(customerId, accessToken, developerToken, `
+    SELECT
+      ad_group_ad.ad.id,
+      ad_group_ad.ad.name,
+      ad_group_ad.ad.type,
+      ad_group_ad.ad.final_urls,
+      ad_group_ad.ad.responsive_search_ad.headlines,
+      ad_group_ad.ad.responsive_search_ad.descriptions,
+      ad_group_ad.status,
+      ad_group.id,
+      ad_group.name,
+      campaign.id,
+      campaign.name,
+      campaign.status,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions,
+      metrics.conversions_value
+    FROM ad_group_ad
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
+      AND campaign.status IN ('ENABLED', 'PAUSED')
+      AND ad_group_ad.status IN ('ENABLED', 'PAUSED')
+  `, loginCustomerId);
+
+  if (adRows.length === 0) return 0;
+
+  // Aggregate by ad ID
+  const adMap = new Map<string, any>();
+  for (const row of adRows) {
+    const adId = String(row.adGroupAd?.ad?.id);
+    if (!adId || adId === "undefined") continue;
+
+    const spend = (row.metrics?.costMicros || 0) / 1_000_000;
+    const revenue = row.metrics?.conversionsValue || 0;
+    const impressions = parseInt(row.metrics?.impressions || "0");
+    const clicks = parseInt(row.metrics?.clicks || "0");
+    const conversions = Math.round(row.metrics?.conversions || 0);
+
+    if (adMap.has(adId)) {
+      const existing = adMap.get(adId);
+      existing.spend += spend;
+      existing.revenue += revenue;
+      existing.impressions += impressions;
+      existing.clicks += clicks;
+      existing.conversions += conversions;
+    } else {
+      // Extract RSA headlines and descriptions
+      const rsa = row.adGroupAd?.ad?.responsiveSearchAd;
+      const headlines: string[] = [];
+      const descriptions: string[] = [];
+      if (rsa?.headlines) {
+        for (const h of rsa.headlines) {
+          if (h.text) headlines.push(h.text);
+        }
+      }
+      if (rsa?.descriptions) {
+        for (const d of rsa.descriptions) {
+          if (d.text) descriptions.push(d.text);
+        }
+      }
+
+      const finalUrls = row.adGroupAd?.ad?.finalUrls || [];
+      const campaignName = row.campaign?.name || "Unknown";
+
+      adMap.set(adId, {
+        client_id: clientId,
+        platform: "google",
+        campaign_name: campaignName,
+        ad_name: row.adGroupAd?.ad?.name || `RSA ${adId}`,
+        platform_ad_id: adId,
+        platform_campaign_id: String(row.campaign?.id || ""),
+        platform_adset_id: String(row.adGroup?.id || ""),
+        adset_name: row.adGroup?.name || null,
+        creative_type: "search",
+        headlines: headlines.length > 0 ? headlines : null,
+        descriptions: descriptions.length > 0 ? descriptions : null,
+        final_url: finalUrls[0] || null,
+        display_url: finalUrls[0] ? new URL(finalUrls[0]).hostname : null,
+        vertical: classifyVertical(campaignName),
+        spend, impressions, clicks, conversions, revenue,
+        status: (row.adGroupAd?.status || row.campaign?.status || "UNKNOWN").toLowerCase(),
+        date_from: since,
+        date_to: until,
+      });
+    }
+  }
+
+  // Build batch and compute derived metrics
+  const batch = Array.from(adMap.values()).map(ad => ({
+    ...ad,
+    ctr: ad.impressions > 0 ? (ad.clicks / ad.impressions) * 100 : null,
+    cpa: ad.conversions > 0 ? ad.spend / ad.conversions : null,
+    roas: ad.spend > 0 ? ad.revenue / ad.spend : null,
+  }));
+
+  if (batch.length > 0) {
+    await batchUpsert(supabase, "ad_creatives", batch, "client_id,platform,platform_ad_id");
+  }
+
+  return batch.length;
+}
+
+function classifyVertical(campaignName: string): string {
+  const name = campaignName.toLowerCase();
+  if (name.includes("pest") || name.includes("bug") || name.includes("roach") || name.includes("termite") || name.includes("rodent") || name.includes("ant control") || name.includes("bed bug") || name.includes("cockroach")) return "pest_control";
+  if (name.includes("flight") || name.includes("premflight")) return "flights";
+  if (name.includes("porta potty") || name.includes("portapotty")) return "porta_potty";
+  if (name.includes("siding")) return "siding";
+  if (name.includes("bath")) return "bathroom";
+  if (name.includes("moving") || name.includes("movers")) return "moving";
+  if (name.includes("home service")) return "home_services";
+  return "other";
 }
 
 function buildDateChunks(start: Date, end: Date, chunkDays: number): { since: string; until: string }[] {
@@ -366,6 +491,14 @@ async function queryGoogleAds(customerId: string, accessToken: string, developer
     }
   }
   return results;
+}
+
+async function batchUpsert(supabase: any, table: string, rows: any[], onConflict: string, batchSize = 200) {
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const chunk = rows.slice(i, i + batchSize);
+    const { error } = await supabase.from(table).upsert(chunk, { onConflict });
+    if (error) console.error(`Batch upsert error on ${table}:`, error.message);
+  }
 }
 
 function formatDate(d: Date): string {

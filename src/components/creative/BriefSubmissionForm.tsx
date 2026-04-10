@@ -182,8 +182,15 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         ? form.reference_urls.split('\n').filter(Boolean).map(url => ({ source: 'url', drive_url: url.trim(), note: '' }))
         : [];
 
+      const isSpecialClient = form.client_id.startsWith('__');
+      const specialLabel = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id)?.name;
+      const resolvedClientId = isSpecialClient ? clientId : form.client_id;
+      const notesWithTag = isSpecialClient
+        ? `[${specialLabel}] ${form.notes || ''}`.trim()
+        : form.notes || null;
+
       const { data: brief, error } = await supabase.from('creative_briefs').insert({
-        client_id: form.client_id.startsWith('__') ? clientId : form.client_id,
+        client_id: resolvedClientId,
         title: form.title,
         creative_type: form.creative_types[0] || 'static',
         creative_types: form.creative_types,
@@ -202,7 +209,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         priority: form.priority,
         assigned_to_id: assignedTo,
         created_by_id: teamMember?.id || null,
-        notes: form.notes || null,
+        notes: notesWithTag,
         status: 'draft',
       } as any).select().single();
       if (error) throw error;

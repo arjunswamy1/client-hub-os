@@ -1,4 +1,5 @@
-import { Bell, Search, LogOut } from 'lucide-react';
+import { Search, LogOut } from 'lucide-react';
+import { NotificationBell } from '@/components/creative/NotificationBell';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
@@ -40,9 +41,7 @@ export function TopBar() {
         <button className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
           <Search className="h-4 w-4" />
         </button>
-        <button className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-          <Bell className="h-4 w-4" />
-        </button>
+        <NotificationBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

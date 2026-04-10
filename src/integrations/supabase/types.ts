@@ -138,6 +138,64 @@ export type Database = {
           },
         ]
       }
+      ai_copy_generations: {
+        Row: {
+          ads_analyzed: number | null
+          campaign_context: Json | null
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          generated_options: Json | null
+          id: string
+          selected_option: Json | null
+          trafficking_ad_id: string | null
+        }
+        Insert: {
+          ads_analyzed?: number | null
+          campaign_context?: Json | null
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          generated_options?: Json | null
+          id?: string
+          selected_option?: Json | null
+          trafficking_ad_id?: string | null
+        }
+        Update: {
+          ads_analyzed?: number | null
+          campaign_context?: Json | null
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          generated_options?: Json | null
+          id?: string
+          selected_option?: Json | null
+          trafficking_ad_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_copy_generations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_copy_generations_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_copy_generations_trafficking_ad_id_fkey"
+            columns: ["trafficking_ad_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_ads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_action_items: {
         Row: {
           assignee_id: string | null
@@ -249,6 +307,150 @@ export type Database = {
             columns: ["created_by_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_budget_phases: {
+        Row: {
+          actual_spend: number | null
+          campaign_id: string
+          created_at: string
+          daily_budget: number | null
+          end_date: string | null
+          id: string
+          percentage_of_total: number | null
+          phase_name: string
+          phase_total: number | null
+          position: number | null
+          start_date: string | null
+        }
+        Insert: {
+          actual_spend?: number | null
+          campaign_id: string
+          created_at?: string
+          daily_budget?: number | null
+          end_date?: string | null
+          id?: string
+          percentage_of_total?: number | null
+          phase_name: string
+          phase_total?: number | null
+          position?: number | null
+          start_date?: string | null
+        }
+        Update: {
+          actual_spend?: number | null
+          campaign_id?: string
+          created_at?: string
+          daily_budget?: number | null
+          end_date?: string | null
+          id?: string
+          percentage_of_total?: number | null
+          phase_name?: string
+          phase_total?: number | null
+          position?: number | null
+          start_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_budget_phases_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_extensions: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          description: string | null
+          extension_type: string
+          header: string | null
+          id: string
+          text: string
+          url: string | null
+          values_text: string | null
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          description?: string | null
+          extension_type: string
+          header?: string | null
+          id?: string
+          text: string
+          url?: string | null
+          values_text?: string | null
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          description?: string | null
+          extension_type?: string
+          header?: string | null
+          id?: string
+          text?: string
+          url?: string | null
+          values_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_extensions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_keywords: {
+        Row: {
+          ad_group: string
+          campaign_id: string
+          created_at: string
+          id: string
+          impression_share: number | null
+          intent: string | null
+          is_negative: boolean | null
+          keyword: string
+          match_type: string | null
+          negative_category: string | null
+          quality_score: number | null
+        }
+        Insert: {
+          ad_group: string
+          campaign_id: string
+          created_at?: string
+          id?: string
+          impression_share?: number | null
+          intent?: string | null
+          is_negative?: boolean | null
+          keyword: string
+          match_type?: string | null
+          negative_category?: string | null
+          quality_score?: number | null
+        }
+        Update: {
+          ad_group?: string
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          impression_share?: number | null
+          intent?: string | null
+          is_negative?: boolean | null
+          keyword?: string
+          match_type?: string | null
+          negative_category?: string | null
+          quality_score?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_keywords_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_campaigns"
             referencedColumns: ["id"]
           },
         ]
@@ -385,6 +587,72 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      content_calendar_entries: {
+        Row: {
+          ad_formats_planned: string[] | null
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          creative_theme: string | null
+          delivery_deadline: string | null
+          id: string
+          launch_target: string | null
+          linked_brief_ids: string[] | null
+          notes: string | null
+          product_focus: string | null
+          status: string
+          updated_at: string
+          week_of: string
+        }
+        Insert: {
+          ad_formats_planned?: string[] | null
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          creative_theme?: string | null
+          delivery_deadline?: string | null
+          id?: string
+          launch_target?: string | null
+          linked_brief_ids?: string[] | null
+          notes?: string | null
+          product_focus?: string | null
+          status?: string
+          updated_at?: string
+          week_of: string
+        }
+        Update: {
+          ad_formats_planned?: string[] | null
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          creative_theme?: string | null
+          delivery_deadline?: string | null
+          id?: string
+          launch_target?: string | null
+          linked_brief_ids?: string[] | null
+          notes?: string | null
+          product_focus?: string | null
+          status?: string
+          updated_at?: string
+          week_of?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_calendar_entries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_calendar_entries_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       context_items: {
         Row: {
@@ -1438,6 +1706,291 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      trafficking_ad_performance: {
+        Row: {
+          clicks: number | null
+          conversions: number | null
+          cpa: number | null
+          created_at: string
+          ctr: number | null
+          date: string
+          id: string
+          impressions: number | null
+          revenue: number | null
+          roas: number | null
+          spend: number | null
+          trafficking_ad_id: string
+        }
+        Insert: {
+          clicks?: number | null
+          conversions?: number | null
+          cpa?: number | null
+          created_at?: string
+          ctr?: number | null
+          date: string
+          id?: string
+          impressions?: number | null
+          revenue?: number | null
+          roas?: number | null
+          spend?: number | null
+          trafficking_ad_id: string
+        }
+        Update: {
+          clicks?: number | null
+          conversions?: number | null
+          cpa?: number | null
+          created_at?: string
+          ctr?: number | null
+          date?: string
+          id?: string
+          impressions?: number | null
+          revenue?: number | null
+          roas?: number | null
+          spend?: number | null
+          trafficking_ad_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trafficking_ad_performance_trafficking_ad_id_fkey"
+            columns: ["trafficking_ad_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_ads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trafficking_ads: {
+        Row: {
+          ad_group: string | null
+          ad_name: string
+          approved_at: string | null
+          approved_by_id: string | null
+          asset_urls: Json | null
+          brief_id: string | null
+          campaign_id: string | null
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          creative_deadline: string | null
+          cta: string | null
+          deliverable_ids: string[] | null
+          description: string | null
+          description_2: string | null
+          final_url: string | null
+          format: string | null
+          headline: string | null
+          headline_2: string | null
+          headline_3: string | null
+          id: string
+          launch_checklist: Json | null
+          launch_target: string | null
+          launched_at: string | null
+          notes: string | null
+          platform: string | null
+          platform_ad_id: string | null
+          platform_adset_id: string | null
+          platform_campaign_id: string | null
+          preview_html: string | null
+          preview_screenshots: Json | null
+          preview_url: string | null
+          primary_text: string | null
+          status: string
+          trafficked_at: string | null
+          trafficked_by_id: string | null
+          updated_at: string
+          utm_parameters: string | null
+        }
+        Insert: {
+          ad_group?: string | null
+          ad_name: string
+          approved_at?: string | null
+          approved_by_id?: string | null
+          asset_urls?: Json | null
+          brief_id?: string | null
+          campaign_id?: string | null
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          creative_deadline?: string | null
+          cta?: string | null
+          deliverable_ids?: string[] | null
+          description?: string | null
+          description_2?: string | null
+          final_url?: string | null
+          format?: string | null
+          headline?: string | null
+          headline_2?: string | null
+          headline_3?: string | null
+          id?: string
+          launch_checklist?: Json | null
+          launch_target?: string | null
+          launched_at?: string | null
+          notes?: string | null
+          platform?: string | null
+          platform_ad_id?: string | null
+          platform_adset_id?: string | null
+          platform_campaign_id?: string | null
+          preview_html?: string | null
+          preview_screenshots?: Json | null
+          preview_url?: string | null
+          primary_text?: string | null
+          status?: string
+          trafficked_at?: string | null
+          trafficked_by_id?: string | null
+          updated_at?: string
+          utm_parameters?: string | null
+        }
+        Update: {
+          ad_group?: string | null
+          ad_name?: string
+          approved_at?: string | null
+          approved_by_id?: string | null
+          asset_urls?: Json | null
+          brief_id?: string | null
+          campaign_id?: string | null
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          creative_deadline?: string | null
+          cta?: string | null
+          deliverable_ids?: string[] | null
+          description?: string | null
+          description_2?: string | null
+          final_url?: string | null
+          format?: string | null
+          headline?: string | null
+          headline_2?: string | null
+          headline_3?: string | null
+          id?: string
+          launch_checklist?: Json | null
+          launch_target?: string | null
+          launched_at?: string | null
+          notes?: string | null
+          platform?: string | null
+          platform_ad_id?: string | null
+          platform_adset_id?: string | null
+          platform_campaign_id?: string | null
+          preview_html?: string | null
+          preview_screenshots?: Json | null
+          preview_url?: string | null
+          primary_text?: string | null
+          status?: string
+          trafficked_at?: string | null
+          trafficked_by_id?: string | null
+          updated_at?: string
+          utm_parameters?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trafficking_ads_approved_by_id_fkey"
+            columns: ["approved_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trafficking_ads_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trafficking_ads_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trafficking_ads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trafficking_ads_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trafficking_ads_trafficked_by_id_fkey"
+            columns: ["trafficked_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trafficking_campaigns: {
+        Row: {
+          bidding_strategy: string | null
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          end_date: string | null
+          id: string
+          location: string | null
+          name: string
+          objective: string | null
+          platform: string
+          start_date: string | null
+          status: string
+          total_budget: number | null
+          updated_at: string
+        }
+        Insert: {
+          bidding_strategy?: string | null
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          end_date?: string | null
+          id?: string
+          location?: string | null
+          name: string
+          objective?: string | null
+          platform: string
+          start_date?: string | null
+          status?: string
+          total_budget?: number | null
+          updated_at?: string
+        }
+        Update: {
+          bidding_strategy?: string | null
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          end_date?: string | null
+          id?: string
+          location?: string | null
+          name?: string
+          objective?: string | null
+          platform?: string
+          start_date?: string | null
+          status?: string
+          total_budget?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trafficking_campaigns_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trafficking_campaigns_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

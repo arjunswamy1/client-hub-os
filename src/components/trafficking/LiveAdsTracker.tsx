@@ -4,8 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDateRange } from '@/contexts/DateRangeContext';
-import { useState, useRef } from 'react';
-import { Chrome, Facebook, Image, Video, LayoutGrid, Search, ExternalLink, Play, Pause } from 'lucide-react';
+import { useState } from 'react';
+import { Chrome, Facebook, Image, Video, LayoutGrid, Search, ExternalLink, Play } from 'lucide-react';
 
 interface Props {
   clientId: string;
@@ -141,34 +141,9 @@ function MetaAdGrid({ ads }: { ads: any[] }) {
         const Icon = creativeTypeIcon[ad.creative_type] || Image;
         return (
           <Card key={ad.id} className="overflow-hidden group hover:shadow-md transition-shadow">
-            {/* Creative thumbnail */}
-            <div className="relative aspect-square bg-muted">
-              {ad.creative_thumbnail_url ? (
-                <img
-                  src={ad.creative_thumbnail_url}
-                  alt={ad.ad_name}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <Icon className="h-10 w-10 text-muted-foreground/30" />
-                </div>
-              )}
-              {/* Status badge overlay */}
-              <div className="absolute top-2 left-2">
-                <Badge variant="outline" className={`text-[10px] border ${statusColors[ad.status] || 'bg-muted text-muted-foreground'}`}>
-                  {ad.status}
-                </Badge>
-              </div>
-              {/* Creative type badge */}
-              <div className="absolute top-2 right-2">
-                <Badge variant="secondary" className="text-[10px] gap-1">
-                  <Icon className="h-3 w-3" />
-                  {ad.creative_type}
-                </Badge>
-              </div>
-            </div>
+            {/* Creative thumbnail / video */}
+            <VideoThumbnail ad={ad} Icon={Icon} />
+
 
             <CardContent className="p-3 space-y-2">
               {/* Ad name */}

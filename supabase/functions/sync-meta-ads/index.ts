@@ -192,7 +192,7 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
   // Step 1: Get all ads with their creative details and performance
   const adFields = "id,name,status,campaign_id,adset_id,creative{id,thumbnail_url,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}";
   let ads: any[] = [];
-  let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/ads?fields=${adFields}&effective_status=["ACTIVE","PAUSED"]&limit=200&access_token=${accessToken}`;
+  let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/ads?fields=${adFields}&effective_status=["ACTIVE","PAUSED","PENDING_REVIEW","IN_PROCESS","WITH_ISSUES"]&limit=200&access_token=${accessToken}`;
 
   while (url) {
     const res = await fetch(url);
@@ -385,9 +385,9 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
 // Classify campaign into a vertical based on naming patterns
 function classifyVertical(campaignName: string): string {
   const name = campaignName.toLowerCase();
-  if (name.includes("pest") || name.includes("bug") || name.includes("roach") || name.includes("termite") || name.includes("rodent") || name.includes("ant control") || name.includes("bed bug") || name.includes("cockroach")) return "pest_control";
+  if (name.includes("pest") || name.includes("bug") || name.includes("roach") || name.includes("termite") || name.includes("rodent") || name.includes("ant control") || name.includes("bed bug") || name.includes("cockroach") || name.includes("attila")) return "pest_control";
   if (name.includes("flight") || name.includes("premflight")) return "flights";
-  if (name.includes("porta potty") || name.includes("portapotty")) return "porta_potty";
+  if (name.includes("porta") || name.includes("portapotty")) return "porta_potty";
   if (name.includes("siding")) return "siding";
   if (name.includes("bath")) return "bathroom";
   if (name.includes("moving") || name.includes("movers")) return "moving";

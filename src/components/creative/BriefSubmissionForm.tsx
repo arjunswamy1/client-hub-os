@@ -55,7 +55,7 @@ const INITIAL_FORM: BriefFormData = {
   copy_suggestions: [{ primary_text: '', headline: '', description: '' }],
   target_audience: '', tone_style: '', dos_and_donts: '', reference_urls: '',
   due_date: '', priority: 'medium', assigned_to_id: '', notes: '',
-  custom_width: '', custom_height: '',
+  custom_width: '', custom_height: '', video_scripts: [],
 };
 
 interface Props {

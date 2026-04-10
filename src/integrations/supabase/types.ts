@@ -302,6 +302,54 @@ export type Database = {
           },
         ]
       }
+      client_drive_config: {
+        Row: {
+          client_id: string
+          connected_at: string | null
+          connected_by_id: string | null
+          drive_root_folder_id: string
+          drive_root_folder_url: string | null
+          folder_structure: Json | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          connected_at?: string | null
+          connected_by_id?: string | null
+          drive_root_folder_id: string
+          drive_root_folder_url?: string | null
+          folder_structure?: Json | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          connected_at?: string | null
+          connected_by_id?: string | null
+          drive_root_folder_id?: string
+          drive_root_folder_url?: string | null
+          folder_structure?: Json | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_drive_config_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_drive_config_connected_by_id_fkey"
+            columns: ["connected_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           color: string | null
@@ -429,8 +477,86 @@ export type Database = {
           },
         ]
       }
+      creative_brief_comments: {
+        Row: {
+          author_id: string
+          brief_id: string
+          content: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          author_id: string
+          brief_id: string
+          content: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          author_id?: string
+          brief_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_brief_comments_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_brief_comments_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creative_brief_templates: {
+        Row: {
+          created_at: string
+          created_by_id: string | null
+          id: string
+          is_global: boolean
+          name: string
+          template_data: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          is_global?: boolean
+          name: string
+          template_data?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          is_global?: boolean
+          name?: string
+          template_data?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_brief_templates_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creative_briefs: {
         Row: {
+          approved_at: string | null
           assigned_to_id: string | null
           brand_guidelines_url: string | null
           client_id: string
@@ -438,20 +564,34 @@ export type Database = {
           created_at: string
           created_by_id: string | null
           creative_type: string
+          creative_types: string[] | null
+          delivered_at: string | null
+          dos_and_donts: string | null
+          drive_approved_folder_id: string | null
+          drive_wip_folder_id: string | null
           due_date: string | null
+          funnel_stage: string | null
           id: string
           key_message: string | null
           notes: string | null
+          num_concepts: number | null
           objective: string | null
           platforms: string[] | null
           priority: string
           reference_assets: Json | null
+          sizes: Json | null
           status: string
+          submitted_at: string | null
           target_audience: string | null
+          template_id: string | null
           title: string
+          tone_style: string | null
+          trafficked_at: string | null
+          trafficked_by_id: string | null
           updated_at: string
         }
         Insert: {
+          approved_at?: string | null
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
           client_id: string
@@ -459,20 +599,34 @@ export type Database = {
           created_at?: string
           created_by_id?: string | null
           creative_type?: string
+          creative_types?: string[] | null
+          delivered_at?: string | null
+          dos_and_donts?: string | null
+          drive_approved_folder_id?: string | null
+          drive_wip_folder_id?: string | null
           due_date?: string | null
+          funnel_stage?: string | null
           id?: string
           key_message?: string | null
           notes?: string | null
+          num_concepts?: number | null
           objective?: string | null
           platforms?: string[] | null
           priority?: string
           reference_assets?: Json | null
+          sizes?: Json | null
           status?: string
+          submitted_at?: string | null
           target_audience?: string | null
+          template_id?: string | null
           title: string
+          tone_style?: string | null
+          trafficked_at?: string | null
+          trafficked_by_id?: string | null
           updated_at?: string
         }
         Update: {
+          approved_at?: string | null
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
           client_id?: string
@@ -480,17 +634,30 @@ export type Database = {
           created_at?: string
           created_by_id?: string | null
           creative_type?: string
+          creative_types?: string[] | null
+          delivered_at?: string | null
+          dos_and_donts?: string | null
+          drive_approved_folder_id?: string | null
+          drive_wip_folder_id?: string | null
           due_date?: string | null
+          funnel_stage?: string | null
           id?: string
           key_message?: string | null
           notes?: string | null
+          num_concepts?: number | null
           objective?: string | null
           platforms?: string[] | null
           priority?: string
           reference_assets?: Json | null
+          sizes?: Json | null
           status?: string
+          submitted_at?: string | null
           target_audience?: string | null
+          template_id?: string | null
           title?: string
+          tone_style?: string | null
+          trafficked_at?: string | null
+          trafficked_by_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -517,42 +684,129 @@ export type Database = {
           },
         ]
       }
-      creative_deliverables: {
+      creative_deliverable_versions: {
         Row: {
-          brief_id: string
+          deliverable_id: string
+          drive_file_id: string | null
           drive_url: string | null
-          file_name: string
-          file_size: number | null
+          file_name: string | null
+          file_size_bytes: number | null
           file_type: string | null
-          file_url: string
+          file_url: string | null
           id: string
-          uploaded_at: string
+          uploaded_at: string | null
           uploaded_by_id: string | null
           version: number
         }
         Insert: {
-          brief_id: string
+          deliverable_id: string
+          drive_file_id?: string | null
           drive_url?: string | null
-          file_name: string
-          file_size?: number | null
+          file_name?: string | null
+          file_size_bytes?: number | null
           file_type?: string | null
-          file_url: string
+          file_url?: string | null
           id?: string
-          uploaded_at?: string
+          uploaded_at?: string | null
+          uploaded_by_id?: string | null
+          version: number
+        }
+        Update: {
+          deliverable_id?: string
+          drive_file_id?: string | null
+          drive_url?: string | null
+          file_name?: string | null
+          file_size_bytes?: number | null
+          file_type?: string | null
+          file_url?: string | null
+          id?: string
+          uploaded_at?: string | null
           uploaded_by_id?: string | null
           version?: number
         }
-        Update: {
-          brief_id?: string
+        Relationships: [
+          {
+            foreignKeyName: "creative_deliverable_versions_deliverable_id_fkey"
+            columns: ["deliverable_id"]
+            isOneToOne: false
+            referencedRelation: "creative_deliverables"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_deliverable_versions_uploaded_by_id_fkey"
+            columns: ["uploaded_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creative_deliverables: {
+        Row: {
+          approved_at: string | null
+          approved_by_id: string | null
+          brief_id: string
+          concept_label: string | null
+          drive_url: string | null
+          file_name: string
+          file_size: number | null
+          file_size_bytes: number | null
+          file_type: string | null
+          file_url: string
+          height: number | null
+          id: string
+          revision_note: string | null
+          size_label: string | null
+          status: string
+          thumbnail_url: string | null
+          uploaded_at: string
+          uploaded_by_id: string | null
+          version: number
+          width: number | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by_id?: string | null
+          brief_id: string
+          concept_label?: string | null
           drive_url?: string | null
-          file_name?: string
+          file_name: string
           file_size?: number | null
+          file_size_bytes?: number | null
           file_type?: string | null
-          file_url?: string
+          file_url: string
+          height?: number | null
           id?: string
+          revision_note?: string | null
+          size_label?: string | null
+          status?: string
+          thumbnail_url?: string | null
           uploaded_at?: string
           uploaded_by_id?: string | null
           version?: number
+          width?: number | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by_id?: string | null
+          brief_id?: string
+          concept_label?: string | null
+          drive_url?: string | null
+          file_name?: string
+          file_size?: number | null
+          file_size_bytes?: number | null
+          file_type?: string | null
+          file_url?: string
+          height?: number | null
+          id?: string
+          revision_note?: string | null
+          size_label?: string | null
+          status?: string
+          thumbnail_url?: string | null
+          uploaded_at?: string
+          uploaded_by_id?: string | null
+          version?: number
+          width?: number | null
         }
         Relationships: [
           {
@@ -577,6 +831,7 @@ export type Database = {
           brief_id: string
           comments: string | null
           created_at: string
+          deliverable_id: string | null
           id: string
           reviewer_id: string
         }
@@ -585,6 +840,7 @@ export type Database = {
           brief_id: string
           comments?: string | null
           created_at?: string
+          deliverable_id?: string | null
           id?: string
           reviewer_id: string
         }
@@ -593,6 +849,7 @@ export type Database = {
           brief_id?: string
           comments?: string | null
           created_at?: string
+          deliverable_id?: string | null
           id?: string
           reviewer_id?: string
         }
@@ -607,6 +864,70 @@ export type Database = {
           {
             foreignKeyName: "creative_reviews_reviewer_id_fkey"
             columns: ["reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creative_time_entries: {
+        Row: {
+          brief_id: string
+          client_id: string
+          created_at: string
+          description: string | null
+          duration_minutes: number | null
+          ended_at: string | null
+          id: string
+          is_manual: boolean
+          started_at: string
+          team_member_id: string
+          updated_at: string
+        }
+        Insert: {
+          brief_id: string
+          client_id: string
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          ended_at?: string | null
+          id?: string
+          is_manual?: boolean
+          started_at?: string
+          team_member_id: string
+          updated_at?: string
+        }
+        Update: {
+          brief_id?: string
+          client_id?: string
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          ended_at?: string | null
+          id?: string
+          is_manual?: boolean
+          started_at?: string
+          team_member_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_time_entries_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_time_entries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_time_entries_team_member_id_fkey"
+            columns: ["team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
@@ -650,6 +971,38 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: true
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      designer_monthly_caps: {
+        Row: {
+          cap_hours: number
+          created_at: string
+          id: string
+          month: string
+          team_member_id: string
+        }
+        Insert: {
+          cap_hours?: number
+          created_at?: string
+          id?: string
+          month: string
+          team_member_id: string
+        }
+        Update: {
+          cap_hours?: number
+          created_at?: string
+          id?: string
+          month?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "designer_monthly_caps_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -705,6 +1058,54 @@ export type Database = {
           {
             foreignKeyName: "landing_pages_created_by_id_fkey"
             columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          brief_id: string | null
+          created_at: string
+          id: string
+          is_read: boolean
+          message: string | null
+          recipient_id: string
+          title: string
+          type: string
+        }
+        Insert: {
+          brief_id?: string | null
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message?: string | null
+          recipient_id: string
+          title: string
+          type: string
+        }
+        Update: {
+          brief_id?: string | null
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message?: string | null
+          recipient_id?: string
+          title?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_recipient_id_fkey"
+            columns: ["recipient_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]

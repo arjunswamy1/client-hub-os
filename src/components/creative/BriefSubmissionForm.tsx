@@ -48,7 +48,7 @@ const SPECIAL_CLIENT_OPTIONS = [
 ];
 
 const INITIAL_FORM: BriefFormData = {
-  title: '', creative_types: [], platforms: [], sizes: [],
+  title: '', client_id: '', creative_types: [], platforms: [], sizes: [],
   funnel_stage: '', num_concepts: 1, objective: '', key_message: '',
   copy_suggestions: [{ primary_text: '', headline: '', description: '' }],
   target_audience: '', tone_style: '', dos_and_donts: '', reference_urls: '',

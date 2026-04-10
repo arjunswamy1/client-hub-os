@@ -286,6 +286,30 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
           {step === 0 && (
             <>
               <div className="space-y-2">
+                <Label>Client *</Label>
+                <Select value={form.client_id} onValueChange={v => set('client_id', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select client..." /></SelectTrigger>
+                  <SelectContent>
+                    {clients.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color || '#94a3b8' }} />
+                          {c.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                    {SPECIAL_CLIENT_OPTIONS.map(opt => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
+                          {opt.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label>Brief Title *</Label>
                 <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder='e.g., "Spring Sale Static Set"' required />
               </div>

@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Minus, Save, FileUp } from 'lucide-react';
 import { toast } from 'sonner';
-import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset } from '@/types/creative';
+import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset, getRelevantSizeGroups } from '@/types/creative';
 
 interface BriefFormData {
   title: string;
@@ -352,9 +352,28 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
             </>
           )}
 
-          {/* Step 1: Creative Specs */}
+          {/* Step 1: Creative Specs — Platform → Type → Sizes */}
           {step === 1 && (
             <>
+              {/* 1. Platforms first */}
+              <div className="space-y-2">
+                <Label>Platform(s) *</Label>
+                <p className="text-xs text-muted-foreground">Select where this creative will run — sizes will update below</p>
+                <div className="flex flex-wrap gap-2">
+                  {PLATFORMS.map(p => (
+                    <Badge
+                      key={p.value}
+                      variant={form.platforms.includes(p.value) ? 'default' : 'outline'}
+                      className="cursor-pointer transition-colors"
+                      onClick={() => toggleArrayItem('platforms', p.value)}
+                    >
+                      {p.label}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Creative type */}
               <div className="space-y-2">
                 <Label>Creative Type(s) *</Label>
                 <div className="flex flex-wrap gap-2">
@@ -371,50 +390,51 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Platform(s) *</Label>
-                <div className="flex flex-wrap gap-2">
-                  {PLATFORMS.map(p => (
-                    <Badge
-                      key={p.value}
-                      variant={form.platforms.includes(p.value) ? 'default' : 'outline'}
-                      className="cursor-pointer transition-colors"
-                      onClick={() => toggleArrayItem('platforms', p.value)}
-                    >
-                      {p.label}
+              {/* 3. Sizes — grouped by category, filtered by platform */}
+              {form.platforms.length > 0 && (
+                <div className="space-y-3">
+                  <Label>Size/Format Variations *</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Showing sizes for: {form.platforms.map(p => PLATFORMS.find(pl => pl.value === p)?.label).filter(Boolean).join(', ')}
+                  </p>
+                  {getRelevantSizeGroups(form.platforms).map(group => (
+                    <div key={group.category} className="space-y-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.category}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {group.sizes.map(sp => (
+                          <Badge
+                            key={sp.label}
+                            variant={form.sizes.find(s => s.label === sp.label) ? 'default' : 'outline'}
+                            className="cursor-pointer transition-colors text-[11px]"
+                            onClick={() => toggleSize(sp)}
+                          >
+                            {sp.label} ({sp.width}×{sp.height})
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Input className="w-24 h-8 text-xs" placeholder="Width" value={form.custom_width} onChange={e => set('custom_width', e.target.value)} />
+                    <span className="text-xs text-muted-foreground">×</span>
+                    <Input className="w-24 h-8 text-xs" placeholder="Height" value={form.custom_height} onChange={e => set('custom_height', e.target.value)} />
+                    <Button type="button" size="sm" variant="outline" onClick={addCustomSize}>
+                      <Plus className="h-3 w-3" /> Add Custom
+                    </Button>
+                  </div>
+                  {form.sizes.filter(s => !SIZE_PRESETS.find(p => p.label === s.label)).map(s => (
+                    <Badge key={s.label} variant="default" className="cursor-pointer" onClick={() => toggleSize(s)}>
+                      {s.label} ×
                     </Badge>
                   ))}
                 </div>
-              </div>
+              )}
 
-              <div className="space-y-2">
-                <Label>Size/Format Variations *</Label>
-                <div className="flex flex-wrap gap-2">
-                  {SIZE_PRESETS.map(sp => (
-                    <Badge
-                      key={sp.label}
-                      variant={form.sizes.find(s => s.label === sp.label) ? 'default' : 'outline'}
-                      className="cursor-pointer transition-colors"
-                      onClick={() => toggleSize(sp)}
-                    >
-                      {sp.label} ({sp.width}×{sp.height})
-                    </Badge>
-                  ))}
+              {form.platforms.length === 0 && (
+                <div className="rounded-lg border border-dashed p-4 text-center">
+                  <p className="text-sm text-muted-foreground">Select platform(s) above to see available sizes</p>
                 </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <Input className="w-24 h-8 text-xs" placeholder="Width" value={form.custom_width} onChange={e => set('custom_width', e.target.value)} />
-                  <span className="text-xs text-muted-foreground">×</span>
-                  <Input className="w-24 h-8 text-xs" placeholder="Height" value={form.custom_height} onChange={e => set('custom_height', e.target.value)} />
-                  <Button type="button" size="sm" variant="outline" onClick={addCustomSize}>
-                    <Plus className="h-3 w-3" /> Add
-                  </Button>
-                </div>
-                {form.sizes.filter(s => !SIZE_PRESETS.find(p => p.label === s.label)).map(s => (
-                  <Badge key={s.label} variant="default" className="cursor-pointer" onClick={() => toggleSize(s)}>
-                    {s.label} ×
-                  </Badge>
-                ))}
-              </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">

@@ -1,6 +1,5 @@
 
 import { useState } from 'react';
-import { useClient } from '@/contexts/ClientContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -14,18 +13,13 @@ import { TraffickingQueue } from '@/components/creative/TraffickingQueue';
 import { HoursDashboard } from '@/components/creative/HoursDashboard';
 
 export default function CreativePage() {
-  const { activeClient } = useClient();
   const { isDesigner, isAdmin } = useAuth();
-  const { data: briefs = [] } = useCreativeBriefs();
+  const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { updateStatus } = useBriefMutations();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected = briefs.find((b: any) => b.id === selectedId);
-
-  if (!activeClient) {
-    return <div className="flex h-full items-center justify-center"><p className="text-muted-foreground">Select a client</p></div>;
-  }
 
   // Designer gets their own workspace
   if (isDesigner) {
@@ -35,12 +29,17 @@ export default function CreativePage() {
           <div className="flex items-center justify-between">
             <TabsList>
               <TabsTrigger value="queue">My Queue</TabsTrigger>
+              <TabsTrigger value="planner">Daily Planner</TabsTrigger>
               <TabsTrigger value="hours">Hours</TabsTrigger>
             </TabsList>
           </div>
 
           <TabsContent value="queue" className="mt-4">
-            <DesignerWorkspace onBriefClick={setSelectedId} />
+            <DesignerWorkspace onBriefClick={setSelectedId} view="queue" />
+          </TabsContent>
+
+          <TabsContent value="planner" className="mt-4">
+            <DesignerWorkspace onBriefClick={setSelectedId} view="planner" />
           </TabsContent>
 
           <TabsContent value="hours" className="mt-4">
@@ -55,19 +54,20 @@ export default function CreativePage() {
     );
   }
 
-  // AM / Admin view
+  // AM / Admin view — global, not client-scoped
   return (
     <div className="space-y-6">
       <Tabs defaultValue="kanban">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Creative Briefing</h1>
-            <p className="text-sm text-muted-foreground">{briefs.length} briefs for {activeClient.name}</p>
+            <p className="text-sm text-muted-foreground">{briefs.length} briefs across all clients</p>
           </div>
           <div className="flex items-center gap-3">
             <TabsList>
               <TabsTrigger value="kanban">Kanban</TabsTrigger>
               <TabsTrigger value="trafficking">Trafficking</TabsTrigger>
+              {isAdmin && <TabsTrigger value="planner">Designer Planner</TabsTrigger>}
               {isAdmin && <TabsTrigger value="hours">Designer Hours</TabsTrigger>}
             </TabsList>
             <Button size="sm" onClick={() => setIsCreateOpen(true)}>
@@ -89,6 +89,12 @@ export default function CreativePage() {
         </TabsContent>
 
         {isAdmin && (
+          <TabsContent value="planner" className="mt-4">
+            <DesignerWorkspace onBriefClick={setSelectedId} view="planner" isAdminView />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
           <TabsContent value="hours" className="mt-4">
             <HoursDashboard />
           </TabsContent>
@@ -102,7 +108,6 @@ export default function CreativePage() {
       <BriefSubmissionForm
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
-        clientId={activeClient.id}
       />
     </div>
   );

@@ -949,7 +949,7 @@ export type Database = {
           approved_at: string | null
           assigned_to_id: string | null
           brand_guidelines_url: string | null
-          client_id: string
+          client_id: string | null
           copy_suggestions: Json | null
           created_at: string
           created_by_id: string | null
@@ -960,6 +960,7 @@ export type Database = {
           drive_approved_folder_id: string | null
           drive_wip_folder_id: string | null
           due_date: string | null
+          estimated_hours: number | null
           funnel_stage: string | null
           id: string
           key_message: string | null
@@ -969,6 +970,7 @@ export type Database = {
           platforms: string[] | null
           priority: string
           reference_assets: Json | null
+          scheduled_date: string | null
           sizes: Json | null
           status: string
           submitted_at: string | null
@@ -985,7 +987,7 @@ export type Database = {
           approved_at?: string | null
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
-          client_id: string
+          client_id?: string | null
           copy_suggestions?: Json | null
           created_at?: string
           created_by_id?: string | null
@@ -996,6 +998,7 @@ export type Database = {
           drive_approved_folder_id?: string | null
           drive_wip_folder_id?: string | null
           due_date?: string | null
+          estimated_hours?: number | null
           funnel_stage?: string | null
           id?: string
           key_message?: string | null
@@ -1005,6 +1008,7 @@ export type Database = {
           platforms?: string[] | null
           priority?: string
           reference_assets?: Json | null
+          scheduled_date?: string | null
           sizes?: Json | null
           status?: string
           submitted_at?: string | null
@@ -1021,7 +1025,7 @@ export type Database = {
           approved_at?: string | null
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
-          client_id?: string
+          client_id?: string | null
           copy_suggestions?: Json | null
           created_at?: string
           created_by_id?: string | null
@@ -1032,6 +1036,7 @@ export type Database = {
           drive_approved_folder_id?: string | null
           drive_wip_folder_id?: string | null
           due_date?: string | null
+          estimated_hours?: number | null
           funnel_stage?: string | null
           id?: string
           key_message?: string | null
@@ -1041,6 +1046,7 @@ export type Database = {
           platforms?: string[] | null
           priority?: string
           reference_assets?: Json | null
+          scheduled_date?: string | null
           sizes?: Json | null
           status?: string
           submitted_at?: string | null

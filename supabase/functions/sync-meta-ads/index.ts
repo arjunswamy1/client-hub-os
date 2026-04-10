@@ -12,9 +12,11 @@ Deno.serve(async (req) => {
   );
 
   let bodyClientId: string | null = null;
+  let bodyDaysBack: number | null = null;
   try {
     const body = await req.json();
     bodyClientId = body?.client_id || body?.clientId || null;
+    bodyDaysBack = body?.days_back || null;
   } catch { /* no body */ }
 
   let userId: string | null = null;
@@ -48,7 +50,6 @@ Deno.serve(async (req) => {
     }
     targetConnections = conns;
   } else {
-    // Cron mode
     const { data: connections } = await supabaseAdmin
       .from("platform_connections")
       .select("user_id, access_token, metadata, selected_ad_account, client_id")
@@ -66,7 +67,6 @@ Deno.serve(async (req) => {
     const sel = conn.selected_ad_account as any;
     const syncAccounts = (conn.metadata as any)?.sync_ad_accounts;
     if (sel?.id || (Array.isArray(syncAccounts) && syncAccounts.length > 0)) return true;
-    // Also allow if ad_accounts are in metadata (first one will be used)
     const adAccounts = (conn.metadata as any)?.ad_accounts;
     if (Array.isArray(adAccounts) && adAccounts.length > 0) return true;
     console.warn(`Skipping Meta sync for client ${conn.client_id}: no ad account selected`);
@@ -75,8 +75,7 @@ Deno.serve(async (req) => {
 
   if (validConnections.length === 0) {
     return new Response(JSON.stringify({
-      success: false,
-      records_synced: 0,
+      success: false, records_synced: 0,
       message: "No Meta connections have a selected ad account."
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -95,7 +94,6 @@ Deno.serve(async (req) => {
       if (selectedAccount?.id) {
         adAccountsToSync = [selectedAccount];
       } else {
-        // Fall back to first ad account from metadata
         const metaAccounts = (conn.metadata as any)?.ad_accounts || [];
         adAccountsToSync = metaAccounts.length > 0 ? [metaAccounts[0]] : [];
       }
@@ -103,7 +101,8 @@ Deno.serve(async (req) => {
 
     if (adAccountsToSync.length === 0) continue;
 
-    const result = await syncMetaForUser(supabaseAdmin, conn.user_id, conn.access_token, adAccountsToSync, conn.client_id);
+    const daysBack = bodyDaysBack || 90;
+    const result = await syncMetaForUser(supabaseAdmin, conn.user_id, conn.access_token, adAccountsToSync, conn.client_id, daysBack);
     results.push(result);
   }
 
@@ -112,11 +111,11 @@ Deno.serve(async (req) => {
   });
 });
 
-async function syncMetaForUser(supabase: any, userId: string, accessToken: string, adAccounts: any[], clientId: string | null = null) {
+async function syncMetaForUser(supabase: any, userId: string, accessToken: string, adAccounts: any[], clientId: string | null = null, daysBack: number = 90) {
   try {
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 90);
+    startDate.setDate(startDate.getDate() - daysBack);
     const since = formatDate(startDate);
     const until = formatDate(endDate);
 
@@ -126,6 +125,7 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
       const accountId = account.id || account.account_id;
       if (!accountId) continue;
 
+      // === Existing: daily + campaign metrics ===
       const [dailyInsights, campaignInsights] = await Promise.all([
         fetchInsights(accountId, accessToken, since, until, "account"),
         fetchInsights(accountId, accessToken, since, until, "campaign", "campaign_id,campaign_name,objective,buying_type,"),
@@ -149,7 +149,6 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
         totalRecords += batch.length;
       }
 
-      // Fetch real statuses
       const campaignStatusMap = await fetchEntityStatuses(accountId, accessToken, "campaigns");
 
       if (campaignInsights) {
@@ -172,6 +171,14 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
         await batchUpsert(supabase, "ad_campaigns", batch, "client_id,platform,campaign_name,date");
         totalRecords += batch.length;
       }
+
+      // === NEW: Ad-level data with creatives ===
+      try {
+        const adCreativeRecords = await syncAdCreatives(supabase, accountId, accessToken, clientId, since, until);
+        totalRecords += adCreativeRecords;
+      } catch (err) {
+        console.error("Ad creative sync error:", err);
+      }
     }
 
     return { success: true, records_synced: totalRecords };
@@ -179,6 +186,189 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
     console.error("Meta sync error:", err);
     return { error: err.message };
   }
+}
+
+async function syncAdCreatives(supabase: any, accountId: string, accessToken: string, clientId: string | null, since: string, until: string): Promise<number> {
+  // Step 1: Get all ads with their creative details and performance
+  const adFields = "id,name,status,campaign_id,adset_id,creative{id,thumbnail_url,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}";
+  let ads: any[] = [];
+  let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/ads?fields=${adFields}&effective_status=["ACTIVE","PAUSED"]&limit=200&access_token=${accessToken}`;
+
+  while (url) {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) {
+      console.error("Ads fetch error:", data.error.message);
+      break;
+    }
+    if (data.data) ads = ads.concat(data.data);
+    url = data.paging?.next || null;
+  }
+
+  if (ads.length === 0) return 0;
+
+  // Step 2: Get campaign names and adset names
+  const campaignIds = [...new Set(ads.map((a: any) => a.campaign_id))];
+  const adsetIds = [...new Set(ads.map((a: any) => a.adset_id))];
+
+  const campaignNames = new Map<string, string>();
+  const adsetNames = new Map<string, string>();
+
+  // Fetch campaign names
+  for (const cid of campaignIds) {
+    try {
+      const res = await fetch(`https://graph.facebook.com/v21.0/${cid}?fields=name&access_token=${accessToken}`);
+      const data = await res.json();
+      if (data.name) campaignNames.set(cid, data.name);
+    } catch { /* skip */ }
+  }
+
+  // Fetch adset names
+  for (const asid of adsetIds) {
+    try {
+      const res = await fetch(`https://graph.facebook.com/v21.0/${asid}?fields=name&access_token=${accessToken}`);
+      const data = await res.json();
+      if (data.name) adsetNames.set(asid, data.name);
+    } catch { /* skip */ }
+  }
+
+  // Step 3: Get ad-level performance insights
+  const adInsights = await fetchInsights(
+    accountId, accessToken, since, until, "ad",
+    "ad_id,ad_name,campaign_id,campaign_name,adset_id,adset_name,"
+  );
+
+  // Aggregate performance by ad_id across dates
+  const perfMap = new Map<string, { spend: number; impressions: number; clicks: number; conversions: number; revenue: number; dateFrom: string; dateTo: string }>();
+  if (adInsights) {
+    for (const row of adInsights) {
+      const adId = row.ad_id;
+      if (!adId) continue;
+      const m = extractMetrics(row);
+      const existing = perfMap.get(adId);
+      if (existing) {
+        existing.spend += m.spend;
+        existing.impressions += m.impressions;
+        existing.clicks += m.clicks;
+        existing.conversions += m.conversions;
+        existing.revenue += m.revenue;
+        if (row.date_start < existing.dateFrom) existing.dateFrom = row.date_start;
+        if (row.date_start > existing.dateTo) existing.dateTo = row.date_start;
+      } else {
+        perfMap.set(adId, {
+          spend: m.spend, impressions: m.impressions, clicks: m.clicks,
+          conversions: m.conversions, revenue: m.revenue,
+          dateFrom: row.date_start, dateTo: row.date_start,
+        });
+      }
+
+      // Also update campaign/adset name maps from insights
+      if (row.campaign_name) campaignNames.set(row.campaign_id, row.campaign_name);
+      if (row.adset_name) adsetNames.set(row.adset_id, row.adset_name);
+    }
+  }
+
+  // Step 4: Build upsert batch
+  const batch = [];
+  for (const ad of ads) {
+    const creative = ad.creative || {};
+    const campaignName = campaignNames.get(ad.campaign_id) || "Unknown Campaign";
+    const perf = perfMap.get(ad.id);
+
+    // Extract creative details
+    let thumbnailUrl = creative.thumbnail_url || creative.image_url || null;
+    let primaryText = "";
+    let headlineText = "";
+    let descriptionText = "";
+    let ctaText = "";
+    let linkUrl = "";
+    let creativeType = "image";
+    let videoUrl = null;
+
+    // Try to get from object_story_spec
+    const oss = creative.object_story_spec;
+    if (oss) {
+      const linkData = oss.link_data || oss.video_data || {};
+      primaryText = linkData.message || linkData.description || "";
+      headlineText = linkData.name || linkData.title || "";
+      descriptionText = linkData.description || "";
+      ctaText = linkData.call_to_action?.type || "";
+      linkUrl = linkData.link || "";
+      if (oss.video_data) {
+        creativeType = "video";
+        videoUrl = oss.video_data.video_id ? `https://graph.facebook.com/v21.0/${oss.video_data.video_id}/thumbnails` : null;
+      }
+    }
+
+    // Try asset_feed_spec for dynamic creative
+    if (creative.asset_feed_spec) {
+      const afs = creative.asset_feed_spec;
+      if (afs.bodies?.[0]?.text) primaryText = afs.bodies[0].text;
+      if (afs.titles?.[0]?.text) headlineText = afs.titles[0].text;
+      if (afs.descriptions?.[0]?.text) descriptionText = afs.descriptions[0].text;
+      if (afs.videos?.length > 0) creativeType = "video";
+      if (afs.images?.length > 1) creativeType = "carousel";
+    }
+
+    if (creative.video_id) creativeType = "video";
+
+    const vertical = classifyVertical(campaignName);
+    const spend = perf?.spend || 0;
+    const impressions = perf?.impressions || 0;
+    const clicks = perf?.clicks || 0;
+    const conversions = perf?.conversions || 0;
+    const revenue = perf?.revenue || 0;
+
+    batch.push({
+      client_id: clientId,
+      platform: "meta",
+      campaign_name: campaignName,
+      ad_name: ad.name || "Unnamed Ad",
+      platform_ad_id: ad.id,
+      platform_campaign_id: ad.campaign_id,
+      platform_adset_id: ad.adset_id,
+      adset_name: adsetNames.get(ad.adset_id) || null,
+      creative_thumbnail_url: thumbnailUrl,
+      creative_type: creativeType,
+      primary_text: primaryText || null,
+      headline: headlineText || null,
+      description: descriptionText || null,
+      cta: ctaText ? formatCTA(ctaText) : null,
+      link_url: linkUrl || null,
+      video_url: videoUrl,
+      vertical,
+      spend, impressions, clicks, conversions, revenue,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : null,
+      cpa: conversions > 0 ? spend / conversions : null,
+      roas: spend > 0 ? revenue / spend : null,
+      status: ad.status?.toLowerCase() || "unknown",
+      date_from: perf?.dateFrom || null,
+      date_to: perf?.dateTo || null,
+    });
+  }
+
+  if (batch.length > 0) {
+    await batchUpsert(supabase, "ad_creatives", batch, "client_id,platform,platform_ad_id");
+  }
+
+  return batch.length;
+}
+
+// Classify campaign into a vertical based on naming patterns
+function classifyVertical(campaignName: string): string {
+  const name = campaignName.toLowerCase();
+  if (name.includes("pest") || name.includes("bug") || name.includes("roach") || name.includes("termite") || name.includes("rodent") || name.includes("ant control") || name.includes("bed bug") || name.includes("cockroach")) return "pest_control";
+  if (name.includes("flight") || name.includes("premflight")) return "flights";
+  if (name.includes("porta potty") || name.includes("portapotty")) return "porta_potty";
+  if (name.includes("siding")) return "siding";
+  if (name.includes("bath")) return "bathroom";
+  if (name.includes("moving") || name.includes("movers")) return "moving";
+  if (name.includes("home service")) return "home_services";
+  return "other";
+}
+
+function formatCTA(cta: string): string {
+  return cta.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
 }
 
 async function fetchInsights(accountId: string, accessToken: string, since: string, until: string, level: string, extraFields = "") {
@@ -248,15 +438,8 @@ function formatMetaObjective(objective: string): string {
   return map[objective] || objective.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
 }
 
-const PURCHASE_ACTIONS = [
-  "purchase",
-  "offsite_conversion.fb_pixel_purchase",
-];
-
-const ADD_TO_CART_ACTIONS = [
-  "add_to_cart", "omni_add_to_cart",
-  "offsite_conversion.fb_pixel_add_to_cart",
-];
+const PURCHASE_ACTIONS = ["purchase", "offsite_conversion.fb_pixel_purchase"];
+const ADD_TO_CART_ACTIONS = ["add_to_cart", "omni_add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"];
 
 function extractMetrics(row: any) {
   const spend = parseFloat(row.spend || "0");

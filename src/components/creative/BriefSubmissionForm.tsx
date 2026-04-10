@@ -538,7 +538,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                 }}>
                   <Save className="h-3 w-3 mr-1" /> Save as Template
                 </Button>
-                <Button type="submit" className="flex-1" disabled={createBrief.isPending || !form.title}>
+                <Button type="submit" className="flex-1" disabled={createBrief.isPending || !form.title || !form.client_id}>
                   {createBrief.isPending ? 'Creating...' : 'Create Brief'}
                 </Button>
               </div>

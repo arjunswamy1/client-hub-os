@@ -85,6 +85,128 @@ export type Database = {
           },
         ]
       }
+      ad_creatives: {
+        Row: {
+          ad_name: string | null
+          adset_name: string | null
+          campaign_name: string
+          clicks: number | null
+          client_id: string
+          conversions: number | null
+          cpa: number | null
+          created_at: string | null
+          creative_thumbnail_url: string | null
+          creative_type: string | null
+          cta: string | null
+          ctr: number | null
+          date_from: string | null
+          date_to: string | null
+          description: string | null
+          descriptions: string[] | null
+          display_url: string | null
+          final_url: string | null
+          headline: string | null
+          headlines: string[] | null
+          id: string
+          impressions: number | null
+          link_url: string | null
+          platform: string
+          platform_ad_id: string | null
+          platform_adset_id: string | null
+          platform_campaign_id: string | null
+          primary_text: string | null
+          revenue: number | null
+          roas: number | null
+          spend: number | null
+          status: string | null
+          updated_at: string | null
+          vertical: string | null
+          video_url: string | null
+        }
+        Insert: {
+          ad_name?: string | null
+          adset_name?: string | null
+          campaign_name: string
+          clicks?: number | null
+          client_id: string
+          conversions?: number | null
+          cpa?: number | null
+          created_at?: string | null
+          creative_thumbnail_url?: string | null
+          creative_type?: string | null
+          cta?: string | null
+          ctr?: number | null
+          date_from?: string | null
+          date_to?: string | null
+          description?: string | null
+          descriptions?: string[] | null
+          display_url?: string | null
+          final_url?: string | null
+          headline?: string | null
+          headlines?: string[] | null
+          id?: string
+          impressions?: number | null
+          link_url?: string | null
+          platform: string
+          platform_ad_id?: string | null
+          platform_adset_id?: string | null
+          platform_campaign_id?: string | null
+          primary_text?: string | null
+          revenue?: number | null
+          roas?: number | null
+          spend?: number | null
+          status?: string | null
+          updated_at?: string | null
+          vertical?: string | null
+          video_url?: string | null
+        }
+        Update: {
+          ad_name?: string | null
+          adset_name?: string | null
+          campaign_name?: string
+          clicks?: number | null
+          client_id?: string
+          conversions?: number | null
+          cpa?: number | null
+          created_at?: string | null
+          creative_thumbnail_url?: string | null
+          creative_type?: string | null
+          cta?: string | null
+          ctr?: number | null
+          date_from?: string | null
+          date_to?: string | null
+          description?: string | null
+          descriptions?: string[] | null
+          display_url?: string | null
+          final_url?: string | null
+          headline?: string | null
+          headlines?: string[] | null
+          id?: string
+          impressions?: number | null
+          link_url?: string | null
+          platform?: string
+          platform_ad_id?: string | null
+          platform_adset_id?: string | null
+          platform_campaign_id?: string | null
+          primary_text?: string | null
+          revenue?: number | null
+          roas?: number | null
+          spend?: number | null
+          status?: string | null
+          updated_at?: string | null
+          vertical?: string | null
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_creatives_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ad_daily_metrics: {
         Row: {
           add_to_cart: number

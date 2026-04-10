@@ -21,6 +21,7 @@ import { CREATIVE_TYPES, PLATFORMS, SIZE_PRESETS, FUNNEL_STAGES, SizePreset } fr
 
 interface BriefFormData {
   title: string;
+  client_id: string;
   creative_types: string[];
   platforms: string[];
   sizes: SizePreset[];
@@ -41,8 +42,13 @@ interface BriefFormData {
   custom_height: string;
 }
 
+const SPECIAL_CLIENT_OPTIONS = [
+  { id: '__new_business__', name: 'New Business', color: '#6366f1' },
+  { id: '__other__', name: 'Other / Ad Hoc', color: '#94a3b8' },
+];
+
 const INITIAL_FORM: BriefFormData = {
-  title: '', creative_types: [], platforms: [], sizes: [],
+  title: '', client_id: '', creative_types: [], platforms: [], sizes: [],
   funnel_stage: '', num_concepts: 1, objective: '', key_message: '',
   copy_suggestions: [{ primary_text: '', headline: '', description: '' }],
   target_audience: '', tone_style: '', dos_and_donts: '', reference_urls: '',
@@ -59,8 +65,17 @@ interface Props {
 export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
   const queryClient = useQueryClient();
   const { teamMember } = useAuth();
-  const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM });
+  const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM, client_id: clientId });
   const [step, setStep] = useState(0);
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients_for_brief'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name, color').eq('status', 'active').order('name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
   const { data: teamMembers = [] } = useQuery({
     queryKey: ['team_members'],
@@ -167,8 +182,15 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         ? form.reference_urls.split('\n').filter(Boolean).map(url => ({ source: 'url', drive_url: url.trim(), note: '' }))
         : [];
 
+      const isSpecialClient = form.client_id.startsWith('__');
+      const specialLabel = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id)?.name;
+      const resolvedClientId = isSpecialClient ? clientId : form.client_id;
+      const notesWithTag = isSpecialClient
+        ? `[${specialLabel}] ${form.notes || ''}`.trim()
+        : form.notes || null;
+
       const { data: brief, error } = await supabase.from('creative_briefs').insert({
-        client_id: clientId,
+        client_id: resolvedClientId,
         title: form.title,
         creative_type: form.creative_types[0] || 'static',
         creative_types: form.creative_types,
@@ -187,7 +209,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         priority: form.priority,
         assigned_to_id: assignedTo,
         created_by_id: teamMember?.id || null,
-        notes: form.notes || null,
+        notes: notesWithTag,
         status: 'draft',
       } as any).select().single();
       if (error) throw error;
@@ -270,6 +292,30 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
           {/* Step 0: Basic Info */}
           {step === 0 && (
             <>
+              <div className="space-y-2">
+                <Label>Client *</Label>
+                <Select value={form.client_id} onValueChange={v => set('client_id', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select client..." /></SelectTrigger>
+                  <SelectContent>
+                    {clients.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color || '#94a3b8' }} />
+                          {c.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                    {SPECIAL_CLIENT_OPTIONS.map(opt => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
+                          {opt.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label>Brief Title *</Label>
                 <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder='e.g., "Spring Sale Static Set"' required />
@@ -477,6 +523,12 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
               <div className="rounded-lg border bg-accent/50 p-4 space-y-2">
                 <h4 className="text-sm font-medium">Brief Summary</h4>
                 <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="text-muted-foreground">Client:</span> {(() => {
+                    const special = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id);
+                    if (special) return special.name;
+                    const c = clients.find((c: any) => c.id === form.client_id);
+                    return c ? c.name : '—';
+                  })()}</div>
                   <div><span className="text-muted-foreground">Title:</span> {form.title || '—'}</div>
                   <div><span className="text-muted-foreground">Priority:</span> {form.priority}</div>
                   <div><span className="text-muted-foreground">Types:</span> {form.creative_types.join(', ') || '—'}</div>
@@ -493,7 +545,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                 }}>
                   <Save className="h-3 w-3 mr-1" /> Save as Template
                 </Button>
-                <Button type="submit" className="flex-1" disabled={createBrief.isPending || !form.title}>
+                <Button type="submit" className="flex-1" disabled={createBrief.isPending || !form.title || !form.client_id}>
                   {createBrief.isPending ? 'Creating...' : 'Create Brief'}
                 </Button>
               </div>

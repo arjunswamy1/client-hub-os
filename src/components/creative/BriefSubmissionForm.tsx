@@ -183,7 +183,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         : [];
 
       const { data: brief, error } = await supabase.from('creative_briefs').insert({
-        client_id: clientId,
+        client_id: form.client_id.startsWith('__') ? clientId : form.client_id,
         title: form.title,
         creative_type: form.creative_types[0] || 'static',
         creative_types: form.creative_types,

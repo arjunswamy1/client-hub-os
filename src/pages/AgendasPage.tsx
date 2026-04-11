@@ -581,7 +581,7 @@ function RichAgendaEditor({ content, onChange, readOnly }: { content: AgendaSect
                     <div className="flex items-center gap-1.5 mb-1">
                       <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{sub.title}</h5>
                       {sub.ai_populatable && (
-                        <Sparkles className="h-3 w-3 text-primary/50" title="AI can populate this section" />
+                        <span title="AI can populate this section"><Sparkles className="h-3 w-3 text-primary/50" /></span>
                       )}
                     </div>
                     <ul className="space-y-1">

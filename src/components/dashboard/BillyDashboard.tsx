@@ -2,66 +2,11 @@ import { VerticalProvider } from "@/contexts/VerticalContext";
 import { BillyVerticalSelector } from "@/components/dashboard/BillyVerticalSelector";
 import BillyRevenueEngine from "@/components/dashboard/BillyRevenueEngine";
 import BillyDailyTrends from "@/components/dashboard/BillyDailyTrends";
-import BillyCampaignTable from "@/components/dashboard/BillyCampaignTable";
-import KPICard from "@/components/dashboard/KPICard";
-import { useVerticalKPIs } from "@/hooks/useBillyData";
-import { Skeleton } from "@/components/ui/skeleton";
+import BillyTrendAnalysis from "@/components/dashboard/BillyTrendAnalysis";
+import BillyMetaDashboard from "@/components/dashboard/BillyMetaDashboard";
+import BillyGoogleDashboard from "@/components/dashboard/BillyGoogleDashboard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, Chrome, Facebook, TrendingUp } from "lucide-react";
-
-function BillyOverview() {
-  return (
-    <div className="space-y-6">
-      <BillyRevenueEngine />
-      <BillyDailyTrends />
-      <BillyCampaignTable />
-    </div>
-  );
-}
-
-function BillyMetaTab() {
-  const { data: kpis, isLoading } = useVerticalKPIs("meta");
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
-        ) : (
-          <>
-            <KPICard title="Meta Spend" value={`$${(kpis?.spend ?? 0).toLocaleString()}`} change={kpis?.changes.spend} invertColor />
-            <KPICard title="Conversions" value={(kpis?.conversions ?? 0).toLocaleString()} change={kpis?.changes.conversions} />
-            <KPICard title="CAC" value={kpis?.cac ? `$${kpis.cac}` : "—"} change={kpis?.changes.cac} invertColor />
-            <KPICard title="CTR" value={`${kpis?.ctr ?? 0}%`} change={kpis?.changes.ctr} />
-          </>
-        )}
-      </div>
-      <BillyCampaignTable platform="meta" />
-    </div>
-  );
-}
-
-function BillyGoogleTab() {
-  const { data: kpis, isLoading } = useVerticalKPIs("google");
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
-        ) : (
-          <>
-            <KPICard title="Google Spend" value={`$${(kpis?.spend ?? 0).toLocaleString()}`} change={kpis?.changes.spend} invertColor />
-            <KPICard title="Conversions" value={(kpis?.conversions ?? 0).toLocaleString()} change={kpis?.changes.conversions} />
-            <KPICard title="CPC" value={kpis?.cpc ? `$${kpis.cpc}` : "—"} change={kpis?.changes.cpc} invertColor />
-            <KPICard title="CTR" value={`${kpis?.ctr ?? 0}%`} change={kpis?.changes.ctr} />
-          </>
-        )}
-      </div>
-      <BillyCampaignTable platform="google" />
-    </div>
-  );
-}
+import { BarChart3, Chrome, Facebook, TrendingUp, CalendarDays } from "lucide-react";
 
 function BillyDashboardInner() {
   return (
@@ -78,6 +23,10 @@ function BillyDashboardInner() {
             <TrendingUp className="h-3.5 w-3.5" />
             Daily Trends
           </TabsTrigger>
+          <TabsTrigger value="analysis" className="gap-1.5 text-xs">
+            <CalendarDays className="h-3.5 w-3.5" />
+            Trend Analysis
+          </TabsTrigger>
           <TabsTrigger value="meta" className="gap-1.5 text-xs">
             <Facebook className="h-3.5 w-3.5" />
             Meta Ads
@@ -92,16 +41,16 @@ function BillyDashboardInner() {
           <BillyRevenueEngine />
         </TabsContent>
         <TabsContent value="trends">
-          <div className="space-y-6">
-            <BillyDailyTrends />
-            <BillyCampaignTable />
-          </div>
+          <BillyDailyTrends />
+        </TabsContent>
+        <TabsContent value="analysis">
+          <BillyTrendAnalysis />
         </TabsContent>
         <TabsContent value="meta">
-          <BillyMetaTab />
+          <BillyMetaDashboard />
         </TabsContent>
         <TabsContent value="google">
-          <BillyGoogleTab />
+          <BillyGoogleDashboard />
         </TabsContent>
       </Tabs>
     </div>

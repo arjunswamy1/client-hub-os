@@ -80,8 +80,8 @@ async function fetchDay(
 
     const data = await res.json();
     if (page === 1) {
-      console.log(`  RAW response keys: ${JSON.stringify(Object.keys(data))}`);
-      if (data.report) console.log(`  report keys: ${JSON.stringify(Object.keys(data.report))}`);
+      console.log(`  RAW keys: ${JSON.stringify(Object.keys(data))}`);
+      if (data.report) console.log(`  report totalCount: ${data.report?.totalCount}`);
     }
     const records = data?.report?.records || [];
     const total = data?.report?.totalCount || 0;
@@ -120,13 +120,71 @@ Deno.serve(async (req) => {
 
     let clientId: string | null = null;
     let daysBack = 7;
+    let debugMode = false;
 
     if (req.method === "POST") {
       try {
         const body = await req.json();
         clientId = body.client_id || body.clientId || null;
         daysBack = body.days_back || body.daysBack || 7;
+        debugMode = body.debug || false;
       } catch { /* no body */ }
+    }
+
+    // Debug mode: try to list accounts/campaigns
+    if (debugMode) {
+      console.log(`Debug mode - Account ID: ${RINGBA_ACCOUNT_ID}`);
+      
+      // Try listing campaigns
+      const campaignsRes = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/campaigns`,
+        {
+          headers: {
+            Authorization: `Token ${RINGBA_API_TOKEN}`,
+            Accept: "application/json",
+          },
+        }
+      );
+      const campaignsText = await campaignsRes.text();
+      console.log(`Campaigns API [${campaignsRes.status}]: ${campaignsText.substring(0, 1000)}`);
+
+      // Try listing publishers  
+      const pubRes = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/publishers`,
+        {
+          headers: {
+            Authorization: `Token ${RINGBA_API_TOKEN}`,
+            Accept: "application/json",
+          },
+        }
+      );
+      const pubText = await pubRes.text();
+      console.log(`Publishers API [${pubRes.status}]: ${pubText.substring(0, 1000)}`);
+
+      // Also try the user/account info endpoint
+      const userRes = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}`,
+        {
+          headers: {
+            Authorization: `Token ${RINGBA_API_TOKEN}`,
+            Accept: "application/json",
+          },
+        }
+      );
+      const userText = await userRes.text();
+      console.log(`Account API [${userRes.status}]: ${userText.substring(0, 500)}`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          debug: true,
+          account_id: RINGBA_ACCOUNT_ID,
+          campaigns_status: campaignsRes.status,
+          publishers_status: pubRes.status,
+          account_status: userRes.status,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Find client(s)

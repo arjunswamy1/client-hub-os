@@ -1,8 +1,9 @@
 
+import { useCallback } from 'react';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Image, Video, LayoutGrid, Film } from 'lucide-react';
 import { format, differenceInDays, isPast } from 'date-fns';
@@ -19,35 +20,67 @@ interface Props {
   onStatusChange: (briefId: string, status: string) => void;
 }
 
-export function BriefKanban({ briefs, onBriefClick, onStatusChange: _onStatusChange }: Props) {
+export function BriefKanban({ briefs, onBriefClick, onStatusChange }: Props) {
+  const handleDragEnd = useCallback((result: DropResult) => {
+    if (!result.destination) return;
+    const newStatus = result.destination.droppableId;
+    const briefId = result.draggableId;
+    const brief = briefs.find((b: any) => b.id === briefId);
+    if (brief && brief.status !== newStatus) {
+      onStatusChange(briefId, newStatus);
+    }
+  }, [briefs, onStatusChange]);
+
   return (
-    <ScrollArea className="w-full">
-      <div className="flex gap-4 pb-4 min-w-max">
-        {BRIEF_STATUSES.map(status => {
-          const config = STATUS_CONFIG[status];
-          const col = briefs.filter((b: any) => b.status === status);
-          return (
-            <div key={status} className="w-72 shrink-0">
-              <div className="flex items-center gap-2 mb-3 px-1">
-                <Badge variant="secondary" className={`text-[10px] ${config.color}`}>{config.label}</Badge>
-                <span className="text-xs text-muted-foreground">{col.length}</span>
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <ScrollArea className="w-full">
+        <div className="flex gap-4 pb-4 min-w-max">
+          {BRIEF_STATUSES.map(status => {
+            const config = STATUS_CONFIG[status];
+            const col = briefs.filter((b: any) => b.status === status);
+            return (
+              <div key={status} className="w-72 shrink-0">
+                <div className="flex items-center gap-2 mb-3 px-1">
+                  <Badge variant="secondary" className={`text-[10px] ${config.color}`}>{config.label}</Badge>
+                  <span className="text-xs text-muted-foreground">{col.length}</span>
+                </div>
+                <Droppable droppableId={status}>
+                  {(provided, snapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`space-y-2.5 min-h-[60px] rounded-lg p-1 transition-colors ${snapshot.isDraggingOver ? 'bg-accent/50 ring-1 ring-primary/20' : ''}`}
+                    >
+                      {col.map((brief: any, index: number) => (
+                        <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                          {(dragProvided, dragSnapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              {...dragProvided.dragHandleProps}
+                              className={dragSnapshot.isDragging ? 'opacity-90 rotate-1' : ''}
+                            >
+                              <BriefCard brief={brief} onClick={() => onBriefClick(brief.id)} />
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      {col.length === 0 && !snapshot.isDraggingOver && (
+                        <div className="rounded-lg border border-dashed p-4 text-center">
+                          <p className="text-xs text-muted-foreground">No briefs</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Droppable>
               </div>
-              <div className="space-y-2.5">
-                {col.map((brief: any) => (
-                  <BriefCard key={brief.id} brief={brief} onClick={() => onBriefClick(brief.id)} />
-                ))}
-                {col.length === 0 && (
-                  <div className="rounded-lg border border-dashed p-4 text-center">
-                    <p className="text-xs text-muted-foreground">No briefs</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <ScrollBar orientation="horizontal" />
-    </ScrollArea>
+            );
+          })}
+        </div>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
+    </DragDropContext>
   );
 }
 

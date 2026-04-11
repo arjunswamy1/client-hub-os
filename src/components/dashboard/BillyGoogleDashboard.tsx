@@ -2,7 +2,8 @@ import { useVerticalKPIs } from "@/hooks/useBillyData";
 import { useRingbaByPlatform } from "@/hooks/useRingbaByPlatform";
 import { useVertical } from "@/contexts/VerticalContext";
 import KPICard from "@/components/dashboard/KPICard";
-import BillyCampaignTable from "@/components/dashboard/BillyCampaignTable";
+import DrillDownCampaignTable from "@/components/dashboard/DrillDownCampaignTable";
+import QualityScoreAudit from "@/components/dashboard/QualityScoreAudit";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BillyGoogleDashboard() {
@@ -54,7 +55,11 @@ export default function BillyGoogleDashboard() {
         <KPICard title="Impressions" value={impressions.toLocaleString()} />
       </div>
 
-      <BillyCampaignTable platform="google" />
+      {/* Quality Score Audit — AI-powered */}
+      <QualityScoreAudit />
+
+      {/* Drill-down campaign table: Campaign → Ad Group → Keyword → Search Term */}
+      <DrillDownCampaignTable platform="google" />
     </div>
   );
 }

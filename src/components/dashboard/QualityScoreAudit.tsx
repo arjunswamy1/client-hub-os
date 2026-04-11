@@ -41,7 +41,7 @@ export default function QualityScoreAudit() {
       const result = await auditMutation.mutateAsync(keywords);
       setRecommendations(result);
       toast.success("AI audit complete — see recommendations below");
-    } catch (err) {
+    } catch {
       toast.error("Failed to run audit. Please try again.");
     }
   };

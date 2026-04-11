@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const { keywords, client_id, vertical_id } = await req.json();
+    const { keywords } = await req.json();
 
     if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
       return new Response(

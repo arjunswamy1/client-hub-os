@@ -228,7 +228,8 @@ Deno.serve(async (req) => {
 
     for (let d = 0; d < daysBack; d++) {
       const day = addDays(endDate, -d);
-      const dayStr = fmtDate(day);
+      const dayStr = fmtDateUS(day);
+      console.log(`  Fetching: ${dayStr}`);
 
       const dayCalls = await fetchDay(ringbaUrl, RINGBA_API_TOKEN, dayStr);
 

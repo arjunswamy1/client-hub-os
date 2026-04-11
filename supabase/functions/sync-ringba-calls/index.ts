@@ -133,26 +133,40 @@ Deno.serve(async (req) => {
       } catch { /* no body */ }
     }
 
-    // Debug mode: try to list accounts/campaigns
+    // Debug mode: try to list accounts/campaigns and test calllogs
     if (debugMode) {
       console.log(`Debug mode - Account ID: ${RINGBA_ACCOUNT_ID}`);
       
-      // Try listing campaigns
-      const campaignsRes = await fetch(
-        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/campaigns`,
-        {
-          headers: {
-            Authorization: `Token ${RINGBA_API_TOKEN}`,
-            Accept: "application/json",
-          },
-        }
-      );
-      const campaignsText = await campaignsRes.text();
-      console.log(`Campaigns API [${campaignsRes.status}]: ${campaignsText.substring(0, 1000)}`);
+      // Try calllogs with a wide date range (90 days) and no date filter
+      const testUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
+      const testRes = await fetch(testUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${RINGBA_API_TOKEN}`,
+          "Content-Type": "application/json;charset=UTF-8",
+          Accept: "application/json, text/plain, */*",
+        },
+        body: JSON.stringify({
+          reportStart: "01/01/2025",
+          reportEnd: "04/11/2026",
+          page: 1,
+          pageSize: 100,
+          columns: COLUMNS,
+          orderByColumns: [],
+          filters: [],
+        }),
+      });
+      const testData = await testRes.json();
+      const totalCount = testData?.report?.totalCount || 0;
+      const records = testData?.report?.records || [];
+      console.log(`Wide range calllogs: status=${testRes.status}, total=${totalCount}, records=${records.length}`);
+      if (records.length > 0) {
+        console.log(`First record: ${JSON.stringify(records[0])}`);
+      }
 
-      // Try listing publishers  
-      const pubRes = await fetch(
-        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/publishers`,
+      // Try the /calls endpoint instead
+      const callsRes = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calls?page=1&pageSize=10`,
         {
           headers: {
             Authorization: `Token ${RINGBA_API_TOKEN}`,
@@ -160,30 +174,17 @@ Deno.serve(async (req) => {
           },
         }
       );
-      const pubText = await pubRes.text();
-      console.log(`Publishers API [${pubRes.status}]: ${pubText.substring(0, 1000)}`);
-
-      // Also try the user/account info endpoint
-      const userRes = await fetch(
-        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}`,
-        {
-          headers: {
-            Authorization: `Token ${RINGBA_API_TOKEN}`,
-            Accept: "application/json",
-          },
-        }
-      );
-      const userText = await userRes.text();
-      console.log(`Account API [${userRes.status}]: ${userText.substring(0, 500)}`);
+      const callsText = await callsRes.text();
+      console.log(`/calls endpoint [${callsRes.status}]: ${callsText.substring(0, 500)}`);
 
       return new Response(
         JSON.stringify({
           success: true,
           debug: true,
           account_id: RINGBA_ACCOUNT_ID,
-          campaigns_status: campaignsRes.status,
-          publishers_status: pubRes.status,
-          account_status: userRes.status,
+          calllogs_total: totalCount,
+          calllogs_sample: records.length,
+          calls_status: callsRes.status,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

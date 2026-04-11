@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useClient } from "@/contexts/ClientContext";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Target, MousePointerClick, PhoneCall, TrendingUp,
   AlertTriangle, CheckCircle2, RefreshCw, Calendar,
@@ -224,6 +225,13 @@ function Recommendations({ rpv, cpc, callRoas, conversionRate }: {
   );
 }
 
+interface RingbaSyncResponse {
+  calls_synced?: number;
+  last_page?: number;
+  next_page?: number | null;
+  total_in_range?: number;
+}
+
 /* ═══════ MAIN COMPONENT ═══════ */
 export default function BillyRevenueEngine() {
   const { data: adKpis, isLoading: adLoading } = useVerticalKPIs();
@@ -231,7 +239,9 @@ export default function BillyRevenueEngine() {
   const { activeVertical } = useVertical();
   const { activeClient } = useClient();
   const { dateRange } = useDateRange();
+  const queryClient = useQueryClient();
   const [syncing, setSyncing] = useState(false);
+  const [syncLabel, setSyncLabel] = useState("");
 
   const isLoading = adLoading || ringbaLoading;
 
@@ -280,17 +290,70 @@ export default function BillyRevenueEngine() {
   const daysInMonth = getDaysInMonth(new Date());
 
   const handleSync = async () => {
+    if (!activeClient?.id) {
+      toast.error("Select a client before syncing Ringba calls");
+      return;
+    }
+
     setSyncing(true);
+    setSyncLabel("");
+
     try {
-      const { error } = await supabase.functions.invoke("sync-ringba-calls", {
-        body: { clientId: activeClient?.id },
-      });
-      if (error) throw error;
-      toast.success("Ringba calls synced successfully");
+      let totalProcessed = 0;
+      let totalInRange: number | null = null;
+      let batchCount = 0;
+      let nextPage: number | null = 1;
+      const seenPages = new Set<number>();
+
+      while (nextPage !== null) {
+        if (seenPages.has(nextPage)) {
+          throw new Error(`Sync loop detected at page ${nextPage}`);
+        }
+
+        seenPages.add(nextPage);
+        batchCount += 1;
+        setSyncLabel(
+          totalInRange
+            ? `${Math.min(totalProcessed, totalInRange).toLocaleString()} / ${totalInRange.toLocaleString()}`
+            : `Batch ${batchCount}`
+        );
+
+        const { data, error } = await supabase.functions.invoke("sync-ringba-calls", {
+          body: {
+            clientId: activeClient.id,
+            daysBack: 365,
+            startPage: nextPage,
+          },
+        });
+
+        if (error) throw error;
+
+        const result = (data ?? {}) as RingbaSyncResponse;
+        totalProcessed += result.calls_synced ?? 0;
+        totalInRange = result.total_in_range ?? totalInRange;
+
+        if (result.last_page === -1 || result.next_page == null) {
+          nextPage = null;
+        } else {
+          nextPage = result.next_page;
+        }
+
+        if (batchCount >= 100) {
+          throw new Error("Sync exceeded safe batch limit");
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["ringba-revenue"] }),
+        queryClient.invalidateQueries({ queryKey: ["ringba-daily-revenue"] }),
+      ]);
+
+      toast.success(`Ringba sync complete: ${totalProcessed.toLocaleString()} calls processed`);
     } catch (e: any) {
       toast.error("Sync failed: " + (e.message || "Unknown error"));
     } finally {
       setSyncing(false);
+      setSyncLabel("");
     }
   };
 
@@ -358,11 +421,11 @@ export default function BillyRevenueEngine() {
             variant="outline"
             size="sm"
             onClick={handleSync}
-            disabled={syncing}
+            disabled={syncing || !activeClient?.id}
             className="gap-1.5 text-xs"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-            Sync Calls
+            {syncing ? syncLabel || "Syncing..." : "Sync Calls"}
           </Button>
         }
       >

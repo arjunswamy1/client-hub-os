@@ -74,10 +74,15 @@ async function fetchDay(
 
     if (!res.ok) {
       const t = await res.text();
+      console.error(`Ringba API [${res.status}]: ${t.substring(0, 500)}`);
       throw new Error(`Ringba API [${res.status}]: ${t.substring(0, 200)}`);
     }
 
     const data = await res.json();
+    if (page === 1) {
+      console.log(`  RAW response keys: ${JSON.stringify(Object.keys(data))}`);
+      if (data.report) console.log(`  report keys: ${JSON.stringify(Object.keys(data.report))}`);
+    }
     const records = data?.report?.records || [];
     const total = data?.report?.totalCount || 0;
 

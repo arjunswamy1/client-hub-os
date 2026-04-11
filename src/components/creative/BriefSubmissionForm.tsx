@@ -415,7 +415,30 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                   </p>
                   {getRelevantSizeGroups(form.platforms).map(group => (
                     <div key={group.category} className="space-y-1.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.category}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.category}</p>
+                        {(() => {
+                          const allSelected = group.sizes.every(s => form.sizes.find(fs => fs.label === s.label));
+                          return (
+                            <button
+                              type="button"
+                              className="text-[10px] text-primary hover:underline"
+                              onClick={() => {
+                                if (allSelected) {
+                                  setForm(f => ({ ...f, sizes: f.sizes.filter(s => !group.sizes.find(gs => gs.label === s.label)) }));
+                                } else {
+                                  setForm(f => {
+                                    const existing = f.sizes.filter(s => !group.sizes.find(gs => gs.label === s.label));
+                                    return { ...f, sizes: [...existing, ...group.sizes] };
+                                  });
+                                }
+                              }}
+                            >
+                              {allSelected ? 'Deselect All' : 'Select All'}
+                            </button>
+                          );
+                        })()}
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {group.sizes.map(sp => (
                           <Badge

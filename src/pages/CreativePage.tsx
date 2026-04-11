@@ -23,11 +23,13 @@ import { Client } from '@/types';
 
 export default function CreativePage() {
   const { isDesigner, isAdmin } = useAuth();
-  const { activeClient } = useClient();
+  const { clients } = useClient();
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { updateStatus } = useBriefMutations();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [traffickingClient, setTraffickingClient] = useState<Client | null>(null);
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
 
   const selected = briefs.find((b: any) => b.id === selectedId);
 

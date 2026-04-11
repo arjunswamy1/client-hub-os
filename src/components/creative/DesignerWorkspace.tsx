@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Play, Square, AlertTriangle, Calendar, Clock, User } from 'lucide-react';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, addDays, isSameDay } from 'date-fns';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { toast } from 'sonner';
@@ -150,6 +151,20 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
 
   const capColor = capPercent < 70 ? 'bg-green-500' : capPercent < 90 ? 'bg-yellow-500' : 'bg-red-500';
 
+  const handlePlannerDragEnd = useCallback((result: DropResult) => {
+    if (!result.destination) return;
+    const briefId = result.draggableId;
+    const destId = result.destination.droppableId;
+
+    if (destId === 'unscheduled') {
+      // Dragged back to unscheduled
+      updateSchedule.mutate({ briefId, date: null });
+    } else {
+      // destId is an ISO date string
+      updateSchedule.mutate({ briefId, date: destId });
+    }
+  }, [updateSchedule]);
+
   // Planner view: group by day
   if (view === 'planner') {
     const days = Array.from({ length: 7 }, (_, i) => {
@@ -161,92 +176,139 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
     const unscheduled = activeBriefs.filter((b: any) => !b.scheduled_date);
 
     return (
-      <div className="space-y-4">
-        {isAdminView && designers.length > 0 && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <User className="h-4 w-4" />
-            <span>Viewing all designers' schedules</span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
-          {days.map(day => {
-            const dayBriefs = activeBriefs.filter((b: any) =>
-              b.scheduled_date && isSameDay(new Date(b.scheduled_date), day)
-            );
-            const totalHrs = dayBriefs.reduce((s: number, b: any) => s + ((b as any).estimated_hours || 0), 0);
-            const isToday = isSameDay(day, now);
-
-            return (
-              <div key={day.toISOString()} className={`rounded-lg border p-3 min-h-[200px] ${isToday ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <p className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>
-                      {format(day, 'EEE')}
-                    </p>
-                    <p className="text-sm font-medium">{format(day, 'MMM d')}</p>
-                  </div>
-                  {totalHrs > 0 && (
-                    <Badge variant="secondary" className="text-[10px]">{totalHrs}h</Badge>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  {dayBriefs.map((brief: any) => (
-                    <PlannerBriefCard
-                      key={brief.id}
-                      brief={brief}
-                      onClick={() => onBriefClick(brief.id)}
-                      onEstimateChange={(hrs) => updateEstimate.mutate({ briefId: brief.id, hours: hrs })}
-                    />
-                  ))}
-                  {dayBriefs.length === 0 && (
-                    <p className="text-[10px] text-muted-foreground text-center py-4">No tasks</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Unscheduled briefs */}
-        {unscheduled.length > 0 && (
-          <div className="mt-4">
-            <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              Unscheduled ({unscheduled.length})
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {unscheduled.map((brief: any) => (
-                <Card key={brief.id} className="cursor-pointer hover:shadow-md transition-all" onClick={() => onBriefClick(brief.id)}>
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      {brief.client_name && (
-                        <Badge variant="outline" className="text-[9px] shrink-0">{brief.client_name}</Badge>
-                      )}
-                      <p className="text-sm font-medium truncate">{brief.title}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className={`text-[9px] ${STATUS_CONFIG[brief.status]?.color}`}>
-                        {STATUS_CONFIG[brief.status]?.label}
-                      </Badge>
-                      <Input
-                        type="date"
-                        className="h-6 text-[10px] w-28"
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => {
-                          e.stopPropagation();
-                          updateSchedule.mutate({ briefId: brief.id, date: e.target.value || null });
-                        }}
-                        placeholder="Schedule..."
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+      <DragDropContext onDragEnd={handlePlannerDragEnd}>
+        <div className="space-y-4">
+          {isAdminView && designers.length > 0 && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <User className="h-4 w-4" />
+              <span>Viewing all designers' schedules</span>
             </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
+            {days.map(day => {
+              const dateStr = format(day, 'yyyy-MM-dd');
+              const dayBriefs = activeBriefs.filter((b: any) =>
+                b.scheduled_date && isSameDay(new Date(b.scheduled_date), day)
+              );
+              const totalHrs = dayBriefs.reduce((s: number, b: any) => s + ((b as any).estimated_hours || 0), 0);
+              const isToday = isSameDay(day, now);
+
+              return (
+                <Droppable key={dateStr} droppableId={dateStr}>
+                  {(provided, snapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`rounded-lg border p-3 min-h-[200px] transition-colors ${
+                        isToday ? 'ring-2 ring-primary/30 bg-primary/5' : ''
+                      } ${snapshot.isDraggingOver ? 'bg-accent/50 border-primary/40' : ''}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>
+                            {format(day, 'EEE')}
+                          </p>
+                          <p className="text-sm font-medium">{format(day, 'MMM d')}</p>
+                        </div>
+                        {totalHrs > 0 && (
+                          <Badge variant="secondary" className="text-[10px]">{totalHrs}h</Badge>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {dayBriefs.map((brief: any, index: number) => (
+                          <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                            {(dragProvided, dragSnapshot) => (
+                              <div
+                                ref={dragProvided.innerRef}
+                                {...dragProvided.draggableProps}
+                                {...dragProvided.dragHandleProps}
+                                className={dragSnapshot.isDragging ? 'opacity-80 rotate-1' : ''}
+                              >
+                                <PlannerBriefCard
+                                  brief={brief}
+                                  onClick={() => onBriefClick(brief.id)}
+                                  onEstimateChange={(hrs) => updateEstimate.mutate({ briefId: brief.id, hours: hrs })}
+                                />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                        {dayBriefs.length === 0 && !snapshot.isDraggingOver && (
+                          <p className="text-[10px] text-muted-foreground text-center py-4">No tasks</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </Droppable>
+              );
+            })}
           </div>
-        )}
-      </div>
+
+          {/* Unscheduled briefs */}
+          <Droppable droppableId="unscheduled" direction="horizontal">
+            {(provided, snapshot) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className={`mt-4 transition-colors rounded-lg ${snapshot.isDraggingOver ? 'bg-accent/30' : ''}`}
+              >
+                <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  Unscheduled ({unscheduled.length})
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {unscheduled.map((brief: any, index: number) => (
+                    <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                      {(dragProvided, dragSnapshot) => (
+                        <div
+                          ref={dragProvided.innerRef}
+                          {...dragProvided.draggableProps}
+                          {...dragProvided.dragHandleProps}
+                          className={dragSnapshot.isDragging ? 'opacity-80 rotate-1' : ''}
+                        >
+                          <Card className="cursor-grab hover:shadow-md transition-all active:cursor-grabbing" onClick={() => onBriefClick(brief.id)}>
+                            <CardContent className="p-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                {brief.client_name && (
+                                  <Badge variant="outline" className="text-[9px] shrink-0">{brief.client_name}</Badge>
+                                )}
+                                <p className="text-sm font-medium truncate">{brief.title}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary" className={`text-[9px] ${STATUS_CONFIG[brief.status]?.color}`}>
+                                  {STATUS_CONFIG[brief.status]?.label}
+                                </Badge>
+                                <div className="flex items-center gap-1 ml-auto" onClick={e => e.stopPropagation()}>
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                  <Input
+                                    type="number"
+                                    step="0.5"
+                                    min="0"
+                                    className="h-6 w-14 text-[10px] px-1"
+                                    defaultValue={(brief as any).estimated_hours || ''}
+                                    onBlur={e => updateEstimate.mutate({ briefId: brief.id, hours: e.target.value ? parseFloat(e.target.value) : null })}
+                                    placeholder="hrs"
+                                  />
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </div>
+                {unscheduled.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">All briefs are scheduled!</p>
+                )}
+              </div>
+            )}
+          </Droppable>
+        </div>
+      </DragDropContext>
     );
   }
 

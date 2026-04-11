@@ -118,7 +118,8 @@ Deno.serve(async (req) => {
     const allCampaigns = new Set<string>();
     const allPublishers = new Set<string>();
     const startTime = Date.now();
-    const MAX_MS = 50000;
+    const MAX_MS = 25000; // 25s for fetching, leaves time for upserts
+    const MAX_PAGES = 20; // fetch at most 20 pages per invocation
 
     console.log(`Sync from page ${startPage}, ${daysBack} days`);
 

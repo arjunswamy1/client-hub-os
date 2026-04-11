@@ -5,8 +5,9 @@ import BillyDailyTrends from "@/components/dashboard/BillyDailyTrends";
 import BillyTrendAnalysis from "@/components/dashboard/BillyTrendAnalysis";
 import BillyMetaDashboard from "@/components/dashboard/BillyMetaDashboard";
 import BillyGoogleDashboard from "@/components/dashboard/BillyGoogleDashboard";
+import BillyCrossChannel from "@/components/dashboard/BillyCrossChannel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, Chrome, Facebook, TrendingUp, CalendarDays } from "lucide-react";
+import { BarChart3, Chrome, Facebook, TrendingUp, CalendarDays, GitCompare } from "lucide-react";
 
 function BillyDashboardInner() {
   return (
@@ -18,6 +19,10 @@ function BillyDashboardInner() {
           <TabsTrigger value="overview" className="gap-1.5 text-xs">
             <BarChart3 className="h-3.5 w-3.5" />
             Revenue Engine
+          </TabsTrigger>
+          <TabsTrigger value="cross" className="gap-1.5 text-xs">
+            <GitCompare className="h-3.5 w-3.5" />
+            Cross-Platform
           </TabsTrigger>
           <TabsTrigger value="trends" className="gap-1.5 text-xs">
             <TrendingUp className="h-3.5 w-3.5" />
@@ -39,6 +44,9 @@ function BillyDashboardInner() {
 
         <TabsContent value="overview">
           <BillyRevenueEngine />
+        </TabsContent>
+        <TabsContent value="cross">
+          <BillyCrossChannel />
         </TabsContent>
         <TabsContent value="trends">
           <BillyDailyTrends />

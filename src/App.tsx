@@ -48,7 +48,7 @@ function ProtectedRoutes() {
           <Route path="/agendas" element={<AgendasPage />} />
           <Route path="/creative" element={<CreativePage />} />
           <Route path="/landing-pages" element={<LandingPagesPage />} />
-          <Route path="/trafficking" element={<TraffickingPage />} />
+          <Route path="/trafficking" element={<Navigate to="/creative" replace />} />
           <Route path="/context" element={<ContextPage />} />
           <Route path="/ai" element={<AIAssistantPage />} />
           <Route path="/settings" element={<SettingsPage />} />

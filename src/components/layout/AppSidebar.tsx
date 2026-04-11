@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
-  Database, Bot, Settings, Users, Shield, Megaphone
+  Database, Bot, Settings, Users, Shield
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {

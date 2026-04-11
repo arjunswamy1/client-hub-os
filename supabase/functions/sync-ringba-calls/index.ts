@@ -140,15 +140,20 @@ Deno.serve(async (req) => {
     const startStr = fmtDateUS(startDate);
     const endStr = fmtDateUS(endDate);
 
-    console.log(`Fetching calls from ${startStr} to ${endStr}`);
+    console.log(`Fetching CPM calls from ${startStr} to ${endStr}`);
 
-    // Fetch all pages
+    // Filter for CPM publisher at the API level
+    const cpmFilter = [
+      { column: "publisherName", operand: "IS", value: "CPM" }
+    ];
+
+    // Fetch all pages (filtered to CPM only)
     let allCalls: any[] = [];
     let page = 1;
     let totalCount = 0;
 
     while (true) {
-      const result = await fetchPage(ringbaUrl, RINGBA_API_TOKEN, startStr, endStr, page);
+      const result = await fetchPage(ringbaUrl, RINGBA_API_TOKEN, startStr, endStr, page, cpmFilter);
       
       if (result.totalCount === -1) {
         console.log(`Rate limited on page ${page}, waiting 5s...`);

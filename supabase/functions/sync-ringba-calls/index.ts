@@ -20,7 +20,9 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function mapCallToRow(call: any, clientId: string) {
   const callId = call.inboundCallId || call.callId || `${call.callDt}-${Math.random()}`;
-  const revenue = Number(call.revenue || call.conversionAmount || call.ringTreeWinningBid || call.profitNet || 0);
+  // Revenue = conversionAmount only (set on converted calls). Do NOT use ringTreeWinningBid — that's the bid, not earned revenue.
+  const isConverted = call.hasConnected && call.hasConverted;
+  const revenue = isConverted ? Number(call.conversionAmount || call.revenue || 0) : 0;
   const payout = Number(call.payoutAmount || call.payout || call.totalCost || 0);
   const duration = call.callLengthInSeconds || call.connectedCallLengthInSeconds || 0;
 

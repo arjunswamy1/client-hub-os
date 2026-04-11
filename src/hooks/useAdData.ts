@@ -249,7 +249,7 @@ export function useTopCampaigns(platform?: string) {
     queryFn: async (): Promise<CampaignRow[]> => {
       let query = supabase
         .from("ad_campaigns")
-        .select("campaign_name, platform, spend, revenue, roas, status, impressions, clicks, conversions, impression_share, bidding_strategy_type, campaign_type, daily_budget")
+        .select("campaign_name, platform, spend, revenue, roas, status, impressions, clicks, conversions, impression_share, bidding_strategy_type, campaign_type, daily_budget, bid_strategy_details, account_id")
         .gte("date", fromStr).lte("date", toStr);
 
       if (clientId) query = query.eq("client_id", clientId);
@@ -266,6 +266,8 @@ export function useTopCampaigns(platform?: string) {
           impressions: 0, clicks: 0, conversions: 0, impressionShareSum: 0, impressionShareCount: 0,
           biddingStrategy: row.bidding_strategy_type || null, campaignType: row.campaign_type || null,
           dailyBudget: row.daily_budget != null ? Number(row.daily_budget) : null,
+          bidStrategyDetails: row.bid_strategy_details as Record<string, any> | null,
+          accountId: row.account_id || null,
         };
         existing.spend += Number(row.spend);
         existing.revenue += Number(row.revenue);
@@ -296,8 +298,10 @@ export function useTopCampaigns(platform?: string) {
           conversions: vals.conversions,
           impressionShare: vals.impressionShareCount > 0 ? vals.impressionShareSum / vals.impressionShareCount : null,
           biddingStrategy: vals.biddingStrategy,
+          bidStrategyDetails: vals.bidStrategyDetails,
           campaignType: vals.campaignType,
           dailyBudget: vals.dailyBudget,
+          accountId: vals.accountId,
         }))
         .sort((a, b) => b.spend - a.spend)
         .slice(0, 15);

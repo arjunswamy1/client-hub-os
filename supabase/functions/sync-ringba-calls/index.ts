@@ -159,6 +159,8 @@ Deno.serve(async (req) => {
     const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
     const endDate = new Date();
 
+    console.log(`Account ID: ${RINGBA_ACCOUNT_ID}`);
+    console.log(`Ringba URL: ${ringbaUrl}`);
     console.log(`Syncing ${daysBack} days, day by day`);
 
     let allCpmCalls: any[] = [];

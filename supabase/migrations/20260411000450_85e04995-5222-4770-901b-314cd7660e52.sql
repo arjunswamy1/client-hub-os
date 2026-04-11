@@ -1,0 +1,1 @@
+ALTER TABLE public.creative_briefs DROP CONSTRAINT IF EXISTS creative_briefs_objective_check;

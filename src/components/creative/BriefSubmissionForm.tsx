@@ -424,7 +424,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                             className="cursor-pointer transition-colors text-[11px]"
                             onClick={() => toggleSize(sp)}
                           >
-                            {sp.label} ({sp.width}×{sp.height})
+                            {sp.label.includes('×') || sp.label.includes('x') ? sp.label : `${sp.label} (${sp.width}×${sp.height})`}
                           </Badge>
                         ))}
                       </div>

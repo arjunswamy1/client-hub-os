@@ -70,8 +70,8 @@ Deno.serve(async (req) => {
     const formatDate = (d: Date) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-    // Ringba CallLogs endpoint uses POST with date body
-    const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/CallLogs/Date`;
+    // Ringba CallLogs endpoint — POST to /calllogs with reportStart/reportEnd
+    const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
 
     console.log(`Fetching Ringba calls from ${formatDate(startDate)} to ${formatDate(endDate)}`);
 
@@ -82,18 +82,27 @@ Deno.serve(async (req) => {
     let hasMore = true;
 
     while (hasMore) {
+      const requestBody = {
+        reportStart: formatDate(startDate),
+        reportEnd: formatDate(endDate),
+        page,
+        pageSize,
+        orderByColumns: [],
+        filters: [],
+        formatDateTime: true,
+        formatPercentages: false,
+      };
+
+      console.log(`Page ${page} request to ${ringbaUrl}`);
+
       const response = await fetch(ringbaUrl, {
         method: "POST",
         headers: {
           Authorization: `Token ${RINGBA_API_TOKEN}`,
-          "Content-Type": "application/json",
+          "Content-Type": "application/json;charset=UTF-8",
+          Accept: "application/json, text/plain, */*",
         },
-        body: JSON.stringify({
-          startDate: formatDate(startDate),
-          endDate: formatDate(endDate),
-          page,
-          pageSize,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -103,13 +112,16 @@ Deno.serve(async (req) => {
       }
 
       const data = await response.json();
-      
+
       if (page === 1) {
         console.log("Ringba response keys:", JSON.stringify(Object.keys(data)));
+        if (data.callLog) {
+          console.log("callLog keys:", JSON.stringify(Object.keys(data.callLog)));
+        }
       }
 
-      // Ringba returns calls in callLog.data or similar structures
-      const calls = data?.callLog?.data || data?.calls || data?.callLogs || data?.data || [];
+      // Ringba returns calls in callLog.data
+      const calls = data?.callLog?.data || data?.calls || data?.data || [];
 
       if (!Array.isArray(calls)) {
         console.log("Unexpected response shape:", JSON.stringify(data).substring(0, 1000));
@@ -124,11 +136,16 @@ Deno.serve(async (req) => {
       hasMore = calls.length === pageSize && allCalls.length < totalCount;
       page++;
 
-      // Safety: max 20 pages
       if (page > 20) break;
     }
 
     console.log(`Total Ringba calls fetched: ${allCalls.length}`);
+
+    // Log sample call structure for debugging
+    if (allCalls.length > 0) {
+      console.log("Sample call keys:", JSON.stringify(Object.keys(allCalls[0])));
+      console.log("Sample call (truncated):", JSON.stringify(allCalls[0]).substring(0, 500));
+    }
 
     // Filter to only Billy.com verticals
     const verticalPatterns = [
@@ -138,24 +155,32 @@ Deno.serve(async (req) => {
     ];
 
     const filteredCalls = allCalls.filter((call: any) => {
-      const campaignName = (call.campaignName || call.campaign || "").toLowerCase();
-      const targetName = (call.targetName || call.target || "").toLowerCase();
+      const campaignName = (call.campaignName || call.campaign || call.Campaign || "").toLowerCase();
+      const targetName = (call.targetName || call.target || call.Target || "").toLowerCase();
       const searchText = `${campaignName} ${targetName}`;
       return verticalPatterns.some((p) => searchText.includes(p));
     });
 
-    console.log(`Filtered to ${filteredCalls.length} calls matching Billy verticals`);
+    console.log(`Filtered to ${filteredCalls.length} calls matching Billy verticals out of ${allCalls.length} total`);
+
+    // Log unmatched campaign names for debugging
+    if (allCalls.length > 0 && filteredCalls.length === 0) {
+      const uniqueCampaigns = [...new Set(allCalls.map((c: any) => c.campaignName || c.campaign || c.Campaign || "unknown"))];
+      console.log("Available campaign names:", JSON.stringify(uniqueCampaigns.slice(0, 20)));
+      const uniqueTargets = [...new Set(allCalls.map((c: any) => c.targetName || c.target || c.Target || "unknown"))];
+      console.log("Available target names:", JSON.stringify(uniqueTargets.slice(0, 20)));
+    }
 
     let totalInserted = 0;
 
     for (const cId of clientIds) {
       const rows = filteredCalls.map((call: any) => ({
         client_id: cId,
-        call_id: call.callId || call.id || `${call.callDt || call.startTime}-${call.inboundPhoneNumber || ""}`,
-        call_date: call.callDt || call.startTime || call.date,
-        campaign_name: call.campaignName || call.campaign || null,
-        target_name: call.targetName || call.target || null,
-        caller_number: call.callerNumber || call.caller || call.ani || null,
+        call_id: call.callId || call.id || call.callDt + (call.inboundPhoneNumber || ""),
+        call_date: call.callDt || call.startTime || call.date || call.dt,
+        campaign_name: call.campaignName || call.campaign || call.Campaign || null,
+        target_name: call.targetName || call.target || call.Target || null,
+        caller_number: call.callerNumber || call.caller || call.ani || call.callerId || null,
         duration_seconds: call.callLengthInSeconds || call.duration || call.connectedCallLength || 0,
         connected: call.connected ?? call.isConnected ?? false,
         converted: call.converted ?? call.isConverted ?? false,

@@ -31,7 +31,7 @@ export function useVerticalCampaigns(platform?: "meta" | "google") {
     queryFn: async (): Promise<CampaignRow[]> => {
       let query = supabase
         .from("ad_campaigns")
-        .select("campaign_name, platform, spend, revenue, roas, status, impressions, clicks, conversions, impression_share, bidding_strategy_type, campaign_type, daily_budget")
+        .select("campaign_name, platform, spend, revenue, roas, status, impressions, clicks, conversions, impression_share, bidding_strategy_type, campaign_type, daily_budget, bid_strategy_details, account_id")
         .eq("client_id", clientId!)
         .gte("date", fromStr)
         .lte("date", toStr);

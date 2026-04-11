@@ -14,7 +14,7 @@ import CreativePage from "./pages/CreativePage";
 import ContextPage from "./pages/ContextPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
 import LandingPagesPage from "./pages/LandingPagesPage";
-import TraffickingPage from "./pages/TraffickingPage";
+// TraffickingPage moved into CreativePage tabs
 import SettingsPage from "./pages/SettingsPage";
 import TeamPage from "./pages/TeamPage";
 import AdminPage from "./pages/AdminPage";

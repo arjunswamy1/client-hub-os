@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
         const body = await req.json();
         clientId = body.client_id || body.clientId || null;
         daysBack = body.days_back || body.daysBack || 365;
-        startPage = body.start_page || 1;
+        startPage = body.start_page || body.startPage || 1;
       } catch {}
     }
 
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
     const allPublishers = new Set<string>();
     const startTime = Date.now();
     const MAX_MS = 25000; // 25s for fetching, leaves time for upserts
-    const MAX_PAGES = 20; // fetch at most 20 pages per invocation
+    const MAX_PAGES = 50; // fetch at most 50 pages per invocation
 
     console.log(`Sync from page ${startPage}, ${daysBack} days`);
 

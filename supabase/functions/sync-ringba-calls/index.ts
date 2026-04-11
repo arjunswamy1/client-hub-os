@@ -178,11 +178,11 @@ Deno.serve(async (req) => {
           allPublishers.add(r.publisherName || "unknown");
         }
 
-        // Filter: only CPM publisher AND Billy vertical campaigns
+        // Filter: only CPM publisher AND allowed campaigns
         const filtered = records.filter((call: any) => {
           const pub = (call.publisherName || "").toLowerCase();
           if (pub !== "cpm") return false;
-          return isBillyVerticalCampaign(call.campaignName || "");
+          return isAllowedCampaign(call.campaignName || "");
         });
 
         totalFiltered += filtered.length;

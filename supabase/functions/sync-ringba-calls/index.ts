@@ -52,12 +52,16 @@ function mapCallToRow(call: any, clientId: string) {
   };
 }
 
-/** Check if a campaign name matches any Billy vertical */
-function isBillyVerticalCampaign(campaignName: string): boolean {
+/** Exact campaign names we pull from Ringba — must be CPM publisher */
+const ALLOWED_CAMPAIGNS: Record<string, string> = {
+  "premium flights call flow": "flights",
+  "pest control us call flow": "pest-control",
+  "potty us call flow": "porta-potties",
+};
+
+function isAllowedCampaign(campaignName: string): boolean {
   if (!campaignName) return false;
-  const lower = campaignName.toLowerCase();
-  const patterns = ["flight", "pest", "porta", "potty", "portapotty"];
-  return patterns.some(p => lower.includes(p));
+  return campaignName.toLowerCase() in ALLOWED_CAMPAIGNS;
 }
 
 Deno.serve(async (req) => {
@@ -174,11 +178,11 @@ Deno.serve(async (req) => {
           allPublishers.add(r.publisherName || "unknown");
         }
 
-        // Filter: only CPM publisher AND Billy vertical campaigns
+        // Filter: only CPM publisher AND allowed campaigns
         const filtered = records.filter((call: any) => {
           const pub = (call.publisherName || "").toLowerCase();
           if (pub !== "cpm") return false;
-          return isBillyVerticalCampaign(call.campaignName || "");
+          return isAllowedCampaign(call.campaignName || "");
         });
 
         totalFiltered += filtered.length;

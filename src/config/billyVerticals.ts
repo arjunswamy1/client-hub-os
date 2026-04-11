@@ -31,7 +31,7 @@ export const BILLY_VERTICALS: VerticalConfig[] = [
     emoji: "✈️",
     meta: { patterns: ["Flight"] },
     google: { patterns: ["Flight"] },
-    ringba: { patterns: ["flight", "premium flights call flow"] },
+    ringba: { patterns: ["Flight"] },
   },
   {
     id: "porta-potties",
@@ -39,7 +39,7 @@ export const BILLY_VERTICALS: VerticalConfig[] = [
     emoji: "🚽",
     meta: { patterns: ["Porta", "Potty"] },
     google: { patterns: ["Porta", "Potty"], accountIds: ["1939246766"] },
-    ringba: { patterns: ["porta potty", "porta", "potty"] },
+    ringba: { patterns: ["Porta", "Potty", "Portapotty"] },
   },
   {
     id: "pest-control",
@@ -54,7 +54,8 @@ export const BILLY_VERTICALS: VerticalConfig[] = [
       accountIds: ["1939246766"],
     },
     ringba: {
-      patterns: ["pest control", "pest control call flow", "pest control us"],
+      patterns: ["Pest Control US Call Flow"],
+      exactMatch: true,
     },
   },
 ];
@@ -63,11 +64,36 @@ export const BILLY_VERTICALS: VerticalConfig[] = [
 export function matchesVertical(
   campaignName: string,
   vertical: VerticalConfig,
-  platform: "meta" | "google"
+  platform: "meta" | "google" | "ringba"
 ): boolean {
   const config = vertical[platform];
   if (config.patterns.length === 0) return true; // "all" vertical
+  if ("exactMatch" in config && config.exactMatch) {
+    return config.patterns.some(
+      (p) => campaignName.toLowerCase() === p.toLowerCase()
+    );
+  }
   return config.patterns.some((pattern) =>
     campaignName.toLowerCase().includes(pattern.toLowerCase())
   );
+}
+
+/** Check if an account ID matches a vertical's configured accounts for a platform */
+export function matchesVerticalAccount(
+  accountId: string | null | undefined,
+  vertical: VerticalConfig,
+  platform: "meta" | "google"
+): boolean {
+  const config = vertical[platform];
+  if (!config.accountIds || config.accountIds.length === 0) return true;
+  if (!accountId) return false;
+  return config.accountIds.includes(accountId);
+}
+
+/** Get configured account IDs for a vertical+platform */
+export function getVerticalAccountIds(
+  vertical: VerticalConfig,
+  platform: "meta" | "google"
+): string[] {
+  return vertical[platform].accountIds || [];
 }

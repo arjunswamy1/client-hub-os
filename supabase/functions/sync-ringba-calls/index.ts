@@ -74,10 +74,15 @@ async function fetchDay(
 
     if (!res.ok) {
       const t = await res.text();
+      console.error(`Ringba API [${res.status}]: ${t.substring(0, 500)}`);
       throw new Error(`Ringba API [${res.status}]: ${t.substring(0, 200)}`);
     }
 
     const data = await res.json();
+    if (page === 1) {
+      console.log(`  RAW response keys: ${JSON.stringify(Object.keys(data))}`);
+      if (data.report) console.log(`  report keys: ${JSON.stringify(Object.keys(data.report))}`);
+    }
     const records = data?.report?.records || [];
     const total = data?.report?.totalCount || 0;
 
@@ -154,6 +159,8 @@ Deno.serve(async (req) => {
     const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
     const endDate = new Date();
 
+    console.log(`Account ID: ${RINGBA_ACCOUNT_ID}`);
+    console.log(`Ringba URL: ${ringbaUrl}`);
     console.log(`Syncing ${daysBack} days, day by day`);
 
     let allCpmCalls: any[] = [];

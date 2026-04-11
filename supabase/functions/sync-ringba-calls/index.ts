@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
 
       page++;
       if (page > 500) break;
+      if (page - startPage >= MAX_PAGES) break;
       await sleep(300);
     }
 

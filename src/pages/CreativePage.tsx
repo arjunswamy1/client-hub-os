@@ -4,7 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus } from 'lucide-react';
+import { Plus, Circle, Check, ChevronDown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useCreativeBriefs, useBriefMutations } from '@/hooks/useCreativeBriefs';
 import { BriefSubmissionForm } from '@/components/creative/BriefSubmissionForm';
 import { BriefKanban } from '@/components/creative/BriefKanban';
@@ -18,6 +19,7 @@ import { ContentCalendar } from '@/components/trafficking/ContentCalendar';
 import { CampaignList } from '@/components/trafficking/CampaignList';
 import { InProgressAds } from '@/components/trafficking/InProgressAds';
 import { LiveAdsTracker } from '@/components/trafficking/LiveAdsTracker';
+import { Client } from '@/types';
 
 export default function CreativePage() {
   const { isDesigner, isAdmin } = useAuth();

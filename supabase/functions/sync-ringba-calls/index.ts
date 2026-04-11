@@ -30,6 +30,7 @@ const RINGBA_COLUMNS = [
   "campaignId", "numberPoolName", "isFromNumberPool",
   "endCallSource", "callCompletedDt", "callConnectionDt",
   "ringTreeWinningBid", "ringTreeWinningBidMinimumRevenueAmount",
+  "revenue", "payout", "connected", "converted",
 ].map(c => ({ column: c }));
 
 Deno.serve(async (req) => {
@@ -93,94 +94,108 @@ Deno.serve(async (req) => {
     const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
     console.log(`Fetching Ringba calls from ${formatDate(startDate)} to ${formatDate(endDate)}`);
 
-    // Filter for CPM publisher only
-    const filters = [{
-      column: "publisherName",
-      operand: "IS",
-      value: "CPM",
-    }];
+    // Filter for CPM publisher — try multiple filter formats
+    const filters = [
+      {
+        column: "publisherName",
+        operand: "Equals Single Value",
+        value: "CPM",
+      },
+    ];
 
-    let allCalls: any[] = [];
-    let page = 1;
-    let totalCount = 0;
-    const pageSize = 500;
+    async function fetchAllCalls(ringbaFilters: any[]): Promise<{ calls: any[], totalCount: number }> {
+      let allCalls: any[] = [];
+      let page = 1;
+      let totalCount = 0;
 
-    while (true) {
-      // Try multiple pagination param names
-      const requestBody = {
-        reportStart: formatDate(startDate),
-        reportEnd: formatDate(endDate),
-        page,
-        pageSize,
-        recordCount: pageSize,
-        rowCount: pageSize,
-        columns: RINGBA_COLUMNS,
-        orderByColumns: [],
-        filters,
-        formatDateTime: true,
-        formatPercentages: false,
-      };
+      while (true) {
+        const response = await fetch(ringbaUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${RINGBA_API_TOKEN}`,
+            "Content-Type": "application/json;charset=UTF-8",
+            Accept: "application/json, text/plain, */*",
+          },
+          body: JSON.stringify({
+            reportStart: formatDate(startDate),
+            reportEnd: formatDate(endDate),
+            page,
+            pageSize: 1000,
+            recordCount: 1000,
+            columns: RINGBA_COLUMNS,
+            orderByColumns: [],
+            filters: ringbaFilters,
+            formatDateTime: true,
+            formatPercentages: false,
+          }),
+        });
 
-      const response = await fetch(ringbaUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Token ${RINGBA_API_TOKEN}`,
-          "Content-Type": "application/json;charset=UTF-8",
-          Accept: "application/json, text/plain, */*",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ringba API error [${response.status}]: ${errorText.substring(0, 300)}`);
-      }
-
-      const data = await response.json();
-      const records = data?.report?.records || [];
-      totalCount = data?.report?.totalCount || 0;
-
-      if (page === 1) {
-        console.log(`Total count from API: ${totalCount}`);
-        if (records.length > 0) {
-          console.log("Record keys:", JSON.stringify(Object.keys(records[0])));
-          console.log("Sample record:", JSON.stringify(records[0]).substring(0, 500));
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Ringba API error [${response.status}]: ${errorText.substring(0, 300)}`);
         }
-        // If filter returned 0, try without filter and log publishers
-        if (totalCount === 0 || records.length === 0) {
-          console.log("No CPM publisher calls found with filter. Trying without filter to list publishers...");
-          const unfilteredRes = await fetch(ringbaUrl, {
-            method: "POST",
-            headers: {
-              Authorization: `Token ${RINGBA_API_TOKEN}`,
-              "Content-Type": "application/json;charset=UTF-8",
-              Accept: "application/json, text/plain, */*",
-            },
-            body: JSON.stringify({
-              ...requestBody,
-              filters: [],
-            }),
-          });
-          if (unfilteredRes.ok) {
-            const ufData = await unfilteredRes.json();
-            const ufRecords = ufData?.report?.records || [];
-            const publishers = [...new Set(ufRecords.map((r: any) => r.publisherName || "unknown"))];
-            console.log(`Unfiltered: ${ufData?.report?.totalCount} total calls, ${ufRecords.length} in first page`);
-            console.log("All publisher names:", JSON.stringify(publishers));
+
+        const data = await response.json();
+        const records = data?.report?.records || [];
+        totalCount = data?.report?.totalCount || 0;
+
+        if (page === 1) {
+          console.log(`Filter: ${JSON.stringify(ringbaFilters)}`);
+          console.log(`Total count from API: ${totalCount}, first page: ${records.length} records`);
+          if (records.length > 0) {
+            console.log("Sample:", JSON.stringify({
+              campaign: records[0].campaignName,
+              publisher: records[0].publisherName,
+              revenue: records[0].revenue,
+              payout: records[0].payout,
+              profitNet: records[0].profitNet,
+              bidAmount: records[0].bidAmount,
+              winningBid: records[0].ringTreeWinningBid,
+              duration: records[0].callLengthInSeconds,
+              hasConnected: records[0].hasConnected,
+              target: records[0].targetName,
+            }));
           }
-          break;
         }
+
+        allCalls = allCalls.concat(records);
+        console.log(`Page ${page}: ${records.length} records (total: ${allCalls.length}/${totalCount})`);
+
+        if (records.length === 0 || allCalls.length >= totalCount) break;
+        page++;
+        if (page > 500) break; // safety limit
       }
-
-      allCalls = allCalls.concat(records);
-      console.log(`Page ${page}: ${records.length} records (total fetched: ${allCalls.length} of ${totalCount})`);
-
-      if (records.length === 0 || allCalls.length >= totalCount) break;
-      page++;
-      if (page > 100) break;
+      return { calls: allCalls, totalCount };
     }
 
-    console.log(`Total CPM calls fetched: ${allCalls.length}`);
+    // Try with CPM filter first
+    let result = await fetchAllCalls(filters);
+
+    // If filter didn't work (returned all calls or 0), try client-side filtering
+    if (result.calls.length === 0) {
+      console.log("CPM filter returned 0. Trying 'IS' operand...");
+      result = await fetchAllCalls([{ column: "publisherName", operand: "IS", value: "CPM" }]);
+    }
+
+    if (result.calls.length === 0) {
+      console.log("Still 0. Fetching ALL calls and filtering client-side for publisher=CPM...");
+      result = await fetchAllCalls([]);
+      const before = result.calls.length;
+      result.calls = result.calls.filter((c: any) =>
+        (c.publisherName || "").toLowerCase() === "cpm"
+      );
+      console.log(`Client-side CPM filter: ${result.calls.length} of ${before} total calls`);
+      // Log unique publishers for debugging
+      if (result.calls.length === 0) {
+        const allPubs = [...new Set(result.calls.length > 0 ? [] :
+          (await fetchAllCalls([])).calls.slice(0, 500).map((c: any) => c.publisherName || "unknown")
+        )];
+        console.log("Publishers in first 500 calls:", JSON.stringify(allPubs));
+      }
+    }
+
+    const allCalls = result.calls;
+    console.log(`Final CPM calls to sync: ${allCalls.length}`);
 
     const uniqueCampaigns = [...new Set(allCalls.map((c: any) => c.campaignName || "unknown"))];
     console.log("Campaigns:", JSON.stringify(uniqueCampaigns));
@@ -190,12 +205,12 @@ Deno.serve(async (req) => {
     for (const cId of clientIds) {
       const rows = allCalls.map((call: any) => {
         const callId = call.inboundCallId || `${call.callDt}-${call.inboundPhoneNumber || Math.random()}`;
-        // Revenue: Ringba uses profitNet for net revenue, bidAmount/winningBid for gross
-        const revenue = Number(call.ringTreeWinningBid || call.bidAmount || call.profitNet || 0);
-        const payout = Number(call.totalCost || 0);
+        // Use revenue field first, then winning bid, then profitNet
+        const revenue = Number(call.revenue || call.ringTreeWinningBid || call.bidAmount || call.profitNet || 0);
+        const payout = Number(call.payout || call.totalCost || 0);
         const duration = call.callLengthInSeconds || call.connectedCallLengthInSeconds || 0;
-        const connected = call.hasConnected ?? (duration > 0 && !call.wasBlocked);
-        const converted = revenue > 0;
+        const connected = call.hasConnected ?? call.connected ?? (duration > 0 && !call.wasBlocked);
+        const converted = call.converted ?? (revenue > 0);
 
         return {
           client_id: cId,
@@ -226,13 +241,22 @@ Deno.serve(async (req) => {
             totalCost: call.totalCost,
             telcoCost: call.telcoCost,
             winningBid: call.ringTreeWinningBid,
+            isDuplicate: call.isDuplicate,
           },
         };
       });
 
+      // Deduplicate by call_id before upserting
+      const seen = new Set<string>();
+      const deduped = rows.filter(r => {
+        if (seen.has(r.call_id)) return false;
+        seen.add(r.call_id);
+        return true;
+      });
+
       const batchSize = 200;
-      for (let i = 0; i < rows.length; i += batchSize) {
-        const batch = rows.slice(i, i + batchSize);
+      for (let i = 0; i < deduped.length; i += batchSize) {
+        const batch = deduped.slice(i, i + batchSize);
         const { error } = await supabase
           .from("ringba_calls")
           .upsert(batch, { onConflict: "client_id,call_id" });
@@ -249,8 +273,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        total_api_count: totalCount,
-        total_fetched: allCalls.length,
+        total_api_count: result.totalCount,
+        cpm_calls: allCalls.length,
         calls_synced: totalInserted,
         clients: clientIds.length,
         campaigns_found: uniqueCampaigns,

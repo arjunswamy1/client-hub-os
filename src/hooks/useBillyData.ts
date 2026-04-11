@@ -31,7 +31,7 @@ export function useVerticalCampaigns(platform?: "meta" | "google") {
     queryFn: async (): Promise<CampaignRow[]> => {
       let query = supabase
         .from("ad_campaigns")
-        .select("campaign_name, platform, spend, revenue, roas, status, impressions, clicks, conversions, impression_share, bidding_strategy_type, campaign_type, daily_budget")
+        .select("campaign_name, platform, spend, revenue, roas, status, impressions, clicks, conversions, impression_share, bidding_strategy_type, campaign_type, daily_budget, bid_strategy_details, account_id")
         .eq("client_id", clientId!)
         .gte("date", fromStr)
         .lte("date", toStr);
@@ -50,20 +50,18 @@ export function useVerticalCampaigns(platform?: "meta" | "google") {
             return matchesVertical(row.campaign_name, activeVertical, p);
           });
 
-      // Only show active campaigns for Billy
-      const activeCampaigns = filtered.filter(
-        (row) => row.status === "active" || row.status === "enabled"
-      );
-
+      // Show all campaigns (not just active) so media buyers can compare
       // Aggregate by campaign name
       const byCampaign = new Map<string, any>();
-      for (const row of activeCampaigns) {
+      for (const row of filtered) {
         const existing = byCampaign.get(row.campaign_name) || {
           platform: row.platform, spend: 0, revenue: 0, status: row.status || "unknown",
           impressions: 0, clicks: 0, conversions: 0,
           impressionShareSum: 0, impressionShareCount: 0,
           biddingStrategy: row.bidding_strategy_type, campaignType: row.campaign_type,
           dailyBudget: row.daily_budget != null ? Number(row.daily_budget) : null,
+          bidStrategyDetails: (row as any).bid_strategy_details as Record<string, any> | null,
+          accountId: (row as any).account_id || null,
         };
         existing.spend += Number(row.spend);
         existing.revenue += Number(row.revenue);
@@ -74,6 +72,8 @@ export function useVerticalCampaigns(platform?: "meta" | "google") {
           existing.impressionShareSum += Number(row.impression_share);
           existing.impressionShareCount++;
         }
+        // Keep "active/enabled" status if any day is active
+        if (row.status === "active" || row.status === "enabled") existing.status = row.status;
         byCampaign.set(row.campaign_name, existing);
       }
 
@@ -93,11 +93,13 @@ export function useVerticalCampaigns(platform?: "meta" | "google") {
           conversions: vals.conversions,
           impressionShare: vals.impressionShareCount > 0 ? vals.impressionShareSum / vals.impressionShareCount : null,
           biddingStrategy: vals.biddingStrategy,
+          bidStrategyDetails: vals.bidStrategyDetails,
           campaignType: vals.campaignType,
           dailyBudget: vals.dailyBudget,
+          accountId: vals.accountId,
         }))
         .sort((a, b) => b.spend - a.spend)
-        .slice(0, 20);
+        .slice(0, 30);
     },
   });
 }

@@ -17,7 +17,7 @@ export default function BillyGoogleDashboard() {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          {Array.from({ length: 12 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
         </div>
         <Skeleton className="h-48 rounded-xl" />
       </div>
@@ -34,6 +34,9 @@ export default function BillyGoogleDashboard() {
   const platformConversions = kpis?.conversions ?? 0;
   const cpc = clicks > 0 ? Math.round((spend / clicks) * 100) / 100 : 0;
   const ctr = impressions > 0 ? Math.round((clicks / impressions) * 10000) / 100 : 0;
+  const roas = spend > 0 ? Math.round((ringbaRevenue / spend) * 100) / 100 : 0;
+  const profit = ringbaRevenue - spend;
+  const cpm = impressions > 0 ? Math.round((spend / impressions) * 1000 * 100) / 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -46,19 +49,25 @@ export default function BillyGoogleDashboard() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KPICard title="Google Spend" value={`$${spend.toLocaleString()}`} change={kpis?.changes.spend} invertColor />
-        <KPICard title="Ringba Conv." value={ringbaConversions.toLocaleString()} change={ringba?.changes.convertedCalls} />
         <KPICard title="Ringba Revenue" value={`$${ringbaRevenue.toLocaleString()}`} change={ringba?.changes.revenue} />
-        <KPICard title="CPA (Ringba)" value={ringbaCPA > 0 ? `$${ringbaCPA}` : "—"} invertColor />
-        <KPICard title="Platform Conv." value={platformConversions.toLocaleString()} change={kpis?.changes.conversions} />
+        <KPICard title="ROAS (Ringba)" value={roas > 0 ? `${roas}x` : "—"} subtitle="Revenue ÷ Spend" />
+        <KPICard
+          title="Net Profit"
+          value={`${profit >= 0 ? "" : "−"}$${Math.abs(Math.round(profit)).toLocaleString()}`}
+          subtitle={profit >= 0 ? "Profitable ✓" : "Unprofitable ✗"}
+        />
+        <KPICard title="Ringba Conv." value={ringbaConversions.toLocaleString()} change={ringba?.changes.convertedCalls} />
+        <KPICard title="CPA (Ringba)" value={ringbaCPA > 0 ? `$${ringbaCPA}` : "—"} invertColor subtitle="Spend ÷ Conversions" />
+        <KPICard title="Platform Conv." value={platformConversions.toLocaleString()} change={kpis?.changes.conversions} subtitle="Google-reported" />
         <KPICard title="CPC" value={`$${cpc.toFixed(2)}`} change={kpis?.changes.cpc} invertColor />
         <KPICard title="CTR" value={`${ctr}%`} change={kpis?.changes.ctr} />
+        <KPICard title="CPM" value={`$${cpm.toFixed(2)}`} invertColor subtitle="Cost per 1K impressions" />
+        <KPICard title="Clicks" value={clicks.toLocaleString()} />
         <KPICard title="Impressions" value={impressions.toLocaleString()} />
       </div>
 
-      {/* Quality Score Audit — AI-powered */}
       <QualityScoreAudit />
 
-      {/* Drill-down campaign table: Campaign → Ad Group → Keyword → Search Term */}
       <DrillDownCampaignTable platform="google" />
     </div>
   );

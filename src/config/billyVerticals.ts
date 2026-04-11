@@ -31,7 +31,7 @@ export const BILLY_VERTICALS: VerticalConfig[] = [
     emoji: "✈️",
     meta: { patterns: ["Flight"] },
     google: { patterns: ["Flight"] },
-    ringba: { patterns: ["premium flights call flow"] },
+    ringba: { patterns: ["flight", "premium flights call flow"] },
   },
   {
     id: "porta-potties",
@@ -39,7 +39,7 @@ export const BILLY_VERTICALS: VerticalConfig[] = [
     emoji: "🚽",
     meta: { patterns: ["Porta", "Potty"] },
     google: { patterns: ["Porta", "Potty"], accountIds: ["1939246766"] },
-    ringba: { patterns: ["porta potty"] },
+    ringba: { patterns: ["porta potty", "porta", "potty"] },
   },
   {
     id: "pest-control",
@@ -54,7 +54,7 @@ export const BILLY_VERTICALS: VerticalConfig[] = [
       accountIds: ["1939246766"],
     },
     ringba: {
-      patterns: ["pest control call flow"],
+      patterns: ["pest control", "pest control call flow", "pest control us"],
     },
   },
 ];

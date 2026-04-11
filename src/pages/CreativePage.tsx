@@ -4,7 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus } from 'lucide-react';
+import { Plus, Circle, Check, ChevronDown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useCreativeBriefs, useBriefMutations } from '@/hooks/useCreativeBriefs';
 import { BriefSubmissionForm } from '@/components/creative/BriefSubmissionForm';
 import { BriefKanban } from '@/components/creative/BriefKanban';
@@ -18,14 +19,55 @@ import { ContentCalendar } from '@/components/trafficking/ContentCalendar';
 import { CampaignList } from '@/components/trafficking/CampaignList';
 import { InProgressAds } from '@/components/trafficking/InProgressAds';
 import { LiveAdsTracker } from '@/components/trafficking/LiveAdsTracker';
+import { Client } from '@/types';
+
+function TraffickingClientPicker({ clients, selected, onSelect }: {
+  clients: Client[];
+  selected: Client | null;
+  onSelect: (c: Client) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-accent">
+          {selected ? (
+            <>
+              <Circle className="h-2.5 w-2.5 shrink-0 fill-current" style={{ color: selected.color || 'hsl(220, 70%, 50%)' }} />
+              <span className="truncate max-w-[160px]">{selected.name}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">Select client…</span>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1" align="start">
+        {clients.map((client) => (
+          <button
+            key={client.id}
+            className="flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm transition-colors hover:bg-accent"
+            onClick={() => { onSelect(client); setOpen(false); }}
+          >
+            <Circle className="h-2.5 w-2.5 shrink-0 fill-current" style={{ color: client.color || 'hsl(220, 70%, 50%)' }} />
+            <span className="flex-1 truncate">{client.name}</span>
+            {selected?.id === client.id && <Check className="h-3.5 w-3.5 text-primary" />}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function CreativePage() {
   const { isDesigner, isAdmin } = useAuth();
-  const { activeClient } = useClient();
+  const { clients } = useClient();
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { updateStatus } = useBriefMutations();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [traffickingClient, setTraffickingClient] = useState<Client | null>(null);
 
   const selected = briefs.find((b: any) => b.id === selectedId);
 
@@ -99,12 +141,20 @@ export default function CreativePage() {
           </TabsContent>
 
           <TabsContent value="ad-trafficking" className="mt-4">
-            {activeClient ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <TraffickingClientPicker
+                    clients={clients}
+                    selected={traffickingClient}
+                    onSelect={setTraffickingClient}
+                  />
                   <p className="text-sm text-muted-foreground">Plan, build, and launch ads from one place.</p>
-                  <DateRangePicker />
                 </div>
+                {traffickingClient && <DateRangePicker />}
+              </div>
+
+              {traffickingClient ? (
                 <Tabs defaultValue="in-progress" className="space-y-4">
                   <TabsList>
                     <TabsTrigger value="calendar">Content Calendar</TabsTrigger>
@@ -113,24 +163,24 @@ export default function CreativePage() {
                     <TabsTrigger value="live">🟢 Live Ads</TabsTrigger>
                   </TabsList>
                   <TabsContent value="calendar">
-                    <ContentCalendar clientId={activeClient.id} />
+                    <ContentCalendar clientId={traffickingClient.id} />
                   </TabsContent>
                   <TabsContent value="campaigns">
-                    <CampaignList clientId={activeClient.id} />
+                    <CampaignList clientId={traffickingClient.id} />
                   </TabsContent>
                   <TabsContent value="in-progress">
-                    <InProgressAds clientId={activeClient.id} />
+                    <InProgressAds clientId={traffickingClient.id} />
                   </TabsContent>
                   <TabsContent value="live">
-                    <LiveAdsTracker clientId={activeClient.id} />
+                    <LiveAdsTracker clientId={traffickingClient.id} />
                   </TabsContent>
                 </Tabs>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-64 text-muted-foreground">
-                Select a client to manage ad trafficking.
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center justify-center h-64 text-muted-foreground border border-dashed rounded-lg">
+                  Select a client above to manage ad trafficking.
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {isAdmin && (

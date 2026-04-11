@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       ad_campaigns: {
         Row: {
+          account_id: string | null
+          add_to_cart: number | null
           bid_strategy_details: Json | null
           bidding_strategy_type: string | null
           campaign_name: string
@@ -36,6 +38,8 @@ export type Database = {
           status: string | null
         }
         Insert: {
+          account_id?: string | null
+          add_to_cart?: number | null
           bid_strategy_details?: Json | null
           bidding_strategy_type?: string | null
           campaign_name: string
@@ -56,6 +60,8 @@ export type Database = {
           status?: string | null
         }
         Update: {
+          account_id?: string | null
+          add_to_cart?: number | null
           bid_strategy_details?: Json | null
           bidding_strategy_type?: string | null
           campaign_name?: string
@@ -105,6 +111,8 @@ export type Database = {
           descriptions: string[] | null
           display_url: string | null
           final_url: string | null
+          format: string | null
+          frequency: number | null
           headline: string | null
           headlines: string[] | null
           id: string
@@ -122,6 +130,10 @@ export type Database = {
           updated_at: string | null
           vertical: string | null
           video_url: string | null
+          video_views_25: number | null
+          video_views_3s: number | null
+          video_views_50: number | null
+          video_views_95: number | null
         }
         Insert: {
           ad_name?: string | null
@@ -142,6 +154,8 @@ export type Database = {
           descriptions?: string[] | null
           display_url?: string | null
           final_url?: string | null
+          format?: string | null
+          frequency?: number | null
           headline?: string | null
           headlines?: string[] | null
           id?: string
@@ -159,6 +173,10 @@ export type Database = {
           updated_at?: string | null
           vertical?: string | null
           video_url?: string | null
+          video_views_25?: number | null
+          video_views_3s?: number | null
+          video_views_50?: number | null
+          video_views_95?: number | null
         }
         Update: {
           ad_name?: string | null
@@ -179,6 +197,8 @@ export type Database = {
           descriptions?: string[] | null
           display_url?: string | null
           final_url?: string | null
+          format?: string | null
+          frequency?: number | null
           headline?: string | null
           headlines?: string[] | null
           id?: string
@@ -196,6 +216,10 @@ export type Database = {
           updated_at?: string | null
           vertical?: string | null
           video_url?: string | null
+          video_views_25?: number | null
+          video_views_3s?: number | null
+          video_views_50?: number | null
+          video_views_95?: number | null
         }
         Relationships: [
           {
@@ -253,6 +277,80 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ad_daily_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_sets: {
+        Row: {
+          account_id: string | null
+          adset_name: string
+          campaign_name: string
+          clicks: number
+          client_id: string
+          conversions: number
+          cpa: number | null
+          cpc: number | null
+          created_at: string
+          ctr: number | null
+          date: string
+          id: string
+          impressions: number
+          platform: string
+          platform_adset_id: string | null
+          platform_campaign_id: string | null
+          revenue: number
+          spend: number
+          status: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          adset_name: string
+          campaign_name: string
+          clicks?: number
+          client_id: string
+          conversions?: number
+          cpa?: number | null
+          cpc?: number | null
+          created_at?: string
+          ctr?: number | null
+          date: string
+          id?: string
+          impressions?: number
+          platform: string
+          platform_adset_id?: string | null
+          platform_campaign_id?: string | null
+          revenue?: number
+          spend?: number
+          status?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          adset_name?: string
+          campaign_name?: string
+          clicks?: number
+          client_id?: string
+          conversions?: number
+          cpa?: number | null
+          cpc?: number | null
+          created_at?: string
+          ctr?: number | null
+          date?: string
+          id?: string
+          impressions?: number
+          platform?: string
+          platform_adset_id?: string | null
+          platform_campaign_id?: string | null
+          revenue?: number
+          spend?: number
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_sets_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
@@ -365,6 +463,87 @@ export type Database = {
             columns: ["trafficking_ad_id"]
             isOneToOne: false
             referencedRelation: "trafficking_ads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_optimization_recommendations: {
+        Row: {
+          client_id: string
+          created_at: string
+          current_metrics: Json | null
+          description: string | null
+          entity_id: string | null
+          entity_name: string | null
+          entity_type: string
+          id: string
+          platform: string
+          projected_impact: Json | null
+          recommendation_type: string
+          recommended_action: Json | null
+          resolved_at: string | null
+          resolved_by_id: string | null
+          severity: string
+          status: string
+          title: string
+          updated_at: string
+          vertical_id: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          current_metrics?: Json | null
+          description?: string | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type: string
+          id?: string
+          platform: string
+          projected_impact?: Json | null
+          recommendation_type: string
+          recommended_action?: Json | null
+          resolved_at?: string | null
+          resolved_by_id?: string | null
+          severity?: string
+          status?: string
+          title: string
+          updated_at?: string
+          vertical_id?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          current_metrics?: Json | null
+          description?: string | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type?: string
+          id?: string
+          platform?: string
+          projected_impact?: Json | null
+          recommendation_type?: string
+          recommended_action?: Json | null
+          resolved_at?: string | null
+          resolved_by_id?: string | null
+          severity?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          vertical_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_optimization_recommendations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_optimization_recommendations_resolved_by_id_fkey"
+            columns: ["resolved_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -605,41 +784,74 @@ export type Database = {
         Row: {
           ad_group: string
           campaign_id: string
+          clicks: number | null
+          client_id: string | null
+          conversions: number | null
+          cpa: number | null
+          cpc: number | null
           created_at: string
+          ctr: number | null
+          date: string | null
           id: string
           impression_share: number | null
+          impressions: number | null
           intent: string | null
           is_negative: boolean | null
           keyword: string
           match_type: string | null
           negative_category: string | null
+          platform_adset_id: string | null
           quality_score: number | null
+          revenue: number | null
+          spend: number | null
         }
         Insert: {
           ad_group: string
           campaign_id: string
+          clicks?: number | null
+          client_id?: string | null
+          conversions?: number | null
+          cpa?: number | null
+          cpc?: number | null
           created_at?: string
+          ctr?: number | null
+          date?: string | null
           id?: string
           impression_share?: number | null
+          impressions?: number | null
           intent?: string | null
           is_negative?: boolean | null
           keyword: string
           match_type?: string | null
           negative_category?: string | null
+          platform_adset_id?: string | null
           quality_score?: number | null
+          revenue?: number | null
+          spend?: number | null
         }
         Update: {
           ad_group?: string
           campaign_id?: string
+          clicks?: number | null
+          client_id?: string | null
+          conversions?: number | null
+          cpa?: number | null
+          cpc?: number | null
           created_at?: string
+          ctr?: number | null
+          date?: string | null
           id?: string
           impression_share?: number | null
+          impressions?: number | null
           intent?: string | null
           is_negative?: boolean | null
           keyword?: string
           match_type?: string | null
           negative_category?: string | null
+          platform_adset_id?: string | null
           quality_score?: number | null
+          revenue?: number | null
+          spend?: number | null
         }
         Relationships: [
           {
@@ -647,6 +859,13 @@ export type Database = {
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "trafficking_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_keywords_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -1699,6 +1918,77 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ringba_calls_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      search_terms: {
+        Row: {
+          campaign_name: string | null
+          clicks: number
+          client_id: string
+          conversions: number
+          cpa: number | null
+          cpc: number | null
+          created_at: string
+          ctr: number | null
+          date: string
+          id: string
+          impressions: number
+          keyword_text: string | null
+          match_type: string | null
+          platform_adset_id: string
+          platform_campaign_id: string | null
+          revenue: number
+          search_term: string
+          spend: number
+        }
+        Insert: {
+          campaign_name?: string | null
+          clicks?: number
+          client_id: string
+          conversions?: number
+          cpa?: number | null
+          cpc?: number | null
+          created_at?: string
+          ctr?: number | null
+          date: string
+          id?: string
+          impressions?: number
+          keyword_text?: string | null
+          match_type?: string | null
+          platform_adset_id: string
+          platform_campaign_id?: string | null
+          revenue?: number
+          search_term: string
+          spend?: number
+        }
+        Update: {
+          campaign_name?: string | null
+          clicks?: number
+          client_id?: string
+          conversions?: number
+          cpa?: number | null
+          cpc?: number | null
+          created_at?: string
+          ctr?: number | null
+          date?: string
+          id?: string
+          impressions?: number
+          keyword_text?: string | null
+          match_type?: string | null
+          platform_adset_id?: string
+          platform_campaign_id?: string | null
+          revenue?: number
+          search_term?: string
+          spend?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "search_terms_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"

@@ -6,101 +6,20 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-function parseRingbaDate(dt: string): string {
+function parseRingbaDate(dt: any): string {
   if (!dt) return new Date().toISOString();
-  if (dt.includes("T") || dt.match(/^\d{4}-/)) return dt;
-  try {
-    const d = new Date(dt);
-    if (!isNaN(d.getTime())) return d.toISOString();
-  } catch { /* fall through */ }
+  if (typeof dt === "number") return new Date(dt).toISOString();
+  if (typeof dt === "string") {
+    if (dt.includes("T") || dt.match(/^\d{4}-/)) return dt;
+    try {
+      const d = new Date(dt);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    } catch { /* fall through */ }
+  }
   return new Date().toISOString();
 }
 
-function fmtDate(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
-}
-
-const COLUMNS = [
-  "campaignName", "publisherName", "publisherId",
-  "inboundCallId", "callDt", "inboundPhoneNumber", "callerNumber",
-  "callLengthInSeconds", "connectedCallLengthInSeconds",
-  "targetName", "buyer",
-  "profitNet", "totalCost", "telcoCost", "bidAmount",
-  "wasBlocked", "hasConnected", "campaignId",
-  "ringTreeWinningBid", "revenue", "payout",
-].map(c => ({ column: c }));
-
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-/** Fetch one day of calls, all pages */
-async function fetchDay(
-  url: string, token: string, dateStr: string
-): Promise<any[]> {
-  let all: any[] = [];
-  let page = 1;
-
-  while (true) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${token}`,
-        "Content-Type": "application/json;charset=UTF-8",
-        Accept: "application/json, text/plain, */*",
-      },
-      body: JSON.stringify({
-        reportStart: dateStr,
-        reportEnd: dateStr,
-        page,
-        pageSize: 1000,
-        columns: COLUMNS,
-        orderByColumns: [],
-        filters: [],
-        formatDateTime: true,
-        formatPercentages: false,
-      }),
-    });
-
-    if (res.status === 429) {
-      console.log(`  Rate limited on page ${page}, waiting 5s...`);
-      await sleep(5000);
-      continue; // retry same page
-    }
-
-    if (!res.ok) {
-      const t = await res.text();
-      console.error(`Ringba API [${res.status}]: ${t.substring(0, 500)}`);
-      throw new Error(`Ringba API [${res.status}]: ${t.substring(0, 200)}`);
-    }
-
-    const data = await res.json();
-    if (page === 1) {
-      console.log(`  RAW response keys: ${JSON.stringify(Object.keys(data))}`);
-      if (data.report) console.log(`  report keys: ${JSON.stringify(Object.keys(data.report))}`);
-    }
-    const records = data?.report?.records || [];
-    const total = data?.report?.totalCount || 0;
-
-    all = all.concat(records);
-
-    if (page === 1) {
-      console.log(`  ${dateStr}: ${total} total calls, page1=${records.length}`);
-    }
-
-    if (records.length === 0 || all.length >= total) break;
-    page++;
-    if (page > 100) break;
-
-    // Small delay between pages to avoid rate limits
-    if (page % 10 === 0) await sleep(500);
-  }
-  return all;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -119,17 +38,131 @@ Deno.serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     let clientId: string | null = null;
-    let daysBack = 7;
+    let daysBack = 30;
+    let debugMode = false;
 
     if (req.method === "POST") {
       try {
         const body = await req.json();
         clientId = body.client_id || body.clientId || null;
-        daysBack = body.days_back || body.daysBack || 7;
+        daysBack = body.days_back || body.daysBack || 30;
+        debugMode = body.debug || false;
       } catch { /* no body */ }
     }
 
-    // Find client(s)
+    const authHeaders = {
+      Authorization: `Token ${RINGBA_API_TOKEN}`,
+      "Content-Type": "application/json;charset=UTF-8",
+      Accept: "application/json, text/plain, */*",
+    };
+
+    if (debugMode) {
+      // Test multiple approaches to find one that works
+      console.log(`Debug mode - testing different API approaches`);
+
+      // Approach 1: GET /calllogs (no POST)
+      const getRes = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`,
+        { headers: authHeaders }
+      );
+      const getText = await getRes.text();
+      console.log(`GET calllogs [${getRes.status}]: ${getText.substring(0, 500)}`);
+
+      await sleep(1000);
+
+      // Approach 2: POST with reportStart/End in ISO format
+      const postIsoRes = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`,
+        {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            reportStart: "2025-02-01T00:00:00Z",
+            reportEnd: "2025-02-07T23:59:59Z",
+            page: 1,
+            pageSize: 500,
+            columns: [
+              { column: "campaignName" },
+              { column: "publisherName" },
+              { column: "inboundCallId" },
+              { column: "callDt" },
+              { column: "revenue" },
+              { column: "payout" },
+              { column: "conversionAmount" },
+              { column: "callLengthInSeconds" },
+              { column: "hasConverted" },
+              { column: "hasConnected" },
+              { column: "targetName" },
+              { column: "profitNet" },
+            ],
+            filters: [
+              { column: "publisherName", value: "CPM" }
+            ],
+          }),
+        }
+      );
+      const postIsoData = await postIsoRes.json();
+      const isoTotal = postIsoData?.report?.totalCount || 0;
+      const isoRecords = postIsoData?.report?.records || [];
+      console.log(`POST ISO + CPM filter [${postIsoRes.status}]: total=${isoTotal}, records=${isoRecords.length}`);
+      if (isoRecords.length > 0) {
+        console.log(`Sample: ${JSON.stringify(isoRecords[0])}`);
+      }
+
+      await sleep(1000);
+
+      // Approach 3: POST with US date, no filter, just 1 week of 2025 data
+      const postUsRes = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`,
+        {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            reportStart: "02/01/2025",
+            reportEnd: "02/07/2025",
+            page: 1,
+            pageSize: 500,
+            columns: [
+              { column: "campaignName" },
+              { column: "publisherName" },
+              { column: "inboundCallId" },
+              { column: "callDt" },
+              { column: "revenue" },
+              { column: "conversionAmount" },
+              { column: "callLengthInSeconds" },
+              { column: "hasConverted" },
+              { column: "targetName" },
+              { column: "profitNet" },
+            ],
+            filters: [],
+          }),
+        }
+      );
+      const postUsData = await postUsRes.json();
+      const usTotal = postUsData?.report?.totalCount || 0;
+      const usRecords = postUsData?.report?.records || [];
+      console.log(`POST US date no filter [${postUsRes.status}]: total=${usTotal}, records=${usRecords.length}`);
+      if (usRecords.length > 0) {
+        // Show unique publishers
+        const pubs = [...new Set(usRecords.map((r: any) => r.publisherName))];
+        console.log(`Publishers in sample: ${JSON.stringify(pubs)}`);
+        // Check for CPM
+        const cpmSample = usRecords.filter((r: any) => (r.publisherName || "").toLowerCase() === "cpm");
+        console.log(`CPM in sample: ${cpmSample.length}`);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true, debug: true,
+          get_status: getRes.status,
+          iso_total: isoTotal, iso_records: isoRecords.length,
+          us_total: usTotal, us_records: usRecords.length,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Normal sync mode - find clients
     let clientIds: string[] = [];
     if (clientId) {
       clientIds = [clientId];
@@ -156,63 +189,115 @@ Deno.serve(async (req) => {
       );
     }
 
-    const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
+    // Fetch CPM calls using ISO date format with filter
     const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - daysBack);
+    
+    const startISO = startDate.toISOString();
+    const endISO = endDate.toISOString();
 
-    console.log(`Account ID: ${RINGBA_ACCOUNT_ID}`);
-    console.log(`Ringba URL: ${ringbaUrl}`);
-    console.log(`Syncing ${daysBack} days, day by day`);
+    console.log(`Fetching CPM calls from ${startISO} to ${endISO}`);
 
     let allCpmCalls: any[] = [];
-    const allPubs = new Set<string>();
+    let page = 1;
+    let totalCount = 0;
+    let retries = 0;
 
-    for (let d = 0; d < daysBack; d++) {
-      const day = addDays(endDate, -d);
-      const dayStr = fmtDate(day);
-
-      const dayCalls = await fetchDay(ringbaUrl, RINGBA_API_TOKEN, dayStr);
-
-      // Track publishers
-      for (const c of dayCalls) allPubs.add(c.publisherName || "unknown");
-
-      // Filter CPM publisher
-      const cpm = dayCalls.filter((c: any) =>
-        (c.publisherName || "").toLowerCase() === "cpm"
+    while (retries < 10) {
+      const res = await fetch(
+        `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`,
+        {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            reportStart: startISO,
+            reportEnd: endISO,
+            page,
+            pageSize: 500,
+            columns: [
+              { column: "campaignName" },
+              { column: "publisherName" },
+              { column: "publisherId" },
+              { column: "inboundCallId" },
+              { column: "callDt" },
+              { column: "inboundPhoneNumber" },
+              { column: "callerNumber" },
+              { column: "callLengthInSeconds" },
+              { column: "connectedCallLengthInSeconds" },
+              { column: "targetName" },
+              { column: "buyer" },
+              { column: "profitNet" },
+              { column: "totalCost" },
+              { column: "telcoCost" },
+              { column: "bidAmount" },
+              { column: "wasBlocked" },
+              { column: "hasConnected" },
+              { column: "hasConverted" },
+              { column: "campaignId" },
+              { column: "ringTreeWinningBid" },
+              { column: "revenue" },
+              { column: "payout" },
+              { column: "conversionAmount" },
+              { column: "payoutAmount" },
+            ],
+            filters: [
+              { column: "publisherName", value: "CPM" }
+            ],
+          }),
+        }
       );
 
-      if (cpm.length > 0) {
-        console.log(`  → ${cpm.length} CPM calls on ${dayStr}`);
-        allCpmCalls = allCpmCalls.concat(cpm);
+      if (res.status === 429) {
+        retries++;
+        console.log(`Rate limited on page ${page}, retry ${retries}, waiting 15s...`);
+        await sleep(15000);
+        continue;
       }
 
-      // Delay between days
-      if (d < daysBack - 1) await sleep(300);
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`Ringba API [${res.status}]: ${t.substring(0, 200)}`);
+      }
+
+      const data = await res.json();
+      const records = data?.report?.records || [];
+      
+      if (page === 1) {
+        totalCount = data?.report?.totalCount || 0;
+        console.log(`Total CPM calls found: ${totalCount}`);
+        if (records.length > 0) {
+          console.log(`Sample: ${JSON.stringify({
+            campaign: records[0].campaignName,
+            publisher: records[0].publisherName,
+            revenue: records[0].conversionAmount || records[0].revenue,
+            callDt: records[0].callDt,
+          })}`);
+        }
+      }
+
+      allCpmCalls = allCpmCalls.concat(records);
+
+      if (records.length === 0 || allCpmCalls.length >= totalCount) break;
+      page++;
+      if (page > 200) break;
+      
+      // Respect rate limits but keep it fast enough for edge function timeout
+      await sleep(2000);
     }
 
-    console.log(`Total CPM calls: ${allCpmCalls.length}`);
-    console.log(`All publishers: ${JSON.stringify([...allPubs])}`);
-
-    if (allCpmCalls.length > 0) {
-      console.log("Sample CPM:", JSON.stringify({
-        campaign: allCpmCalls[0].campaignName,
-        publisher: allCpmCalls[0].publisherName,
-        revenue: allCpmCalls[0].revenue,
-        profitNet: allCpmCalls[0].profitNet,
-        bidAmount: allCpmCalls[0].bidAmount,
-        target: allCpmCalls[0].targetName,
-        duration: allCpmCalls[0].callLengthInSeconds,
-      }));
-    }
+    console.log(`Fetched ${allCpmCalls.length} CPM calls total`);
 
     const uniqueCampaigns = [...new Set(allCpmCalls.map((c: any) => c.campaignName || "unknown"))];
+    console.log(`Campaigns: ${JSON.stringify(uniqueCampaigns)}`);
 
-    // Upsert CPM calls
+    // Upsert calls
     let totalInserted = 0;
     for (const cId of clientIds) {
       const rows = allCpmCalls.map((call: any) => {
         const callId = call.inboundCallId || `${call.callDt}-${Math.random()}`;
-        const revenue = Number(call.revenue || call.ringTreeWinningBid || call.profitNet || 0);
-        const payout = Number(call.payout || call.totalCost || 0);
+        const revenue = Number(call.conversionAmount || call.revenue || call.ringTreeWinningBid || call.profitNet || 0);
+        const payout = Number(call.payoutAmount || call.payout || call.totalCost || 0);
         const duration = call.callLengthInSeconds || call.connectedCallLengthInSeconds || 0;
 
         return {
@@ -224,7 +309,7 @@ Deno.serve(async (req) => {
           caller_number: call.callerNumber || null,
           duration_seconds: duration,
           connected: call.hasConnected ?? (duration > 0 && !call.wasBlocked),
-          converted: revenue > 0,
+          converted: call.hasConverted ?? revenue > 0,
           revenue,
           payout,
           inbound_number: call.inboundPhoneNumber || null,
@@ -238,11 +323,11 @@ Deno.serve(async (req) => {
             totalCost: call.totalCost,
             telcoCost: call.telcoCost,
             winningBid: call.ringTreeWinningBid,
+            conversionAmount: call.conversionAmount,
           },
         };
       });
 
-      // Deduplicate
       const seen = new Set<string>();
       const deduped = rows.filter(r => {
         if (seen.has(r.call_id)) return false;
@@ -269,10 +354,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        cpm_calls: allCpmCalls.length,
+        total_cpm_calls: allCpmCalls.length,
         calls_synced: totalInserted,
         campaigns_found: uniqueCampaigns,
-        publishers_found: [...allPubs],
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

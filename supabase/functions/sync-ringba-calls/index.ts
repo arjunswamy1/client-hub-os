@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     // Ringba CallLogs endpoint uses POST with date body
-    const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs/date`;
+    const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/CallLogs/Date`;
 
     console.log(`Fetching Ringba calls from ${formatDate(startDate)} to ${formatDate(endDate)}`);
 

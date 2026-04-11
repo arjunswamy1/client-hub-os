@@ -148,8 +148,10 @@ Deno.serve(async (req) => {
         const revenue = Number(call.revenue || call.payoutAmount || call.profitNet || 0);
         const payout = Number(call.payout || call.publisherPayout || call.totalCost || 0);
         const duration = call.callLengthInSeconds || call.duration || call.timeToCallInSeconds || 0;
-        const connected = call.connected ?? call.isConnected ?? (call.connectedDuration > 0) ?? (!call.wasBlocked);
-        const converted = call.converted ?? call.isConverted ?? false;
+        // Derive connected/converted from available data since Ringba calllogs
+        // don't always include explicit boolean flags
+        const connected = call.connected ?? call.isConnected ?? (duration > 0 && !call.wasBlocked);
+        const converted = call.converted ?? call.isConverted ?? (revenue > 0);
 
         return {
           client_id: cId,

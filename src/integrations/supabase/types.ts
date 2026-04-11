@@ -260,6 +260,57 @@ export type Database = {
           },
         ]
       }
+      agenda_templates: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          id: string
+          is_default: boolean
+          name: string
+          sections: Json
+          template_type: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          is_default?: boolean
+          name: string
+          sections?: Json
+          template_type?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          is_default?: boolean
+          name?: string
+          sections?: Json
+          template_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agenda_templates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agenda_templates_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_copy_generations: {
         Row: {
           ads_analyzed: number | null
@@ -376,6 +427,7 @@ export type Database = {
       call_agendas: {
         Row: {
           agenda_content: Json | null
+          ai_context: Json | null
           call_date: string
           call_type: string
           client_id: string
@@ -384,12 +436,15 @@ export type Database = {
           id: string
           notes_content: Json | null
           published_at: string | null
+          source_agenda_id: string | null
           status: string
+          template_id: string | null
           title: string
           updated_at: string
         }
         Insert: {
           agenda_content?: Json | null
+          ai_context?: Json | null
           call_date: string
           call_type?: string
           client_id: string
@@ -398,12 +453,15 @@ export type Database = {
           id?: string
           notes_content?: Json | null
           published_at?: string | null
+          source_agenda_id?: string | null
           status?: string
+          template_id?: string | null
           title: string
           updated_at?: string
         }
         Update: {
           agenda_content?: Json | null
+          ai_context?: Json | null
           call_date?: string
           call_type?: string
           client_id?: string
@@ -412,7 +470,9 @@ export type Database = {
           id?: string
           notes_content?: Json | null
           published_at?: string | null
+          source_agenda_id?: string | null
           status?: string
+          template_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -429,6 +489,20 @@ export type Database = {
             columns: ["created_by_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_agendas_source_agenda_id_fkey"
+            columns: ["source_agenda_id"]
+            isOneToOne: false
+            referencedRelation: "call_agendas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_agendas_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "agenda_templates"
             referencedColumns: ["id"]
           },
         ]

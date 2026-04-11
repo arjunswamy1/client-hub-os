@@ -50,6 +50,24 @@ export const SIZE_GROUPS: { category: string; platforms: string[]; sizes: SizePr
     ],
   },
   {
+    category: 'Programmatic / DSP',
+    platforms: ['programmatic_dsp'],
+    sizes: [
+      { label: 'Medium Rectangle', width: 300, height: 250 },
+      { label: 'Leaderboard', width: 728, height: 90 },
+      { label: 'Wide Skyscraper', width: 160, height: 600 },
+      { label: 'Half Page', width: 300, height: 600 },
+      { label: 'Billboard', width: 970, height: 250 },
+      { label: 'Large Leaderboard', width: 970, height: 90 },
+      { label: 'Mobile Interstitial', width: 320, height: 480 },
+      { label: 'Smartphone Banner', width: 320, height: 50 },
+      { label: 'Tablet Banner', width: 768, height: 90 },
+      { label: 'Native (1200×627)', width: 1200, height: 627 },
+      { label: 'Native Square', width: 1200, height: 1200 },
+      { label: 'Pre-Roll Video (1920×1080)', width: 1920, height: 1080 },
+    ],
+  },
+  {
     category: 'Email & Landing Page',
     platforms: ['email', 'landing_page'],
     sizes: [
@@ -90,6 +108,7 @@ export const PLATFORMS = [
   { value: 'google_youtube', label: 'Google (YouTube)' },
   { value: 'tiktok', label: 'TikTok' },
   { value: 'ott_ctv', label: 'OTT / CTV' },
+  { value: 'programmatic_dsp', label: 'Programmatic / DSP' },
   { value: 'email', label: 'Email' },
   { value: 'landing_page', label: 'Landing Page' },
   { value: 'other', label: 'Other' },

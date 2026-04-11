@@ -65,8 +65,6 @@ async function fetchDay(
         columns: COLUMNS,
         orderByColumns: [],
         filters: [],
-        formatDateTime: true,
-        formatPercentages: false,
       }),
     });
 

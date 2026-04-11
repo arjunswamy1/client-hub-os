@@ -177,31 +177,21 @@ Deno.serve(async (req) => {
       if (page % 20 === 0) await sleep(1000);
     }
 
-    console.log(`Fetched ${allCalls.length} total calls`);
+    console.log(`Fetched ${allCalls.length} CPM calls`);
 
-    // Find all publishers
-    const allPubs = new Set<string>();
-    for (const c of allCalls) allPubs.add(c.publisherName || "unknown");
-    console.log(`Publishers: ${JSON.stringify([...allPubs])}`);
-
-    // Filter CPM publisher
-    const cpmCalls = allCalls.filter((c: any) =>
-      (c.publisherName || "").toLowerCase() === "cpm"
-    );
-
-    console.log(`CPM calls: ${cpmCalls.length}`);
+    // All calls are already CPM-filtered
+    const cpmCalls = allCalls;
 
     if (cpmCalls.length > 0) {
       const campaigns = [...new Set(cpmCalls.map((c: any) => c.campaignName))];
       console.log(`CPM campaigns: ${JSON.stringify(campaigns)}`);
-      console.log(`Sample CPM call: ${JSON.stringify({
+      console.log(`Sample: ${JSON.stringify({
         campaign: cpmCalls[0].campaignName,
         publisher: cpmCalls[0].publisherName,
         revenue: cpmCalls[0].conversionAmount || cpmCalls[0].revenue || cpmCalls[0].ringTreeWinningBid,
         payout: cpmCalls[0].payoutAmount || cpmCalls[0].payout,
         profit: cpmCalls[0].profitNet,
         duration: cpmCalls[0].callLengthInSeconds,
-        converted: cpmCalls[0].hasConverted,
         callDt: cpmCalls[0].callDt,
       })}`);
     }

@@ -2,7 +2,8 @@ import { useVerticalKPIs } from "@/hooks/useBillyData";
 import { useRingbaByPlatform } from "@/hooks/useRingbaByPlatform";
 import { useVertical } from "@/contexts/VerticalContext";
 import KPICard from "@/components/dashboard/KPICard";
-import BillyCampaignTable from "@/components/dashboard/BillyCampaignTable";
+import DrillDownCampaignTable from "@/components/dashboard/DrillDownCampaignTable";
+import CreativeReporting from "@/components/dashboard/CreativeReporting";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BillyMetaDashboard() {
@@ -54,7 +55,11 @@ export default function BillyMetaDashboard() {
         <KPICard title="Impressions" value={impressions.toLocaleString()} />
       </div>
 
-      <BillyCampaignTable platform="meta" />
+      {/* Creative Performance: Top Creatives, Format Comparison, Fatigue Alerts */}
+      <CreativeReporting />
+
+      {/* Drill-down campaign table: Campaign → Ad Set → Ad */}
+      <DrillDownCampaignTable platform="meta" />
     </div>
   );
 }

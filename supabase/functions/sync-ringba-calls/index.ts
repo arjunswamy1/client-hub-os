@@ -115,17 +115,21 @@ Deno.serve(async (req) => {
 
       if (page === 1) {
         console.log("Ringba response keys:", JSON.stringify(Object.keys(data)));
+        if (data.report) {
+          console.log("report keys:", JSON.stringify(Object.keys(data.report)));
+          console.log("report sample:", JSON.stringify(data.report).substring(0, 1000));
+        }
         if (data.callLog) {
           console.log("callLog keys:", JSON.stringify(Object.keys(data.callLog)));
         }
       }
 
-      // Ringba returns calls in callLog.data
-      const calls = data?.callLog?.data || data?.calls || data?.data || [];
+      // Ringba may return in report.records, callLog.data, or other structures
+      const calls = data?.report?.records || data?.report?.data || data?.callLog?.data || data?.calls || data?.data || [];
 
       if (!Array.isArray(calls)) {
-        console.log("Unexpected response shape:", JSON.stringify(data).substring(0, 1000));
-        throw new Error("Unexpected Ringba response format");
+        console.log("Full response (truncated):", JSON.stringify(data).substring(0, 2000));
+        throw new Error("Unexpected Ringba response format - no array found");
       }
 
       allCalls = allCalls.concat(calls);

@@ -43,7 +43,8 @@ const COLUMNS = [
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 async function fetchPage(
-  url: string, token: string, startDate: string, endDate: string, page: number
+  url: string, token: string, startDate: string, endDate: string, page: number,
+  filters: any[] = []
 ): Promise<{ records: any[]; totalCount: number }> {
   const res = await fetch(url, {
     method: "POST",
@@ -59,7 +60,7 @@ async function fetchPage(
       pageSize: 100,
       columns: COLUMNS,
       orderByColumns: [],
-      filters: [],
+      filters,
     }),
   });
 

@@ -59,8 +59,10 @@ export interface CampaignRow {
   conversions: number;
   impressionShare: number | null;
   biddingStrategy: string | null;
+  bidStrategyDetails: Record<string, any> | null;
   campaignType: string | null;
   dailyBudget: number | null;
+  accountId: string | null;
 }
 
 function calcKPIs(data: any[]): KPIData {

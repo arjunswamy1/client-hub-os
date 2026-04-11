@@ -20,27 +20,32 @@ function fmtDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
 const COLUMNS = [
   "campaignName", "publisherName", "publisherId",
   "inboundCallId", "callDt", "inboundPhoneNumber", "callerNumber",
   "callLengthInSeconds", "connectedCallLengthInSeconds",
   "targetName", "buyer",
   "profitNet", "totalCost", "telcoCost", "bidAmount",
-  "wasBlocked", "blockReason", "hasConnected",
-  "campaignId", "numberPoolName",
+  "wasBlocked", "hasConnected", "campaignId",
   "ringTreeWinningBid", "revenue", "payout",
 ].map(c => ({ column: c }));
 
-/** Fetch one date-range chunk, paginating up to maxPages */
-async function fetchChunk(
-  url: string, token: string,
-  startStr: string, endStr: string,
-  maxPages = 200
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Fetch one day of calls, all pages */
+async function fetchDay(
+  url: string, token: string, dateStr: string
 ): Promise<any[]> {
   let all: any[] = [];
   let page = 1;
 
-  while (page <= maxPages) {
+  while (true) {
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -49,8 +54,8 @@ async function fetchChunk(
         Accept: "application/json, text/plain, */*",
       },
       body: JSON.stringify({
-        reportStart: startStr,
-        reportEnd: endStr,
+        reportStart: dateStr,
+        reportEnd: dateStr,
         page,
         pageSize: 1000,
         columns: COLUMNS,
@@ -60,6 +65,12 @@ async function fetchChunk(
         formatPercentages: false,
       }),
     });
+
+    if (res.status === 429) {
+      console.log(`  Rate limited on page ${page}, waiting 5s...`);
+      await sleep(5000);
+      continue; // retry same page
+    }
 
     if (!res.ok) {
       const t = await res.text();
@@ -73,11 +84,15 @@ async function fetchChunk(
     all = all.concat(records);
 
     if (page === 1) {
-      console.log(`  Chunk ${startStr}→${endStr}: ${total} total, page1=${records.length}`);
+      console.log(`  ${dateStr}: ${total} total calls, page1=${records.length}`);
     }
 
     if (records.length === 0 || all.length >= total) break;
     page++;
+    if (page > 100) break;
+
+    // Small delay between pages to avoid rate limits
+    if (page % 10 === 0) await sleep(500);
   }
   return all;
 }
@@ -137,65 +152,61 @@ Deno.serve(async (req) => {
     }
 
     const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
-
-    // Break into 3-day chunks to avoid timeouts
-    const chunkDays = 3;
     const endDate = new Date();
-    const chunks: { start: string; end: string }[] = [];
-    for (let d = 0; d < daysBack; d += chunkDays) {
-      const cEnd = new Date(endDate);
-      cEnd.setDate(cEnd.getDate() - d);
-      const cStart = new Date(endDate);
-      cStart.setDate(cStart.getDate() - Math.min(d + chunkDays - 1, daysBack - 1));
-      chunks.push({ start: fmtDate(cStart), end: fmtDate(cEnd) });
+
+    console.log(`Syncing ${daysBack} days, day by day`);
+
+    let allCpmCalls: any[] = [];
+    const allPubs = new Set<string>();
+
+    for (let d = 0; d < daysBack; d++) {
+      const day = addDays(endDate, -d);
+      const dayStr = fmtDate(day);
+
+      const dayCalls = await fetchDay(ringbaUrl, RINGBA_API_TOKEN, dayStr);
+
+      // Track publishers
+      for (const c of dayCalls) allPubs.add(c.publisherName || "unknown");
+
+      // Filter CPM publisher
+      const cpm = dayCalls.filter((c: any) =>
+        (c.publisherName || "").toLowerCase() === "cpm"
+      );
+
+      if (cpm.length > 0) {
+        console.log(`  → ${cpm.length} CPM calls on ${dayStr}`);
+        allCpmCalls = allCpmCalls.concat(cpm);
+      }
+
+      // Delay between days
+      if (d < daysBack - 1) await sleep(300);
     }
 
-    console.log(`Fetching ${daysBack} days in ${chunks.length} chunks of ${chunkDays} days`);
+    console.log(`Total CPM calls: ${allCpmCalls.length}`);
+    console.log(`All publishers: ${JSON.stringify([...allPubs])}`);
 
-    let allCalls: any[] = [];
-    for (const chunk of chunks) {
-      const calls = await fetchChunk(ringbaUrl, RINGBA_API_TOKEN, chunk.start, chunk.end);
-      allCalls = allCalls.concat(calls);
-    }
-
-    console.log(`Total fetched: ${allCalls.length}`);
-
-    // Filter for CPM publisher only
-    const cpmCalls = allCalls.filter((c: any) =>
-      (c.publisherName || "").toLowerCase() === "cpm"
-    );
-
-    // Log all publishers for debugging
-    const allPubs = [...new Set(allCalls.map((c: any) => c.publisherName || "unknown"))];
-    console.log(`Publishers found: ${JSON.stringify(allPubs)}`);
-    console.log(`CPM calls: ${cpmCalls.length} of ${allCalls.length}`);
-
-    if (cpmCalls.length > 0) {
-      console.log("Sample CPM call:", JSON.stringify({
-        campaign: cpmCalls[0].campaignName,
-        publisher: cpmCalls[0].publisherName,
-        revenue: cpmCalls[0].revenue,
-        profitNet: cpmCalls[0].profitNet,
-        bidAmount: cpmCalls[0].bidAmount,
-        winningBid: cpmCalls[0].ringTreeWinningBid,
-        duration: cpmCalls[0].callLengthInSeconds,
-        target: cpmCalls[0].targetName,
+    if (allCpmCalls.length > 0) {
+      console.log("Sample CPM:", JSON.stringify({
+        campaign: allCpmCalls[0].campaignName,
+        publisher: allCpmCalls[0].publisherName,
+        revenue: allCpmCalls[0].revenue,
+        profitNet: allCpmCalls[0].profitNet,
+        bidAmount: allCpmCalls[0].bidAmount,
+        target: allCpmCalls[0].targetName,
+        duration: allCpmCalls[0].callLengthInSeconds,
       }));
     }
 
-    const uniqueCampaigns = [...new Set(cpmCalls.map((c: any) => c.campaignName || "unknown"))];
-    console.log("CPM campaigns:", JSON.stringify(uniqueCampaigns));
+    const uniqueCampaigns = [...new Set(allCpmCalls.map((c: any) => c.campaignName || "unknown"))];
 
+    // Upsert CPM calls
     let totalInserted = 0;
-
     for (const cId of clientIds) {
-      const rows = cpmCalls.map((call: any) => {
-        const callId = call.inboundCallId || `${call.callDt}-${call.inboundPhoneNumber || Math.random()}`;
+      const rows = allCpmCalls.map((call: any) => {
+        const callId = call.inboundCallId || `${call.callDt}-${Math.random()}`;
         const revenue = Number(call.revenue || call.ringTreeWinningBid || call.profitNet || 0);
         const payout = Number(call.payout || call.totalCost || 0);
         const duration = call.callLengthInSeconds || call.connectedCallLengthInSeconds || 0;
-        const connected = call.hasConnected ?? (duration > 0 && !call.wasBlocked);
-        const converted = revenue > 0;
 
         return {
           client_id: cId,
@@ -205,19 +216,16 @@ Deno.serve(async (req) => {
           target_name: call.targetName || null,
           caller_number: call.callerNumber || null,
           duration_seconds: duration,
-          connected,
-          converted,
+          connected: call.hasConnected ?? (duration > 0 && !call.wasBlocked),
+          converted: revenue > 0,
           revenue,
           payout,
           inbound_number: call.inboundPhoneNumber || null,
           metadata: {
-            campaignId: call.campaignId,
-            publisherId: call.publisherId,
             publisherName: call.publisherName,
+            publisherId: call.publisherId,
             buyer: call.buyer,
-            targetName: call.targetName,
-            numberPoolName: call.numberPoolName,
-            wasBlocked: call.wasBlocked,
+            campaignId: call.campaignId,
             bidAmount: call.bidAmount,
             profitNet: call.profitNet,
             totalCost: call.totalCost,
@@ -254,11 +262,10 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        total_fetched: allCalls.length,
-        cpm_calls: cpmCalls.length,
+        cpm_calls: allCpmCalls.length,
         calls_synced: totalInserted,
         campaigns_found: uniqueCampaigns,
-        publishers_found: allPubs,
+        publishers_found: [...allPubs],
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

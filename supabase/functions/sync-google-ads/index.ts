@@ -680,8 +680,27 @@ async function queryGoogleAds(customerId: string, accessToken: string, developer
 }
 
 async function batchUpsert(supabase: any, table: string, rows: any[], onConflict: string, batchSize = 200) {
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const chunk = rows.slice(i, i + batchSize);
+  // Deduplicate by conflict keys to avoid "cannot affect row a second time"
+  const conflictKeys = onConflict.split(",").map(k => k.trim());
+  const deduped = new Map<string, any>();
+  for (const row of rows) {
+    const key = conflictKeys.map(k => row[k] ?? "").join("|");
+    if (deduped.has(key)) {
+      // Merge numeric fields (sum them)
+      const existing = deduped.get(key)!;
+      for (const [field, val] of Object.entries(row)) {
+        if (typeof val === "number" && !conflictKeys.includes(field)) {
+          existing[field] = (existing[field] || 0) + val;
+        }
+      }
+    } else {
+      deduped.set(key, { ...row });
+    }
+  }
+  const dedupedRows = Array.from(deduped.values());
+  
+  for (let i = 0; i < dedupedRows.length; i += batchSize) {
+    const chunk = dedupedRows.slice(i, i + batchSize);
     const { error } = await supabase.from(table).upsert(chunk, { onConflict });
     if (error) console.error(`Batch upsert error on ${table}:`, error.message);
   }

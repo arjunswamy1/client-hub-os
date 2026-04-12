@@ -265,8 +265,15 @@ function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformA
           keyword={optimizerKw.keyword}
           matchType={optimizerKw.matchType}
           qualityScore={optimizerKw.qualityScore}
-          currentHeadlines={ads?.flatMap(a => [a.adName].filter(Boolean)) ?? []}
-          currentDescriptions={[]}
+          currentHeadlines={ads?.flatMap(a => [
+            ...(a.headlines || []),
+            ...(a.headline ? [a.headline] : []),
+          ].filter(Boolean)) ?? []}
+          currentDescriptions={ads?.flatMap(a => [
+            ...(a.descriptions || []),
+            ...(a.description ? [a.description] : []),
+            ...(a.primaryText ? [a.primaryText] : []),
+          ].filter(Boolean)) ?? []}
           campaignName={campaignName}
           adGroupName={adGroupName}
         />

@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Sparkles, Copy, Check, Lightbulb, AlertTriangle, FileText } from "lucide-react";
@@ -49,6 +50,47 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
     </Button>
+  );
+}
+
+/** Render items in a grid table: `cols` columns */
+function GridTable({ items, maxLen, cols = 5 }: { items: string[]; maxLen: number; cols?: number }) {
+  if (items.length === 0) return null;
+  const rows: string[][] = [];
+  for (let i = 0; i < items.length; i += cols) {
+    rows.push(items.slice(i, i + cols));
+  }
+  // pad last row
+  const lastRow = rows[rows.length - 1];
+  while (lastRow.length < cols) lastRow.push("");
+
+  return (
+    <div className="overflow-auto rounded border">
+      <Table>
+        <TableBody>
+          {rows.map((row, ri) => (
+            <TableRow key={ri}>
+              {row.map((cell, ci) => (
+                <TableCell key={ci} className="py-1.5 px-2 text-xs whitespace-nowrap">
+                  {cell ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate max-w-[200px]" title={cell}>{cell}</span>
+                      <Badge
+                        variant={cell.length <= maxLen ? "secondary" : "destructive"}
+                        className="text-[9px] shrink-0"
+                      >
+                        {cell.length}/{maxLen}
+                      </Badge>
+                      <CopyButton text={cell} />
+                    </div>
+                  ) : null}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -114,7 +156,7 @@ export default function HeadlineOptimizerModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] p-0">
+      <DialogContent className="max-w-5xl max-h-[90vh] p-0">
         <DialogHeader className="p-6 pb-3">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -125,10 +167,10 @@ export default function HeadlineOptimizerModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[70vh]">
+        <ScrollArea className="max-h-[80vh]">
           <div className="px-6 pb-6 space-y-4">
             {/* Keyword Context */}
-            <div className="rounded-lg border p-4 space-y-3">
+            <div className="rounded-lg border p-4 space-y-1">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">"{keyword}"</span>
@@ -150,41 +192,27 @@ export default function HeadlineOptimizerModal({
                   {campaignName} {adGroupName ? `→ ${adGroupName}` : ""}
                 </p>
               )}
-
-              {/* Current Headlines */}
-              {dedupedHeadlines.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1.5">Current Headlines ({dedupedHeadlines.length}):</p>
-                  <div className="space-y-1">
-                    {dedupedHeadlines.map((h, i) => (
-                      <div key={i} className="flex items-center justify-between rounded border px-2.5 py-1.5 bg-muted/30">
-                        <span className="text-xs">{h}</span>
-                        <Badge variant="secondary" className="text-[9px] shrink-0 ml-2">{h.length}/30</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Current Descriptions */}
-              {dedupedDescriptions.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1.5">Current Descriptions ({dedupedDescriptions.length}):</p>
-                  <div className="space-y-1">
-                    {dedupedDescriptions.map((d, i) => (
-                      <div key={i} className="flex items-center justify-between rounded border px-2.5 py-1.5 bg-muted/30">
-                        <span className="text-xs">{d}</span>
-                        <Badge variant="secondary" className="text-[9px] shrink-0 ml-2">{d.length}/90</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {dedupedHeadlines.length === 0 && dedupedDescriptions.length === 0 && (
-                <p className="text-xs text-muted-foreground italic">No existing ad copy found for this ad group. AI will generate fresh suggestions.</p>
-              )}
             </div>
+
+            {/* Current Headlines — table grid */}
+            {dedupedHeadlines.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold mb-1.5">Current Headlines ({dedupedHeadlines.length})</p>
+                <GridTable items={dedupedHeadlines} maxLen={30} cols={5} />
+              </div>
+            )}
+
+            {/* Current Descriptions — table grid */}
+            {dedupedDescriptions.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold mb-1.5">Current Descriptions ({dedupedDescriptions.length})</p>
+                <GridTable items={dedupedDescriptions} maxLen={90} cols={3} />
+              </div>
+            )}
+
+            {dedupedHeadlines.length === 0 && dedupedDescriptions.length === 0 && (
+              <p className="text-xs text-muted-foreground italic">No existing ad copy found for this ad group. AI will generate fresh suggestions.</p>
+            )}
 
             {/* Custom Prompt / Direction */}
             <div>
@@ -199,7 +227,7 @@ export default function HeadlineOptimizerModal({
                 rows={2}
               />
               <p className="text-[10px] text-muted-foreground mt-1">
-                Tell the AI what messaging angle or key selling points to emphasize in the headlines.
+                Tell the AI what messaging angle or key selling points to emphasize.
               </p>
             </div>
 
@@ -220,7 +248,6 @@ export default function HeadlineOptimizerModal({
                 </div>
                 <Skeleton className="h-20 rounded-lg" />
                 <Skeleton className="h-32 rounded-lg" />
-                <Skeleton className="h-24 rounded-lg" />
               </div>
             )}
 
@@ -251,53 +278,67 @@ export default function HeadlineOptimizerModal({
 
                 <Separator />
 
-                {/* Headlines */}
+                {/* Suggested Headlines — table */}
                 <div>
                   <p className="text-sm font-semibold mb-2">Suggested Headlines</p>
-                  <div className="space-y-2">
-                    {result.headlines.map((h, i) => (
-                      <div key={i} className="rounded-lg border p-3 flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{h.text}</span>
-                            <Badge
-                              variant={h.text.length <= 30 ? "secondary" : "destructive"}
-                              className="text-[9px] shrink-0"
-                            >
-                              {h.text.length}/30
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{h.rationale}</p>
-                        </div>
-                        <CopyButton text={h.text} />
-                      </div>
-                    ))}
+                  <div className="overflow-auto rounded border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs w-[260px]">Headline</TableHead>
+                          <TableHead className="text-xs w-[60px]">Chars</TableHead>
+                          <TableHead className="text-xs">Rationale</TableHead>
+                          <TableHead className="text-xs w-[40px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {result.headlines.map((h, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="py-1.5 font-medium text-sm">{h.text}</TableCell>
+                            <TableCell className="py-1.5">
+                              <Badge variant={h.text.length <= 30 ? "secondary" : "destructive"} className="text-[9px]">
+                                {h.text.length}/30
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-1.5 text-xs text-muted-foreground">{h.rationale}</TableCell>
+                            <TableCell className="py-1.5"><CopyButton text={h.text} /></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
 
                 <Separator />
 
-                {/* Descriptions */}
+                {/* Suggested Descriptions — table */}
                 <div>
                   <p className="text-sm font-semibold mb-2">Suggested Descriptions</p>
-                  <div className="space-y-2">
-                    {result.descriptions.map((d, i) => (
-                      <div key={i} className="rounded-lg border p-3 flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm">{d.text}</span>
-                            <Badge
-                              variant={d.text.length <= 90 ? "secondary" : "destructive"}
-                              className="text-[9px] shrink-0"
-                            >
-                              {d.text.length}/90
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{d.rationale}</p>
-                        </div>
-                        <CopyButton text={d.text} />
-                      </div>
-                    ))}
+                  <div className="overflow-auto rounded border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Description</TableHead>
+                          <TableHead className="text-xs w-[60px]">Chars</TableHead>
+                          <TableHead className="text-xs w-[300px]">Rationale</TableHead>
+                          <TableHead className="text-xs w-[40px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {result.descriptions.map((d, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="py-1.5 text-sm">{d.text}</TableCell>
+                            <TableCell className="py-1.5">
+                              <Badge variant={d.text.length <= 90 ? "secondary" : "destructive"} className="text-[9px]">
+                                {d.text.length}/90
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-1.5 text-xs text-muted-foreground">{d.rationale}</TableCell>
+                            <TableCell className="py-1.5"><CopyButton text={d.text} /></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
 

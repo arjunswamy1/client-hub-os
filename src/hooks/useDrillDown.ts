@@ -185,6 +185,8 @@ export function useAdSetAds(platformAdsetId: string | null) {
         descriptions: row.descriptions as string[] | null,
         description: row.description as string | null,
         primaryText: row.primary_text as string | null,
+        finalUrl: row.final_url as string | null,
+        displayUrl: row.display_url as string | null,
       })).sort((a, b) => b.spend - a.spend);
     },
   });

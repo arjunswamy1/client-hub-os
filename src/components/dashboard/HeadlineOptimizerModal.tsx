@@ -21,6 +21,7 @@ interface HeadlineOptimizerProps {
   currentDescriptions?: string[];
   campaignName?: string;
   adGroupName?: string;
+  landingPageUrl?: string;
 }
 
 interface Suggestion {
@@ -139,6 +140,7 @@ export default function HeadlineOptimizerModal({
   currentDescriptions = [],
   campaignName,
   adGroupName,
+  landingPageUrl,
 }: HeadlineOptimizerProps) {
   const [result, setResult] = useState<AIResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -160,6 +162,7 @@ export default function HeadlineOptimizerModal({
           currentDescriptions,
           campaignName,
           adGroupName,
+          landingPageUrl,
           customPrompt: customPrompt.trim() || undefined,
         },
       });
@@ -224,6 +227,15 @@ export default function HeadlineOptimizerModal({
                 </div>
               )}
             </div>
+
+            {/* Landing Page URL */}
+            {landingPageUrl && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground rounded-lg border px-4 py-2">
+                <span className="font-medium text-foreground">Landing Page:</span>
+                <a href={landingPageUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">{landingPageUrl}</a>
+                <span className="text-[10px] shrink-0">• AI will analyze for keyword↔LP alignment</span>
+              </div>
+            )}
 
             {/* Current Headlines */}
             {dedupedHeadlines.length > 0 && (

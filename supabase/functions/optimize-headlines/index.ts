@@ -6,11 +6,42 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function fetchLandingPageContent(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AdCopyOptimizer/1.0)" },
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) return null;
+    const html = await resp.text();
+    // Extract text content: strip tags, scripts, styles
+    const cleaned = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    // Limit to ~3000 chars to avoid token bloat
+    return cleaned.slice(0, 3000);
+  } catch {
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { keyword, matchType, qualityScore, currentHeadlines, currentDescriptions, campaignName, adGroupName, customPrompt } = await req.json();
+    const { keyword, matchType, qualityScore, currentHeadlines, currentDescriptions, campaignName, adGroupName, customPrompt, landingPageUrl } = await req.json();
+
+    // Fetch landing page content if URL provided
+    let landingPageContent: string | null = null;
+    if (landingPageUrl) {
+      landingPageContent = await fetchLandingPageContent(landingPageUrl);
+    }
 
     const systemPrompt = `You are a Google Ads optimization expert specializing in Quality Score improvement.
 Your job is to analyze a keyword's current ad copy and suggest improved headlines and descriptions that will boost Quality Score.
@@ -27,7 +58,8 @@ Focus on:
 - Ensuring headlines are distinct from each other (not repetitive)
 - Following Google Ads character limits: Headlines max 30 chars, Descriptions max 90 chars
 - Using emotional triggers and urgency where appropriate
-- Including numbers/stats when relevant`;
+- Including numbers/stats when relevant
+- CRITICAL: Aligning ad copy with the landing page content so that the user's journey from search → ad → landing page is seamless and relevant`;
 
     let userPrompt = `Analyze this keyword and its current ads, then suggest optimized headlines and descriptions to improve Quality Score.
 
@@ -41,10 +73,22 @@ Focus on:
 ${currentHeadlines?.length ? currentHeadlines.map((h: string, i: number) => `${i + 1}. ${h}`).join("\n") : "No headlines found"}
 
 **Current Descriptions:**
-${currentDescriptions?.length ? currentDescriptions.map((d: string, i: number) => `${i + 1}. ${d}`).join("\n") : "No descriptions found"}
+${currentDescriptions?.length ? currentDescriptions.map((d: string, i: number) => `${i + 1}. ${d}`).join("\n") : "No descriptions found"}`;
 
-Please provide:
-1. Analysis of why the current Quality Score may be low
+    if (landingPageUrl) {
+      userPrompt += `\n\n**Landing Page URL:** ${landingPageUrl}`;
+    }
+    if (landingPageContent) {
+      userPrompt += `\n\n**Landing Page Content (extracted text):**\n${landingPageContent}`;
+      userPrompt += `\n\nIMPORTANT: Analyze the landing page content above and ensure your suggested headlines and descriptions:
+- Use language and terminology that matches what's on the landing page
+- Highlight features/benefits that the landing page actually delivers on
+- Create a coherent user journey from search query → ad → landing page
+- Reference specific offers, pricing, or value props found on the page`;
+    }
+
+    userPrompt += `\n\nPlease provide:
+1. Analysis of why the current Quality Score may be low (include landing page alignment assessment if landing page was provided)
 2. 5 optimized headline suggestions (max 30 chars each)
 3. 3 optimized description suggestions (max 90 chars each)
 4. Specific tips to improve this keyword's QS
@@ -78,7 +122,7 @@ Format your response as JSON using the tool provided.`;
                 properties: {
                   analysis: {
                     type: "string",
-                    description: "Brief analysis of why Quality Score is low and what to improve",
+                    description: "Brief analysis of why Quality Score is low and what to improve, including landing page alignment if relevant",
                   },
                   headlines: {
                     type: "array",

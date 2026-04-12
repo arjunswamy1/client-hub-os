@@ -14,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 
 import BidStrategyPopover from "./BidStrategyPopover";
 import HeadlineOptimizerModal from "./HeadlineOptimizerModal";
+import GoogleAdPreviewModal from "./GoogleAdPreviewModal";
 import {
   ChevronRight, ChevronDown, Search, Download, Filter,
   ArrowUpDown, ArrowUp, ArrowDown, Eye, EyeOff, Pause, Play, Sparkles
@@ -276,6 +277,7 @@ function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformA
           ].filter(Boolean)) ?? []}
           campaignName={campaignName}
           adGroupName={adGroupName}
+          landingPageUrl={ads?.map(a => a.finalUrl).filter(Boolean)[0] ?? undefined}
         />
       )}
     </>
@@ -284,40 +286,60 @@ function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformA
 
 function AdRows({ platformAdsetId }: { platformAdsetId: string }) {
   const { data, isLoading } = useAdSetAds(platformAdsetId);
+  const [previewAd, setPreviewAd] = useState<any>(null);
 
   if (isLoading) return <TableRow><TableCell colSpan={12}><Skeleton className="h-6" /></TableCell></TableRow>;
   if (!data || data.length === 0) return <TableRow><TableCell colSpan={12} className="text-center text-xs text-muted-foreground py-2">No ads</TableCell></TableRow>;
 
   return (
     <>
-      {data.map((ad, i) => (
-        <TableRow key={i} className="bg-muted/20">
-          <TableCell />
-          <TableCell className="pl-12 text-xs max-w-[200px] truncate">
-            <div className="flex items-center gap-2">
-              {ad.thumbnailUrl ? (
-                <img src={ad.thumbnailUrl} className="h-8 w-8 rounded object-cover shrink-0" alt="" />
-              ) : (
-                <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0 text-[10px] text-muted-foreground">AD</div>
-              )}
-              <div className="min-w-0">
-                <span className="block truncate font-medium">{ad.adName}</span>
-                {ad.format && <Badge variant="secondary" className="text-[9px] mt-0.5">{ad.format}</Badge>}
+      {data.map((ad, i) => {
+        const allHeadlines = [...(ad.headlines || []), ...(ad.headline ? [ad.headline] : [])].filter(Boolean);
+        const allDescs = [...(ad.descriptions || []), ...(ad.description ? [ad.description] : []), ...(ad.primaryText ? [ad.primaryText] : [])].filter(Boolean);
+
+        return (
+          <TableRow key={i} className="bg-muted/20">
+            <TableCell />
+            <TableCell className="pl-12 text-xs max-w-[260px]">
+              <div className="flex items-center gap-2">
+                {ad.thumbnailUrl ? (
+                  <img src={ad.thumbnailUrl} className="h-8 w-8 rounded object-cover shrink-0" alt="" />
+                ) : (
+                  <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0 text-[10px] text-muted-foreground">AD</div>
+                )}
+                <div className="min-w-0">
+                  <button
+                    className="block truncate font-medium text-primary hover:underline text-left cursor-pointer"
+                    onClick={() => setPreviewAd({
+                      adName: ad.adName,
+                      format: ad.format,
+                      headlines: allHeadlines,
+                      descriptions: allDescs,
+                      displayUrl: ad.displayUrl,
+                      finalUrl: ad.finalUrl,
+                      status: ad.status,
+                    })}
+                  >
+                    {ad.adName}
+                  </button>
+                  {ad.format && <Badge variant="secondary" className="text-[9px] mt-0.5">{ad.format}</Badge>}
+                </div>
               </div>
-            </div>
-          </TableCell>
-          <TableCell className="text-right text-xs">${ad.spend.toLocaleString()}</TableCell>
-          <TableCell className="text-right text-xs">${ad.revenue.toLocaleString()}</TableCell>
-          <TableCell className="text-right text-xs">{formatNum(ad.impressions)}</TableCell>
-          <TableCell className="text-right text-xs">{ad.clicks}</TableCell>
-          <TableCell className="text-right text-xs">{ad.roas}x</TableCell>
-          <TableCell className="text-right text-xs">{ad.conversions}</TableCell>
-          <TableCell colSpan={3} />
-          <TableCell>
-            <StatusBadge status={ad.status || "unknown"} />
-          </TableCell>
-        </TableRow>
-      ))}
+            </TableCell>
+            <TableCell className="text-right text-xs">${ad.spend.toLocaleString()}</TableCell>
+            <TableCell className="text-right text-xs">${ad.revenue.toLocaleString()}</TableCell>
+            <TableCell className="text-right text-xs">{formatNum(ad.impressions)}</TableCell>
+            <TableCell className="text-right text-xs">{ad.clicks}</TableCell>
+            <TableCell className="text-right text-xs">{ad.roas}x</TableCell>
+            <TableCell className="text-right text-xs">{ad.conversions}</TableCell>
+            <TableCell colSpan={3} />
+            <TableCell>
+              <StatusBadge status={ad.status || "unknown"} />
+            </TableCell>
+          </TableRow>
+        );
+      })}
+      <GoogleAdPreviewModal open={!!previewAd} onOpenChange={(o) => !o && setPreviewAd(null)} ad={previewAd} />
     </>
   );
 }

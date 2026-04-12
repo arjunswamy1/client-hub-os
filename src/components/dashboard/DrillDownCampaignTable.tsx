@@ -118,7 +118,10 @@ function SearchTermRows({ platformAdsetId, keywordText }: { platformAdsetId: str
       {data.slice(0, 20).map((st, i) => (
         <TableRow key={i} className="bg-muted/20">
           <TableCell />
-          <TableCell className="pl-16 text-xs max-w-[220px] truncate">🔍 {st.searchTerm}</TableCell>
+          <TableCell className="pl-16 text-xs max-w-[220px] truncate">
+            <Badge variant="outline" className="mr-1.5 text-[9px] px-1 py-0 font-normal text-muted-foreground border-muted-foreground/30">Search Term</Badge>
+            🔍 {st.searchTerm}
+          </TableCell>
           <TableCell className="text-right text-xs">${st.spend}</TableCell>
           <TableCell className="text-right text-xs">{st.clicks}</TableCell>
           <TableCell className="text-right text-xs">{formatNum(st.impressions)}</TableCell>
@@ -156,11 +159,24 @@ function KeywordRows({ platformAdsetId }: { platformAdsetId: string }) {
               <TableCell className="w-8 pl-10">
                 {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </TableCell>
-              <TableCell className="text-xs max-w-[200px] truncate">
+              <TableCell className="text-xs max-w-[260px] truncate">
+                <Badge variant="outline" className="mr-1.5 text-[9px] px-1 py-0 font-normal text-blue-500 border-blue-500/30">Keyword</Badge>
                 {kw.isNegative && <Badge variant="destructive" className="mr-1 text-[9px] px-1">NEG</Badge>}
                 {kw.keyword}
                 {kw.matchType && <Badge variant="outline" className="ml-1.5 text-[10px]">{kw.matchType}</Badge>}
-                {kw.qualityScore != null && <span className={`ml-1.5 font-medium ${qsColor}`}>{kw.qualityScore}/10</span>}
+                {kw.qualityScore != null && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={`ml-1.5 font-medium ${qsColor} cursor-help`}>QS {kw.qualityScore}/10</span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        <p className="font-semibold">Quality Score: {kw.qualityScore}/10</p>
+                        <p className="text-muted-foreground">Google's rating of keyword relevance, ad quality, and landing page experience</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </TableCell>
               <TableCell className="text-right text-xs">${kw.spend.toLocaleString()}</TableCell>
               <TableCell className="text-right text-xs">{kw.clicks}</TableCell>
@@ -241,7 +257,10 @@ function AdSetRows({ campaignName, platform }: { campaignName: string; platform:
               <TableCell className="w-8 pl-6">
                 {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </TableCell>
-              <TableCell className="text-xs max-w-[220px] truncate font-medium">
+              <TableCell className="text-xs max-w-[260px] truncate font-medium">
+                <Badge variant="outline" className="mr-1.5 text-[9px] px-1 py-0 font-normal text-amber-500 border-amber-500/30">
+                  {platform === "google" ? "Ad Group" : "Ad Set"}
+                </Badge>
                 {adSet.adsetName}
                 {platform === "google" && adSet.platformAdsetId && (
                   <Button

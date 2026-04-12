@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode, useMemo } from "react";
 import { BILLY_VERTICALS, VerticalConfig } from "@/config/billyVerticals";
+import { useClientVerticals } from "@/hooks/useClientVerticals";
 
 interface VerticalContextType {
   activeVertical: VerticalConfig;
@@ -10,11 +11,19 @@ interface VerticalContextType {
 const VerticalContext = createContext<VerticalContextType | undefined>(undefined);
 
 export function VerticalProvider({ children }: { children: ReactNode }) {
+  const { dbVerticals } = useClientVerticals();
   const [activeVertical, setActiveVertical] = useState<VerticalConfig>(BILLY_VERTICALS[0]);
+
+  const verticals = useMemo(() => {
+    // Merge hardcoded defaults with DB-stored custom verticals
+    const existingIds = new Set(BILLY_VERTICALS.map(v => v.id));
+    const custom = dbVerticals.filter(v => !existingIds.has(v.id));
+    return [...BILLY_VERTICALS, ...custom];
+  }, [dbVerticals]);
 
   return (
     <VerticalContext.Provider
-      value={{ activeVertical, setActiveVertical, verticals: BILLY_VERTICALS }}
+      value={{ activeVertical, setActiveVertical, verticals }}
     >
       {children}
     </VerticalContext.Provider>

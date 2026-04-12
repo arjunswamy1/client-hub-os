@@ -1,5 +1,6 @@
 import { useVertical } from "@/contexts/VerticalContext";
 import { cn } from "@/lib/utils";
+import { AddVerticalDialog } from "./AddVerticalDialog";
 
 export function BillyVerticalSelector() {
   const { activeVertical, setActiveVertical, verticals } = useVertical();
@@ -21,6 +22,7 @@ export function BillyVerticalSelector() {
           <span>{v.label}</span>
         </button>
       ))}
+      <AddVerticalDialog />
     </div>
   );
 }

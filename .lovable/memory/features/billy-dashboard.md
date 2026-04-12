@@ -1,11 +1,14 @@
 ---
 name: Billy.com dashboard vertical logic
-description: Billy dashboard — vertical filtering, 4-step funnel, Ringba attribution, AI insights, trend analysis, drill-down tables, creative reporting, QS audit, agent APIs, cross-platform view
+description: Billy dashboard — vertical filtering, 4-step funnel, Ringba attribution, AI insights, trend analysis, drill-down tables, creative reporting, QS audit, agent APIs, cross-platform view, dynamic vertical management
 type: feature
 ---
 
 ## Architecture
-- Verticals configured in `src/config/billyVerticals.ts` with per-platform patterns + account IDs
+- Verticals configured in `src/config/billyVerticals.ts` with per-platform patterns + account IDs (hardcoded defaults)
+- Custom verticals stored in `client_verticals` DB table, merged at runtime via `useClientVerticals` hook
+- `VerticalContext` merges hardcoded BILLY_VERTICALS with DB-stored custom verticals
+- `AddVerticalDialog` provides UI to add new verticals with platform-specific patterns
 - `matchesVertical()` does case-insensitive contains (or exactMatch for pest control ringba)
 - `matchesVerticalAccount()` for account ID scoping
 - Campaign data filtered client-side from single `ad_campaigns` table
@@ -19,6 +22,7 @@ type: feature
 - `useDrillDown.ts` — useCampaignAdSets, useAdGroupKeywords, useSearchTerms, useAdSetAds
 - `useCreativeReporting.ts` — useCreativePerformance, useFormatComparison, useFatigueAlerts
 - `useQualityScoreAudit.ts` — useQualityScoreData, useQSAuditRecommendations
+- `useClientVerticals.ts` — fetch/add/delete custom verticals from client_verticals table
 
 ## Dashboard Tabs
 1. Revenue Engine — 4-step lead-gen funnel (Traffic → LP → Calls → Monetization)
@@ -49,6 +53,8 @@ type: feature
 - Top Creatives tab: sorted by spend, with thumbnails and video views
 - Format Comparison tab: aggregated by Video/Static/Carousel
 - Fatigue Alerts tab: high frequency (>3.0) flagged ads
+- Active/Paused toggle filter
+- Ad preview modal with creative details
 
 ## Quality Score Audit (Google only)
 - QS distribution overview card (good/fair/poor + wasted spend)
@@ -72,8 +78,10 @@ type: feature
 - `ad_sets` — ad group/ad set level data
 - `search_terms` — Google search term reports
 - `ai_optimization_recommendations` — stored AI recommendations with severity/impact/status
+- `client_verticals` — custom verticals per client with platform patterns + account IDs
 
 ## Verticals
 - Flights: campaign name contains "Flight"
 - Porta Potties: contains "Porta"/"Potty", Google account 1939246766
 - Pest Control: contains "Pest"/"Bed Bug", Meta accounts scoped, Ringba uses exactMatch
+- Custom verticals: stored in DB, added via AddVerticalDialog UI

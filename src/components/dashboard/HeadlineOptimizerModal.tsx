@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Sparkles, Copy, Check, Lightbulb, AlertTriangle, FileText } from "lucide-react";
@@ -65,6 +66,7 @@ export default function HeadlineOptimizerModal({
   const [result, setResult] = useState<AIResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customPrompt, setCustomPrompt] = useState("");
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -81,6 +83,7 @@ export default function HeadlineOptimizerModal({
           currentDescriptions,
           campaignName,
           adGroupName,
+          customPrompt: customPrompt.trim() || undefined,
         },
       });
 
@@ -106,6 +109,9 @@ export default function HeadlineOptimizerModal({
         : "text-foreground"
       : "text-muted-foreground";
 
+  const dedupedHeadlines = [...new Set(currentHeadlines)];
+  const dedupedDescriptions = [...new Set(currentDescriptions)];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] p-0">
@@ -122,7 +128,7 @@ export default function HeadlineOptimizerModal({
         <ScrollArea className="max-h-[70vh]">
           <div className="px-6 pb-6 space-y-4">
             {/* Keyword Context */}
-            <div className="rounded-lg border p-4 space-y-2">
+            <div className="rounded-lg border p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">"{keyword}"</span>
@@ -145,25 +151,63 @@ export default function HeadlineOptimizerModal({
                 </p>
               )}
 
-              {currentHeadlines.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Current Headlines:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {currentHeadlines.map((h, i) => (
-                      <Badge key={i} variant="secondary" className="text-[10px] font-normal">
-                        {h}
-                      </Badge>
+              {/* Current Headlines */}
+              {dedupedHeadlines.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">Current Headlines ({dedupedHeadlines.length}):</p>
+                  <div className="space-y-1">
+                    {dedupedHeadlines.map((h, i) => (
+                      <div key={i} className="flex items-center justify-between rounded border px-2.5 py-1.5 bg-muted/30">
+                        <span className="text-xs">{h}</span>
+                        <Badge variant="secondary" className="text-[9px] shrink-0 ml-2">{h.length}/30</Badge>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* Current Descriptions */}
+              {dedupedDescriptions.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">Current Descriptions ({dedupedDescriptions.length}):</p>
+                  <div className="space-y-1">
+                    {dedupedDescriptions.map((d, i) => (
+                      <div key={i} className="flex items-center justify-between rounded border px-2.5 py-1.5 bg-muted/30">
+                        <span className="text-xs">{d}</span>
+                        <Badge variant="secondary" className="text-[9px] shrink-0 ml-2">{d.length}/90</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {dedupedHeadlines.length === 0 && dedupedDescriptions.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">No existing ad copy found for this ad group. AI will generate fresh suggestions.</p>
+              )}
+            </div>
+
+            {/* Custom Prompt / Direction */}
+            <div>
+              <label className="text-xs font-medium mb-1.5 block">
+                Additional direction <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Textarea
+                placeholder="e.g. Focus on price savings, mention 24/7 customer support, emphasize same-day booking, highlight no change fees..."
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                className="text-xs min-h-[60px] resize-none"
+                rows={2}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Tell the AI what messaging angle or key selling points to emphasize in the headlines.
+              </p>
             </div>
 
             {/* Generate Button */}
-            {!result && !loading && (
+            {!loading && (
               <Button onClick={handleGenerate} className="w-full gap-2">
                 <Sparkles className="h-4 w-4" />
-                Generate Optimized Headlines
+                {result ? "Regenerate with Updated Direction" : "Generate Optimized Headlines"}
               </Button>
             )}
 
@@ -240,7 +284,7 @@ export default function HeadlineOptimizerModal({
                     {result.descriptions.map((d, i) => (
                       <div key={i} className="rounded-lg border p-3 flex items-start gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm">{d.text}</span>
                             <Badge
                               variant={d.text.length <= 90 ? "secondary" : "destructive"}
@@ -276,12 +320,6 @@ export default function HeadlineOptimizerModal({
                     </ul>
                   </div>
                 )}
-
-                {/* Regenerate */}
-                <Button onClick={handleGenerate} variant="outline" size="sm" className="gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Regenerate
-                </Button>
               </>
             )}
           </div>

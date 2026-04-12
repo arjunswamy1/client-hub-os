@@ -10,10 +10,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { keyword, matchType, qualityScore, currentHeadlines, currentDescriptions, campaignName, adGroupName } = await req.json();
-
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const { keyword, matchType, qualityScore, currentHeadlines, currentDescriptions, campaignName, adGroupName, customPrompt } = await req.json();
 
     const systemPrompt = `You are a Google Ads optimization expert specializing in Quality Score improvement.
 Your job is to analyze a keyword's current ad copy and suggest improved headlines and descriptions that will boost Quality Score.
@@ -32,7 +29,7 @@ Focus on:
 - Using emotional triggers and urgency where appropriate
 - Including numbers/stats when relevant`;
 
-    const userPrompt = `Analyze this keyword and its current ads, then suggest optimized headlines and descriptions to improve Quality Score.
+    let userPrompt = `Analyze this keyword and its current ads, then suggest optimized headlines and descriptions to improve Quality Score.
 
 **Keyword:** "${keyword}"
 **Match Type:** ${matchType || "broad"}
@@ -53,6 +50,10 @@ Please provide:
 4. Specific tips to improve this keyword's QS
 
 Format your response as JSON using the tool provided.`;
+
+    if (customPrompt) {
+      userPrompt += `\n\n**IMPORTANT — Additional direction from the media buyer:**\n${customPrompt}\n\nMake sure your headline and description suggestions strongly reflect the above direction while still optimizing for Quality Score.`;
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

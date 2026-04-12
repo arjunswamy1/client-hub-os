@@ -11,6 +11,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
+  console.log("[sync-google-ads] Starting sync...");
   let userId: string | null = null;
   const authHeader = req.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
@@ -32,6 +33,7 @@ Deno.serve(async (req) => {
     bodyDaysBack = body?.days_back || null;
   } catch { /* no body */ }
 
+  console.log(`[sync-google-ads] userId=${userId}, clientId=${bodyClientId}, daysBack=${bodyDaysBack}`);
   if (userId) {
     let query = supabaseAdmin
       .from("platform_connections")
@@ -61,6 +63,7 @@ Deno.serve(async (req) => {
     targetConnections = connections;
   }
 
+  console.log(`[sync-google-ads] Found ${targetConnections.length} connections, starting sync loop`);
   const results = [];
   for (const conn of targetConnections) {
     let accessToken = conn.access_token;

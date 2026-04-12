@@ -126,12 +126,16 @@ function SearchTermRows({ platformAdsetId, keywordText }: { platformAdsetId: str
             🔍 {st.searchTerm}
           </TableCell>
           <TableCell className="text-right text-xs">${st.spend}</TableCell>
+          {/* Pacing */}<TableCell />
+          {/* Type */}<TableCell />
+          {/* Bid Strategy */}<TableCell />
+          <TableCell className="text-right text-xs">{st.conversions}</TableCell>
+          <TableCell className="text-right text-xs">{st.conversions > 0 ? `$${st.cpa}` : "—"}</TableCell>
           <TableCell className="text-right text-xs">{st.clicks}</TableCell>
           <TableCell className="text-right text-xs">{formatNum(st.impressions)}</TableCell>
-          <TableCell className="text-right text-xs">{st.ctr}%</TableCell>
           <TableCell className="text-right text-xs">${st.cpc}</TableCell>
-          <TableCell className="text-right text-xs">{st.conversions}</TableCell>
-          <TableCell colSpan={4} />
+          {/* IS% */}<TableCell />
+          {/* Status */}<TableCell />
         </TableRow>
       ))}
     </>
@@ -206,12 +210,16 @@ function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformA
                 </div>
               </TableCell>
               <TableCell className="text-right text-xs">${kw.spend.toLocaleString()}</TableCell>
+              {/* Pacing */}<TableCell />
+              {/* Type */}<TableCell />
+              {/* Bid Strategy */}<TableCell />
+              <TableCell className="text-right text-xs">{kw.conversions}</TableCell>
+              <TableCell className="text-right text-xs">{kw.conversions > 0 ? `$${Math.round(kw.spend / kw.conversions)}` : "—"}</TableCell>
               <TableCell className="text-right text-xs">{kw.clicks}</TableCell>
               <TableCell className="text-right text-xs">{formatNum(kw.impressions)}</TableCell>
-              <TableCell className="text-right text-xs">{kw.ctr}%</TableCell>
               <TableCell className="text-right text-xs">${kw.cpc}</TableCell>
-              <TableCell className="text-right text-xs">{kw.conversions}</TableCell>
-              <TableCell colSpan={4} />
+              {/* IS% */}<TableCell />
+              {/* Status */}<TableCell />
             </TableRow>
 
             {isExpanded && (
@@ -327,12 +335,15 @@ function AdRows({ platformAdsetId }: { platformAdsetId: string }) {
               </div>
             </TableCell>
             <TableCell className="text-right text-xs">${ad.spend.toLocaleString()}</TableCell>
-            <TableCell className="text-right text-xs">${ad.revenue.toLocaleString()}</TableCell>
-            <TableCell className="text-right text-xs">{formatNum(ad.impressions)}</TableCell>
-            <TableCell className="text-right text-xs">{ad.clicks}</TableCell>
-            <TableCell className="text-right text-xs">{ad.roas}x</TableCell>
+            {/* Pacing */}<TableCell />
+            {/* Type */}<TableCell />
+            {/* Bid Strategy */}<TableCell />
             <TableCell className="text-right text-xs">{ad.conversions}</TableCell>
-            <TableCell colSpan={3} />
+            <TableCell className="text-right text-xs">{ad.conversions > 0 ? `$${Math.round(ad.spend / ad.conversions)}` : "—"}</TableCell>
+            <TableCell className="text-right text-xs">{ad.clicks}</TableCell>
+            <TableCell className="text-right text-xs">{formatNum(ad.impressions)}</TableCell>
+            <TableCell className="text-right text-xs">{ad.clicks > 0 ? `$${(ad.spend / ad.clicks).toFixed(2)}` : "—"}</TableCell>
+            {/* IS% */}<TableCell />
             <TableCell>
               <StatusBadge status={ad.status || "unknown"} />
             </TableCell>
@@ -388,12 +399,15 @@ function AdSetRows({ campaignName, platform }: { campaignName: string; platform:
                 )}
               </TableCell>
               <TableCell className="text-right text-xs">${adSet.spend.toLocaleString()}</TableCell>
+              {/* Pacing */}<TableCell />
+              {/* Type */}<TableCell />
+              {/* Bid Strategy */}<TableCell />
+              <TableCell className="text-right text-xs">{adSet.conversions}</TableCell>
+              <TableCell className="text-right text-xs">{adSet.conversions > 0 ? `$${Math.round(adSet.spend / adSet.conversions)}` : "—"}</TableCell>
               <TableCell className="text-right text-xs">{adSet.clicks.toLocaleString()}</TableCell>
               <TableCell className="text-right text-xs">{formatNum(adSet.impressions)}</TableCell>
-              <TableCell className="text-right text-xs">{adSet.ctr}%</TableCell>
               <TableCell className="text-right text-xs">${adSet.cpc}</TableCell>
-              <TableCell className="text-right text-xs">{adSet.conversions}</TableCell>
-              <TableCell colSpan={3} />
+              {/* IS% */}<TableCell />
               <TableCell>
                 <StatusBadge status={adSet.status || "unknown"} />
               </TableCell>

@@ -148,13 +148,6 @@ function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformA
   if (isLoading) return <TableRow><TableCell colSpan={12}><Skeleton className="h-6" /></TableCell></TableRow>;
   if (!data || data.length === 0) return <TableRow><TableCell colSpan={12} className="text-center text-xs text-muted-foreground py-2">No keywords</TableCell></TableRow>;
 
-  // Collect headlines/descriptions from ads for AI context
-  const adHeadlines = ads?.flatMap(a => {
-    const raw: string[] = [];
-    // ad_creatives has headlines array and headline field
-    return raw;
-  }) ?? [];
-
   return (
     <>
       {data.slice(0, 25).map((kw) => {

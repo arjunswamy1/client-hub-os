@@ -228,6 +228,15 @@ export default function HeadlineOptimizerModal({
               )}
             </div>
 
+            {/* Landing Page URL */}
+            {landingPageUrl && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground rounded-lg border px-4 py-2">
+                <span className="font-medium text-foreground">Landing Page:</span>
+                <a href={landingPageUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">{landingPageUrl}</a>
+                <span className="text-[10px] shrink-0">• AI will analyze for keyword↔LP alignment</span>
+              </div>
+            )}
+
             {/* Current Headlines */}
             {dedupedHeadlines.length > 0 && (
               <div>

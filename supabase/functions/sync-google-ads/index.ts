@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
     targetConnections = connections;
   }
 
+  console.log(`[sync-google-ads] Found ${targetConnections.length} connections, starting sync loop`);
   const results = [];
   for (const conn of targetConnections) {
     let accessToken = conn.access_token;

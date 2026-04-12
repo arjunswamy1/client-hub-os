@@ -207,109 +207,26 @@ export default function HeadlineOptimizerModal({
 
         <ScrollArea className="flex-1 min-h-0">
           <div className="px-6 pb-6 space-y-5">
-            {/* Keyword Context — compact bar */}
-            <div className="flex items-center justify-between rounded-lg border px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">"{keyword}"</span>
-                {matchType && (
-                  <Badge variant="outline" className="text-[10px]">{matchType}</Badge>
-                )}
-                {campaignName && (
-                  <span className="text-xs text-muted-foreground ml-1">
-                    {campaignName}{adGroupName ? ` → ${adGroupName}` : ""}
-                  </span>
-                )}
-              </div>
-              {qualityScore != null && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">Quality Score:</span>
-                  <span className={`text-lg font-bold ${qsColor}`}>{qualityScore}/10</span>
-                </div>
-              )}
-            </div>
 
-            {/* Landing Page URL */}
-            {landingPageUrl && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground rounded-lg border px-4 py-2">
-                <span className="font-medium text-foreground">Landing Page:</span>
-                <a href={landingPageUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">{landingPageUrl}</a>
-                <span className="text-[10px] shrink-0">• AI will analyze for keyword↔LP alignment</span>
-              </div>
-            )}
-
-            {/* Current Headlines */}
-            {dedupedHeadlines.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold mb-2">Current Headlines ({dedupedHeadlines.length})</p>
-                <HeadlinesGrid items={dedupedHeadlines} />
-              </div>
-            )}
-
-            {/* Current Descriptions */}
-            {dedupedDescriptions.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold mb-2">Current Descriptions ({dedupedDescriptions.length})</p>
-                <DescriptionsGrid items={dedupedDescriptions} />
-              </div>
-            )}
-
-            {dedupedHeadlines.length === 0 && dedupedDescriptions.length === 0 && (
-              <p className="text-xs text-muted-foreground italic">No existing ad copy found for this ad group. AI will generate fresh suggestions.</p>
-            )}
-
-            {/* Custom Prompt */}
-            <div>
-              <label className="text-xs font-medium mb-1.5 block">
-                Additional direction <span className="text-muted-foreground font-normal">(optional)</span>
-              </label>
-              <Textarea
-                placeholder="e.g. Focus on price savings, mention 24/7 customer support, emphasize same-day booking..."
-                value={customPrompt}
-                onChange={(e) => setCustomPrompt(e.target.value)}
-                className="text-xs min-h-[52px] resize-none"
-                rows={2}
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Tell the AI what messaging angle or key selling points to emphasize.
-              </p>
-            </div>
-
-            {/* Generate Button */}
-            {!loading && (
-              <Button onClick={handleGenerate} className="w-full gap-2">
-                <Sparkles className="h-4 w-4" />
-                {result ? "Regenerate with Updated Direction" : "Generate Optimized Headlines"}
-              </Button>
-            )}
-
-            {/* Loading */}
-            {loading && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Sparkles className="h-4 w-4 animate-pulse text-primary" />
-                  Analyzing keyword and generating suggestions...
-                </div>
-                <div className="h-20 rounded-lg bg-muted animate-pulse" />
-                <div className="h-32 rounded-lg bg-muted animate-pulse" />
-              </div>
-            )}
-
-            {/* Error */}
-            {error && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4">
-                <p className="text-sm text-destructive flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  {error}
-                </p>
-                <Button onClick={handleGenerate} variant="outline" size="sm" className="mt-2">
-                  Retry
-                </Button>
-              </div>
-            )}
-
-            {/* Results */}
-            {result && (
+            {/* ─── RESULTS VIEW ─── */}
+            {result ? (
               <>
+                {/* Compact keyword context bar */}
+                <div className="flex items-center justify-between rounded-lg border px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">"{keyword}"</span>
+                    {matchType && <Badge variant="outline" className="text-[10px]">{matchType}</Badge>}
+                    {campaignName && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {campaignName}{adGroupName ? ` → ${adGroupName}` : ""}
+                      </span>
+                    )}
+                  </div>
+                  {qualityScore != null && (
+                    <span className={`text-lg font-bold ${qsColor}`}>{qualityScore}/10</span>
+                  )}
+                </div>
+
                 {/* Analysis */}
                 <div className="rounded-lg border bg-muted/30 p-4">
                   <p className="text-xs font-semibold mb-1 flex items-center gap-1.5">
@@ -398,6 +315,138 @@ export default function HeadlineOptimizerModal({
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Refine section */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold">Request Edits</p>
+                  <Textarea
+                    placeholder="e.g. Make headline #2 shorter, remove mention of price, add urgency to descriptions..."
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    className="text-xs min-h-[52px] resize-none"
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <Button onClick={handleGenerate} className="flex-1 gap-2" disabled={loading}>
+                      {loading ? (
+                        <>
+                          <Sparkles className="h-4 w-4 animate-pulse" />
+                          Regenerating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4" />
+                          Regenerate
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setResult(null)}
+                      className="text-xs"
+                    >
+                      ← Back to Input
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* ─── INPUT VIEW ─── */
+              <>
+                {/* Keyword Context — compact bar */}
+                <div className="flex items-center justify-between rounded-lg border px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">"{keyword}"</span>
+                    {matchType && <Badge variant="outline" className="text-[10px]">{matchType}</Badge>}
+                    {campaignName && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {campaignName}{adGroupName ? ` → ${adGroupName}` : ""}
+                      </span>
+                    )}
+                  </div>
+                  {qualityScore != null && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">Quality Score:</span>
+                      <span className={`text-lg font-bold ${qsColor}`}>{qualityScore}/10</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Landing Page URL */}
+                {landingPageUrl && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground rounded-lg border px-4 py-2">
+                    <span className="font-medium text-foreground">Landing Page:</span>
+                    <a href={landingPageUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">{landingPageUrl}</a>
+                    <span className="text-[10px] shrink-0">• AI will analyze for keyword↔LP alignment</span>
+                  </div>
+                )}
+
+                {/* Current Headlines */}
+                {dedupedHeadlines.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold mb-2">Current Headlines ({dedupedHeadlines.length})</p>
+                    <HeadlinesGrid items={dedupedHeadlines} />
+                  </div>
+                )}
+
+                {/* Current Descriptions */}
+                {dedupedDescriptions.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold mb-2">Current Descriptions ({dedupedDescriptions.length})</p>
+                    <DescriptionsGrid items={dedupedDescriptions} />
+                  </div>
+                )}
+
+                {dedupedHeadlines.length === 0 && dedupedDescriptions.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic">No existing ad copy found for this ad group. AI will generate fresh suggestions.</p>
+                )}
+
+                {/* Custom Prompt */}
+                <div>
+                  <label className="text-xs font-medium mb-1.5 block">
+                    Additional direction <span className="text-muted-foreground font-normal">(optional)</span>
+                  </label>
+                  <Textarea
+                    placeholder="e.g. Focus on price savings, mention 24/7 customer support, emphasize same-day booking..."
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    className="text-xs min-h-[52px] resize-none"
+                    rows={2}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Tell the AI what messaging angle or key selling points to emphasize.
+                  </p>
+                </div>
+
+                {/* Generate Button */}
+                <Button onClick={handleGenerate} className="w-full gap-2" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <Sparkles className="h-4 w-4 animate-pulse" />
+                      Analyzing keyword & landing page...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      Generate Optimized Headlines
+                    </>
+                  )}
+                </Button>
+
+                {/* Error */}
+                {error && (
+                  <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4">
+                    <p className="text-sm text-destructive flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      {error}
+                    </p>
+                    <Button onClick={handleGenerate} variant="outline" size="sm" className="mt-2">
+                      Retry
+                    </Button>
                   </div>
                 )}
               </>

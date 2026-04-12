@@ -452,7 +452,7 @@ export default function HeadlineOptimizerModal({
               </>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );

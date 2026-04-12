@@ -387,7 +387,7 @@ function AdSetRows({ campaignName, platform }: { campaignName: string; platform:
 
             {isExpanded && adSet.platformAdsetId && (
               platform === "google"
-                ? <KeywordRows platformAdsetId={adSet.platformAdsetId} />
+                ? <KeywordRows platformAdsetId={adSet.platformAdsetId} campaignName={campaignName} adGroupName={adSet.adsetName} />
                 : <AdRows platformAdsetId={adSet.platformAdsetId} />
             )}
           </Fragment>

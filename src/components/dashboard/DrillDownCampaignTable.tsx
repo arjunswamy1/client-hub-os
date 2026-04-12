@@ -18,7 +18,7 @@ import {
   ChevronRight, ChevronDown, Search, Download, Filter,
   ArrowUpDown, ArrowUp, ArrowDown, Eye, EyeOff, Pause, Play, Sparkles
 } from "lucide-react";
-import type { CampaignRow } from "@/hooks/useAdData";
+
 
 interface Props {
   platform: "meta" | "google";

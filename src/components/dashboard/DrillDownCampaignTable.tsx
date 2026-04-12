@@ -282,6 +282,7 @@ function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformA
   );
 }
 
+function AdRows({ platformAdsetId }: { platformAdsetId: string }) {
   const { data, isLoading } = useAdSetAds(platformAdsetId);
 
   if (isLoading) return <TableRow><TableCell colSpan={12}><Skeleton className="h-6" /></TableCell></TableRow>;

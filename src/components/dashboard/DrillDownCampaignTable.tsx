@@ -137,17 +137,29 @@ function SearchTermRows({ platformAdsetId, keywordText }: { platformAdsetId: str
   );
 }
 
-function KeywordRows({ platformAdsetId }: { platformAdsetId: string }) {
+function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformAdsetId: string; campaignName?: string; adGroupName?: string }) {
   const { data, isLoading } = useAdGroupKeywords(platformAdsetId);
+  const { data: ads } = useAdSetAds(platformAdsetId);
   const [expandedKw, setExpandedKw] = useState<string | null>(null);
+  const [kwViewMode, setKwViewMode] = useState<Record<string, "search" | "ads">>({}); 
+  const [optimizerOpen, setOptimizerOpen] = useState(false);
+  const [optimizerKw, setOptimizerKw] = useState<any>(null);
 
   if (isLoading) return <TableRow><TableCell colSpan={12}><Skeleton className="h-6" /></TableCell></TableRow>;
   if (!data || data.length === 0) return <TableRow><TableCell colSpan={12} className="text-center text-xs text-muted-foreground py-2">No keywords</TableCell></TableRow>;
+
+  // Collect headlines/descriptions from ads for AI context
+  const adHeadlines = ads?.flatMap(a => {
+    const raw: string[] = [];
+    // ad_creatives has headlines array and headline field
+    return raw;
+  }) ?? [];
 
   return (
     <>
       {data.slice(0, 25).map((kw) => {
         const isExpanded = expandedKw === kw.keyword;
+        const viewMode = kwViewMode[kw.keyword] || "search";
         const qsColor = kw.qualityScore != null
           ? kw.qualityScore < 5 ? "text-destructive" : kw.qualityScore >= 7 ? "text-green-600" : "text-foreground"
           : "text-muted-foreground";
@@ -161,24 +173,43 @@ function KeywordRows({ platformAdsetId }: { platformAdsetId: string }) {
               <TableCell className="w-8 pl-10">
                 {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </TableCell>
-              <TableCell className="text-xs max-w-[260px] truncate">
-                <Badge variant="outline" className="mr-1.5 text-[9px] px-1 py-0 font-normal text-blue-500 border-blue-500/30">Keyword</Badge>
-                {kw.isNegative && <Badge variant="destructive" className="mr-1 text-[9px] px-1">NEG</Badge>}
-                {kw.keyword}
-                {kw.matchType && <Badge variant="outline" className="ml-1.5 text-[10px]">{kw.matchType}</Badge>}
-                {kw.qualityScore != null && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className={`ml-1.5 font-medium ${qsColor} cursor-help`}>QS {kw.qualityScore}/10</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        <p className="font-semibold">Quality Score: {kw.qualityScore}/10</p>
-                        <p className="text-muted-foreground">Google's rating of keyword relevance, ad quality, and landing page experience</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
+              <TableCell className="text-xs max-w-[260px]">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <Badge variant="outline" className="text-[9px] px-1 py-0 font-normal text-blue-500 border-blue-500/30 shrink-0">Keyword</Badge>
+                  {kw.isNegative && <Badge variant="destructive" className="text-[9px] px-1 shrink-0">NEG</Badge>}
+                  <span className="truncate">{kw.keyword}</span>
+                  {kw.matchType && <Badge variant="outline" className="text-[10px] shrink-0">{kw.matchType}</Badge>}
+                  {kw.qualityScore != null && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className={`font-medium ${qsColor} cursor-help shrink-0`}>QS {kw.qualityScore}/10</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs max-w-[220px]">
+                          <p className="font-semibold">Quality Score: {kw.qualityScore}/10</p>
+                          <p className="text-muted-foreground">Google's rating of keyword relevance, ad quality, and landing page experience</p>
+                          {kw.qualityScore < 7 && (
+                            <p className="text-primary mt-1">💡 Click ✨ to get AI suggestions to improve this score</p>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {/* AI Optimize button — shows for low QS or always */}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-5 px-1.5 text-[10px] gap-0.5 shrink-0 text-primary hover:text-primary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOptimizerKw(kw);
+                      setOptimizerOpen(true);
+                    }}
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Optimize
+                  </Button>
+                </div>
               </TableCell>
               <TableCell className="text-right text-xs">${kw.spend.toLocaleString()}</TableCell>
               <TableCell className="text-right text-xs">{kw.clicks}</TableCell>
@@ -188,15 +219,69 @@ function KeywordRows({ platformAdsetId }: { platformAdsetId: string }) {
               <TableCell className="text-right text-xs">{kw.conversions}</TableCell>
               <TableCell colSpan={4} />
             </TableRow>
-            {isExpanded && <SearchTermRows platformAdsetId={platformAdsetId} keywordText={kw.keyword} />}
+
+            {isExpanded && (
+              <>
+                {/* Tab bar for switching between search terms and ads */}
+                <TableRow className="bg-muted/10">
+                  <TableCell />
+                  <TableCell colSpan={11} className="py-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant={viewMode === "search" ? "default" : "ghost"}
+                        className="h-6 text-[10px] px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setKwViewMode(prev => ({ ...prev, [kw.keyword]: "search" }));
+                        }}
+                      >
+                        <Search className="h-3 w-3 mr-1" />
+                        Search Terms
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={viewMode === "ads" ? "default" : "ghost"}
+                        className="h-6 text-[10px] px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setKwViewMode(prev => ({ ...prev, [kw.keyword]: "ads" }));
+                        }}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        Ads ({ads?.length ?? 0})
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+                {viewMode === "search"
+                  ? <SearchTermRows platformAdsetId={platformAdsetId} keywordText={kw.keyword} />
+                  : <AdRows platformAdsetId={platformAdsetId} />
+                }
+              </>
+            )}
           </Fragment>
         );
       })}
+
+      {/* AI Headline Optimizer Modal */}
+      {optimizerKw && (
+        <HeadlineOptimizerModal
+          open={optimizerOpen}
+          onOpenChange={setOptimizerOpen}
+          keyword={optimizerKw.keyword}
+          matchType={optimizerKw.matchType}
+          qualityScore={optimizerKw.qualityScore}
+          currentHeadlines={ads?.flatMap(a => [a.adName].filter(Boolean)) ?? []}
+          currentDescriptions={[]}
+          campaignName={campaignName}
+          adGroupName={adGroupName}
+        />
+      )}
     </>
   );
 }
 
-function AdRows({ platformAdsetId }: { platformAdsetId: string }) {
   const { data, isLoading } = useAdSetAds(platformAdsetId);
 
   if (isLoading) return <TableRow><TableCell colSpan={12}><Skeleton className="h-6" /></TableCell></TableRow>;

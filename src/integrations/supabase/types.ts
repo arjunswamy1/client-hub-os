@@ -966,6 +966,65 @@ export type Database = {
           },
         ]
       }
+      client_verticals: {
+        Row: {
+          client_id: string
+          created_at: string
+          emoji: string
+          google_account_ids: string[]
+          google_patterns: string[]
+          id: string
+          label: string
+          meta_account_ids: string[]
+          meta_patterns: string[]
+          position: number
+          ringba_exact_match: boolean
+          ringba_patterns: string[]
+          updated_at: string
+          vertical_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          emoji?: string
+          google_account_ids?: string[]
+          google_patterns?: string[]
+          id?: string
+          label: string
+          meta_account_ids?: string[]
+          meta_patterns?: string[]
+          position?: number
+          ringba_exact_match?: boolean
+          ringba_patterns?: string[]
+          updated_at?: string
+          vertical_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          emoji?: string
+          google_account_ids?: string[]
+          google_patterns?: string[]
+          id?: string
+          label?: string
+          meta_account_ids?: string[]
+          meta_patterns?: string[]
+          position?: number
+          ringba_exact_match?: boolean
+          ringba_patterns?: string[]
+          updated_at?: string
+          vertical_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_verticals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           color: string | null

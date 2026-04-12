@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+// skeleton replaced with inline animated divs
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,58 +38,93 @@ interface AIResult {
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <Button
-      size="sm"
-      variant="ghost"
-      className="h-6 w-6 p-0 shrink-0"
+    <button
+      className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-muted shrink-0"
       onClick={() => {
         navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
     >
-      {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-    </Button>
+      {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+    </button>
   );
 }
 
-/** Render items in a grid table: `cols` columns */
-function GridTable({ items, maxLen, cols = 5 }: { items: string[]; maxLen: number; cols?: number }) {
+function CharBadge({ len, max }: { len: number; max: number }) {
+  return (
+    <span className={`text-[10px] tabular-nums shrink-0 ${len <= max ? "text-muted-foreground" : "text-destructive font-medium"}`}>
+      {len}/{max}
+    </span>
+  );
+}
+
+/** Headlines grid: 4 columns, full text visible */
+function HeadlinesGrid({ items }: { items: string[] }) {
   if (items.length === 0) return null;
+  const cols = 4;
   const rows: string[][] = [];
   for (let i = 0; i < items.length; i += cols) {
     rows.push(items.slice(i, i + cols));
   }
-  // pad last row
   const lastRow = rows[rows.length - 1];
   while (lastRow.length < cols) lastRow.push("");
 
   return (
-    <div className="overflow-auto rounded border">
-      <Table>
-        <TableBody>
-          {rows.map((row, ri) => (
-            <TableRow key={ri}>
-              {row.map((cell, ci) => (
-                <TableCell key={ci} className="py-1.5 px-2 text-xs whitespace-nowrap">
-                  {cell ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate max-w-[200px]" title={cell}>{cell}</span>
-                      <Badge
-                        variant={cell.length <= maxLen ? "secondary" : "destructive"}
-                        className="text-[9px] shrink-0"
-                      >
-                        {cell.length}/{maxLen}
-                      </Badge>
-                      <CopyButton text={cell} />
-                    </div>
-                  ) : null}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className="grid grid-cols-4 gap-px bg-border rounded-md overflow-hidden border">
+      {rows.flatMap((row, ri) =>
+        row.map((cell, ci) => (
+          <div
+            key={`${ri}-${ci}`}
+            className="bg-background px-2.5 py-2 text-xs min-h-[36px]"
+          >
+            {cell ? (
+              <div className="flex items-start gap-1.5">
+                <span className="flex-1 break-words leading-snug">{cell}</span>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <CharBadge len={cell.length} max={30} />
+                  <CopyButton text={cell} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** Descriptions grid: 2 columns, full text visible */
+function DescriptionsGrid({ items }: { items: string[] }) {
+  if (items.length === 0) return null;
+  const cols = 2;
+  const rows: string[][] = [];
+  for (let i = 0; i < items.length; i += cols) {
+    rows.push(items.slice(i, i + cols));
+  }
+  const lastRow = rows[rows.length - 1];
+  while (lastRow.length < cols) lastRow.push("");
+
+  return (
+    <div className="grid grid-cols-2 gap-px bg-border rounded-md overflow-hidden border">
+      {rows.flatMap((row, ri) =>
+        row.map((cell, ci) => (
+          <div
+            key={`${ri}-${ci}`}
+            className="bg-background px-2.5 py-2 text-xs min-h-[36px]"
+          >
+            {cell ? (
+              <div className="flex items-start gap-1.5">
+                <span className="flex-1 break-words leading-snug">{cell}</span>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <CharBadge len={cell.length} max={90} />
+                  <CopyButton text={cell} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -156,57 +191,53 @@ export default function HeadlineOptimizerModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] p-0">
-        <DialogHeader className="p-6 pb-3">
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="max-w-[90vw] w-[1200px] max-h-[92vh] p-0 flex flex-col">
+        <DialogHeader className="px-6 pt-5 pb-3 shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-5 w-5 text-primary" />
             AI Headline Optimizer
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs">
             Improve Quality Score by optimizing ad headlines for your keyword.
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[80vh]">
-          <div className="px-6 pb-6 space-y-4">
-            {/* Keyword Context */}
-            <div className="rounded-lg border p-4 space-y-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">"{keyword}"</span>
-                  {matchType && (
-                    <Badge variant="outline" className="text-[10px]">
-                      {matchType}
-                    </Badge>
-                  )}
-                </div>
-                {qualityScore != null && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-muted-foreground">Quality Score:</span>
-                    <span className={`text-lg font-bold ${qsColor}`}>{qualityScore}/10</span>
-                  </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="px-6 pb-6 space-y-5">
+            {/* Keyword Context — compact bar */}
+            <div className="flex items-center justify-between rounded-lg border px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">"{keyword}"</span>
+                {matchType && (
+                  <Badge variant="outline" className="text-[10px]">{matchType}</Badge>
+                )}
+                {campaignName && (
+                  <span className="text-xs text-muted-foreground ml-1">
+                    {campaignName}{adGroupName ? ` → ${adGroupName}` : ""}
+                  </span>
                 )}
               </div>
-              {campaignName && (
-                <p className="text-xs text-muted-foreground">
-                  {campaignName} {adGroupName ? `→ ${adGroupName}` : ""}
-                </p>
+              {qualityScore != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Quality Score:</span>
+                  <span className={`text-lg font-bold ${qsColor}`}>{qualityScore}/10</span>
+                </div>
               )}
             </div>
 
-            {/* Current Headlines — table grid */}
+            {/* Current Headlines */}
             {dedupedHeadlines.length > 0 && (
               <div>
-                <p className="text-xs font-semibold mb-1.5">Current Headlines ({dedupedHeadlines.length})</p>
-                <GridTable items={dedupedHeadlines} maxLen={30} cols={5} />
+                <p className="text-xs font-semibold mb-2">Current Headlines ({dedupedHeadlines.length})</p>
+                <HeadlinesGrid items={dedupedHeadlines} />
               </div>
             )}
 
-            {/* Current Descriptions — table grid */}
+            {/* Current Descriptions */}
             {dedupedDescriptions.length > 0 && (
               <div>
-                <p className="text-xs font-semibold mb-1.5">Current Descriptions ({dedupedDescriptions.length})</p>
-                <GridTable items={dedupedDescriptions} maxLen={90} cols={3} />
+                <p className="text-xs font-semibold mb-2">Current Descriptions ({dedupedDescriptions.length})</p>
+                <DescriptionsGrid items={dedupedDescriptions} />
               </div>
             )}
 
@@ -214,16 +245,16 @@ export default function HeadlineOptimizerModal({
               <p className="text-xs text-muted-foreground italic">No existing ad copy found for this ad group. AI will generate fresh suggestions.</p>
             )}
 
-            {/* Custom Prompt / Direction */}
+            {/* Custom Prompt */}
             <div>
               <label className="text-xs font-medium mb-1.5 block">
                 Additional direction <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <Textarea
-                placeholder="e.g. Focus on price savings, mention 24/7 customer support, emphasize same-day booking, highlight no change fees..."
+                placeholder="e.g. Focus on price savings, mention 24/7 customer support, emphasize same-day booking..."
                 value={customPrompt}
                 onChange={(e) => setCustomPrompt(e.target.value)}
-                className="text-xs min-h-[60px] resize-none"
+                className="text-xs min-h-[52px] resize-none"
                 rows={2}
               />
               <p className="text-[10px] text-muted-foreground mt-1">
@@ -246,8 +277,8 @@ export default function HeadlineOptimizerModal({
                   <Sparkles className="h-4 w-4 animate-pulse text-primary" />
                   Analyzing keyword and generating suggestions...
                 </div>
-                <Skeleton className="h-20 rounded-lg" />
-                <Skeleton className="h-32 rounded-lg" />
+                <div className="h-20 rounded-lg bg-muted animate-pulse" />
+                <div className="h-32 rounded-lg bg-muted animate-pulse" />
               </div>
             )}
 
@@ -273,35 +304,33 @@ export default function HeadlineOptimizerModal({
                     <FileText className="h-3.5 w-3.5" />
                     Analysis
                   </p>
-                  <p className="text-sm text-muted-foreground">{result.analysis}</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{result.analysis}</p>
                 </div>
 
                 <Separator />
 
-                {/* Suggested Headlines — table */}
+                {/* Suggested Headlines */}
                 <div>
                   <p className="text-sm font-semibold mb-2">Suggested Headlines</p>
-                  <div className="overflow-auto rounded border">
+                  <div className="rounded-md border overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="text-xs w-[260px]">Headline</TableHead>
-                          <TableHead className="text-xs w-[60px]">Chars</TableHead>
+                          <TableHead className="text-xs w-[280px]">Headline</TableHead>
+                          <TableHead className="text-xs w-[50px] text-center">Chars</TableHead>
                           <TableHead className="text-xs">Rationale</TableHead>
-                          <TableHead className="text-xs w-[40px]"></TableHead>
+                          <TableHead className="text-xs w-[36px]" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {result.headlines.map((h, i) => (
                           <TableRow key={i}>
-                            <TableCell className="py-1.5 font-medium text-sm">{h.text}</TableCell>
-                            <TableCell className="py-1.5">
-                              <Badge variant={h.text.length <= 30 ? "secondary" : "destructive"} className="text-[9px]">
-                                {h.text.length}/30
-                              </Badge>
+                            <TableCell className="py-2 font-medium text-sm">{h.text}</TableCell>
+                            <TableCell className="py-2 text-center">
+                              <CharBadge len={h.text.length} max={30} />
                             </TableCell>
-                            <TableCell className="py-1.5 text-xs text-muted-foreground">{h.rationale}</TableCell>
-                            <TableCell className="py-1.5"><CopyButton text={h.text} /></TableCell>
+                            <TableCell className="py-2 text-xs text-muted-foreground">{h.rationale}</TableCell>
+                            <TableCell className="py-2"><CopyButton text={h.text} /></TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -311,30 +340,28 @@ export default function HeadlineOptimizerModal({
 
                 <Separator />
 
-                {/* Suggested Descriptions — table */}
+                {/* Suggested Descriptions */}
                 <div>
                   <p className="text-sm font-semibold mb-2">Suggested Descriptions</p>
-                  <div className="overflow-auto rounded border">
+                  <div className="rounded-md border overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="text-xs">Description</TableHead>
-                          <TableHead className="text-xs w-[60px]">Chars</TableHead>
-                          <TableHead className="text-xs w-[300px]">Rationale</TableHead>
-                          <TableHead className="text-xs w-[40px]"></TableHead>
+                          <TableHead className="text-xs w-[50px] text-center">Chars</TableHead>
+                          <TableHead className="text-xs w-[340px]">Rationale</TableHead>
+                          <TableHead className="text-xs w-[36px]" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {result.descriptions.map((d, i) => (
                           <TableRow key={i}>
-                            <TableCell className="py-1.5 text-sm">{d.text}</TableCell>
-                            <TableCell className="py-1.5">
-                              <Badge variant={d.text.length <= 90 ? "secondary" : "destructive"} className="text-[9px]">
-                                {d.text.length}/90
-                              </Badge>
+                            <TableCell className="py-2 text-sm">{d.text}</TableCell>
+                            <TableCell className="py-2 text-center">
+                              <CharBadge len={d.text.length} max={90} />
                             </TableCell>
-                            <TableCell className="py-1.5 text-xs text-muted-foreground">{d.rationale}</TableCell>
-                            <TableCell className="py-1.5"><CopyButton text={d.text} /></TableCell>
+                            <TableCell className="py-2 text-xs text-muted-foreground">{d.rationale}</TableCell>
+                            <TableCell className="py-2"><CopyButton text={d.text} /></TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

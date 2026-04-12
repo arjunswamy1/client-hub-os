@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     bodyDaysBack = body?.days_back || null;
   } catch { /* no body */ }
 
+  console.log(`[sync-google-ads] userId=${userId}, clientId=${bodyClientId}, daysBack=${bodyDaysBack}`);
   if (userId) {
     let query = supabaseAdmin
       .from("platform_connections")

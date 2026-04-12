@@ -21,6 +21,7 @@ interface HeadlineOptimizerProps {
   currentDescriptions?: string[];
   campaignName?: string;
   adGroupName?: string;
+  landingPageUrl?: string;
 }
 
 interface Suggestion {
@@ -139,6 +140,7 @@ export default function HeadlineOptimizerModal({
   currentDescriptions = [],
   campaignName,
   adGroupName,
+  landingPageUrl,
 }: HeadlineOptimizerProps) {
   const [result, setResult] = useState<AIResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -160,6 +162,7 @@ export default function HeadlineOptimizerModal({
           currentDescriptions,
           campaignName,
           adGroupName,
+          landingPageUrl,
           customPrompt: customPrompt.trim() || undefined,
         },
       });

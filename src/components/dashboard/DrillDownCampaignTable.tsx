@@ -277,6 +277,7 @@ function KeywordRows({ platformAdsetId, campaignName, adGroupName }: { platformA
           ].filter(Boolean)) ?? []}
           campaignName={campaignName}
           adGroupName={adGroupName}
+          landingPageUrl={ads?.map(a => a.finalUrl).filter(Boolean)[0] ?? undefined}
         />
       )}
     </>

@@ -27,6 +27,11 @@ export interface CreativeData {
   videoViews25: number;
   videoViews50: number;
   videoViews95: number;
+  status: string | null;
+  primaryText: string | null;
+  headline: string | null;
+  description: string | null;
+  linkUrl: string | null;
 }
 
 /** Fetch all ad creatives for the vertical (Meta) */
@@ -84,6 +89,11 @@ export function useCreativePerformance() {
           videoViews25: Number((row as any).video_views_25 || 0),
           videoViews50: Number((row as any).video_views_50 || 0),
           videoViews95: Number((row as any).video_views_95 || 0),
+          status: row.status,
+          primaryText: row.primary_text,
+          headline: row.headline,
+          description: row.description,
+          linkUrl: row.link_url,
         };
       }).sort((a, b) => b.spend - a.spend);
     },

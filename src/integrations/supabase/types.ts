@@ -783,7 +783,8 @@ export type Database = {
       campaign_keywords: {
         Row: {
           ad_group: string
-          campaign_id: string
+          campaign_id: string | null
+          campaign_name: string | null
           clicks: number | null
           client_id: string | null
           conversions: number | null
@@ -800,6 +801,7 @@ export type Database = {
           keyword: string
           match_type: string | null
           negative_category: string | null
+          platform: string | null
           platform_adset_id: string | null
           quality_score: number | null
           revenue: number | null
@@ -807,7 +809,8 @@ export type Database = {
         }
         Insert: {
           ad_group: string
-          campaign_id: string
+          campaign_id?: string | null
+          campaign_name?: string | null
           clicks?: number | null
           client_id?: string | null
           conversions?: number | null
@@ -824,6 +827,7 @@ export type Database = {
           keyword: string
           match_type?: string | null
           negative_category?: string | null
+          platform?: string | null
           platform_adset_id?: string | null
           quality_score?: number | null
           revenue?: number | null
@@ -831,7 +835,8 @@ export type Database = {
         }
         Update: {
           ad_group?: string
-          campaign_id?: string
+          campaign_id?: string | null
+          campaign_name?: string | null
           clicks?: number | null
           client_id?: string | null
           conversions?: number | null
@@ -848,19 +853,13 @@ export type Database = {
           keyword?: string
           match_type?: string | null
           negative_category?: string | null
+          platform?: string | null
           platform_adset_id?: string | null
           quality_score?: number | null
           revenue?: number | null
           spend?: number | null
         }
         Relationships: [
-          {
-            foreignKeyName: "campaign_keywords_campaign_id_fkey"
-            columns: ["campaign_id"]
-            isOneToOne: false
-            referencedRelation: "trafficking_campaigns"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "campaign_keywords_client_id_fkey"
             columns: ["client_id"]

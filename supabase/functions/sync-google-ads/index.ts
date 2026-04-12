@@ -294,13 +294,196 @@ async function syncGoogleForUser(supabase: any, userId: string, accessToken: str
           }
         }
 
-        // === NEW: Ad-level data for search ads ===
+        // === Ad-level data for search ads ===
         if (hasTimeBudget()) {
           try {
             const adRecords = await syncGoogleAdCreatives(supabase, cid, accessToken, developerToken, loginCustomerId, clientId, formatDate(startDate), formatDate(endDate));
             totalRecords += adRecords;
           } catch (err) {
             console.error(`Ad creative sync error for ${cid}:`, err);
+          }
+        }
+
+        // === Ad Groups → ad_sets ===
+        if (hasTimeBudget()) {
+          for (const { since, until } of chunks) {
+            if (!hasTimeBudget()) { timedOut = true; break; }
+            try {
+              const agRows = await queryGoogleAds(cid, accessToken, developerToken, `
+                SELECT
+                  ad_group.id,
+                  ad_group.name,
+                  ad_group.status,
+                  campaign.name,
+                  campaign.id,
+                  segments.date,
+                  metrics.cost_micros,
+                  metrics.impressions,
+                  metrics.clicks,
+                  metrics.conversions,
+                  metrics.conversions_value
+                FROM ad_group
+                WHERE segments.date BETWEEN '${since}' AND '${until}'
+                  AND campaign.status IN ('ENABLED', 'PAUSED')
+              `, loginCustomerId);
+
+              if (agRows.length > 0) {
+                const batch = agRows.map((row: any) => {
+                  const spend = (row.metrics?.costMicros || 0) / 1_000_000;
+                  const clicks = parseInt(row.metrics?.clicks || "0");
+                  const impressions = parseInt(row.metrics?.impressions || "0");
+                  const conversions = Math.round(row.metrics?.conversions || 0);
+                  return {
+                    client_id: clientId,
+                    platform: "google",
+                    campaign_name: row.campaign?.name || "Unknown",
+                    platform_campaign_id: String(row.campaign?.id || ""),
+                    adset_name: row.adGroup?.name || "Unknown",
+                    platform_adset_id: String(row.adGroup?.id || ""),
+                    status: (row.adGroup?.status || "UNKNOWN").toLowerCase(),
+                    date: row.segments?.date,
+                    spend,
+                    revenue: row.metrics?.conversionsValue || 0,
+                    impressions,
+                    clicks,
+                    conversions,
+                    cpc: clicks > 0 ? Math.round((spend / clicks) * 100) / 100 : null,
+                    ctr: impressions > 0 ? Math.round((clicks / impressions) * 10000) / 100 : null,
+                    cpa: conversions > 0 ? Math.round((spend / conversions) * 100) / 100 : null,
+                    account_id: cid,
+                  };
+                });
+                await batchUpsert(supabase, "ad_sets", batch, "client_id,platform,campaign_name,adset_name,date");
+                totalRecords += batch.length;
+                console.log(`[sync] ${batch.length} ad group rows for ${cid} ${since}-${until}`);
+              }
+            } catch (err) {
+              console.error(`Ad group sync error for ${cid} ${since}-${until}:`, err);
+            }
+          }
+        }
+
+        // === Keywords → campaign_keywords ===
+        if (hasTimeBudget()) {
+          for (const { since, until } of chunks) {
+            if (!hasTimeBudget()) { timedOut = true; break; }
+            try {
+              const kwRows = await queryGoogleAds(cid, accessToken, developerToken, `
+                SELECT
+                  ad_group.id,
+                  ad_group.name,
+                  campaign.name,
+                  ad_group_criterion.keyword.text,
+                  ad_group_criterion.keyword.match_type,
+                  ad_group_criterion.quality_info.quality_score,
+                  ad_group_criterion.negative,
+                  segments.date,
+                  metrics.cost_micros,
+                  metrics.impressions,
+                  metrics.clicks,
+                  metrics.conversions,
+                  metrics.conversions_value,
+                  metrics.search_impression_share
+                FROM keyword_view
+                WHERE segments.date BETWEEN '${since}' AND '${until}'
+                  AND campaign.status IN ('ENABLED', 'PAUSED')
+              `, loginCustomerId);
+
+              if (kwRows.length > 0) {
+                const batch = kwRows.filter((row: any) => row.adGroupCriterion?.keyword?.text).map((row: any) => {
+                  const spend = (row.metrics?.costMicros || 0) / 1_000_000;
+                  const clicks = parseInt(row.metrics?.clicks || "0");
+                  const impressions = parseInt(row.metrics?.impressions || "0");
+                  const conversions = Math.round(row.metrics?.conversions || 0);
+                  return {
+                    client_id: clientId,
+                    platform: "google",
+                    campaign_name: row.campaign?.name || "Unknown",
+                    ad_group: row.adGroup?.name || "Unknown",
+                    platform_adset_id: String(row.adGroup?.id || ""),
+                    keyword: row.adGroupCriterion.keyword.text,
+                    match_type: (row.adGroupCriterion.keyword.matchType || "").replace("_", " ").toLowerCase(),
+                    quality_score: row.adGroupCriterion?.qualityInfo?.qualityScore ?? null,
+                    is_negative: row.adGroupCriterion?.negative ?? false,
+                    date: row.segments?.date,
+                    spend,
+                    revenue: row.metrics?.conversionsValue || 0,
+                    impressions,
+                    clicks,
+                    conversions,
+                    cpc: clicks > 0 ? Math.round((spend / clicks) * 100) / 100 : null,
+                    ctr: impressions > 0 ? Math.round((clicks / impressions) * 10000) / 100 : null,
+                    cpa: conversions > 0 ? Math.round((spend / conversions) * 100) / 100 : null,
+                    impression_share: row.metrics?.searchImpressionShare ?? null,
+                  };
+                });
+                await batchUpsert(supabase, "campaign_keywords", batch, "client_id,platform_adset_id,keyword,date");
+                totalRecords += batch.length;
+                console.log(`[sync] ${batch.length} keyword rows for ${cid} ${since}-${until}`);
+              }
+            } catch (err) {
+              console.error(`Keyword sync error for ${cid} ${since}-${until}:`, err);
+            }
+          }
+        }
+
+        // === Search Terms → search_terms ===
+        if (hasTimeBudget()) {
+          for (const { since, until } of chunks) {
+            if (!hasTimeBudget()) { timedOut = true; break; }
+            try {
+              const stRows = await queryGoogleAds(cid, accessToken, developerToken, `
+                SELECT
+                  search_term_view.search_term,
+                  ad_group.id,
+                  ad_group.name,
+                  campaign.name,
+                  campaign.id,
+                  segments.keyword.info.text,
+                  segments.keyword.info.match_type,
+                  segments.date,
+                  metrics.cost_micros,
+                  metrics.impressions,
+                  metrics.clicks,
+                  metrics.conversions,
+                  metrics.conversions_value
+                FROM search_term_view
+                WHERE segments.date BETWEEN '${since}' AND '${until}'
+                  AND campaign.status IN ('ENABLED', 'PAUSED')
+              `, loginCustomerId);
+
+              if (stRows.length > 0) {
+                const batch = stRows.filter((row: any) => row.searchTermView?.searchTerm).map((row: any) => {
+                  const spend = (row.metrics?.costMicros || 0) / 1_000_000;
+                  const clicks = parseInt(row.metrics?.clicks || "0");
+                  const impressions = parseInt(row.metrics?.impressions || "0");
+                  const conversions = Math.round(row.metrics?.conversions || 0);
+                  return {
+                    client_id: clientId,
+                    platform_adset_id: String(row.adGroup?.id || ""),
+                    platform_campaign_id: String(row.campaign?.id || ""),
+                    campaign_name: row.campaign?.name || "Unknown",
+                    search_term: row.searchTermView.searchTerm,
+                    keyword_text: row.segments?.keyword?.info?.text || null,
+                    match_type: (row.segments?.keyword?.info?.matchType || "").replace("_", " ").toLowerCase(),
+                    date: row.segments?.date,
+                    spend,
+                    revenue: row.metrics?.conversionsValue || 0,
+                    impressions,
+                    clicks,
+                    conversions,
+                    cpc: clicks > 0 ? Math.round((spend / clicks) * 100) / 100 : null,
+                    ctr: impressions > 0 ? Math.round((clicks / impressions) * 10000) / 100 : null,
+                    cpa: conversions > 0 ? Math.round((spend / conversions) * 100) / 100 : null,
+                  };
+                });
+                await batchUpsert(supabase, "search_terms", batch, "client_id,platform_adset_id,search_term,date");
+                totalRecords += batch.length;
+                console.log(`[sync] ${batch.length} search term rows for ${cid} ${since}-${until}`);
+              }
+            } catch (err) {
+              console.error(`Search term sync error for ${cid} ${since}-${until}:`, err);
+            }
           }
         }
       }
@@ -497,8 +680,27 @@ async function queryGoogleAds(customerId: string, accessToken: string, developer
 }
 
 async function batchUpsert(supabase: any, table: string, rows: any[], onConflict: string, batchSize = 200) {
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const chunk = rows.slice(i, i + batchSize);
+  // Deduplicate by conflict keys to avoid "cannot affect row a second time"
+  const conflictKeys = onConflict.split(",").map(k => k.trim());
+  const deduped = new Map<string, any>();
+  for (const row of rows) {
+    const key = conflictKeys.map(k => row[k] ?? "").join("|");
+    if (deduped.has(key)) {
+      // Merge numeric fields (sum them)
+      const existing = deduped.get(key)!;
+      for (const [field, val] of Object.entries(row)) {
+        if (typeof val === "number" && !conflictKeys.includes(field)) {
+          existing[field] = (existing[field] || 0) + val;
+        }
+      }
+    } else {
+      deduped.set(key, { ...row });
+    }
+  }
+  const dedupedRows = Array.from(deduped.values());
+  
+  for (let i = 0; i < dedupedRows.length; i += batchSize) {
+    const chunk = dedupedRows.slice(i, i + batchSize);
     const { error } = await supabase.from(table).upsert(chunk, { onConflict });
     if (error) console.error(`Batch upsert error on ${table}:`, error.message);
   }

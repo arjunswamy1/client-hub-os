@@ -14,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 
 import BidStrategyPopover from "./BidStrategyPopover";
 import HeadlineOptimizerModal from "./HeadlineOptimizerModal";
+import GoogleAdPreviewModal from "./GoogleAdPreviewModal";
 import {
   ChevronRight, ChevronDown, Search, Download, Filter,
   ArrowUpDown, ArrowUp, ArrowDown, Eye, EyeOff, Pause, Play, Sparkles

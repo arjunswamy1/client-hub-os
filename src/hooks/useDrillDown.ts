@@ -180,6 +180,11 @@ export function useAdSetAds(platformAdsetId: string | null) {
         status: row.status,
         format: row.format || row.creative_type,
         thumbnailUrl: row.creative_thumbnail_url,
+        headlines: row.headlines as string[] | null,
+        headline: row.headline as string | null,
+        descriptions: row.descriptions as string[] | null,
+        description: row.description as string | null,
+        primaryText: row.primary_text as string | null,
       })).sort((a, b) => b.spend - a.spend);
     },
   });

@@ -89,7 +89,20 @@ export default function CampaignBuildPage() {
     },
   });
 
-  // Auto-scroll chat
+  // Rename build
+  const activeBuild = builds?.find(b => b.id === activeBuildId);
+  const handleStartRename = () => {
+    setEditTitle(activeBuild?.title || '');
+    setIsEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.focus(), 50);
+  };
+  const handleSaveTitle = async () => {
+    if (!activeBuildId || !editTitle.trim()) return;
+    setIsEditingTitle(false);
+    await supabase.from('campaign_builds').update({ title: editTitle.trim() }).eq('id', activeBuildId);
+    qc.invalidateQueries({ queryKey: ['campaign_builds', activeClient?.id] });
+  };
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);

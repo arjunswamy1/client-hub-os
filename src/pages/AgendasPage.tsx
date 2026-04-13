@@ -19,7 +19,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import {
-  Plus, Calendar, FileText, ChevronRight, Copy, MoreHorizontal,
+  Plus, Calendar, FileText, Copy, MoreHorizontal,
   Sparkles, LayoutTemplate, Loader2, CheckCircle2,
   Clock, Send, Search, ChevronDown, Zap, BarChart3, Phone, MessageSquare, ListChecks,
   TrendingUp, Minus, Bug, Droplets, Home
@@ -1019,6 +1019,52 @@ function SimpleEditor({ content, onChange, readOnly }: { content: AgendaSection[
         </div>
       ))}
     </div>
+  );
+}
+
+/* ───── Editable Item ───── */
+
+function EditableItem({ value, readOnly, onUpdate, onRemove }: {
+  value: string; readOnly: boolean; onUpdate: (val: string) => void; onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  if (editing && !readOnly) {
+    return (
+      <li className="flex items-start gap-2 text-[13px] leading-relaxed">
+        <span className="text-muted-foreground/40 mt-1 shrink-0">•</span>
+        <Input
+          autoFocus
+          className="h-7 text-[13px] flex-1 border-primary/30 bg-primary/5"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft.trim() && draft !== value) onUpdate(draft.trim());
+            setEditing(false);
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); if (draft.trim() && draft !== value) onUpdate(draft.trim()); setEditing(false); }
+            if (e.key === 'Escape') { setDraft(value); setEditing(false); }
+          }}
+        />
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
+      <span className="text-muted-foreground/40 mt-0.5 shrink-0">•</span>
+      <span
+        className={`flex-1 ${!readOnly ? 'cursor-pointer hover:bg-muted/40 rounded px-1 -mx-1 transition-colors' : ''}`}
+        onClick={() => { if (!readOnly) { setDraft(value); setEditing(true); } }}
+      >
+        {value}
+      </span>
+      {!readOnly && (
+        <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={onRemove}>×</button>
+      )}
+    </li>
   );
 }
 

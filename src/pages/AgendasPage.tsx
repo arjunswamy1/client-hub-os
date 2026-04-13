@@ -891,15 +891,15 @@ function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSec
                 </div>
               ) : (
                 <div className="px-5 py-3">
-                  <ul className="space-y-1.5">
+                  <ul className="space-y-1">
                     {section.items?.map((item, ii) => (
-                      <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
-                        <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
-                        <span className="flex-1">{item}</span>
-                        {!readOnly && (
-                          <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii)}>×</button>
-                        )}
-                      </li>
+                      <EditableItem
+                        key={ii}
+                        value={item}
+                        readOnly={readOnly}
+                        onUpdate={(val) => updateItem(si, ii, val)}
+                        onRemove={() => removeItem(si, ii)}
+                      />
                     ))}
                   </ul>
                   {!readOnly && (

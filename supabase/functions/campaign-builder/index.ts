@@ -21,9 +21,22 @@ CONVERSATION FLOW:
 3. Ask 3-5 targeted follow-up questions to fill gaps
 4. Generate the full campaign structure as a JSON tool call
 
+GOOGLE ADS CHARACTER LIMITS (STRICTLY ENFORCED — COUNT EVERY CHARACTER):
+- RSA Headlines: MAX 30 characters each. No exceptions.
+- RSA Descriptions: MAX 90 characters each. No exceptions.
+- Display Path 1: MAX 15 characters
+- Display Path 2: MAX 15 characters
+- Sitelink text: MAX 25 characters
+- Sitelink Description Line 1: MAX 35 characters
+- Sitelink Description Line 2: MAX 35 characters
+- Callout text: MAX 25 characters
+- Structured Snippet values: MAX 25 characters per value
+- Campaign name: MAX 128 characters
+- Ad Group name: MAX 255 characters
+
 RULES:
 - Every keyword must be tagged with intent: "high", "medium", or "low"
-- Headlines MUST be ≤30 characters. Descriptions MUST be ≤90 characters. VALIDATE THIS.
+- VALIDATE ALL CHARACTER LIMITS ABOVE before outputting. Count characters carefully. If a headline is 31+ chars, rewrite it shorter.
 - Generate at least 15 headlines per RSA (the max Google allows)
 - Generate 4 descriptions per RSA
 - Include match types: exact, phrase, broad (use exact for high-intent, phrase for medium, broad sparingly)
@@ -386,6 +399,71 @@ async function generateCSVs(
 
 function esc(s: string): string {
   return (s || '').replace(/"/g, '""');
+}
+
+// Google Ads character limit enforcement
+const CHAR_LIMITS = {
+  headline: 30,
+  description: 90,
+  path: 15,
+  sitelinkText: 25,
+  sitelinkDesc: 35,
+  callout: 25,
+  snippetValue: 25,
+  campaignName: 128,
+  adGroupName: 255,
+};
+
+function truncate(s: string, max: number): string {
+  if (!s) return '';
+  return s.length > max ? s.slice(0, max) : s;
+}
+
+function enforceCharLimits(structure: any): { structure: any; warnings: string[] } {
+  const warnings: string[] = [];
+  for (const c of structure.campaigns || []) {
+    if (c.name?.length > CHAR_LIMITS.campaignName) {
+      warnings.push(`Campaign "${c.name}" truncated to ${CHAR_LIMITS.campaignName} chars`);
+      c.name = truncate(c.name, CHAR_LIMITS.campaignName);
+    }
+    for (const ag of c.ad_groups || []) {
+      if (ag.name?.length > CHAR_LIMITS.adGroupName) {
+        ag.name = truncate(ag.name, CHAR_LIMITS.adGroupName);
+      }
+      for (const ad of ag.ads || []) {
+        ad.headlines = (ad.headlines || []).map((h: string) => {
+          if (h.length > CHAR_LIMITS.headline) {
+            warnings.push(`Headline "${h}" (${h.length} chars) truncated to ${CHAR_LIMITS.headline}`);
+            return truncate(h, CHAR_LIMITS.headline);
+          }
+          return h;
+        });
+        ad.descriptions = (ad.descriptions || []).map((d: string) => {
+          if (d.length > CHAR_LIMITS.description) {
+            warnings.push(`Description "${d.slice(0,40)}..." (${d.length} chars) truncated to ${CHAR_LIMITS.description}`);
+            return truncate(d, CHAR_LIMITS.description);
+          }
+          return d;
+        });
+        ad.path1 = truncate(ad.path1 || '', CHAR_LIMITS.path);
+        ad.path2 = truncate(ad.path2 || '', CHAR_LIMITS.path);
+      }
+    }
+    for (const sl of c.extensions?.sitelinks || []) {
+      sl.text = truncate(sl.text || '', CHAR_LIMITS.sitelinkText);
+      sl.description1 = truncate(sl.description1 || '', CHAR_LIMITS.sitelinkDesc);
+      sl.description2 = truncate(sl.description2 || '', CHAR_LIMITS.sitelinkDesc);
+    }
+    c.extensions?.callouts?.forEach((co: string, i: number) => {
+      if (co.length > CHAR_LIMITS.callout) {
+        c.extensions.callouts[i] = truncate(co, CHAR_LIMITS.callout);
+      }
+    });
+    for (const ss of c.extensions?.structured_snippets || []) {
+      ss.values = (ss.values || '').split(',').map((v: string) => truncate(v.trim(), CHAR_LIMITS.snippetValue)).join(', ');
+    }
+  }
+  return { structure, warnings };
 }
 
 function formatKeyword(keyword: string, matchType: string): string {

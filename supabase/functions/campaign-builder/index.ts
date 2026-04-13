@@ -40,7 +40,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, build_id, client_context, action } = await req.json();
+    const body = await req.json();
+    const { messages, build_id, client_context, action, campaign_structure } = body;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
@@ -51,10 +52,7 @@ Deno.serve(async (req) => {
 
     // If action is "generate_csvs", generate CSV files from the structure
     if (action === "generate_csvs") {
-      const { campaign_structure, client_name } = await req.json().catch(() => ({ campaign_structure: null, client_name: '' }));
-      // Re-parse from the original request
-      const body = JSON.parse(await new Response(req.clone().body).text().catch(() => '{}'));
-      return await generateCSVs(supabase, body.campaign_structure || campaign_structure, body.build_id || build_id);
+      return await generateCSVs(supabase, campaign_structure, build_id);
     }
 
     // Build enhanced system prompt with client context

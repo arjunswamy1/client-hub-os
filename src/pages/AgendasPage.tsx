@@ -861,15 +861,15 @@ function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSec
                             <Sparkles className="h-2.5 w-2.5 text-primary/40" />
                           )}
                         </div>
-                        <ul className="space-y-1.5">
+                        <ul className="space-y-1">
                           {sub.items?.map((item, ii) => (
-                            <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
-                              <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
-                              <span className="flex-1">{item}</span>
-                              {!readOnly && (
-                                <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii, subi)}>×</button>
-                              )}
-                            </li>
+                            <EditableItem
+                              key={ii}
+                              value={item}
+                              readOnly={readOnly}
+                              onUpdate={(val) => updateItem(si, ii, val, subi)}
+                              onRemove={() => removeItem(si, ii, subi)}
+                            />
                           ))}
                         </ul>
                         {!hasItems && readOnly && (

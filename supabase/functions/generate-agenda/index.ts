@@ -107,18 +107,18 @@ Deno.serve(async (req) => {
     ]);
 
     // Vertical detection patterns
-    const VERTICALS = ['flights', 'pest control', 'porta potty', 'bathroom remodel', 'hvac'];
+    const VERTICALS = ['flights', 'pest control', 'porta potty', 'bathroom remodel', 'hvac', 'garage doors'];
     function detectVertical(name: string): string {
       const lower = (name || '').toLowerCase();
       for (const v of VERTICALS) {
         if (lower.includes(v.replace(' ', '')) || lower.includes(v)) return v;
       }
-      // Also check short forms
       if (lower.includes('pest') || lower.includes('exterminator')) return 'pest control';
       if (lower.includes('flight') || lower.includes('airline')) return 'flights';
       if (lower.includes('porta') || lower.includes('portable toilet')) return 'porta potty';
       if (lower.includes('bathroom') || lower.includes('bath remodel') || lower.includes('br ')) return 'bathroom remodel';
       if (lower.includes('hvac') || lower.includes('heating') || lower.includes('cooling')) return 'hvac';
+      if (lower.includes('garage') || lower.includes('a1 garage')) return 'garage doors';
       return 'unclassified';
     }
 
@@ -205,20 +205,26 @@ Deno.serve(async (req) => {
     const systemPrompt = `You are an expert digital marketing account manager preparing a weekly client call agenda.
 You analyze the TRAILING 7 DAYS of performance data ending on the agenda date.
 
-The agenda follows a specific template structure. For each section marked [AI SHOULD POPULATE], generate 3-6 concise bullet points based ONLY on the actual data provided below.
-For sections NOT marked for AI population, leave the items array empty — those are for manual input by the team.
+The agenda follows a specific template structure. The structure has:
+1. "Marketing Updates" — a top-level section for links/resources. Leave items empty.
+2. Per-vertical sections (Pest Control, Porta Potty, Flights, HVAC, Bathroom Remodel, Garage Doors) each with subsections: Google, Meta, Bing, Ringba / Calls, Notes.
+   - For platform subsections marked [AI SHOULD POPULATE], generate 2-5 concise bullet points with actual spend, conversions, CPA, and notable campaign callouts. Format like: "Spend: $X | Y conversions | $Z CPA" on the first bullet, then specific campaign callouts.
+   - If a vertical has no data for a platform, add one bullet: "No activity this period."
+   - For "Notes" subsections (not AI populatable), leave items empty for manual input.
+3. "Feedback from Client" — leave items empty for manual input.
 
 ABSOLUTE RULES — VIOLATION = FAILURE:
-1. You may ONLY cite numbers that appear verbatim in the DATA sections below. If the data says spend is $2,322 then you write $2,322 — not $2,300, not $2.3K rounded differently, and absolutely not a made-up number like $48,000.
+1. You may ONLY cite numbers that appear verbatim in the DATA sections below. If the data says spend is $2,322 then you write $2,322 — not $2,300, not $2.3K rounded differently, and absolutely not a made-up number.
 2. Revenue in ad platforms may be $0 if tracking is not connected. If revenue = 0, say "Revenue: $0 (platform revenue tracking not connected)" — do NOT invent a revenue figure.
 3. Ringba call data is the ONLY source of call-based revenue. Use the exact totals provided.
-4. If a vertical or platform has NO rows in the data, write "No campaign data available for this period."
+4. If a vertical or platform has NO rows in the data, write "No activity this period."
 5. NEVER use placeholder numbers, industry benchmarks, or estimates. Every dollar figure must come from the data below.
 6. ALL metrics are for the trailing 7-day window (${contextSummary.period}) ONLY.
 7. Use the client's actual campaign names when referencing specific campaigns.
 8. Keep each bullet point concise (1-2 sentences max).
 9. Reference open action items from previous calls if any exist.
 10. Format spend/revenue as dollars with commas (e.g. $2,322.37). Format ROAS to 2 decimal places.
+11. For the first bullet in each platform subsection, lead with the summary line: "Spend: $X | Y conversions | $Z CPA"
 
 Return ONLY valid JSON matching the template structure.`;
 

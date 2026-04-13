@@ -267,7 +267,7 @@ Return the complete agenda_content as a JSON array of sections matching the temp
           { role: 'user', content: userPrompt },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.3,
+        temperature: 0.1,
       }),
     });
 

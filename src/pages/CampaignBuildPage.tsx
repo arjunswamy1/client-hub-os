@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   Send, Download, ChevronRight, ChevronDown, FolderOpen, FileText,
   Target, Hash, Type, Zap, Plus, Loader2, Bot, User, ArrowLeft,
-  Sparkles, AlertTriangle
+  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -274,6 +274,114 @@ export default function CampaignBuildPage() {
     }
   };
 
+  // Regenerate campaign structure
+  const handleRegenerate = async () => {
+    const regenMsg = 'Please regenerate the campaign structure with improvements. Keep the same goals and targeting but optimize the keywords, ad copy, and structure based on best practices.';
+    setInput('');
+    const userMsg: Message = { role: 'user', content: regenMsg };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setCampaignStructure(null);
+    setGeneratedFiles([]);
+    
+    // Trigger send with the regen message
+    setIsStreaming(true);
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-builder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: newMessages,
+          build_id: activeBuildId,
+          client_context: { client_name: activeClient?.name },
+        }),
+      });
+
+      if (!resp.ok || !resp.body) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to stream');
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = '';
+      let assistantContent = '';
+      let toolCallArgs = '';
+      let isToolCall = false;
+      let toolCallName = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (line.startsWith(':') || line.trim() === '') continue;
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const choice = parsed.choices?.[0];
+            if (choice?.delta?.tool_calls) {
+              for (const tc of choice.delta.tool_calls) {
+                if (tc.function?.name) { toolCallName = tc.function.name; isToolCall = true; }
+                if (tc.function?.arguments) { toolCallArgs += tc.function.arguments; }
+              }
+            }
+            const content = choice?.delta?.content;
+            if (content) {
+              assistantContent += content;
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant') {
+                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent } : m);
+                }
+                return [...prev, { role: 'assistant', content: assistantContent }];
+              });
+            }
+          } catch { textBuffer = line + '\n' + textBuffer; break; }
+        }
+      }
+
+      if (isToolCall && toolCallName === 'generate_campaign_structure' && toolCallArgs) {
+        try {
+          const structure = JSON.parse(toolCallArgs);
+          setCampaignStructure(structure);
+          if (activeBuildId) {
+            await supabase.from('campaign_builds').update({
+              campaign_structure: structure,
+              optimization_notes: structure.optimization_notes || '',
+              conversation_history: [...newMessages, { role: 'assistant', content: assistantContent || 'Campaign structure regenerated!' }],
+              status: 'draft',
+              updated_at: new Date().toISOString(),
+            }).eq('id', activeBuildId);
+          }
+          if (!assistantContent) {
+            setMessages(prev => [...prev, { role: 'assistant', content: '✅ **Campaign structure regenerated!** Review the updated structure in the preview panel. Click **"Generate & Download"** when ready.' }]);
+          }
+        } catch (e) { console.error('Failed to parse tool call:', e); }
+      }
+
+      if (activeBuildId) {
+        const finalMessages = [...newMessages];
+        if (assistantContent) finalMessages.push({ role: 'assistant', content: assistantContent });
+        await supabase.from('campaign_builds').update({ conversation_history: finalMessages, updated_at: new Date().toISOString() }).eq('id', activeBuildId);
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
   if (!activeClient) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -360,14 +468,25 @@ export default function CampaignBuildPage() {
             <p className="text-xs text-muted-foreground">AI Campaign Architect</p>
           </div>
           {campaignStructure && (
-            <Button
-              size="sm"
-              onClick={handleGenerateCSVs}
-              disabled={isGeneratingCSVs}
-            >
-              {isGeneratingCSVs ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-              Generate CSVs
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRegenerate}
+                disabled={isStreaming}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Regenerate
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleGenerateCSVs}
+                disabled={isGeneratingCSVs}
+              >
+                {isGeneratingCSVs ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                Generate & Download
+              </Button>
+            </div>
           )}
         </div>
 
@@ -463,19 +582,34 @@ export default function CampaignBuildPage() {
 
           {/* Download section */}
           {generatedFiles.length > 0 && (
-            <div className="mt-6 space-y-2">
-              <p className="text-sm font-medium flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                Download Files
-              </p>
-              {generatedFiles.map((f: any, i: number) => (
+            <div className="mt-6 space-y-3">
+              {/* Master Excel - prominent */}
+              {generatedFiles.filter((f: any) => f.file_type === 'xlsx').map((f: any, i: number) => (
+                <a
+                  key={`xlsx-${i}`}
+                  href={f.storage_url}
+                  download={f.filename}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30 hover:bg-green-500/20 transition-colors"
+                >
+                  <FileSpreadsheet className="h-5 w-5 text-green-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{f.filename}</p>
+                    <p className="text-[10px] text-muted-foreground">Master workbook — all sheets for team audit</p>
+                  </div>
+                  <Download className="h-4 w-4 text-muted-foreground" />
+                </a>
+              ))}
+
+              {/* Individual CSVs */}
+              <p className="text-xs font-medium text-muted-foreground pt-1">Individual CSV Files</p>
+              {generatedFiles.filter((f: any) => f.file_type !== 'xlsx').map((f: any, i: number) => (
                 <a
                   key={i}
                   href={f.storage_url}
                   download={f.filename}
                   className="flex items-center gap-2 p-2 rounded-md bg-background border hover:bg-accent/50 transition-colors text-sm"
                 >
-                  <FileText className="h-4 w-4 text-green-600" />
+                  <FileText className="h-4 w-4 text-muted-foreground" />
                   {f.filename}
                 </a>
               ))}

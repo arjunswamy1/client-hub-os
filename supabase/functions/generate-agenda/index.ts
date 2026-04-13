@@ -327,7 +327,25 @@ Return the complete agenda_content as a JSON array of sections matching the temp
       generatedSections = template_sections as AgendaSection[];
     }
 
-    // If agenda_id provided, update it directly
+    // Post-process: remove platform subsections with no activity
+    const NO_ACTIVITY_PATTERNS = ['no activity', 'no data', 'no spend', 'n/a'];
+    const PLATFORM_SUBS = ['google', 'meta', 'bing', 'ringba / calls'];
+
+    for (const section of generatedSections) {
+      if (!section.subsections || !section.vertical) continue;
+      section.subsections = section.subsections.filter(sub => {
+        const subTitle = sub.title.toLowerCase();
+        // Always keep non-platform subsections (Notes, etc.)
+        if (!PLATFORM_SUBS.includes(subTitle)) return true;
+        // Remove if no items
+        if (!sub.items || sub.items.length === 0) return false;
+        // Remove if only "no activity" type bullets
+        const allNoActivity = sub.items.every(item =>
+          NO_ACTIVITY_PATTERNS.some(p => item.toLowerCase().includes(p))
+        );
+        return !allNoActivity;
+      });
+    }
     if (agenda_id) {
       const { error } = await supabase
         .from('call_agendas')

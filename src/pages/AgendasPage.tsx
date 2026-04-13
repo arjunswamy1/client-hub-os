@@ -78,6 +78,9 @@ const VERTICAL_ICONS: Record<string, typeof Bug> = {
   'pest': Bug,
   'bathroom': Droplets,
   'home': Home,
+  'hvac': Zap,
+  'flight': TrendingUp,
+  'porta': ListChecks,
 };
 
 function getVerticalIcon(vertical?: string) {
@@ -90,6 +93,8 @@ const VERTICAL_COLORS: Record<string, { bg: string; border: string; text: string
   'pest control': { bg: 'bg-green-500/8', border: 'border-green-500/25', text: 'text-green-700' },
   'bathroom remodel': { bg: 'bg-cyan-500/8', border: 'border-cyan-500/25', text: 'text-cyan-700' },
   'hvac': { bg: 'bg-red-500/8', border: 'border-red-500/25', text: 'text-red-700' },
+  'flights': { bg: 'bg-sky-500/8', border: 'border-sky-500/25', text: 'text-sky-700' },
+  'porta potty': { bg: 'bg-amber-500/8', border: 'border-amber-500/25', text: 'text-amber-700' },
 };
 
 function getVerticalColor(vertical?: string) {

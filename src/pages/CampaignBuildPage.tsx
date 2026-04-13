@@ -275,12 +275,111 @@ export default function CampaignBuildPage() {
   };
 
   // Regenerate campaign structure
-  const handleRegenerate = () => {
-    setInput('Please regenerate the campaign structure with improvements based on our conversation so far.');
-    setTimeout(() => {
-      const btn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
-      btn?.click();
-    }, 100);
+  const handleRegenerate = async () => {
+    const regenMsg = 'Please regenerate the campaign structure with improvements. Keep the same goals and targeting but optimize the keywords, ad copy, and structure based on best practices.';
+    setInput('');
+    const userMsg: Message = { role: 'user', content: regenMsg };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setCampaignStructure(null);
+    setGeneratedFiles([]);
+    
+    // Trigger send with the regen message
+    setIsStreaming(true);
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-builder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: newMessages,
+          build_id: activeBuildId,
+          client_context: { client_name: activeClient?.name },
+        }),
+      });
+
+      if (!resp.ok || !resp.body) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to stream');
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = '';
+      let assistantContent = '';
+      let toolCallArgs = '';
+      let isToolCall = false;
+      let toolCallName = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (line.startsWith(':') || line.trim() === '') continue;
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const choice = parsed.choices?.[0];
+            if (choice?.delta?.tool_calls) {
+              for (const tc of choice.delta.tool_calls) {
+                if (tc.function?.name) { toolCallName = tc.function.name; isToolCall = true; }
+                if (tc.function?.arguments) { toolCallArgs += tc.function.arguments; }
+              }
+            }
+            const content = choice?.delta?.content;
+            if (content) {
+              assistantContent += content;
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant') {
+                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent } : m);
+                }
+                return [...prev, { role: 'assistant', content: assistantContent }];
+              });
+            }
+          } catch { textBuffer = line + '\n' + textBuffer; break; }
+        }
+      }
+
+      if (isToolCall && toolCallName === 'generate_campaign_structure' && toolCallArgs) {
+        try {
+          const structure = JSON.parse(toolCallArgs);
+          setCampaignStructure(structure);
+          if (activeBuildId) {
+            await supabase.from('campaign_builds').update({
+              campaign_structure: structure,
+              optimization_notes: structure.optimization_notes || '',
+              conversation_history: [...newMessages, { role: 'assistant', content: assistantContent || 'Campaign structure regenerated!' }],
+              status: 'draft',
+              updated_at: new Date().toISOString(),
+            }).eq('id', activeBuildId);
+          }
+          if (!assistantContent) {
+            setMessages(prev => [...prev, { role: 'assistant', content: '✅ **Campaign structure regenerated!** Review the updated structure in the preview panel. Click **"Generate & Download"** when ready.' }]);
+          }
+        } catch (e) { console.error('Failed to parse tool call:', e); }
+      }
+
+      if (activeBuildId) {
+        const finalMessages = [...newMessages];
+        if (assistantContent) finalMessages.push({ role: 'assistant', content: assistantContent });
+        await supabase.from('campaign_builds').update({ conversation_history: finalMessages, updated_at: new Date().toISOString() }).eq('id', activeBuildId);
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setIsStreaming(false);
+    }
   };
 
   if (!activeClient) {

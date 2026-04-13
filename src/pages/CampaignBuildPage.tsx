@@ -582,19 +582,34 @@ export default function CampaignBuildPage() {
 
           {/* Download section */}
           {generatedFiles.length > 0 && (
-            <div className="mt-6 space-y-2">
-              <p className="text-sm font-medium flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                Download Files
-              </p>
-              {generatedFiles.map((f: any, i: number) => (
+            <div className="mt-6 space-y-3">
+              {/* Master Excel - prominent */}
+              {generatedFiles.filter((f: any) => f.file_type === 'xlsx').map((f: any, i: number) => (
+                <a
+                  key={`xlsx-${i}`}
+                  href={f.storage_url}
+                  download={f.filename}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30 hover:bg-green-500/20 transition-colors"
+                >
+                  <FileSpreadsheet className="h-5 w-5 text-green-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{f.filename}</p>
+                    <p className="text-[10px] text-muted-foreground">Master workbook — all sheets for team audit</p>
+                  </div>
+                  <Download className="h-4 w-4 text-muted-foreground" />
+                </a>
+              ))}
+
+              {/* Individual CSVs */}
+              <p className="text-xs font-medium text-muted-foreground pt-1">Individual CSV Files</p>
+              {generatedFiles.filter((f: any) => f.file_type !== 'xlsx').map((f: any, i: number) => (
                 <a
                   key={i}
                   href={f.storage_url}
                   download={f.filename}
                   className="flex items-center gap-2 p-2 rounded-md bg-background border hover:bg-accent/50 transition-colors text-sm"
                 >
-                  <FileText className="h-4 w-4 text-green-600" />
+                  <FileText className="h-4 w-4 text-muted-foreground" />
                   {f.filename}
                 </a>
               ))}

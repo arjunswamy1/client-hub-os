@@ -59,19 +59,13 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const SECTION_COLORS: Record<string, { bg: string; border: string; icon: string; headerBg: string }> = {
-  'Development Update': { bg: 'bg-violet-500/5', border: 'border-violet-500/20', icon: 'text-violet-500', headerBg: 'bg-violet-500/10' },
-  'Marketing Strategy': { bg: 'bg-blue-500/5', border: 'border-blue-500/20', icon: 'text-blue-500', headerBg: 'bg-blue-500/10' },
-  'General Connect Paid Media Needs': { bg: 'bg-orange-500/5', border: 'border-orange-500/20', icon: 'text-orange-500', headerBg: 'bg-orange-500/10' },
-  'Notes from Billy.com Team': { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', icon: 'text-emerald-500', headerBg: 'bg-emerald-500/10' },
-  'Notes from Client': { bg: 'bg-pink-500/5', border: 'border-pink-500/20', icon: 'text-pink-500', headerBg: 'bg-pink-500/10' },
+  'Marketing Updates': { bg: 'bg-blue-500/5', border: 'border-blue-500/20', icon: 'text-blue-500', headerBg: 'bg-blue-500/10' },
+  'Feedback from Client': { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', icon: 'text-emerald-500', headerBg: 'bg-emerald-500/10' },
 };
 
 const SECTION_ICONS: Record<string, typeof FileText> = {
-  'Development Update': Zap,
-  'Marketing Strategy': BarChart3,
-  'General Connect Paid Media Needs': ListChecks,
-  'Notes from Billy.com Team': MessageSquare,
-  'Notes from Client': MessageSquare,
+  'Marketing Updates': BarChart3,
+  'Feedback from Client': MessageSquare,
 };
 
 const VERTICAL_ICONS: Record<string, typeof Bug> = {
@@ -80,6 +74,7 @@ const VERTICAL_ICONS: Record<string, typeof Bug> = {
   'hvac': Wrench,
   'flight': Plane,
   'porta': Toilet,
+  'garage': Wrench,
 };
 
 function getVerticalIcon(vertical?: string) {
@@ -94,6 +89,7 @@ const VERTICAL_COLORS: Record<string, { bg: string; border: string; text: string
   'hvac': { bg: 'bg-red-500/8', border: 'border-red-500/25', text: 'text-red-700' },
   'flights': { bg: 'bg-sky-500/8', border: 'border-sky-500/25', text: 'text-sky-700' },
   'porta potty': { bg: 'bg-amber-500/8', border: 'border-amber-500/25', text: 'text-amber-700' },
+  'garage doors': { bg: 'bg-purple-500/8', border: 'border-purple-500/25', text: 'text-purple-700' },
 };
 
 function getVerticalColor(vertical?: string) {
@@ -731,39 +727,31 @@ export default function AgendasPage() {
 
 function defaultSections(): AgendaSection[] {
   const verticals = [
-    { name: 'Flights', id: 'flights' },
     { name: 'Pest Control', id: 'pest_control' },
     { name: 'Porta Potty', id: 'porta_potty' },
-    { name: 'Bathroom Remodel', id: 'bathroom_remodel' },
+    { name: 'Flights', id: 'flights' },
     { name: 'HVAC', id: 'hvac' },
+    { name: 'Bathroom Remodel', id: 'bathroom_remodel' },
+    { name: 'Garage Doors', id: 'garage_doors' },
   ];
 
   return [
-    { section: 'Development Update', subsections: [
-      { title: 'In Progress', items: [], placeholder: 'Current development work...' },
-      { title: 'Upcoming Priorities', items: [], placeholder: 'Next priorities...' },
-      { title: 'Action Items / Needs', items: [], placeholder: 'Dev action items...' },
-    ]},
-    { section: 'Marketing Strategy — Overview', subsections: [
-      { title: 'Overall Performance Recap', items: [], placeholder: 'High-level cross-vertical metrics...', ai_populatable: true },
-      { title: 'Budget & Pacing', items: [], placeholder: 'Budget status across verticals...', ai_populatable: true },
-      { title: 'Upcoming Launches', items: [], placeholder: 'Planned launches...' },
+    { section: 'Marketing Updates', subsections: [
+      { title: 'Links & Resources', items: [], placeholder: 'Dashboard links, project tracker URLs...' },
     ]},
     ...verticals.map(v => ({
-      section: `${v.name} — Vertical Update`,
+      section: v.name,
       vertical: v.id,
       subsections: [
-        { title: 'Google Ads', items: [], placeholder: `Google performance for ${v.name}...`, ai_populatable: true },
-        { title: 'Meta Ads', items: [], placeholder: `Meta performance for ${v.name}...`, ai_populatable: true },
+        { title: 'Google', items: [], placeholder: `Google Ads performance for ${v.name}...`, ai_populatable: true },
+        { title: 'Meta', items: [], placeholder: `Meta Ads performance for ${v.name}...`, ai_populatable: true },
+        { title: 'Bing', items: [], placeholder: `Bing Ads performance for ${v.name}...`, ai_populatable: true },
         { title: 'Ringba / Calls', items: [], placeholder: `Call metrics for ${v.name}...`, ai_populatable: true },
-        { title: 'Notes & Action Items', items: [], placeholder: `${v.name} action items...` },
+        { title: 'Notes', items: [], placeholder: `Strategic notes, next steps for ${v.name}...` },
       ],
     })),
-    { section: 'General Connect Paid Media Needs', subsections: [
-      { title: 'Items', items: [], placeholder: 'Broader support requests...' },
-    ]},
-    { section: 'Notes from Client', subsections: [
-      { title: 'Items', items: [], placeholder: 'Client comments...' },
+    { section: 'Feedback from Client', subsections: [
+      { title: 'Items', items: [], placeholder: 'Client feedback, requests, follow-ups...' },
     ]},
   ];
 }

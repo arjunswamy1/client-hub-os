@@ -22,7 +22,7 @@ import {
   Plus, Calendar, FileText, Copy, MoreHorizontal,
   Sparkles, LayoutTemplate, Loader2, CheckCircle2,
   Clock, Send, Search, ChevronDown, Zap, BarChart3, Phone, MessageSquare, ListChecks,
-  TrendingUp, Minus, Bug, Droplets, Home
+  TrendingUp, Minus, Bug, Plane, Toilet, Wrench, Bath
 } from 'lucide-react';
 import { format, addDays, nextMonday, isThisWeek, isThisMonth } from 'date-fns';
 import { toast } from 'sonner';
@@ -76,11 +76,10 @@ const SECTION_ICONS: Record<string, typeof FileText> = {
 
 const VERTICAL_ICONS: Record<string, typeof Bug> = {
   'pest': Bug,
-  'bathroom': Droplets,
-  'home': Home,
-  'hvac': Zap,
-  'flight': TrendingUp,
-  'porta': ListChecks,
+  'bathroom': Bath,
+  'hvac': Wrench,
+  'flight': Plane,
+  'porta': Toilet,
 };
 
 function getVerticalIcon(vertical?: string) {

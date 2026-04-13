@@ -161,13 +161,14 @@ Deno.serve(async (req) => {
       .join('\n\n');
 
     const systemPrompt = `You are an expert digital marketing account manager preparing a weekly client call agenda. 
-You analyze performance data, context feed items, open action items, and optimization recommendations to create a focused, actionable agenda.
+You analyze LAST 7 DAYS performance data, context feed items, open action items, and optimization recommendations to create a focused, actionable agenda.
 
 The agenda follows a specific template structure. For each section marked [AI SHOULD POPULATE], generate 3-6 concise bullet points based on the data provided.
 For sections NOT marked for AI population, leave the items array empty — those are for manual input by the team.
 
 IMPORTANT RULES:
-- Be specific with numbers: include actual spend, revenue, ROAS, conversion counts
+- ALL metrics are from the LAST 7 DAYS ONLY — not all-time. Always reference the date range.
+- Be specific with numbers: include actual spend, revenue, ROAS, conversion counts for the 7-day window
 - Call out significant changes (>10% week-over-week)
 - Highlight any campaigns that need attention (high spend/low return, paused campaigns that could be restarted)
 - For Ringba/call metrics: include call volume, conversion rates, revenue
@@ -179,8 +180,9 @@ IMPORTANT RULES:
 Return ONLY valid JSON matching the template structure.`;
 
     const userPrompt = `Generate the weekly agenda for ${contextSummary.client_name}.
+ALL DATA BELOW IS FROM THE LAST 7 DAYS (${contextSummary.period}). Report metrics for this period only.
 
-PERFORMANCE DATA (Last 7 days):
+PERFORMANCE DATA (${contextSummary.period}):
 ${JSON.stringify(contextSummary.platform_performance, null, 2)}
 
 RINGBA CALL DATA:

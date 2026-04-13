@@ -180,8 +180,9 @@ IMPORTANT RULES:
 Return ONLY valid JSON matching the template structure.`;
 
     const userPrompt = `Generate the weekly agenda for ${contextSummary.client_name}.
+ALL DATA BELOW IS FROM THE LAST 7 DAYS (${contextSummary.period}). Report metrics for this period only.
 
-PERFORMANCE DATA (Last 7 days):
+PERFORMANCE DATA (${contextSummary.period}):
 ${JSON.stringify(contextSummary.platform_performance, null, 2)}
 
 RINGBA CALL DATA:

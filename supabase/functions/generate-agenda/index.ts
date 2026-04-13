@@ -259,6 +259,8 @@ ${templateDesc}
 
 Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays.`;
 
+    console.log('Calling AI with', Object.keys(contextSummary.vertical_performance).length, 'verticals,', Object.keys(contextSummary.platform_performance).length, 'platforms');
+
     // Call AI
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -274,25 +276,31 @@ Return the complete agenda_content as a JSON array of sections matching the temp
         ],
         response_format: { type: 'json_object' },
         temperature: 0.1,
+        max_tokens: 8000,
       }),
     });
 
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
+      console.error('AI API error:', aiResponse.status, errText);
       throw new Error(`AI API error: ${aiResponse.status} ${errText}`);
     }
 
     const aiData = await aiResponse.json();
     const rawContent = aiData.choices?.[0]?.message?.content;
+    console.log('AI response length:', rawContent?.length, 'finish_reason:', aiData.choices?.[0]?.finish_reason);
 
     let generatedSections: AgendaSection[];
     try {
-      const parsed = JSON.parse(rawContent);
+      const cleaned = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const parsed = JSON.parse(cleaned);
       generatedSections = parsed.sections || parsed.agenda_content || parsed;
       if (!Array.isArray(generatedSections)) {
+        console.error('AI returned non-array, keys:', Object.keys(parsed));
         generatedSections = template_sections as AgendaSection[];
       }
-    } catch {
+    } catch (parseErr: any) {
+      console.error('JSON parse error:', parseErr.message, 'raw preview:', rawContent?.slice(0, 200));
       generatedSections = template_sections as AgendaSection[];
     }
 

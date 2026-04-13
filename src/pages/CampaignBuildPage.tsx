@@ -12,8 +12,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   Send, Download, ChevronRight, ChevronDown, FolderOpen, FileText,
   Target, Hash, Type, Zap, Plus, Loader2, Bot, User, ArrowLeft,
-  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet
+  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet, Pencil, Check
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import ReactMarkdown from 'react-markdown';
 
 type Message = { role: 'user' | 'assistant'; content: string };

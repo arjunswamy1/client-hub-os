@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -360,11 +361,52 @@ async function generateCSVs(
   }
   files.push({ filename: "Structured Snippets.csv", content: snippetsCsv });
 
+  // Generate master Excel workbook with all CSVs as sheets
+  const wb = XLSX.utils.book_new();
+  for (const file of files) {
+    const rows = file.content.split('\n').filter(r => r.trim()).map(row => {
+      const cells: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (ch === '"') {
+          if (inQuotes && row[i + 1] === '"') { current += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if (ch === ',' && !inQuotes) {
+          cells.push(current); current = '';
+        } else { current += ch; }
+      }
+      cells.push(current);
+      return cells;
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const sheetName = file.filename.replace('.csv', '').slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  }
+  const xlsxBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
   // Upload to storage
   const uploadedFiles = [];
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const folder = `${buildId || 'manual'}/${timestamp}`;
 
+  // Upload Excel file first
+  const xlsxPath = `${folder}/Campaign Build - Master.xlsx`;
+  const { error: xlsxErr } = await supabase.storage
+    .from('campaign-build-files')
+    .upload(xlsxPath, new Blob([xlsxBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), {
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      upsert: true,
+    });
+  if (!xlsxErr) {
+    const { data: xlsxUrl } = supabase.storage.from('campaign-build-files').getPublicUrl(xlsxPath);
+    uploadedFiles.push({ filename: 'Campaign Build - Master.xlsx', storage_url: xlsxUrl.publicUrl, file_type: 'xlsx' });
+  } else {
+    console.error('Excel upload error:', xlsxErr);
+  }
+
+  // Upload individual CSVs
   for (const file of files) {
     const path = `${folder}/${file.filename}`;
     const { error } = await supabase.storage

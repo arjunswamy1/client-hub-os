@@ -41,7 +41,10 @@ export default function CampaignBuildPage() {
   const [campaignStructure, setCampaignStructure] = useState<any>(null);
   const [isGeneratingCSVs, setIsGeneratingCSVs] = useState(false);
   const [generatedFiles, setGeneratedFiles] = useState<any[]>([]);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch existing builds
   const { data: builds } = useQuery({

@@ -274,6 +274,15 @@ export default function CampaignBuildPage() {
     }
   };
 
+  // Regenerate campaign structure
+  const handleRegenerate = () => {
+    setInput('Please regenerate the campaign structure with improvements based on our conversation so far.');
+    setTimeout(() => {
+      const btn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
+      btn?.click();
+    }, 100);
+  };
+
   if (!activeClient) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">

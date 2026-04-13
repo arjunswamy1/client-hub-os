@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
@@ -21,9 +20,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Plus, Calendar, FileText, ChevronRight, Copy, MoreHorizontal,
-  Sparkles, LayoutTemplate, Loader2, RefreshCw, CheckCircle2,
+  Sparkles, LayoutTemplate, Loader2, CheckCircle2,
   Clock, Send, Search, ChevronDown, Zap, BarChart3, Phone, MessageSquare, ListChecks,
-  TrendingUp, TrendingDown, Minus, Bug, Droplets, Home
+  TrendingUp, Minus, Bug, Droplets, Home
 } from 'lucide-react';
 import { format, addDays, nextMonday, isThisWeek, isThisMonth } from 'date-fns';
 import { toast } from 'sonner';

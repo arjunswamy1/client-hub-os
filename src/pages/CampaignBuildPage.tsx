@@ -596,6 +596,60 @@ export default function CampaignBuildPage() {
               ))}
             </div>
           )}
+
+          {/* Bulk Locations Upload */}
+          {campaignStructure && (
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-primary" />
+                <p className="text-sm font-medium">Bulk Location Targeting</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Paste zip codes below to generate a bulk locations CSV with Google Ads Editor headers and Location IDs.
+              </p>
+              <Textarea
+                value={zipcodesInput}
+                onChange={(e) => setZipcodesInput(e.target.value)}
+                placeholder="Paste zip codes here (comma, space, or newline separated)&#10;e.g. 90210, 10001, 30301, 60601"
+                className="min-h-[80px] text-xs font-mono"
+                rows={4}
+              />
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] text-muted-foreground">
+                  {zipcodesInput.trim() ? `${zipcodesInput.split(/[\s,;\n]+/).filter(z => /^\d{5}$/.test(z.trim())).length} valid zip codes` : 'No zip codes entered'}
+                </p>
+                <Button
+                  size="sm"
+                  onClick={handleGenerateLocations}
+                  disabled={isGeneratingLocations || !zipcodesInput.trim()}
+                >
+                  {isGeneratingLocations ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <MapPin className="h-4 w-4 mr-2" />}
+                  Generate Locations CSV
+                </Button>
+              </div>
+
+              {/* Location files download */}
+              {locationFiles.length > 0 && (
+                <div className="space-y-2 pt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground">Location Files</p>
+                  {locationFiles.map((f: any, i: number) => (
+                    <a
+                      key={i}
+                      href={f.storage_url}
+                      download={f.filename}
+                      className={`flex items-center gap-2 p-2 rounded-md border hover:bg-accent/50 transition-colors text-sm ${
+                        f.file_type === 'xlsx' ? 'bg-primary/5 border-primary/20' : 'bg-background'
+                      }`}
+                    >
+                      {f.file_type === 'xlsx' ? <FileSpreadsheet className="h-4 w-4 text-primary" /> : <FileText className="h-4 w-4 text-muted-foreground" />}
+                      {f.filename}
+                      <Download className="h-3 w-3 ml-auto text-muted-foreground" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </ScrollArea>
       </div>
     </div>

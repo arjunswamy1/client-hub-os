@@ -453,7 +453,7 @@ export default function CampaignBuildPage() {
               className="min-h-[44px] max-h-[120px] resize-none"
               rows={1}
             />
-            <Button onClick={sendMessage} disabled={isStreaming || !input.trim()} size="icon" className="shrink-0">
+            <Button onClick={() => sendMessage()} disabled={isStreaming || !input.trim()} size="icon" className="shrink-0">
               <Send className="h-4 w-4" />
             </Button>
           </div>

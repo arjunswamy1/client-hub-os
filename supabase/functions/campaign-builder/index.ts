@@ -460,6 +460,154 @@ async function generateCSVs(
   });
 }
 
+async function generateLocationsCsv(
+  supabase: any,
+  apiKey: string,
+  zipcodes: string[],
+  campaignNames: string[],
+  buildId: string,
+  clientName?: string,
+) {
+  if (!zipcodes?.length || !campaignNames?.length) {
+    return new Response(JSON.stringify({ error: "Zip codes and campaign names are required" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Use AI to map zip codes to Google Ads criteria IDs
+  const prompt = `You are a Google Ads location targeting expert. I need you to generate a bulk location upload CSV for Google Ads Editor.
+
+Given these US zip codes: ${zipcodes.join(', ')}
+
+For each zip code, provide the Google Ads Criteria ID (also called Location ID). US zip codes have criteria IDs typically in the range of 9000000+.
+
+Return ONLY a valid JSON array with objects like:
+[{"zip":"90210","criteria_id":"9032869","canonical_name":"90210,California,United States"}]
+
+If you don't know the exact criteria ID for a zip code, use the format "zip:XXXXX" as the criteria_id so the user knows to look it up. But try your best to provide accurate criteria IDs.
+
+IMPORTANT: Return ONLY the JSON array, no markdown, no explanation.`;
+
+  try {
+    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: "You are a Google Ads API expert. Return only valid JSON." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.1,
+      }),
+    });
+
+    if (!aiResp.ok) {
+      const errText = await aiResp.text();
+      console.error("AI error for locations:", errText);
+      throw new Error("Failed to generate location mappings");
+    }
+
+    const aiData = await aiResp.json();
+    let locationsJson: any[];
+    const rawContent = aiData.choices?.[0]?.message?.content || '[]';
+    // Strip markdown code fences if present
+    const cleaned = rawContent.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    try {
+      locationsJson = JSON.parse(cleaned);
+    } catch {
+      console.error("Failed to parse AI locations response:", cleaned);
+      // Fallback: create entries without criteria IDs
+      locationsJson = zipcodes.map(z => ({ zip: z, criteria_id: '', canonical_name: `${z},United States` }));
+    }
+
+    // Generate CSV with Google Ads Editor headers
+    // Google Ads Editor bulk location headers: Campaign, Location, Location ID, Bid adj.
+    let locationsCsv = "Campaign,Location,Location ID,Bid adj.\n";
+    for (const cName of campaignNames) {
+      for (const loc of locationsJson) {
+        locationsCsv += `"${esc(cName)}","${esc(loc.canonical_name || loc.zip)}","${esc(String(loc.criteria_id || ''))}",""\n`;
+      }
+    }
+
+    // Build filename
+    const sanitize = (s: string) => (s || '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    const now = new Date();
+    const dateStr = `${now.getMonth() + 1}${now.getDate()}${String(now.getFullYear()).slice(-2)}`;
+    const clientSlug = sanitize(clientName || 'Client');
+    const prefix = `${clientSlug}_Locations_${dateStr}`;
+    const csvFilename = `${prefix}.csv`;
+
+    // Also create an Excel version
+    const wb = XLSX.utils.book_new();
+    const rows = locationsCsv.split('\n').filter(r => r.trim()).map(row => {
+      const cells: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (ch === '"') {
+          if (inQuotes && row[i + 1] === '"') { current += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if (ch === ',' && !inQuotes) {
+          cells.push(current); current = '';
+        } else { current += ch; }
+      }
+      cells.push(current);
+      return cells;
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Locations');
+    const xlsxBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+    // Upload files
+    const timestamp = now.toISOString().replace(/[:.]/g, '-');
+    const folder = `${buildId || 'manual'}/${timestamp}`;
+    const uploadedFiles = [];
+
+    // Upload CSV
+    const csvPath = `${folder}/${csvFilename}`;
+    const { error: csvErr } = await supabase.storage
+      .from('campaign-build-files')
+      .upload(csvPath, new Blob([locationsCsv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
+    if (!csvErr) {
+      const { data: csvUrl } = supabase.storage.from('campaign-build-files').getPublicUrl(csvPath);
+      uploadedFiles.push({ filename: csvFilename, storage_url: csvUrl.publicUrl, file_type: 'csv' });
+    }
+
+    // Upload Excel
+    const xlsxFilename = `${prefix}.xlsx`;
+    const xlsxPath = `${folder}/${xlsxFilename}`;
+    const { error: xlsxErr } = await supabase.storage
+      .from('campaign-build-files')
+      .upload(xlsxPath, new Blob([xlsxBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), {
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        upsert: true,
+      });
+    if (!xlsxErr) {
+      const { data: xlsxUrl } = supabase.storage.from('campaign-build-files').getPublicUrl(xlsxPath);
+      uploadedFiles.push({ filename: xlsxFilename, storage_url: xlsxUrl.publicUrl, file_type: 'xlsx' });
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      files: uploadedFiles,
+      locations_count: locationsJson.length,
+      campaigns_count: campaignNames.length,
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("generateLocationsCsv error:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+}
+
 function esc(s: string): string {
   return (s || '').replace(/"/g, '""');
 }

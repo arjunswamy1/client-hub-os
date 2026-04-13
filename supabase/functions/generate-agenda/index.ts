@@ -208,15 +208,17 @@ You analyze the TRAILING 7 DAYS of performance data ending on the agenda date.
 The agenda follows a specific template structure. For each section marked [AI SHOULD POPULATE], generate 3-6 concise bullet points based ONLY on the actual data provided below.
 For sections NOT marked for AI population, leave the items array empty — those are for manual input by the team.
 
-CRITICAL RULES:
-- ONLY use the exact numbers from the data provided below. NEVER invent, estimate, or hallucinate metrics.
-- If a metric is 0 or missing, say so explicitly (e.g. "Revenue: $0 — revenue tracking not yet connected").
-- If there is no data for a vertical or platform, state "No data available for this period."
-- ALL metrics are for the trailing 7-day window (${contextSummary.period}) ONLY.
-- Use the client's actual campaign names when referencing specific campaigns.
-- Keep each bullet point concise (1-2 sentences max).
-- Reference open action items from previous calls if any exist.
-- Include pending AI optimization recommendations if any exist.
+ABSOLUTE RULES — VIOLATION = FAILURE:
+1. You may ONLY cite numbers that appear verbatim in the DATA sections below. If the data says spend is $2,322 then you write $2,322 — not $2,300, not $2.3K rounded differently, and absolutely not a made-up number like $48,000.
+2. Revenue in ad platforms may be $0 if tracking is not connected. If revenue = 0, say "Revenue: $0 (platform revenue tracking not connected)" — do NOT invent a revenue figure.
+3. Ringba call data is the ONLY source of call-based revenue. Use the exact totals provided.
+4. If a vertical or platform has NO rows in the data, write "No campaign data available for this period."
+5. NEVER use placeholder numbers, industry benchmarks, or estimates. Every dollar figure must come from the data below.
+6. ALL metrics are for the trailing 7-day window (${contextSummary.period}) ONLY.
+7. Use the client's actual campaign names when referencing specific campaigns.
+8. Keep each bullet point concise (1-2 sentences max).
+9. Reference open action items from previous calls if any exist.
+10. Format spend/revenue as dollars with commas (e.g. $2,322.37). Format ROAS to 2 decimal places.
 
 Return ONLY valid JSON matching the template structure.`;
 
@@ -265,7 +267,7 @@ Return the complete agenda_content as a JSON array of sections matching the temp
           { role: 'user', content: userPrompt },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.3,
+        temperature: 0.1,
       }),
     });
 

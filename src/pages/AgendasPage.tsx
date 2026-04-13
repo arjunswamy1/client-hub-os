@@ -800,28 +800,29 @@ function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSec
   return (
     <div className="space-y-4">
       {sections.map((section, si) => {
-        const isVertical = isVerticalSection(section);
+    const isVertical = isVerticalSection(section);
         const sectionName = section.section;
-        const colors = isVertical
-          ? getVerticalColor(sectionName)
-          : SECTION_COLORS[sectionName] || { bg: 'bg-muted/20', border: 'border-muted', icon: 'text-muted-foreground', headerBg: 'bg-muted/30' };
+        const vc = isVertical ? getVerticalColor(sectionName) : null;
+        const sc = !isVertical ? (SECTION_COLORS[sectionName] || { bg: 'bg-muted/20', border: 'border-muted', icon: 'text-muted-foreground', headerBg: 'bg-muted/30' }) : null;
         const Icon = isVertical
           ? (getVerticalIcon(sectionName) || TrendingUp)
           : (SECTION_ICONS[sectionName] || FileText);
 
+        const borderClass = isVertical ? vc!.border : sc!.border;
+        const headerBgClass = isVertical ? vc!.bg : sc!.headerBg;
+        const iconBgClass = isVertical ? `${vc!.bg} border ${vc!.border}` : sc!.bg;
+        const iconColorClass = isVertical ? vc!.text : sc!.icon;
+
         return (
-          <div
-            key={si}
-            className={`rounded-xl border ${isVertical ? colors.border : (colors as any).border} overflow-hidden`}
-          >
+          <div key={si} className={`rounded-xl border ${borderClass} overflow-hidden`}>
             {/* Section Header */}
-            <div className={`px-4 py-3 flex items-center gap-3 ${isVertical ? colors.bg : (colors as any).headerBg}`}>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isVertical ? `${colors.bg} border ${colors.border}` : `${(colors as any).bg}`}`}>
-                <Icon className={`h-4 w-4 ${isVertical ? colors.text : (colors as any).icon}`} />
+            <div className={`px-4 py-3 flex items-center gap-3 ${headerBgClass}`}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${iconBgClass}`}>
+                <Icon className={`h-4 w-4 ${iconColorClass}`} />
               </div>
               <h4 className="text-sm font-semibold flex-1">{sectionName}</h4>
-              {isVertical && (
-                <Badge variant="outline" className={`text-[10px] ${colors.text} ${colors.border}`}>
+              {isVertical && vc && (
+                <Badge variant="outline" className={`text-[10px] ${vc.text} ${vc.border}`}>
                   Vertical
                 </Badge>
               )}

@@ -274,6 +274,7 @@ async function generateCSVs(
     console.warn("Character limit warnings:", warnings);
   }
   const campaigns = validatedStructure.campaigns;
+  const files: { filename: string; content: string }[] = [];
 
   // 1. Campaigns.csv
   let campaignsCsv = "Campaign,Campaign Type,Campaign Daily Budget,Campaign Status,Networks,Location,Language,Bid Strategy Type\n";

@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { client_id, agenda_id, template_sections, additional_context } = await req.json();
+    const { client_id, agenda_id, template_sections, additional_context, call_date } = await req.json();
 
     if (!client_id) {
       return new Response(JSON.stringify({ error: 'client_id required' }), {
@@ -38,11 +38,11 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Gather context in parallel
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
-    const todayStr = now.toISOString().split('T')[0];
+    // Use the agenda's call_date as the reference point, falling back to today
+    const referenceDate = call_date ? new Date(call_date + 'T23:59:59Z') : new Date();
+    const todayStr = referenceDate.toISOString().split('T')[0];
+    const sevenDaysAgo = new Date(referenceDate.getTime() - 7 * 86400000).toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(referenceDate.getTime() - 30 * 86400000).toISOString().split('T')[0];
 
     const [
       { data: contextItems },
@@ -106,25 +106,65 @@ Deno.serve(async (req) => {
         .single(),
     ]);
 
-    // Aggregate campaign metrics by platform
-    const platformMetrics: Record<string, { spend: number; revenue: number; conversions: number; clicks: number; impressions: number }> = {};
+    // Vertical detection patterns
+    const VERTICALS = ['flights', 'pest control', 'porta potty', 'bathroom remodel', 'hvac'];
+    function detectVertical(name: string): string {
+      const lower = (name || '').toLowerCase();
+      for (const v of VERTICALS) {
+        if (lower.includes(v.replace(' ', '')) || lower.includes(v)) return v;
+      }
+      // Also check short forms
+      if (lower.includes('pest') || lower.includes('exterminator')) return 'pest control';
+      if (lower.includes('flight') || lower.includes('airline')) return 'flights';
+      if (lower.includes('porta') || lower.includes('portable toilet')) return 'porta potty';
+      if (lower.includes('bathroom') || lower.includes('bath remodel') || lower.includes('br ')) return 'bathroom remodel';
+      if (lower.includes('hvac') || lower.includes('heating') || lower.includes('cooling')) return 'hvac';
+      return 'unclassified';
+    }
+
+    // Aggregate campaign metrics by platform AND by vertical+platform
+    type MetricBucket = { spend: number; revenue: number; conversions: number; clicks: number; impressions: number; campaigns: string[] };
+    const newBucket = (): MetricBucket => ({ spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0, campaigns: [] });
+
+    const platformMetrics: Record<string, MetricBucket> = {};
+    const verticalMetrics: Record<string, Record<string, MetricBucket>> = {};
+
     for (const c of recentCampaigns || []) {
       const p = c.platform || 'unknown';
-      if (!platformMetrics[p]) platformMetrics[p] = { spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0 };
+      const v = detectVertical(c.campaign_name);
+      if (!platformMetrics[p]) platformMetrics[p] = newBucket();
       platformMetrics[p].spend += Number(c.spend);
       platformMetrics[p].revenue += Number(c.revenue);
       platformMetrics[p].conversions += Number(c.conversions);
       platformMetrics[p].clicks += Number(c.clicks);
       platformMetrics[p].impressions += Number(c.impressions);
+      if (!platformMetrics[p].campaigns.includes(c.campaign_name)) platformMetrics[p].campaigns.push(c.campaign_name);
+
+      if (!verticalMetrics[v]) verticalMetrics[v] = {};
+      if (!verticalMetrics[v][p]) verticalMetrics[v][p] = newBucket();
+      verticalMetrics[v][p].spend += Number(c.spend);
+      verticalMetrics[v][p].revenue += Number(c.revenue);
+      verticalMetrics[v][p].conversions += Number(c.conversions);
+      verticalMetrics[v][p].clicks += Number(c.clicks);
+      verticalMetrics[v][p].impressions += Number(c.impressions);
+      if (!verticalMetrics[v][p].campaigns.includes(c.campaign_name)) verticalMetrics[v][p].campaigns.push(c.campaign_name);
     }
 
-    // Aggregate Ringba
+    // Aggregate Ringba by vertical
     const ringbaAgg = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
+    const ringbaByVertical: Record<string, { totalCalls: number; converted: number; totalRevenue: number; totalPayout: number }> = {};
     for (const call of ringbaCalls || []) {
       ringbaAgg.totalCalls++;
       if (call.converted) ringbaAgg.converted++;
       ringbaAgg.totalRevenue += Number(call.revenue);
       ringbaAgg.totalPayout += Number(call.payout);
+
+      const v = detectVertical(call.campaign_name || '');
+      if (!ringbaByVertical[v]) ringbaByVertical[v] = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
+      ringbaByVertical[v].totalCalls++;
+      if (call.converted) ringbaByVertical[v].converted++;
+      ringbaByVertical[v].totalRevenue += Number(call.revenue);
+      ringbaByVertical[v].totalPayout += Number(call.payout);
     }
 
     // Build context summary for AI
@@ -132,7 +172,9 @@ Deno.serve(async (req) => {
       client_name: clientInfo?.name || 'Unknown',
       period: `${sevenDaysAgo} to ${todayStr}`,
       platform_performance: platformMetrics,
+      vertical_performance: verticalMetrics,
       ringba_performance: ringbaAgg,
+      ringba_by_vertical: ringbaByVertical,
       recent_context_items: (contextItems || []).map(ci => ({
         title: ci.title,
         type: ci.content_type,
@@ -160,49 +202,54 @@ Deno.serve(async (req) => {
       })
       .join('\n\n');
 
-    const systemPrompt = `You are an expert digital marketing account manager preparing a weekly client call agenda. 
-You analyze LAST 7 DAYS performance data, context feed items, open action items, and optimization recommendations to create a focused, actionable agenda.
+    const systemPrompt = `You are an expert digital marketing account manager preparing a weekly client call agenda.
+You analyze the TRAILING 7 DAYS of performance data ending on the agenda date.
 
-The agenda follows a specific template structure. For each section marked [AI SHOULD POPULATE], generate 3-6 concise bullet points based on the data provided.
+The agenda follows a specific template structure. For each section marked [AI SHOULD POPULATE], generate 3-6 concise bullet points based ONLY on the actual data provided below.
 For sections NOT marked for AI population, leave the items array empty — those are for manual input by the team.
 
-IMPORTANT RULES:
-- ALL metrics are from the LAST 7 DAYS ONLY — not all-time. Always reference the date range.
-- Be specific with numbers: include actual spend, revenue, ROAS, conversion counts for the 7-day window
-- Call out significant changes (>10% week-over-week)
-- Highlight any campaigns that need attention (high spend/low return, paused campaigns that could be restarted)
-- For Ringba/call metrics: include call volume, conversion rates, revenue
-- Reference open action items from previous calls
-- Include pending AI optimization recommendations
-- Keep each bullet point concise (1-2 sentences max)
-- Use the client's actual campaign names when referencing specific campaigns
+CRITICAL RULES:
+- ONLY use the exact numbers from the data provided below. NEVER invent, estimate, or hallucinate metrics.
+- If a metric is 0 or missing, say so explicitly (e.g. "Revenue: $0 — revenue tracking not yet connected").
+- If there is no data for a vertical or platform, state "No data available for this period."
+- ALL metrics are for the trailing 7-day window (${contextSummary.period}) ONLY.
+- Use the client's actual campaign names when referencing specific campaigns.
+- Keep each bullet point concise (1-2 sentences max).
+- Reference open action items from previous calls if any exist.
+- Include pending AI optimization recommendations if any exist.
 
 Return ONLY valid JSON matching the template structure.`;
 
     const userPrompt = `Generate the weekly agenda for ${contextSummary.client_name}.
-ALL DATA BELOW IS FROM THE LAST 7 DAYS (${contextSummary.period}). Report metrics for this period only.
+DATA PERIOD: ${contextSummary.period} (trailing 7 days ending ${todayStr}).
 
-PERFORMANCE DATA (${contextSummary.period}):
+=== OVERALL PLATFORM PERFORMANCE (use these exact numbers — do NOT make up figures) ===
 ${JSON.stringify(contextSummary.platform_performance, null, 2)}
 
-RINGBA CALL DATA:
+=== PERFORMANCE BROKEN DOWN BY VERTICAL (use for vertical-specific sections) ===
+${JSON.stringify(contextSummary.vertical_performance, null, 2)}
+
+=== OVERALL RINGBA CALL DATA ===
 ${JSON.stringify(contextSummary.ringba_performance, null, 2)}
 
-RECENT CONTEXT/COMMUNICATIONS:
+=== RINGBA CALLS BY VERTICAL ===
+${JSON.stringify(contextSummary.ringba_by_vertical, null, 2)}
+
+=== RECENT CONTEXT/COMMUNICATIONS ===
 ${JSON.stringify(contextSummary.recent_context_items, null, 2)}
 
-OPEN ACTION ITEMS FROM PREVIOUS CALLS:
+=== OPEN ACTION ITEMS FROM PREVIOUS CALLS ===
 ${JSON.stringify(contextSummary.open_action_items, null, 2)}
 
-PENDING OPTIMIZATION RECOMMENDATIONS:
+=== PENDING OPTIMIZATION RECOMMENDATIONS ===
 ${JSON.stringify(contextSummary.pending_recommendations, null, 2)}
 
-${contextSummary.additional_context ? `ADDITIONAL CONTEXT FROM TEAM:\n${contextSummary.additional_context}` : ''}
+${contextSummary.additional_context ? `=== ADDITIONAL CONTEXT FROM TEAM ===\n${contextSummary.additional_context}` : ''}
 
 TEMPLATE STRUCTURE TO FOLLOW:
 ${templateDesc}
 
-Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points. For non-ai_populatable subsections, keep items as empty arrays.`;
+Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays.`;
 
     // Call AI
     const aiResponse = await fetch('https://ai.lovable.dev/api/v1/chat/completions', {

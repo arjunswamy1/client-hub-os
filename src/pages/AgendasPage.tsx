@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
@@ -15,16 +16,23 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
-import { Plus, Calendar, FileText, ChevronRight, Copy, MoreVertical, Sparkles, LayoutTemplate } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { Plus, Calendar, FileText, ChevronRight, Copy, MoreVertical, Sparkles, LayoutTemplate, Bot, Loader2, RefreshCw, CheckCircle2, Clock, Send } from 'lucide-react';
 import { format, addDays, nextMonday } from 'date-fns';
 import { toast } from 'sonner';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-muted text-muted-foreground',
-  published: 'bg-blue-100 text-blue-700',
-  completed: 'bg-green-100 text-green-700',
+  published: 'bg-blue-500/10 text-blue-600',
+  completed: 'bg-green-500/10 text-green-600',
+};
+
+const STATUS_ICONS: Record<string, typeof Clock> = {
+  draft: Clock,
+  published: Send,
+  completed: CheckCircle2,
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -57,6 +65,8 @@ export default function AgendasPage() {
   const [newDate, setNewDate] = useState('');
   const [newType, setNewType] = useState('weekly');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('blank');
+  const [aiContext, setAiContext] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Fetch agendas
   const { data: agendas = [] } = useQuery({
@@ -74,7 +84,7 @@ export default function AgendasPage() {
     enabled: !!activeClient,
   });
 
-  // Fetch templates for client
+  // Fetch templates
   const { data: templates = [] } = useQuery({
     queryKey: ['agenda_templates', activeClient?.id],
     queryFn: async () => {
@@ -106,7 +116,7 @@ export default function AgendasPage() {
     enabled: !!selectedId,
   });
 
-  // Create agenda (from template or blank)
+  // Create agenda
   const createAgenda = useMutation({
     mutationFn: async () => {
       let agendaContent: AgendaSection[];
@@ -134,25 +144,109 @@ export default function AgendasPage() {
       };
       if (templateId) insertData.template_id = templateId;
 
-      const { error } = await supabase.from('call_agendas').insert(insertData);
+      const { data, error } = await supabase.from('call_agendas').insert(insertData).select().single();
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['agendas'] });
       toast.success('Agenda created');
       setIsCreateOpen(false);
       resetCreateForm();
+      if (data) setSelectedId(data.id);
     },
     onError: (err: any) => toast.error(err.message),
   });
 
-  // Duplicate agenda for next week
+  // AI Generate agenda content
+  const generateWithAI = async (agendaId?: string) => {
+    if (!activeClient) return;
+    setIsGenerating(true);
+    try {
+      // Get the template sections to pass to AI
+      const defaultTemplate = templates.find((t: any) => t.is_default);
+      const templateSections = defaultTemplate?.sections || defaultSections();
+
+      const { data, error } = await supabase.functions.invoke('generate-agenda', {
+        body: {
+          client_id: activeClient.id,
+          agenda_id: agendaId,
+          template_sections: templateSections,
+          additional_context: aiContext,
+        },
+      });
+
+      if (error) throw error;
+
+      if (agendaId) {
+        queryClient.invalidateQueries({ queryKey: ['agendas'] });
+        toast.success('Agenda populated with AI insights');
+      }
+
+      setAiContext('');
+      return data;
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate agenda');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Create + AI Generate in one step
+  const createAndGenerate = async () => {
+    if (!activeClient) return;
+    setIsGenerating(true);
+    try {
+      const defaultTemplate = templates.find((t: any) => t.is_default);
+      const templateSections = defaultTemplate?.sections || defaultSections();
+
+      const insertData: any = {
+        client_id: activeClient.id,
+        title: newTitle || 'Weekly Digital Marketing Review',
+        call_date: newDate || format(nextMonday(new Date()), 'yyyy-MM-dd'),
+        call_type: newType,
+        created_by_id: teamMember?.id || null,
+        agenda_content: templateSections,
+        template_id: defaultTemplate?.id || null,
+      };
+
+      const { data: newAgenda, error: insertError } = await supabase
+        .from('call_agendas')
+        .insert(insertData)
+        .select()
+        .single();
+      if (insertError) throw insertError;
+
+      // Now generate AI content
+      const { error: genError } = await supabase.functions.invoke('generate-agenda', {
+        body: {
+          client_id: activeClient.id,
+          agenda_id: newAgenda.id,
+          template_sections: templateSections,
+          additional_context: aiContext,
+        },
+      });
+      if (genError) throw genError;
+
+      queryClient.invalidateQueries({ queryKey: ['agendas'] });
+      toast.success('AI agenda generated');
+      setIsCreateOpen(false);
+      resetCreateForm();
+      setSelectedId(newAgenda.id);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate');
+      queryClient.invalidateQueries({ queryKey: ['agendas'] });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Duplicate agenda
   const duplicateAgenda = useMutation({
     mutationFn: async (sourceAgenda: any) => {
       const sourceDate = new Date(sourceAgenda.call_date);
       const nextDate = nextMonday(addDays(sourceDate, 1));
 
-      // Carry forward the section structure but clear items
       const sourceSections = (sourceAgenda.agenda_content || []) as AgendaSection[];
       const clearedSections = sourceSections.map((section: AgendaSection) => ({
         ...section,
@@ -182,7 +276,6 @@ export default function AgendasPage() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  // Duplicate with content carried forward
   const duplicateWithContent = useMutation({
     mutationFn: async (sourceAgenda: any) => {
       const sourceDate = new Date(sourceAgenda.call_date);
@@ -252,9 +345,9 @@ export default function AgendasPage() {
     setNewDate('');
     setNewType('weekly');
     setSelectedTemplateId('blank');
+    setAiContext('');
   };
 
-  // When template selected, auto-fill title
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplateId(templateId);
     if (templateId !== 'blank') {
@@ -276,60 +369,91 @@ export default function AgendasPage() {
       <div className="w-80 shrink-0 space-y-3 overflow-y-auto scrollbar-thin">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">Agendas</h1>
-          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" /> New
-          </Button>
+          <div className="flex gap-1">
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => { setIsCreateOpen(true); setSelectedTemplateId('ai'); }}>
+              <Bot className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">AI</span>
+            </Button>
+            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="mr-1 h-4 w-4" /> New
+            </Button>
+          </div>
         </div>
 
-        {agendas.map((agenda: any) => (
-          <Card
-            key={agenda.id}
-            className={`cursor-pointer transition-all hover:shadow-sm ${selectedId === agenda.id ? 'ring-2 ring-primary/30' : ''}`}
-            onClick={() => setSelectedId(agenda.id)}
-          >
-            <CardContent className="p-3">
-              <div className="flex items-start justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{agenda.title}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Calendar className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      {format(new Date(agenda.call_date), 'MMM d, yyyy')}
-                    </span>
+        {agendas.map((agenda: any) => {
+          const StatusIcon = STATUS_ICONS[agenda.status] || Clock;
+          return (
+            <Card
+              key={agenda.id}
+              className={`cursor-pointer transition-all hover:shadow-sm ${selectedId === agenda.id ? 'ring-2 ring-primary/30 bg-accent/30' : ''}`}
+              onClick={() => setSelectedId(agenda.id)}
+            >
+              <CardContent className="p-3">
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{agenda.title}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Calendar className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(agenda.call_date), 'MMM d, yyyy')}
+                      </span>
+                    </div>
+                    {(agenda as any).created_by?.name && (
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">by {(agenda as any).created_by.name}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="secondary" className={`text-[10px] gap-1 ${STATUS_COLORS[agenda.status] || ''}`}>
+                        <StatusIcon className="h-2.5 w-2.5" />
+                        {agenda.status}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        {TYPE_LABELS[agenda.call_type] || agenda.call_type}
+                      </Badge>
+                      {(agenda as any).ai_context && (
+                        <Badge variant="outline" className="text-[10px] gap-0.5 text-primary border-primary/20">
+                          <Sparkles className="h-2.5 w-2.5" /> AI
+                        </Badge>
+                      )}
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuItem onClick={() => duplicateAgenda.mutate(agenda)}>
+                          <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate (Empty)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => duplicateWithContent.mutate(agenda)}>
+                          <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate with Content
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => {
+                          setSelectedId(agenda.id);
+                          generateWithAI(agenda.id);
+                        }}>
+                          <Sparkles className="mr-2 h-3.5 w-3.5" /> Regenerate with AI
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge variant="secondary" className={`text-[10px] ${STATUS_COLORS[agenda.status] || ''}`}>
-                      {agenda.status}
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px]">
-                      {TYPE_LABELS[agenda.call_type] || agenda.call_type}
-                    </Badge>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                        <MoreVertical className="h-3.5 w-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenuItem onClick={() => duplicateAgenda.mutate(agenda)}>
-                        <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate for Next Week
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => duplicateWithContent.mutate(agenda)}>
-                        <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate with Content
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
 
         {agendas.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">No agendas yet</p>
+          <div className="text-center py-12 space-y-3">
+            <FileText className="mx-auto h-10 w-10 text-muted-foreground/20" />
+            <p className="text-sm text-muted-foreground">No agendas yet</p>
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => { setIsCreateOpen(true); setSelectedTemplateId('ai'); }}>
+              <Bot className="h-3.5 w-3.5" /> Generate First Agenda with AI
+            </Button>
+          </div>
         )}
       </div>
 
@@ -348,6 +472,18 @@ export default function AgendasPage() {
                 </p>
               </div>
               <div className="flex gap-2">
+                {selected.status === 'draft' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => generateWithAI(selected.id)}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                    {isGenerating ? 'Generating...' : 'AI Populate'}
+                  </Button>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
@@ -365,18 +501,31 @@ export default function AgendasPage() {
                 </DropdownMenu>
                 {selected.status === 'draft' && (
                   <Button size="sm" onClick={() => updateStatus.mutate({ id: selected.id, status: 'published' })}>
-                    Publish to Client
+                    <Send className="mr-1 h-3.5 w-3.5" /> Publish
                   </Button>
                 )}
                 {selected.status === 'published' && (
                   <Button size="sm" variant="outline" onClick={() => updateStatus.mutate({ id: selected.id, status: 'completed' })}>
-                    Mark Completed
+                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Complete
                   </Button>
                 )}
               </div>
             </div>
 
-            {/* Agenda Content - rich section editor */}
+            {/* AI generation overlay */}
+            {isGenerating && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  <div>
+                    <p className="text-sm font-medium text-primary">Generating agenda with AI...</p>
+                    <p className="text-xs text-muted-foreground">Analyzing performance data, context feed, and open action items</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Agenda Content */}
             <Card>
               <CardHeader><CardTitle className="text-base">Agenda</CardTitle></CardHeader>
               <CardContent>
@@ -404,6 +553,11 @@ export default function AgendasPage() {
             <Card>
               <CardHeader className="flex-row items-center justify-between">
                 <CardTitle className="text-base">Action Items</CardTitle>
+                {actionItems.length > 0 && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {actionItems.filter((i: any) => i.completed).length}/{actionItems.length} done
+                  </Badge>
+                )}
               </CardHeader>
               <CardContent className="space-y-2">
                 {actionItems.map((item: any) => (
@@ -431,89 +585,198 @@ export default function AgendasPage() {
               <Card className="border-primary/20 bg-primary/5">
                 <CardContent className="p-3 flex items-center gap-2 text-sm text-primary">
                   <Sparkles className="h-4 w-4" />
-                  <span>This agenda was generated with AI assistance</span>
+                  <span>This agenda was populated with AI insights</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto h-7 gap-1 text-xs"
+                    onClick={() => generateWithAI(selected.id)}
+                    disabled={isGenerating}
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isGenerating ? 'animate-spin' : ''}`} /> Refresh
+                  </Button>
                 </CardContent>
               </Card>
             )}
           </div>
         ) : (
           <div className="flex h-full items-center justify-center">
-            <div className="text-center">
-              <FileText className="mx-auto h-10 w-10 text-muted-foreground/30 mb-2" />
-              <p className="text-sm text-muted-foreground">Select an agenda to view details</p>
+            <div className="text-center space-y-4">
+              <FileText className="mx-auto h-12 w-12 text-muted-foreground/20" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Select an agenda to view</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">or create a new one with AI</p>
+              </div>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setIsCreateOpen(true); setSelectedTemplateId('ai'); }}>
+                <Bot className="h-3.5 w-3.5" /> Generate with AI
+              </Button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Create Dialog with template selection */}
+      {/* Create Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetCreateForm(); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>New Agenda</DialogTitle></DialogHeader>
-          <form onSubmit={e => { e.preventDefault(); createAgenda.mutate(); }} className="space-y-4">
-            {/* Template selection */}
-            {templates.length > 0 && (
-              <div className="space-y-2">
-                <Label className="flex items-center gap-1.5">
-                  <LayoutTemplate className="h-3.5 w-3.5" /> Template
-                </Label>
-                <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="blank">Blank Agenda</SelectItem>
-                    {templates.map((t: any) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name} {t.is_default && '★'}
-                      </SelectItem>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {selectedTemplateId === 'ai' ? (
+                <>
+                  <Bot className="h-5 w-5 text-primary" />
+                  Generate Agenda with AI
+                </>
+              ) : (
+                'New Agenda'
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Mode toggle */}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={selectedTemplateId === 'ai' ? 'default' : 'outline'}
+                className="flex-1 gap-1.5"
+                onClick={() => setSelectedTemplateId('ai')}
+              >
+                <Sparkles className="h-3.5 w-3.5" /> AI Generate
+              </Button>
+              <Button
+                size="sm"
+                variant={selectedTemplateId !== 'ai' ? 'default' : 'outline'}
+                className="flex-1 gap-1.5"
+                onClick={() => setSelectedTemplateId('blank')}
+              >
+                <FileText className="h-3.5 w-3.5" /> Manual
+              </Button>
+            </div>
+
+            {selectedTemplateId === 'ai' ? (
+              <>
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">AI will analyze:</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {['📊 Performance dashboards', '📞 Ringba call data', '💬 Context feed', '✅ Open action items', '🤖 AI recommendations', '📋 Previous agendas'].map(item => (
+                      <p key={item} className="text-xs">{item}</p>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Title</Label>
-              <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Weekly Digital Marketing Review" required />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Call Date</Label>
-                <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Type</Label>
-                <Select value={newType} onValueChange={setNewType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="adhoc">Ad Hoc</SelectItem>
-                    <SelectItem value="strategy">Strategy</SelectItem>
-                    <SelectItem value="creative_review">Creative Review</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Template preview */}
-            {selectedTemplateId !== 'blank' && (
-              <div className="rounded-md border bg-muted/50 p-3 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground mb-2">Template Sections</p>
-                {(templates.find((t: any) => t.id === selectedTemplateId)?.sections as AgendaSection[] || []).map((s: AgendaSection, i: number) => (
-                  <div key={i} className="text-xs text-foreground">
-                    • {s.section}
-                    {s.subsections && s.subsections.length > 0 && (
-                      <span className="text-muted-foreground ml-1">
-                        ({s.subsections.map(sub => sub.title).join(', ')})
-                      </span>
-                    )}
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
 
-            <Button type="submit" className="w-full" disabled={createAgenda.isPending}>Create Agenda</Button>
-          </form>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Call Date</Label>
+                    <Input
+                      type="date"
+                      value={newDate || format(nextMonday(new Date()), 'yyyy-MM-dd')}
+                      onChange={e => setNewDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Type</Label>
+                    <Select value={newType} onValueChange={setNewType}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="adhoc">Ad Hoc</SelectItem>
+                        <SelectItem value="strategy">Strategy</SelectItem>
+                        <SelectItem value="creative_review">Creative Review</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs">Additional Context (optional)</Label>
+                  <Textarea
+                    placeholder="Add any extra context for the AI... e.g. 'Focus on Bathroom Remodel launch prep' or 'Client mentioned budget concerns'"
+                    value={aiContext}
+                    onChange={e => setAiContext(e.target.value)}
+                    className="h-20 text-xs"
+                  />
+                </div>
+
+                <Button
+                  className="w-full gap-1.5"
+                  onClick={createAndGenerate}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" /> Generate Agenda
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <form onSubmit={e => { e.preventDefault(); createAgenda.mutate(); }} className="space-y-4">
+                {templates.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1.5">
+                      <LayoutTemplate className="h-3.5 w-3.5" /> Template
+                    </Label>
+                    <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="blank">Blank Agenda</SelectItem>
+                        {templates.map((t: any) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.name} {t.is_default && '★'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Title</Label>
+                  <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Weekly Digital Marketing Review" required />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Call Date</Label>
+                    <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Type</Label>
+                    <Select value={newType} onValueChange={setNewType}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="adhoc">Ad Hoc</SelectItem>
+                        <SelectItem value="strategy">Strategy</SelectItem>
+                        <SelectItem value="creative_review">Creative Review</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {selectedTemplateId !== 'blank' && selectedTemplateId !== 'ai' && (
+                  <div className="rounded-md border bg-muted/50 p-3 space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Template Sections</p>
+                    {(templates.find((t: any) => t.id === selectedTemplateId)?.sections as AgendaSection[] || []).map((s: AgendaSection, i: number) => (
+                      <div key={i} className="text-xs text-foreground">
+                        • {s.section}
+                        {s.subsections && s.subsections.length > 0 && (
+                          <span className="text-muted-foreground ml-1">
+                            ({s.subsections.map(sub => sub.title).join(', ')})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button type="submit" className="w-full" disabled={createAgenda.isPending}>Create Agenda</Button>
+              </form>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -522,21 +785,34 @@ export default function AgendasPage() {
 
 function defaultSections(): AgendaSection[] {
   return [
-    { section: 'Topics', subsections: [{ title: 'Items', items: [], placeholder: 'Discussion topics...' }] },
-    { section: 'Metrics Review', subsections: [{ title: 'Items', items: [], placeholder: 'Key metrics...' }] },
-    { section: 'Action Items', subsections: [{ title: 'Items', items: [], placeholder: 'Action items from this call...' }] },
-    { section: 'Open Questions', subsections: [{ title: 'Items', items: [], placeholder: 'Questions to address...' }] },
+    { section: 'Development Update', subsections: [
+      { title: 'In Progress', items: [], placeholder: 'Current development work...' },
+      { title: 'Upcoming Priorities', items: [], placeholder: 'Next priorities...' },
+      { title: 'Action Items / Needs', items: [], placeholder: 'Dev action items...' },
+    ]},
+    { section: 'Marketing Strategy', subsections: [
+      { title: 'Performance Recap', items: [], placeholder: 'Key metrics...', ai_populatable: true },
+      { title: 'Performance Notes & Callouts', items: [], placeholder: 'Key successes...', ai_populatable: true },
+      { title: 'Optimization Opportunities', items: [], placeholder: 'Recommended optimizations...', ai_populatable: true },
+      { title: 'Upcoming Launches', items: [], placeholder: 'Planned launches...' },
+      { title: 'Action Items / Needs', items: [], placeholder: 'Marketing action items...' },
+    ]},
+    { section: 'General Connect Paid Media Needs', subsections: [
+      { title: 'Items', items: [], placeholder: 'Broader support requests...' },
+    ]},
+    { section: 'Notes from Client', subsections: [
+      { title: 'Items', items: [], placeholder: 'Client comments...' },
+    ]},
   ];
 }
 
-// Rich agenda editor that supports subsections
+// Rich agenda editor with subsection support
 function RichAgendaEditor({ content, onChange, readOnly }: { content: AgendaSection[]; onChange: (c: AgendaSection[]) => void; readOnly: boolean }) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [newItem, setNewItem] = useState('');
 
   const sections = Array.isArray(content) ? content : [];
 
-  // Handle flat sections (legacy) and subsection-based sections
   const addItem = (sectionIdx: number, subIdx?: number) => {
     if (!newItem.trim()) return;
     const updated = JSON.parse(JSON.stringify(sections));
@@ -572,7 +848,6 @@ function RichAgendaEditor({ content, onChange, readOnly }: { content: AgendaSect
           <h4 className="text-sm font-semibold mb-2 text-foreground border-b pb-1">{section.section}</h4>
 
           {section.subsections ? (
-            // Subsection-based layout
             <div className="space-y-3 pl-1">
               {section.subsections.map((sub, subi) => {
                 const key = `${si}-${subi}`;
@@ -615,7 +890,6 @@ function RichAgendaEditor({ content, onChange, readOnly }: { content: AgendaSect
               })}
             </div>
           ) : (
-            // Flat items (legacy format)
             <div className="pl-1">
               <ul className="space-y-1">
                 {section.items?.map((item, ii) => (

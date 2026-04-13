@@ -335,12 +335,16 @@ async function generateCSVs(
   }
   files.push({ filename: "Responsive Search Ads.csv", content: rsaCsv });
 
-  // 6. Sitelinks.csv
-  let sitelinksCsv = "Campaign,Sitelink Text,Sitelink Description Line 1,Sitelink Description Line 2,Sitelink Final URL\n";
+  // 6. Sitelinks.csv — headers match Google Ads Editor exactly
+  let sitelinksCsv = "Campaign,Sitelink text,Description line 1,Description line 2,Final URL\n";
   for (const c of campaigns) {
-    for (const sl of c.extensions?.sitelinks || []) {
-      sitelinksCsv += `"${esc(c.name)}","${esc(sl.text)}","${esc(sl.description1 || '')}","${esc(sl.description2 || '')}","${esc(sl.final_url)}"\n`;
-    }
+    const sitelinks = c.extensions?.sitelinks || [];
+    sitelinks.forEach((sl: any, idx: number) => {
+      // Append #1, #2, etc. slug to final URL so each sitelink has a unique URL for bulk upload
+      const baseUrl = (sl.final_url || '').replace(/#\d+$/, '');
+      const sluggedUrl = `${baseUrl}#${idx + 1}`;
+      sitelinksCsv += `"${esc(c.name)}","${esc(sl.text)}","${esc(sl.description1 || '')}","${esc(sl.description2 || '')}","${esc(sluggedUrl)}"\n`;
+    });
   }
   files.push({ filename: "Sitelinks.csv", content: sitelinksCsv });
 

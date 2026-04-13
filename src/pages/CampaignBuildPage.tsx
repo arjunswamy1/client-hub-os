@@ -12,8 +12,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   Send, Download, ChevronRight, ChevronDown, FolderOpen, FileText,
   Target, Hash, Type, Zap, Plus, Loader2, Bot, User, ArrowLeft,
-  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet
+  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet, Pencil, Check
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import ReactMarkdown from 'react-markdown';
 
 type Message = { role: 'user' | 'assistant'; content: string };
@@ -40,7 +41,10 @@ export default function CampaignBuildPage() {
   const [campaignStructure, setCampaignStructure] = useState<any>(null);
   const [isGeneratingCSVs, setIsGeneratingCSVs] = useState(false);
   const [generatedFiles, setGeneratedFiles] = useState<any[]>([]);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch existing builds
   const { data: builds } = useQuery({
@@ -85,7 +89,20 @@ export default function CampaignBuildPage() {
     },
   });
 
-  // Auto-scroll chat
+  // Rename build
+  const activeBuild = builds?.find(b => b.id === activeBuildId);
+  const handleStartRename = () => {
+    setEditTitle(activeBuild?.title || '');
+    setIsEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.focus(), 50);
+  };
+  const handleSaveTitle = async () => {
+    if (!activeBuildId || !editTitle.trim()) return;
+    setIsEditingTitle(false);
+    await supabase.from('campaign_builds').update({ title: editTitle.trim() }).eq('id', activeBuildId);
+    qc.invalidateQueries({ queryKey: ['campaign_builds', activeClient?.id] });
+  };
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
@@ -364,7 +381,26 @@ export default function CampaignBuildPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">Campaign Build — {activeClient.name}</p>
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  ref={titleInputRef}
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTitle(); if (e.key === 'Escape') setIsEditingTitle(false); }}
+                  className="h-7 text-sm font-medium"
+                  autoFocus
+                />
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleSaveTitle}>
+                  <Check className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 group cursor-pointer" onClick={handleStartRename}>
+                <p className="text-sm font-medium truncate">{activeBuild?.title || 'Untitled Build'}</p>
+                <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">AI Campaign Architect</p>
           </div>
           {campaignStructure && (

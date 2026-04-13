@@ -796,6 +796,16 @@ function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSec
     onChange(updated);
   };
 
+  const updateItem = (si: number, ii: number, value: string, subIdx?: number) => {
+    const updated = JSON.parse(JSON.stringify(sections));
+    if (subIdx !== undefined && updated[si].subsections) {
+      updated[si].subsections[subIdx].items[ii] = value;
+    } else if (updated[si].items) {
+      updated[si].items[ii] = value;
+    }
+    onChange(updated);
+  };
+
   if (sections.length === 0) {
     return <div className="p-6 text-center"><p className="text-sm text-muted-foreground">No content yet.</p></div>;
   }

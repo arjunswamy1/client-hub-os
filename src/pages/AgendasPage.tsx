@@ -725,32 +725,35 @@ export default function AgendasPage() {
 /* ───── Default Sections with vertical breakdowns ───── */
 
 function defaultSections(): AgendaSection[] {
+  const verticals = [
+    { name: 'Flights', id: 'flights' },
+    { name: 'Pest Control', id: 'pest_control' },
+    { name: 'Porta Potty', id: 'porta_potty' },
+    { name: 'Bathroom Remodel', id: 'bathroom_remodel' },
+    { name: 'HVAC', id: 'hvac' },
+  ];
+
   return [
     { section: 'Development Update', subsections: [
       { title: 'In Progress', items: [], placeholder: 'Current development work...' },
       { title: 'Upcoming Priorities', items: [], placeholder: 'Next priorities...' },
       { title: 'Action Items / Needs', items: [], placeholder: 'Dev action items...' },
     ]},
-    { section: 'Marketing Strategy', subsections: [
-      { title: 'Performance Recap', items: [], placeholder: 'Key metrics...', ai_populatable: true },
-      { title: 'Performance Notes & Callouts', items: [], placeholder: 'Key successes...', ai_populatable: true },
-      { title: 'Optimization Opportunities', items: [], placeholder: 'Recommended optimizations...', ai_populatable: true },
+    { section: 'Marketing Strategy — Overview', subsections: [
+      { title: 'Overall Performance Recap', items: [], placeholder: 'High-level cross-vertical metrics...', ai_populatable: true },
+      { title: 'Budget & Pacing', items: [], placeholder: 'Budget status across verticals...', ai_populatable: true },
       { title: 'Upcoming Launches', items: [], placeholder: 'Planned launches...' },
-      { title: 'Action Items / Needs', items: [], placeholder: 'Marketing action items...' },
     ]},
-    // Per-vertical breakdowns
-    { section: 'Pest Control — Vertical Update', vertical: 'pest_control', subsections: [
-      { title: 'Google Ads', items: [], placeholder: 'Google performance for Pest Control...', ai_populatable: true },
-      { title: 'Meta Ads', items: [], placeholder: 'Meta performance for Pest Control...', ai_populatable: true },
-      { title: 'Ringba / Calls', items: [], placeholder: 'Call metrics for Pest Control...', ai_populatable: true },
-      { title: 'Notes & Action Items', items: [], placeholder: 'Pest Control action items...' },
-    ]},
-    { section: 'Bathroom Remodel — Vertical Update', vertical: 'bathroom_remodel', subsections: [
-      { title: 'Google Ads', items: [], placeholder: 'Google performance for Bathroom Remodel...', ai_populatable: true },
-      { title: 'Meta Ads', items: [], placeholder: 'Meta performance for Bathroom Remodel...', ai_populatable: true },
-      { title: 'Ringba / Calls', items: [], placeholder: 'Call metrics for Bathroom Remodel...', ai_populatable: true },
-      { title: 'Notes & Action Items', items: [], placeholder: 'Bathroom Remodel action items...' },
-    ]},
+    ...verticals.map(v => ({
+      section: `${v.name} — Vertical Update`,
+      vertical: v.id,
+      subsections: [
+        { title: 'Google Ads', items: [], placeholder: `Google performance for ${v.name}...`, ai_populatable: true },
+        { title: 'Meta Ads', items: [], placeholder: `Meta performance for ${v.name}...`, ai_populatable: true },
+        { title: 'Ringba / Calls', items: [], placeholder: `Call metrics for ${v.name}...`, ai_populatable: true },
+        { title: 'Notes & Action Items', items: [], placeholder: `${v.name} action items...` },
+      ],
+    })),
     { section: 'General Connect Paid Media Needs', subsections: [
       { title: 'Items', items: [], placeholder: 'Broader support requests...' },
     ]},

@@ -223,22 +223,28 @@ Return ONLY valid JSON matching the template structure.`;
     const userPrompt = `Generate the weekly agenda for ${contextSummary.client_name}.
 DATA PERIOD: ${contextSummary.period} (trailing 7 days ending ${todayStr}).
 
-ACTUAL PLATFORM PERFORMANCE DATA (use these exact numbers — do NOT make up figures):
+=== OVERALL PLATFORM PERFORMANCE (use these exact numbers — do NOT make up figures) ===
 ${JSON.stringify(contextSummary.platform_performance, null, 2)}
 
-ACTUAL RINGBA CALL DATA (use these exact numbers):
+=== PERFORMANCE BROKEN DOWN BY VERTICAL (use for vertical-specific sections) ===
+${JSON.stringify(contextSummary.vertical_performance, null, 2)}
+
+=== OVERALL RINGBA CALL DATA ===
 ${JSON.stringify(contextSummary.ringba_performance, null, 2)}
 
-RECENT CONTEXT/COMMUNICATIONS:
+=== RINGBA CALLS BY VERTICAL ===
+${JSON.stringify(contextSummary.ringba_by_vertical, null, 2)}
+
+=== RECENT CONTEXT/COMMUNICATIONS ===
 ${JSON.stringify(contextSummary.recent_context_items, null, 2)}
 
-OPEN ACTION ITEMS FROM PREVIOUS CALLS:
+=== OPEN ACTION ITEMS FROM PREVIOUS CALLS ===
 ${JSON.stringify(contextSummary.open_action_items, null, 2)}
 
-PENDING OPTIMIZATION RECOMMENDATIONS:
+=== PENDING OPTIMIZATION RECOMMENDATIONS ===
 ${JSON.stringify(contextSummary.pending_recommendations, null, 2)}
 
-${contextSummary.additional_context ? `ADDITIONAL CONTEXT FROM TEAM:\n${contextSummary.additional_context}` : ''}
+${contextSummary.additional_context ? `=== ADDITIONAL CONTEXT FROM TEAM ===\n${contextSummary.additional_context}` : ''}
 
 TEMPLATE STRUCTURE TO FOLLOW:
 ${templateDesc}

@@ -736,6 +736,137 @@ export type Database = {
           },
         ]
       }
+      campaign_build_templates: {
+        Row: {
+          created_at: string
+          created_by_id: string | null
+          default_extensions: Json | null
+          default_negatives: string[] | null
+          id: string
+          is_global: boolean | null
+          name: string
+          template_structure: Json | null
+          vertical: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by_id?: string | null
+          default_extensions?: Json | null
+          default_negatives?: string[] | null
+          id?: string
+          is_global?: boolean | null
+          name: string
+          template_structure?: Json | null
+          vertical?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by_id?: string | null
+          default_extensions?: Json | null
+          default_negatives?: string[] | null
+          id?: string
+          is_global?: boolean | null
+          name?: string
+          template_structure?: Json | null
+          vertical?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_build_templates_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_builds: {
+        Row: {
+          additional_context: string | null
+          audience_description: string | null
+          budget_monthly: number | null
+          campaign_structure: Json | null
+          campaign_types: string[] | null
+          client_id: string
+          conversation_history: Json | null
+          created_at: string
+          created_by_id: string | null
+          generated_files: Json | null
+          goal: string | null
+          id: string
+          landing_page_analysis: Json | null
+          landing_page_url: string | null
+          location: string | null
+          optimization_notes: string | null
+          schedule: string | null
+          status: string
+          title: string | null
+          updated_at: string
+          vertical: string | null
+        }
+        Insert: {
+          additional_context?: string | null
+          audience_description?: string | null
+          budget_monthly?: number | null
+          campaign_structure?: Json | null
+          campaign_types?: string[] | null
+          client_id: string
+          conversation_history?: Json | null
+          created_at?: string
+          created_by_id?: string | null
+          generated_files?: Json | null
+          goal?: string | null
+          id?: string
+          landing_page_analysis?: Json | null
+          landing_page_url?: string | null
+          location?: string | null
+          optimization_notes?: string | null
+          schedule?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          vertical?: string | null
+        }
+        Update: {
+          additional_context?: string | null
+          audience_description?: string | null
+          budget_monthly?: number | null
+          campaign_structure?: Json | null
+          campaign_types?: string[] | null
+          client_id?: string
+          conversation_history?: Json | null
+          created_at?: string
+          created_by_id?: string | null
+          generated_files?: Json | null
+          goal?: string | null
+          id?: string
+          landing_page_analysis?: Json | null
+          landing_page_url?: string | null
+          location?: string | null
+          optimization_notes?: string | null
+          schedule?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          vertical?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_builds_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_builds_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_extensions: {
         Row: {
           campaign_id: string

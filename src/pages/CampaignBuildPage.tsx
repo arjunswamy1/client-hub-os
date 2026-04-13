@@ -44,6 +44,9 @@ export default function CampaignBuildPage() {
   const [generatedFiles, setGeneratedFiles] = useState<any[]>([]);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
+  const [zipcodesInput, setZipcodesInput] = useState('');
+  const [isGeneratingLocations, setIsGeneratingLocations] = useState(false);
+  const [locationFiles, setLocationFiles] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 

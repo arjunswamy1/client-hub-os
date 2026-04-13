@@ -209,7 +209,7 @@ The agenda follows a specific template structure. The structure has:
 1. "Marketing Updates" — a top-level section for links/resources. Leave items empty.
 2. Per-vertical sections (Pest Control, Porta Potty, Flights, HVAC, Bathroom Remodel, Garage Doors) each with subsections: Google, Meta, Bing, Ringba / Calls, Notes.
    - For platform subsections marked [AI SHOULD POPULATE], generate 2-5 concise bullet points with actual spend, conversions, CPA, and notable campaign callouts. Format like: "Spend: $X | Y conversions | $Z CPA" on the first bullet, then specific campaign callouts.
-   - If a vertical has no data for a platform, add one bullet: "No activity this period."
+   - If a vertical has no data for a platform, OMIT that platform subsection entirely (do not include it). Only include platforms that have real activity data.
    - For "Notes" subsections (not AI populatable), leave items empty for manual input.
 3. "Feedback from Client" — leave items empty for manual input.
 

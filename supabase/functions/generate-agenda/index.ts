@@ -106,25 +106,65 @@ Deno.serve(async (req) => {
         .single(),
     ]);
 
-    // Aggregate campaign metrics by platform
-    const platformMetrics: Record<string, { spend: number; revenue: number; conversions: number; clicks: number; impressions: number }> = {};
+    // Vertical detection patterns
+    const VERTICALS = ['flights', 'pest control', 'porta potty', 'bathroom remodel', 'hvac'];
+    function detectVertical(name: string): string {
+      const lower = (name || '').toLowerCase();
+      for (const v of VERTICALS) {
+        if (lower.includes(v.replace(' ', '')) || lower.includes(v)) return v;
+      }
+      // Also check short forms
+      if (lower.includes('pest') || lower.includes('exterminator')) return 'pest control';
+      if (lower.includes('flight') || lower.includes('airline')) return 'flights';
+      if (lower.includes('porta') || lower.includes('portable toilet')) return 'porta potty';
+      if (lower.includes('bathroom') || lower.includes('bath remodel') || lower.includes('br ')) return 'bathroom remodel';
+      if (lower.includes('hvac') || lower.includes('heating') || lower.includes('cooling')) return 'hvac';
+      return 'unclassified';
+    }
+
+    // Aggregate campaign metrics by platform AND by vertical+platform
+    type MetricBucket = { spend: number; revenue: number; conversions: number; clicks: number; impressions: number; campaigns: string[] };
+    const newBucket = (): MetricBucket => ({ spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0, campaigns: [] });
+
+    const platformMetrics: Record<string, MetricBucket> = {};
+    const verticalMetrics: Record<string, Record<string, MetricBucket>> = {};
+
     for (const c of recentCampaigns || []) {
       const p = c.platform || 'unknown';
-      if (!platformMetrics[p]) platformMetrics[p] = { spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0 };
+      const v = detectVertical(c.campaign_name);
+      if (!platformMetrics[p]) platformMetrics[p] = newBucket();
       platformMetrics[p].spend += Number(c.spend);
       platformMetrics[p].revenue += Number(c.revenue);
       platformMetrics[p].conversions += Number(c.conversions);
       platformMetrics[p].clicks += Number(c.clicks);
       platformMetrics[p].impressions += Number(c.impressions);
+      if (!platformMetrics[p].campaigns.includes(c.campaign_name)) platformMetrics[p].campaigns.push(c.campaign_name);
+
+      if (!verticalMetrics[v]) verticalMetrics[v] = {};
+      if (!verticalMetrics[v][p]) verticalMetrics[v][p] = newBucket();
+      verticalMetrics[v][p].spend += Number(c.spend);
+      verticalMetrics[v][p].revenue += Number(c.revenue);
+      verticalMetrics[v][p].conversions += Number(c.conversions);
+      verticalMetrics[v][p].clicks += Number(c.clicks);
+      verticalMetrics[v][p].impressions += Number(c.impressions);
+      if (!verticalMetrics[v][p].campaigns.includes(c.campaign_name)) verticalMetrics[v][p].campaigns.push(c.campaign_name);
     }
 
-    // Aggregate Ringba
+    // Aggregate Ringba by vertical
     const ringbaAgg = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
+    const ringbaByVertical: Record<string, { totalCalls: number; converted: number; totalRevenue: number; totalPayout: number }> = {};
     for (const call of ringbaCalls || []) {
       ringbaAgg.totalCalls++;
       if (call.converted) ringbaAgg.converted++;
       ringbaAgg.totalRevenue += Number(call.revenue);
       ringbaAgg.totalPayout += Number(call.payout);
+
+      const v = detectVertical(call.campaign_name || '');
+      if (!ringbaByVertical[v]) ringbaByVertical[v] = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
+      ringbaByVertical[v].totalCalls++;
+      if (call.converted) ringbaByVertical[v].converted++;
+      ringbaByVertical[v].totalRevenue += Number(call.revenue);
+      ringbaByVertical[v].totalPayout += Number(call.payout);
     }
 
     // Build context summary for AI
@@ -132,7 +172,9 @@ Deno.serve(async (req) => {
       client_name: clientInfo?.name || 'Unknown',
       period: `${sevenDaysAgo} to ${todayStr}`,
       platform_performance: platformMetrics,
+      vertical_performance: verticalMetrics,
       ringba_performance: ringbaAgg,
+      ringba_by_vertical: ringbaByVertical,
       recent_context_items: (contextItems || []).map(ci => ({
         title: ci.title,
         type: ci.content_type,

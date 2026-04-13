@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Sparkles, Copy, Check, Lightbulb, AlertTriangle, FileText } from "lucide-react";
+import { Sparkles, Copy, Check, Lightbulb, AlertTriangle, FileText, Download } from "lucide-react";
 
 interface HeadlineOptimizerProps {
   open: boolean;
@@ -316,6 +316,21 @@ export default function HeadlineOptimizerModal({
                     </ul>
                   </div>
                 )}
+
+                <Separator />
+
+                {/* Export Button */}
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 text-xs"
+                    onClick={() => exportBulkUploadSheet(keyword, matchType, campaignName, adGroupName, result)}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export Bulk Upload Sheet
+                  </Button>
+                </div>
 
                 <Separator />
 

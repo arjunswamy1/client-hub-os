@@ -12,7 +12,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   Send, Download, ChevronRight, ChevronDown, FolderOpen, FileText,
   Target, Hash, Type, Zap, Plus, Loader2, Bot, User, ArrowLeft,
-  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet, Pencil, Check
+  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet, Pencil, Check,
+  MapPin
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import ReactMarkdown from 'react-markdown';
@@ -43,6 +44,9 @@ export default function CampaignBuildPage() {
   const [generatedFiles, setGeneratedFiles] = useState<any[]>([]);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
+  const [zipcodesInput, setZipcodesInput] = useState('');
+  const [isGeneratingLocations, setIsGeneratingLocations] = useState(false);
+  const [locationFiles, setLocationFiles] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -299,6 +303,47 @@ export default function CampaignBuildPage() {
     sendMessage('IMPORTANT: You MUST call the generate_campaign_structure tool now. Do NOT respond with text. Regenerate the full campaign structure with improvements — better keywords, tighter ad copy within character limits, and optimized structure. Keep the same goals, targeting, and landing page. Output the complete structure via the tool call immediately.');
   };
 
+  // Generate bulk locations CSV from zip codes
+  const handleGenerateLocations = async () => {
+    if (!zipcodesInput.trim() || !campaignStructure || !activeBuildId) return;
+    const zips = zipcodesInput.split(/[\s,;\n]+/).map(z => z.trim()).filter(z => /^\d{5}$/.test(z));
+    if (zips.length === 0) {
+      toast({ title: 'Invalid zip codes', description: 'Enter valid 5-digit US zip codes separated by commas or newlines.', variant: 'destructive' });
+      return;
+    }
+    const campNames = campaignStructure.campaigns?.map((c: any) => c.name) || [];
+    if (campNames.length === 0) return;
+
+    setIsGeneratingLocations(true);
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-builder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          action: 'generate_locations',
+          zipcodes: zips,
+          campaign_names: campNames,
+          build_id: activeBuildId,
+          client_name: activeClient?.name,
+        }),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        setLocationFiles(data.files);
+        toast({ title: 'Locations CSV Generated', description: `${data.locations_count} zip codes × ${data.campaigns_count} campaigns ready for download.` });
+      } else {
+        throw new Error(data.error || 'Failed to generate locations');
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setIsGeneratingLocations(false);
+    }
+  };
+
   if (!activeClient) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -549,6 +594,60 @@ export default function CampaignBuildPage() {
                   {f.filename}
                 </a>
               ))}
+            </div>
+          )}
+
+          {/* Bulk Locations Upload */}
+          {campaignStructure && (
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-primary" />
+                <p className="text-sm font-medium">Bulk Location Targeting</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Paste zip codes below to generate a bulk locations CSV with Google Ads Editor headers and Location IDs.
+              </p>
+              <Textarea
+                value={zipcodesInput}
+                onChange={(e) => setZipcodesInput(e.target.value)}
+                placeholder="Paste zip codes here (comma, space, or newline separated)&#10;e.g. 90210, 10001, 30301, 60601"
+                className="min-h-[80px] text-xs font-mono"
+                rows={4}
+              />
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] text-muted-foreground">
+                  {zipcodesInput.trim() ? `${zipcodesInput.split(/[\s,;\n]+/).filter(z => /^\d{5}$/.test(z.trim())).length} valid zip codes` : 'No zip codes entered'}
+                </p>
+                <Button
+                  size="sm"
+                  onClick={handleGenerateLocations}
+                  disabled={isGeneratingLocations || !zipcodesInput.trim()}
+                >
+                  {isGeneratingLocations ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <MapPin className="h-4 w-4 mr-2" />}
+                  Generate Locations CSV
+                </Button>
+              </div>
+
+              {/* Location files download */}
+              {locationFiles.length > 0 && (
+                <div className="space-y-2 pt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground">Location Files</p>
+                  {locationFiles.map((f: any, i: number) => (
+                    <a
+                      key={i}
+                      href={f.storage_url}
+                      download={f.filename}
+                      className={`flex items-center gap-2 p-2 rounded-md border hover:bg-accent/50 transition-colors text-sm ${
+                        f.file_type === 'xlsx' ? 'bg-primary/5 border-primary/20' : 'bg-background'
+                      }`}
+                    >
+                      {f.file_type === 'xlsx' ? <FileSpreadsheet className="h-4 w-4 text-primary" /> : <FileText className="h-4 w-4 text-muted-foreground" />}
+                      {f.filename}
+                      <Download className="h-3 w-3 ml-auto text-muted-foreground" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </ScrollArea>

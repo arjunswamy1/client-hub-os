@@ -294,10 +294,33 @@ Return the complete agenda_content as a JSON array of sections matching the temp
     try {
       const cleaned = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
       const parsed = JSON.parse(cleaned);
-      generatedSections = parsed.sections || parsed.agenda_content || parsed;
-      if (!Array.isArray(generatedSections)) {
-        console.error('AI returned non-array, keys:', Object.keys(parsed));
-        generatedSections = template_sections as AgendaSection[];
+
+      if (Array.isArray(parsed)) {
+        generatedSections = parsed;
+      } else if (Array.isArray(parsed.sections)) {
+        generatedSections = parsed.sections;
+      } else if (Array.isArray(parsed.agenda_content)) {
+        generatedSections = parsed.agenda_content;
+      } else {
+        // AI returned an object keyed by section name — merge into template
+        console.log('AI returned object with keys, merging into template sections');
+        const tpl = JSON.parse(JSON.stringify(template_sections)) as AgendaSection[];
+        for (const section of tpl) {
+          const aiSection = parsed[section.section];
+          if (!aiSection) continue;
+          if (section.subsections) {
+            for (const sub of section.subsections) {
+              // Try matching by subsection title
+              const aiSub = aiSection[sub.title] || aiSection[sub.title.toLowerCase()];
+              if (Array.isArray(aiSub)) {
+                sub.items = aiSub;
+              } else if (aiSub && typeof aiSub === 'object' && Array.isArray(aiSub.items)) {
+                sub.items = aiSub.items;
+              }
+            }
+          }
+        }
+        generatedSections = tpl;
       }
     } catch (parseErr: any) {
       console.error('JSON parse error:', parseErr.message, 'raw preview:', rawContent?.slice(0, 200));

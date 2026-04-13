@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
       const { campaign_structure, client_name } = await req.json().catch(() => ({ campaign_structure: null, client_name: '' }));
       // Re-parse from the original request
       const body = JSON.parse(await new Response(req.clone().body).text().catch(() => '{}'));
-      return await generateCSVs(supabase, body.campaign_structure || campaign_structure, body.build_id || build_id, body.client_name || client_name || 'Campaign', supabaseUrl);
+      return await generateCSVs(supabase, body.campaign_structure || campaign_structure, body.build_id || build_id);
     }
 
     // Build enhanced system prompt with client context

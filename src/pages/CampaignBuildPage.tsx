@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   Send, Download, ChevronRight, ChevronDown, FolderOpen, FileText,
   Target, Hash, Type, Zap, Plus, Loader2, Bot, User, ArrowLeft,
-  Sparkles, AlertTriangle
+  Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -360,14 +360,25 @@ export default function CampaignBuildPage() {
             <p className="text-xs text-muted-foreground">AI Campaign Architect</p>
           </div>
           {campaignStructure && (
-            <Button
-              size="sm"
-              onClick={handleGenerateCSVs}
-              disabled={isGeneratingCSVs}
-            >
-              {isGeneratingCSVs ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-              Generate CSVs
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRegenerate}
+                disabled={isStreaming}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Regenerate
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleGenerateCSVs}
+                disabled={isGeneratingCSVs}
+              >
+                {isGeneratingCSVs ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                Generate & Download
+              </Button>
+            </div>
           )}
         </div>
 

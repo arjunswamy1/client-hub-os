@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
-  Database, Bot, Settings, Users, Shield
+  Database, Bot, Settings, Users, Shield, Rocket
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -21,6 +21,7 @@ const clientNavItems = [
   { title: 'Landing Pages', url: '/landing-pages', icon: Globe },
   { title: 'Context Feed', url: '/context', icon: Database },
   { title: 'AI Assistant', url: '/ai', icon: Bot },
+  { title: 'Campaign Build', url: '/campaign-build', icon: Rocket },
 ];
 
 const bottomItems = [

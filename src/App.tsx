@@ -19,6 +19,7 @@ import SettingsPage from "./pages/SettingsPage";
 import TeamPage from "./pages/TeamPage";
 import AdminPage from "./pages/AdminPage";
 import AMHomePage from "./pages/AMHomePage";
+import CampaignBuildPage from "./pages/CampaignBuildPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -51,6 +52,7 @@ function ProtectedRoutes() {
           <Route path="/trafficking" element={<Navigate to="/creative" replace />} />
           <Route path="/context" element={<ContextPage />} />
           <Route path="/ai" element={<AIAssistantPage />} />
+          <Route path="/campaign-build" element={<CampaignBuildPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

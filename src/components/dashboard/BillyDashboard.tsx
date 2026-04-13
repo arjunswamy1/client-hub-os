@@ -65,6 +65,7 @@ function BillyDashboardInner() {
   );
 }
 
+/** Wraps inner dashboard with the VerticalProvider context */
 export default function BillyDashboard() {
   return (
     <VerticalProvider>

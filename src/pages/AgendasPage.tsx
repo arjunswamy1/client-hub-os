@@ -19,7 +19,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import {
-  Plus, Calendar, FileText, ChevronRight, Copy, MoreHorizontal,
+  Plus, Calendar, FileText, Copy, MoreHorizontal,
   Sparkles, LayoutTemplate, Loader2, CheckCircle2,
   Clock, Send, Search, ChevronDown, Zap, BarChart3, Phone, MessageSquare, ListChecks,
   TrendingUp, Minus, Bug, Droplets, Home
@@ -78,6 +78,9 @@ const VERTICAL_ICONS: Record<string, typeof Bug> = {
   'pest': Bug,
   'bathroom': Droplets,
   'home': Home,
+  'hvac': Zap,
+  'flight': TrendingUp,
+  'porta': ListChecks,
 };
 
 function getVerticalIcon(vertical?: string) {
@@ -90,6 +93,8 @@ const VERTICAL_COLORS: Record<string, { bg: string; border: string; text: string
   'pest control': { bg: 'bg-green-500/8', border: 'border-green-500/25', text: 'text-green-700' },
   'bathroom remodel': { bg: 'bg-cyan-500/8', border: 'border-cyan-500/25', text: 'text-cyan-700' },
   'hvac': { bg: 'bg-red-500/8', border: 'border-red-500/25', text: 'text-red-700' },
+  'flights': { bg: 'bg-sky-500/8', border: 'border-sky-500/25', text: 'text-sky-700' },
+  'porta potty': { bg: 'bg-amber-500/8', border: 'border-amber-500/25', text: 'text-amber-700' },
 };
 
 function getVerticalColor(vertical?: string) {
@@ -725,32 +730,35 @@ export default function AgendasPage() {
 /* ───── Default Sections with vertical breakdowns ───── */
 
 function defaultSections(): AgendaSection[] {
+  const verticals = [
+    { name: 'Flights', id: 'flights' },
+    { name: 'Pest Control', id: 'pest_control' },
+    { name: 'Porta Potty', id: 'porta_potty' },
+    { name: 'Bathroom Remodel', id: 'bathroom_remodel' },
+    { name: 'HVAC', id: 'hvac' },
+  ];
+
   return [
     { section: 'Development Update', subsections: [
       { title: 'In Progress', items: [], placeholder: 'Current development work...' },
       { title: 'Upcoming Priorities', items: [], placeholder: 'Next priorities...' },
       { title: 'Action Items / Needs', items: [], placeholder: 'Dev action items...' },
     ]},
-    { section: 'Marketing Strategy', subsections: [
-      { title: 'Performance Recap', items: [], placeholder: 'Key metrics...', ai_populatable: true },
-      { title: 'Performance Notes & Callouts', items: [], placeholder: 'Key successes...', ai_populatable: true },
-      { title: 'Optimization Opportunities', items: [], placeholder: 'Recommended optimizations...', ai_populatable: true },
+    { section: 'Marketing Strategy — Overview', subsections: [
+      { title: 'Overall Performance Recap', items: [], placeholder: 'High-level cross-vertical metrics...', ai_populatable: true },
+      { title: 'Budget & Pacing', items: [], placeholder: 'Budget status across verticals...', ai_populatable: true },
       { title: 'Upcoming Launches', items: [], placeholder: 'Planned launches...' },
-      { title: 'Action Items / Needs', items: [], placeholder: 'Marketing action items...' },
     ]},
-    // Per-vertical breakdowns
-    { section: 'Pest Control — Vertical Update', vertical: 'pest_control', subsections: [
-      { title: 'Google Ads', items: [], placeholder: 'Google performance for Pest Control...', ai_populatable: true },
-      { title: 'Meta Ads', items: [], placeholder: 'Meta performance for Pest Control...', ai_populatable: true },
-      { title: 'Ringba / Calls', items: [], placeholder: 'Call metrics for Pest Control...', ai_populatable: true },
-      { title: 'Notes & Action Items', items: [], placeholder: 'Pest Control action items...' },
-    ]},
-    { section: 'Bathroom Remodel — Vertical Update', vertical: 'bathroom_remodel', subsections: [
-      { title: 'Google Ads', items: [], placeholder: 'Google performance for Bathroom Remodel...', ai_populatable: true },
-      { title: 'Meta Ads', items: [], placeholder: 'Meta performance for Bathroom Remodel...', ai_populatable: true },
-      { title: 'Ringba / Calls', items: [], placeholder: 'Call metrics for Bathroom Remodel...', ai_populatable: true },
-      { title: 'Notes & Action Items', items: [], placeholder: 'Bathroom Remodel action items...' },
-    ]},
+    ...verticals.map(v => ({
+      section: `${v.name} — Vertical Update`,
+      vertical: v.id,
+      subsections: [
+        { title: 'Google Ads', items: [], placeholder: `Google performance for ${v.name}...`, ai_populatable: true },
+        { title: 'Meta Ads', items: [], placeholder: `Meta performance for ${v.name}...`, ai_populatable: true },
+        { title: 'Ringba / Calls', items: [], placeholder: `Call metrics for ${v.name}...`, ai_populatable: true },
+        { title: 'Notes & Action Items', items: [], placeholder: `${v.name} action items...` },
+      ],
+    })),
     { section: 'General Connect Paid Media Needs', subsections: [
       { title: 'Items', items: [], placeholder: 'Broader support requests...' },
     ]},
@@ -785,6 +793,16 @@ function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSec
     const updated = JSON.parse(JSON.stringify(sections));
     if (subIdx !== undefined && updated[si].subsections) updated[si].subsections[subIdx].items.splice(ii, 1);
     else updated[si].items?.splice(ii, 1);
+    onChange(updated);
+  };
+
+  const updateItem = (si: number, ii: number, value: string, subIdx?: number) => {
+    const updated = JSON.parse(JSON.stringify(sections));
+    if (subIdx !== undefined && updated[si].subsections) {
+      updated[si].subsections[subIdx].items[ii] = value;
+    } else if (updated[si].items) {
+      updated[si].items[ii] = value;
+    }
     onChange(updated);
   };
 
@@ -843,15 +861,15 @@ function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSec
                             <Sparkles className="h-2.5 w-2.5 text-primary/40" />
                           )}
                         </div>
-                        <ul className="space-y-1.5">
+                        <ul className="space-y-1">
                           {sub.items?.map((item, ii) => (
-                            <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
-                              <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
-                              <span className="flex-1">{item}</span>
-                              {!readOnly && (
-                                <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii, subi)}>×</button>
-                              )}
-                            </li>
+                            <EditableItem
+                              key={ii}
+                              value={item}
+                              readOnly={readOnly}
+                              onUpdate={(val) => updateItem(si, ii, val, subi)}
+                              onRemove={() => removeItem(si, ii, subi)}
+                            />
                           ))}
                         </ul>
                         {!hasItems && readOnly && (
@@ -873,15 +891,15 @@ function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSec
                 </div>
               ) : (
                 <div className="px-5 py-3">
-                  <ul className="space-y-1.5">
+                  <ul className="space-y-1">
                     {section.items?.map((item, ii) => (
-                      <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
-                        <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
-                        <span className="flex-1">{item}</span>
-                        {!readOnly && (
-                          <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii)}>×</button>
-                        )}
-                      </li>
+                      <EditableItem
+                        key={ii}
+                        value={item}
+                        readOnly={readOnly}
+                        onUpdate={(val) => updateItem(si, ii, val)}
+                        onRemove={() => removeItem(si, ii)}
+                      />
                     ))}
                   </ul>
                   {!readOnly && (
@@ -1001,6 +1019,52 @@ function SimpleEditor({ content, onChange, readOnly }: { content: AgendaSection[
         </div>
       ))}
     </div>
+  );
+}
+
+/* ───── Editable Item ───── */
+
+function EditableItem({ value, readOnly, onUpdate, onRemove }: {
+  value: string; readOnly: boolean; onUpdate: (val: string) => void; onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  if (editing && !readOnly) {
+    return (
+      <li className="flex items-start gap-2 text-[13px] leading-relaxed">
+        <span className="text-muted-foreground/40 mt-1 shrink-0">•</span>
+        <Input
+          autoFocus
+          className="h-7 text-[13px] flex-1 border-primary/30 bg-primary/5"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft.trim() && draft !== value) onUpdate(draft.trim());
+            setEditing(false);
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); if (draft.trim() && draft !== value) onUpdate(draft.trim()); setEditing(false); }
+            if (e.key === 'Escape') { setDraft(value); setEditing(false); }
+          }}
+        />
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
+      <span className="text-muted-foreground/40 mt-0.5 shrink-0">•</span>
+      <span
+        className={`flex-1 ${!readOnly ? 'cursor-pointer hover:bg-muted/40 rounded px-1 -mx-1 transition-colors' : ''}`}
+        onClick={() => { if (!readOnly) { setDraft(value); setEditing(true); } }}
+      >
+        {value}
+      </span>
+      {!readOnly && (
+        <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={onRemove}>×</button>
+      )}
+    </li>
   );
 }
 

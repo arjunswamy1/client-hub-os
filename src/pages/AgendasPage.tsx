@@ -4,44 +4,30 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClient } from '@/contexts/ClientContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle
+  Dialog, DialogContent
 } from '@/components/ui/dialog';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import {
   Plus, Calendar, FileText, ChevronRight, Copy, MoreHorizontal,
-  Sparkles, LayoutTemplate, Bot, Loader2, RefreshCw, CheckCircle2,
-  Clock, Send, Search, ChevronDown, Zap, BarChart3, Phone, MessageSquare, ListChecks
+  Sparkles, LayoutTemplate, Loader2, CheckCircle2,
+  Clock, Send, Search, ChevronDown, Zap, BarChart3, Phone, MessageSquare, ListChecks,
+  TrendingUp, Minus, Bug, Droplets, Home
 } from 'lucide-react';
 import { format, addDays, nextMonday, isThisWeek, isThisMonth } from 'date-fns';
 import { toast } from 'sonner';
 
-/* ───── Constants ───── */
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
-  draft: { label: 'Draft', color: 'bg-amber-500/10 text-amber-600 border-amber-200', icon: Clock },
-  published: { label: 'Published', color: 'bg-blue-500/10 text-blue-600 border-blue-200', icon: Send },
-  completed: { label: 'Completed', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-200', icon: CheckCircle2 },
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  weekly: 'Weekly Review',
-  adhoc: 'Ad Hoc',
-  strategy: 'Strategy Session',
-  creative_review: 'Creative Review',
-};
+/* ───── Types ───── */
 
 interface AgendaSubsection {
   title: string;
@@ -54,6 +40,62 @@ interface AgendaSection {
   section: string;
   items?: string[];
   subsections?: AgendaSubsection[];
+  vertical?: string;
+}
+
+/* ───── Constants ───── */
+
+const STATUS_CONFIG: Record<string, { label: string; dotClass: string; badgeClass: string; icon: typeof Clock }> = {
+  draft: { label: 'Draft', dotClass: 'bg-amber-400', badgeClass: 'bg-amber-500/10 text-amber-600 border-amber-200', icon: Clock },
+  published: { label: 'Published', dotClass: 'bg-blue-500', badgeClass: 'bg-blue-500/10 text-blue-600 border-blue-200', icon: Send },
+  completed: { label: 'Completed', dotClass: 'bg-emerald-500', badgeClass: 'bg-emerald-500/10 text-emerald-600 border-emerald-200', icon: CheckCircle2 },
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  weekly: 'Weekly Review',
+  adhoc: 'Ad Hoc',
+  strategy: 'Strategy Session',
+  creative_review: 'Creative Review',
+};
+
+const SECTION_COLORS: Record<string, { bg: string; border: string; icon: string; headerBg: string }> = {
+  'Development Update': { bg: 'bg-violet-500/5', border: 'border-violet-500/20', icon: 'text-violet-500', headerBg: 'bg-violet-500/10' },
+  'Marketing Strategy': { bg: 'bg-blue-500/5', border: 'border-blue-500/20', icon: 'text-blue-500', headerBg: 'bg-blue-500/10' },
+  'General Connect Paid Media Needs': { bg: 'bg-orange-500/5', border: 'border-orange-500/20', icon: 'text-orange-500', headerBg: 'bg-orange-500/10' },
+  'Notes from Billy.com Team': { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', icon: 'text-emerald-500', headerBg: 'bg-emerald-500/10' },
+  'Notes from Client': { bg: 'bg-pink-500/5', border: 'border-pink-500/20', icon: 'text-pink-500', headerBg: 'bg-pink-500/10' },
+};
+
+const SECTION_ICONS: Record<string, typeof FileText> = {
+  'Development Update': Zap,
+  'Marketing Strategy': BarChart3,
+  'General Connect Paid Media Needs': ListChecks,
+  'Notes from Billy.com Team': MessageSquare,
+  'Notes from Client': MessageSquare,
+};
+
+const VERTICAL_ICONS: Record<string, typeof Bug> = {
+  'pest': Bug,
+  'bathroom': Droplets,
+  'home': Home,
+};
+
+function getVerticalIcon(vertical?: string) {
+  if (!vertical) return null;
+  const key = Object.keys(VERTICAL_ICONS).find(k => vertical.toLowerCase().includes(k));
+  return key ? VERTICAL_ICONS[key] : TrendingUp;
+}
+
+const VERTICAL_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  'pest control': { bg: 'bg-green-500/8', border: 'border-green-500/25', text: 'text-green-700' },
+  'bathroom remodel': { bg: 'bg-cyan-500/8', border: 'border-cyan-500/25', text: 'text-cyan-700' },
+  'hvac': { bg: 'bg-red-500/8', border: 'border-red-500/25', text: 'text-red-700' },
+};
+
+function getVerticalColor(vertical?: string) {
+  if (!vertical) return { bg: 'bg-muted/30', border: 'border-muted', text: 'text-muted-foreground' };
+  const key = Object.keys(VERTICAL_COLORS).find(k => vertical.toLowerCase().includes(k));
+  return key ? VERTICAL_COLORS[key] : { bg: 'bg-primary/5', border: 'border-primary/20', text: 'text-primary' };
 }
 
 /* ───── Main Component ───── */
@@ -118,7 +160,6 @@ export default function AgendasPage() {
     enabled: !!selectedId,
   });
 
-  // Group agendas by time period
   const groupedAgendas = useMemo(() => {
     const filtered = searchQuery
       ? agendas.filter((a: any) => a.title.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -301,15 +342,13 @@ export default function AgendasPage() {
   return (
     <div className="flex h-[calc(100vh-4rem)] gap-0">
       {/* ───── LEFT PANEL: Agenda List ───── */}
-      <div className="w-[320px] shrink-0 border-r flex flex-col bg-card">
-        {/* Header */}
+      <div className="w-[300px] shrink-0 border-r flex flex-col bg-card">
         <div className="p-4 border-b space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-semibold tracking-tight">Agendas</h1>
             <div className="flex gap-1.5">
               <Button
-                size="sm"
-                variant="outline"
+                size="sm" variant="outline"
                 className="h-8 gap-1.5 text-xs border-primary/20 text-primary hover:bg-primary/5"
                 onClick={() => { setCreateMode('ai'); setIsCreateOpen(true); }}
               >
@@ -331,7 +370,6 @@ export default function AgendasPage() {
           </div>
         </div>
 
-        {/* Agenda List */}
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
             {groupedAgendas.map(group => (
@@ -346,17 +384,11 @@ export default function AgendasPage() {
                     <div
                       key={agenda.id}
                       className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer transition-all ${
-                        isActive
-                          ? 'bg-primary/8 ring-1 ring-primary/20'
-                          : 'hover:bg-muted/60'
+                        isActive ? 'bg-primary/8 ring-1 ring-primary/20' : 'hover:bg-muted/60'
                       }`}
                       onClick={() => setSelectedId(agenda.id)}
                     >
-                      <div className={`shrink-0 w-2 h-2 rounded-full ${
-                        agenda.status === 'completed' ? 'bg-emerald-500'
-                        : agenda.status === 'published' ? 'bg-blue-500'
-                        : 'bg-amber-400'
-                      }`} />
+                      <div className={`shrink-0 w-2 h-2 rounded-full ${cfg.dotClass}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate leading-tight">{agenda.title}</p>
                         <div className="flex items-center gap-1.5 mt-0.5">
@@ -367,12 +399,6 @@ export default function AgendasPage() {
                           <span className="text-[11px] text-muted-foreground">
                             {TYPE_LABELS[agenda.call_type]?.split(' ')[0] || agenda.call_type}
                           </span>
-                          {(agenda as any).ai_context && (
-                            <>
-                              <span className="text-muted-foreground/30">·</span>
-                              <Sparkles className="h-2.5 w-2.5 text-primary/60" />
-                            </>
-                          )}
                         </div>
                       </div>
                       <DropdownMenu>
@@ -404,75 +430,69 @@ export default function AgendasPage() {
                 <div className="w-12 h-12 rounded-full bg-muted/60 flex items-center justify-center mx-auto">
                   <FileText className="h-5 w-5 text-muted-foreground/40" />
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">No agendas yet</p>
-                  <p className="text-xs text-muted-foreground/60 mt-0.5">Create your first one</p>
-                </div>
+                <p className="text-sm font-medium text-muted-foreground">No agendas yet</p>
+                <p className="text-xs text-muted-foreground/60">Create your first one</p>
               </div>
             )}
           </div>
         </ScrollArea>
       </div>
 
-      {/* ───── RIGHT PANEL: Detail ───── */}
+      {/* ───── RIGHT PANEL: Detail (full width) ───── */}
       <div className="flex-1 overflow-hidden">
         {selected ? (
           <ScrollArea className="h-full">
-            <div className="max-w-3xl mx-auto py-6 px-8 space-y-6">
+            <div className="py-6 px-8 space-y-6">
               {/* Header */}
-              <div className="space-y-1">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold tracking-tight">{selected.title}</h2>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-sm text-muted-foreground">
-                        {format(new Date(selected.call_date), 'EEEE, MMMM d, yyyy')}
-                      </span>
-                      <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[selected.status]?.color || ''}`}>
-                        {STATUS_CONFIG[selected.status]?.label || selected.status}
-                      </Badge>
-                    </div>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold tracking-tight">{selected.title}</h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">
+                      {format(new Date(selected.call_date), 'EEEE, MMMM d, yyyy')}
+                    </span>
+                    <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[selected.status]?.badgeClass || ''}`}>
+                      {STATUS_CONFIG[selected.status]?.label || selected.status}
+                    </Badge>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {TYPE_LABELS[selected.call_type] || selected.call_type}
+                    </Badge>
                   </div>
-                  <div className="flex gap-2">
-                    {selected.status === 'draft' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 gap-1.5 text-xs"
-                        onClick={() => generateWithAI(selected.id)}
-                        disabled={isGenerating}
-                      >
-                        {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                        AI Populate
+                </div>
+                <div className="flex gap-2">
+                  {selected.status === 'draft' && (
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"
+                      onClick={() => generateWithAI(selected.id)} disabled={isGenerating}>
+                      {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      AI Populate
+                    </Button>
+                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                        <Copy className="h-3.5 w-3.5" /> Duplicate <ChevronDown className="h-3 w-3 opacity-50" />
                       </Button>
-                    )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                          <Copy className="h-3.5 w-3.5" /> Duplicate
-                          <ChevronDown className="h-3 w-3 opacity-50" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: selected, withContent: false })}>
-                          Empty (structure only)
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: selected, withContent: true })}>
-                          With current content
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    {selected.status === 'draft' && (
-                      <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => updateStatus.mutate({ id: selected.id, status: 'published' })}>
-                        <Send className="h-3.5 w-3.5" /> Publish
-                      </Button>
-                    )}
-                    {selected.status === 'published' && (
-                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => updateStatus.mutate({ id: selected.id, status: 'completed' })}>
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
-                      </Button>
-                    )}
-                  </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: selected, withContent: false })}>
+                        Empty (structure only)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: selected, withContent: true })}>
+                        With current content
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {selected.status === 'draft' && (
+                    <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => updateStatus.mutate({ id: selected.id, status: 'published' })}>
+                      <Send className="h-3.5 w-3.5" /> Publish
+                    </Button>
+                  )}
+                  {selected.status === 'published' && (
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => updateStatus.mutate({ id: selected.id, status: 'completed' })}>
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -489,23 +509,22 @@ export default function AgendasPage() {
                 </div>
               )}
 
-              {/* Agenda Content */}
-              <div className="space-y-1">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agenda</h3>
-                <div className="rounded-xl border bg-card overflow-hidden">
-                  <RichAgendaEditor
-                    content={(selected.agenda_content as any) || []}
-                    onChange={(c) => updateContent.mutate({ id: selected.id, field: 'agenda_content', value: c })}
-                    readOnly={selected.status === 'completed'}
-                  />
-                </div>
+              {/* Agenda Content — color-coded sections */}
+              <div className="space-y-4">
+                <AgendaContentView
+                  content={(selected.agenda_content as any) || []}
+                  onChange={(c) => updateContent.mutate({ id: selected.id, field: 'agenda_content', value: c })}
+                  readOnly={selected.status === 'completed'}
+                />
               </div>
 
               {/* Meeting Notes */}
-              <div className="space-y-1">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Meeting Notes</h3>
+              <div className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <MessageSquare className="h-3.5 w-3.5" /> Meeting Notes
+                </h3>
                 <div className="rounded-xl border bg-card overflow-hidden">
-                  <RichAgendaEditor
+                  <SimpleEditor
                     content={(selected.notes_content as any) || []}
                     onChange={(c) => updateContent.mutate({ id: selected.id, field: 'notes_content', value: c })}
                     readOnly={selected.status !== 'completed' && selected.status !== 'published'}
@@ -514,9 +533,11 @@ export default function AgendasPage() {
               </div>
 
               {/* Action Items */}
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Action Items</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Action Items
+                  </h3>
                   {actionItems.length > 0 && (
                     <span className="text-[10px] text-muted-foreground">
                       {actionItems.filter((i: any) => i.completed).length}/{actionItems.length} complete
@@ -529,9 +550,7 @@ export default function AgendasPage() {
                       <button
                         onClick={() => toggleActionItem.mutate({ id: item.id, completed: !item.completed })}
                         className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                          item.completed
-                            ? 'bg-emerald-500 border-emerald-500'
-                            : 'border-muted-foreground/30 hover:border-primary/50'
+                          item.completed ? 'bg-emerald-500 border-emerald-500' : 'border-muted-foreground/30 hover:border-primary/50'
                         }`}
                       >
                         {item.completed && <CheckCircle2 className="h-3 w-3 text-white" />}
@@ -547,24 +566,6 @@ export default function AgendasPage() {
                   <ActionItemInput onAdd={(desc) => addActionItem.mutate({ description: desc })} />
                 </div>
               </div>
-
-              {/* AI badge */}
-              {(selected as any).ai_context && (
-                <div className="flex items-center justify-between rounded-xl border border-primary/10 bg-primary/5 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    <span className="text-xs text-primary font-medium">AI-assisted agenda</span>
-                  </div>
-                  <Button
-                    size="sm" variant="ghost"
-                    className="h-7 text-xs gap-1 text-primary hover:text-primary"
-                    onClick={() => generateWithAI(selected.id)}
-                    disabled={isGenerating}
-                  >
-                    <RefreshCw className={`h-3 w-3 ${isGenerating ? 'animate-spin' : ''}`} /> Refresh
-                  </Button>
-                </div>
-              )}
             </div>
           </ScrollArea>
         ) : (
@@ -575,9 +576,7 @@ export default function AgendasPage() {
               </div>
               <div>
                 <p className="text-sm font-medium">No agenda selected</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Choose one from the list or generate a new agenda with AI
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">Choose one from the list or generate a new agenda with AI</p>
               </div>
               <div className="flex gap-2 justify-center">
                 <Button size="sm" variant="outline" className="gap-1.5 h-9" onClick={() => { setCreateMode('manual'); setIsCreateOpen(true); }}>
@@ -595,13 +594,10 @@ export default function AgendasPage() {
       {/* ───── CREATE DIALOG ───── */}
       <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetCreateForm(); }}>
         <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
-          {/* Tabs header */}
           <div className="flex border-b">
             <button
               className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
-                createMode === 'ai'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                createMode === 'ai' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
               onClick={() => setCreateMode('ai')}
             >
@@ -609,9 +605,7 @@ export default function AgendasPage() {
             </button>
             <button
               className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
-                createMode === 'manual'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                createMode === 'manual' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
               onClick={() => setCreateMode('manual')}
             >
@@ -622,7 +616,6 @@ export default function AgendasPage() {
           <div className="p-5 space-y-4">
             {createMode === 'ai' ? (
               <>
-                {/* AI data sources */}
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { icon: BarChart3, label: 'Dashboards', desc: 'Meta + Google performance' },
@@ -640,11 +633,9 @@ export default function AgendasPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Call Date</Label>
-                    <Input
-                      type="date" className="h-9 text-sm"
+                    <Input type="date" className="h-9 text-sm"
                       value={newDate || format(nextMonday(new Date()), 'yyyy-MM-dd')}
-                      onChange={e => setNewDate(e.target.value)}
-                    />
+                      onChange={e => setNewDate(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Type</Label>
@@ -664,8 +655,7 @@ export default function AgendasPage() {
                   <Label className="text-xs">Additional Context <span className="text-muted-foreground font-normal">(optional)</span></Label>
                   <Textarea
                     placeholder="e.g. 'Focus on Bathroom Remodel launch' or 'Client raised budget concerns'"
-                    value={aiContext}
-                    onChange={e => setAiContext(e.target.value)}
+                    value={aiContext} onChange={e => setAiContext(e.target.value)}
                     className="h-20 text-sm resize-none"
                   />
                 </div>
@@ -700,12 +690,10 @@ export default function AgendasPage() {
                     </Select>
                   </div>
                 )}
-
                 <div className="space-y-1.5">
                   <Label className="text-xs">Title</Label>
                   <Input className="h-9" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Weekly Digital Marketing Review" required />
                 </div>
-
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Call Date</Label>
@@ -724,7 +712,6 @@ export default function AgendasPage() {
                     </Select>
                   </div>
                 </div>
-
                 <Button type="submit" className="w-full h-10" disabled={createAgenda.isPending}>Create Agenda</Button>
               </form>
             )}
@@ -735,7 +722,7 @@ export default function AgendasPage() {
   );
 }
 
-/* ───── Default Sections ───── */
+/* ───── Default Sections with vertical breakdowns ───── */
 
 function defaultSections(): AgendaSection[] {
   return [
@@ -751,6 +738,19 @@ function defaultSections(): AgendaSection[] {
       { title: 'Upcoming Launches', items: [], placeholder: 'Planned launches...' },
       { title: 'Action Items / Needs', items: [], placeholder: 'Marketing action items...' },
     ]},
+    // Per-vertical breakdowns
+    { section: 'Pest Control — Vertical Update', vertical: 'pest_control', subsections: [
+      { title: 'Google Ads', items: [], placeholder: 'Google performance for Pest Control...', ai_populatable: true },
+      { title: 'Meta Ads', items: [], placeholder: 'Meta performance for Pest Control...', ai_populatable: true },
+      { title: 'Ringba / Calls', items: [], placeholder: 'Call metrics for Pest Control...', ai_populatable: true },
+      { title: 'Notes & Action Items', items: [], placeholder: 'Pest Control action items...' },
+    ]},
+    { section: 'Bathroom Remodel — Vertical Update', vertical: 'bathroom_remodel', subsections: [
+      { title: 'Google Ads', items: [], placeholder: 'Google performance for Bathroom Remodel...', ai_populatable: true },
+      { title: 'Meta Ads', items: [], placeholder: 'Meta performance for Bathroom Remodel...', ai_populatable: true },
+      { title: 'Ringba / Calls', items: [], placeholder: 'Call metrics for Bathroom Remodel...', ai_populatable: true },
+      { title: 'Notes & Action Items', items: [], placeholder: 'Bathroom Remodel action items...' },
+    ]},
     { section: 'General Connect Paid Media Needs', subsections: [
       { title: 'Items', items: [], placeholder: 'Broader support requests...' },
     ]},
@@ -760,18 +760,9 @@ function defaultSections(): AgendaSection[] {
   ];
 }
 
-/* ───── Section icons ───── */
-const SECTION_ICONS: Record<string, typeof FileText> = {
-  'Development Update': Zap,
-  'Marketing Strategy': BarChart3,
-  'General Connect Paid Media Needs': ListChecks,
-  'Notes from Billy.com Team': MessageSquare,
-  'Notes from Client': MessageSquare,
-};
+/* ───── Color-Coded Agenda Content View ───── */
 
-/* ───── Rich Agenda Editor ───── */
-
-function RichAgendaEditor({ content, onChange, readOnly }: { content: AgendaSection[]; onChange: (c: AgendaSection[]) => void; readOnly: boolean }) {
+function AgendaContentView({ content, onChange, readOnly }: { content: AgendaSection[]; onChange: (c: AgendaSection[]) => void; readOnly: boolean }) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [newItem, setNewItem] = useState('');
   const sections = Array.isArray(content) ? content : [];
@@ -801,87 +792,214 @@ function RichAgendaEditor({ content, onChange, readOnly }: { content: AgendaSect
     return <div className="p-6 text-center"><p className="text-sm text-muted-foreground">No content yet.</p></div>;
   }
 
+  // Detect if this is a vertical section
+  const isVerticalSection = (section: AgendaSection) => {
+    return section.vertical || section.section.includes('Vertical Update');
+  };
+
   return (
-    <div className="divide-y">
+    <div className="space-y-4">
       {sections.map((section, si) => {
-        const Icon = SECTION_ICONS[section.section] || FileText;
+    const isVertical = isVerticalSection(section);
+        const sectionName = section.section;
+        const vc = isVertical ? getVerticalColor(sectionName) : null;
+        const sc = !isVertical ? (SECTION_COLORS[sectionName] || { bg: 'bg-muted/20', border: 'border-muted', icon: 'text-muted-foreground', headerBg: 'bg-muted/30' }) : null;
+        const Icon = isVertical
+          ? (getVerticalIcon(sectionName) || TrendingUp)
+          : (SECTION_ICONS[sectionName] || FileText);
+
+        const borderClass = isVertical ? vc!.border : sc!.border;
+        const headerBgClass = isVertical ? vc!.bg : sc!.headerBg;
+        const iconBgClass = isVertical ? `${vc!.bg} border ${vc!.border}` : sc!.bg;
+        const iconColorClass = isVertical ? vc!.text : sc!.icon;
+
         return (
-          <div key={si} className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-md bg-muted/60 flex items-center justify-center">
-                <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+          <div key={si} className={`rounded-xl border ${borderClass} overflow-hidden`}>
+            {/* Section Header */}
+            <div className={`px-4 py-3 flex items-center gap-3 ${headerBgClass}`}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${iconBgClass}`}>
+                <Icon className={`h-4 w-4 ${iconColorClass}`} />
               </div>
-              <h4 className="text-sm font-semibold">{section.section}</h4>
+              <h4 className="text-sm font-semibold flex-1">{sectionName}</h4>
+              {isVertical && vc && (
+                <Badge variant="outline" className={`text-[10px] ${vc.text} ${vc.border}`}>
+                  Vertical
+                </Badge>
+              )}
             </div>
 
-            {section.subsections ? (
-              <div className="space-y-4 pl-8">
-                {section.subsections.map((sub, subi) => {
-                  const key = `${si}-${subi}`;
-                  return (
-                    <div key={subi}>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <h5 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{sub.title}</h5>
-                        {sub.ai_populatable && (
-                          <Sparkles className="h-2.5 w-2.5 text-primary/40" />
+            {/* Section Body */}
+            <div className="bg-card">
+              {section.subsections ? (
+                <div className="divide-y divide-border/50">
+                  {section.subsections.map((sub, subi) => {
+                    const key = `${si}-${subi}`;
+                    const hasItems = sub.items && sub.items.length > 0;
+                    return (
+                      <div key={subi} className="px-5 py-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h5 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{sub.title}</h5>
+                          {sub.ai_populatable && (
+                            <Sparkles className="h-2.5 w-2.5 text-primary/40" />
+                          )}
+                        </div>
+                        <ul className="space-y-1.5">
+                          {sub.items?.map((item, ii) => (
+                            <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
+                              <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
+                              <span className="flex-1">{item}</span>
+                              {!readOnly && (
+                                <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii, subi)}>×</button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                        {!hasItems && readOnly && (
+                          <p className="text-xs text-muted-foreground/40 italic pl-5">—</p>
+                        )}
+                        {!readOnly && (
+                          <Input
+                            className="h-7 text-xs mt-2 border-dashed border-muted-foreground/15 bg-transparent focus:bg-card"
+                            placeholder={sub.placeholder || 'Add item...'}
+                            value={editingKey === key ? newItem : ''}
+                            onFocus={() => { setEditingKey(key); setNewItem(''); }}
+                            onChange={e => setNewItem(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si, subi))}
+                          />
                         )}
                       </div>
-                      <ul className="space-y-1">
-                        {sub.items?.map((item, ii) => (
-                          <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
-                            <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
-                            <span className="flex-1">{item}</span>
-                            {!readOnly && (
-                              <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii, subi)}>×</button>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                      {sub.items?.length === 0 && readOnly && (
-                        <p className="text-xs text-muted-foreground/40 italic">—</p>
-                      )}
-                      {!readOnly && (
-                        <Input
-                          className="h-7 text-xs mt-1.5 border-dashed border-muted-foreground/15 bg-transparent focus:bg-card"
-                          placeholder={sub.placeholder || 'Add item...'}
-                          value={editingKey === key ? newItem : ''}
-                          onFocus={() => { setEditingKey(key); setNewItem(''); }}
-                          onChange={e => setNewItem(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si, subi))}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="pl-8">
-                <ul className="space-y-1">
-                  {section.items?.map((item, ii) => (
-                    <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
-                      <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
-                      <span className="flex-1">{item}</span>
-                      {!readOnly && (
-                        <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii)}>×</button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {!readOnly && (
-                  <Input
-                    className="h-7 text-xs mt-1.5 border-dashed border-muted-foreground/15 bg-transparent focus:bg-card"
-                    placeholder="Add item..."
-                    value={editingKey === `${si}-flat` ? newItem : ''}
-                    onFocus={() => { setEditingKey(`${si}-flat`); setNewItem(''); }}
-                    onChange={e => setNewItem(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si))}
-                  />
-                )}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-5 py-3">
+                  <ul className="space-y-1.5">
+                    {section.items?.map((item, ii) => (
+                      <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
+                        <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
+                        <span className="flex-1">{item}</span>
+                        {!readOnly && (
+                          <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii)}>×</button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {!readOnly && (
+                    <Input
+                      className="h-7 text-xs mt-2 border-dashed border-muted-foreground/15 bg-transparent focus:bg-card"
+                      placeholder="Add item..."
+                      value={editingKey === `${si}-flat` ? newItem : ''}
+                      onFocus={() => { setEditingKey(`${si}-flat`); setNewItem(''); }}
+                      onChange={e => setNewItem(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si))}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ───── Simple Editor (for notes) ───── */
+
+function SimpleEditor({ content, onChange, readOnly }: { content: AgendaSection[]; onChange: (c: AgendaSection[]) => void; readOnly: boolean }) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [newItem, setNewItem] = useState('');
+  const sections = Array.isArray(content) ? content : [];
+
+  const addItem = (si: number, subIdx?: number) => {
+    if (!newItem.trim()) return;
+    const updated = JSON.parse(JSON.stringify(sections));
+    if (subIdx !== undefined && updated[si].subsections) {
+      updated[si].subsections[subIdx].items.push(newItem.trim());
+    } else {
+      if (!updated[si].items) updated[si].items = [];
+      updated[si].items.push(newItem.trim());
+    }
+    onChange(updated);
+    setNewItem('');
+    setEditingKey(null);
+  };
+
+  const removeItem = (si: number, ii: number, subIdx?: number) => {
+    const updated = JSON.parse(JSON.stringify(sections));
+    if (subIdx !== undefined && updated[si].subsections) updated[si].subsections[subIdx].items.splice(ii, 1);
+    else updated[si].items?.splice(ii, 1);
+    onChange(updated);
+  };
+
+  if (sections.length === 0) {
+    return <div className="p-6 text-center"><p className="text-sm text-muted-foreground">No notes yet.</p></div>;
+  }
+
+  return (
+    <div className="divide-y">
+      {sections.map((section, si) => (
+        <div key={si} className="p-4">
+          <h4 className="text-sm font-semibold mb-2">{section.section}</h4>
+          {section.subsections ? (
+            <div className="space-y-3 pl-4">
+              {section.subsections.map((sub, subi) => {
+                const key = `note-${si}-${subi}`;
+                return (
+                  <div key={subi}>
+                    <h5 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">{sub.title}</h5>
+                    <ul className="space-y-1">
+                      {sub.items?.map((item, ii) => (
+                        <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
+                          <Minus className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/30" />
+                          <span className="flex-1">{item}</span>
+                          {!readOnly && (
+                            <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive" onClick={() => removeItem(si, ii, subi)}>×</button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    {!readOnly && (
+                      <Input
+                        className="h-7 text-xs mt-1 border-dashed border-muted-foreground/15 bg-transparent"
+                        placeholder={sub.placeholder || 'Add note...'}
+                        value={editingKey === key ? newItem : ''}
+                        onFocus={() => { setEditingKey(key); setNewItem(''); }}
+                        onChange={e => setNewItem(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si, subi))}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pl-4">
+              <ul className="space-y-1">
+                {section.items?.map((item, ii) => (
+                  <li key={ii} className="flex items-start gap-2 text-[13px] group/item">
+                    <Minus className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/30" />
+                    <span className="flex-1">{item}</span>
+                    {!readOnly && (
+                      <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive" onClick={() => removeItem(si, ii)}>×</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {!readOnly && (
+                <Input
+                  className="h-7 text-xs mt-1 border-dashed border-muted-foreground/15 bg-transparent"
+                  placeholder="Add note..."
+                  value={editingKey === `note-${si}-flat` ? newItem : ''}
+                  onFocus={() => { setEditingKey(`note-${si}-flat`); setNewItem(''); }}
+                  onChange={e => setNewItem(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si))}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Sparkles, Copy, Check, Lightbulb, AlertTriangle, FileText } from "lucide-react";
+import { Sparkles, Copy, Check, Lightbulb, AlertTriangle, FileText, Download } from "lucide-react";
 
 interface HeadlineOptimizerProps {
   open: boolean;
@@ -127,6 +127,41 @@ function DescriptionsGrid({ items }: { items: string[] }) {
       )}
     </div>
   );
+}
+
+function exportBulkUploadSheet(
+  keyword: string,
+  matchType: string | undefined,
+  campaignName: string | undefined,
+  adGroupName: string | undefined,
+  result: AIResult
+) {
+  const rows: string[][] = [];
+  // Header row matching Google Ads Editor bulk format
+  rows.push(['Action', 'Campaign', 'Ad group', 'Headline 1', 'Headline 2', 'Headline 3', 'Headline 4', 'Headline 5', 'Description 1', 'Description 2', 'Description 3', 'Keyword', 'Match Type']);
+
+  const h = result.headlines.map(x => x.text);
+  const d = result.descriptions.map(x => x.text);
+
+  rows.push([
+    'Add',
+    campaignName || '',
+    adGroupName || '',
+    h[0] || '', h[1] || '', h[2] || '', h[3] || '', h[4] || '',
+    d[0] || '', d[1] || '', d[2] || '',
+    keyword,
+    matchType || 'broad',
+  ]);
+
+  const csvContent = rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `bulk_upload_${keyword.replace(/\s+/g, '_').slice(0, 30)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast.success('Bulk upload CSV downloaded');
 }
 
 export default function HeadlineOptimizerModal({
@@ -316,6 +351,21 @@ export default function HeadlineOptimizerModal({
                     </ul>
                   </div>
                 )}
+
+                <Separator />
+
+                {/* Export Button */}
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 text-xs"
+                    onClick={() => exportBulkUploadSheet(keyword, matchType, campaignName, adGroupName, result)}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export Bulk Upload Sheet
+                  </Button>
+                </div>
 
                 <Separator />
 

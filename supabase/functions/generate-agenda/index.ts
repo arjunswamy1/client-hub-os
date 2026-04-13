@@ -209,7 +209,7 @@ The agenda follows a specific template structure. The structure has:
 1. "Marketing Updates" — a top-level section for links/resources. Leave items empty.
 2. Per-vertical sections (Pest Control, Porta Potty, Flights, HVAC, Bathroom Remodel, Garage Doors) each with subsections: Google, Meta, Bing, Ringba / Calls, Notes.
    - For platform subsections marked [AI SHOULD POPULATE], generate 2-5 concise bullet points with actual spend, conversions, CPA, and notable campaign callouts. Format like: "Spend: $X | Y conversions | $Z CPA" on the first bullet, then specific campaign callouts.
-   - If a vertical has no data for a platform, add one bullet: "No activity this period."
+   - If a vertical has no data for a platform, OMIT that platform subsection entirely (do not include it). Only include platforms that have real activity data.
    - For "Notes" subsections (not AI populatable), leave items empty for manual input.
 3. "Feedback from Client" — leave items empty for manual input.
 
@@ -327,7 +327,25 @@ Return the complete agenda_content as a JSON array of sections matching the temp
       generatedSections = template_sections as AgendaSection[];
     }
 
-    // If agenda_id provided, update it directly
+    // Post-process: remove platform subsections with no activity
+    const NO_ACTIVITY_PATTERNS = ['no activity', 'no data', 'no spend', 'n/a'];
+    const PLATFORM_SUBS = ['google', 'meta', 'bing', 'ringba / calls'];
+
+    for (const section of generatedSections) {
+      if (!section.subsections || !section.vertical) continue;
+      section.subsections = section.subsections.filter(sub => {
+        const subTitle = sub.title.toLowerCase();
+        // Always keep non-platform subsections (Notes, etc.)
+        if (!PLATFORM_SUBS.includes(subTitle)) return true;
+        // Remove if no items
+        if (!sub.items || sub.items.length === 0) return false;
+        // Remove if only "no activity" type bullets
+        const allNoActivity = sub.items.every(item =>
+          NO_ACTIVITY_PATTERNS.some(p => item.toLowerCase().includes(p))
+        );
+        return !allNoActivity;
+      });
+    }
     if (agenda_id) {
       const { error } = await supabase
         .from('call_agendas')

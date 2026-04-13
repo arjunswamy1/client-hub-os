@@ -228,8 +228,9 @@ export default function AgendasPage() {
     try {
       const defaultTemplate = templates.find((t: any) => t.is_default);
       const templateSections = defaultTemplate?.sections || defaultSections();
+      const targetAgenda = agendas.find((a: any) => a.id === agendaId);
       const { data, error } = await supabase.functions.invoke('generate-agenda', {
-        body: { client_id: activeClient.id, agenda_id: agendaId, template_sections: templateSections, additional_context: aiContext },
+        body: { client_id: activeClient.id, agenda_id: agendaId, template_sections: templateSections, additional_context: aiContext, call_date: targetAgenda?.call_date },
       });
       if (error) throw error;
       if (agendaId) {
@@ -263,7 +264,7 @@ export default function AgendasPage() {
       if (insertError) throw insertError;
 
       const { error: genError } = await supabase.functions.invoke('generate-agenda', {
-        body: { client_id: activeClient.id, agenda_id: newAgenda.id, template_sections: templateSections, additional_context: aiContext },
+        body: { client_id: activeClient.id, agenda_id: newAgenda.id, template_sections: templateSections, additional_context: aiContext, call_date: newDate || format(nextMonday(new Date()), 'yyyy-MM-dd') },
       });
       if (genError) throw genError;
 

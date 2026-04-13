@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { client_id, agenda_id, template_sections, additional_context } = await req.json();
+    const { client_id, agenda_id, template_sections, additional_context, call_date } = await req.json();
 
     if (!client_id) {
       return new Response(JSON.stringify({ error: 'client_id required' }), {
@@ -38,11 +38,11 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Gather context in parallel
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
-    const todayStr = now.toISOString().split('T')[0];
+    // Use the agenda's call_date as the reference point, falling back to today
+    const referenceDate = call_date ? new Date(call_date + 'T23:59:59Z') : new Date();
+    const todayStr = referenceDate.toISOString().split('T')[0];
+    const sevenDaysAgo = new Date(referenceDate.getTime() - 7 * 86400000).toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(referenceDate.getTime() - 30 * 86400000).toISOString().split('T')[0];
 
     const [
       { data: contextItems },
@@ -160,32 +160,31 @@ Deno.serve(async (req) => {
       })
       .join('\n\n');
 
-    const systemPrompt = `You are an expert digital marketing account manager preparing a weekly client call agenda. 
-You analyze LAST 7 DAYS performance data, context feed items, open action items, and optimization recommendations to create a focused, actionable agenda.
+    const systemPrompt = `You are an expert digital marketing account manager preparing a weekly client call agenda.
+You analyze the TRAILING 7 DAYS of performance data ending on the agenda date.
 
-The agenda follows a specific template structure. For each section marked [AI SHOULD POPULATE], generate 3-6 concise bullet points based on the data provided.
+The agenda follows a specific template structure. For each section marked [AI SHOULD POPULATE], generate 3-6 concise bullet points based ONLY on the actual data provided below.
 For sections NOT marked for AI population, leave the items array empty — those are for manual input by the team.
 
-IMPORTANT RULES:
-- ALL metrics are from the LAST 7 DAYS ONLY — not all-time. Always reference the date range.
-- Be specific with numbers: include actual spend, revenue, ROAS, conversion counts for the 7-day window
-- Call out significant changes (>10% week-over-week)
-- Highlight any campaigns that need attention (high spend/low return, paused campaigns that could be restarted)
-- For Ringba/call metrics: include call volume, conversion rates, revenue
-- Reference open action items from previous calls
-- Include pending AI optimization recommendations
-- Keep each bullet point concise (1-2 sentences max)
-- Use the client's actual campaign names when referencing specific campaigns
+CRITICAL RULES:
+- ONLY use the exact numbers from the data provided below. NEVER invent, estimate, or hallucinate metrics.
+- If a metric is 0 or missing, say so explicitly (e.g. "Revenue: $0 — revenue tracking not yet connected").
+- If there is no data for a vertical or platform, state "No data available for this period."
+- ALL metrics are for the trailing 7-day window (${contextSummary.period}) ONLY.
+- Use the client's actual campaign names when referencing specific campaigns.
+- Keep each bullet point concise (1-2 sentences max).
+- Reference open action items from previous calls if any exist.
+- Include pending AI optimization recommendations if any exist.
 
 Return ONLY valid JSON matching the template structure.`;
 
     const userPrompt = `Generate the weekly agenda for ${contextSummary.client_name}.
-ALL DATA BELOW IS FROM THE LAST 7 DAYS (${contextSummary.period}). Report metrics for this period only.
+DATA PERIOD: ${contextSummary.period} (trailing 7 days ending ${todayStr}).
 
-PERFORMANCE DATA (${contextSummary.period}):
+ACTUAL PLATFORM PERFORMANCE DATA (use these exact numbers — do NOT make up figures):
 ${JSON.stringify(contextSummary.platform_performance, null, 2)}
 
-RINGBA CALL DATA:
+ACTUAL RINGBA CALL DATA (use these exact numbers):
 ${JSON.stringify(contextSummary.ringba_performance, null, 2)}
 
 RECENT CONTEXT/COMMUNICATIONS:
@@ -202,7 +201,7 @@ ${contextSummary.additional_context ? `ADDITIONAL CONTEXT FROM TEAM:\n${contextS
 TEMPLATE STRUCTURE TO FOLLOW:
 ${templateDesc}
 
-Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points. For non-ai_populatable subsections, keep items as empty arrays.`;
+Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays.`;
 
     // Call AI
     const aiResponse = await fetch('https://ai.lovable.dev/api/v1/chat/completions', {

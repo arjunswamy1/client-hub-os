@@ -268,8 +268,12 @@ async function generateCSVs(
     });
   }
 
-  const files: { filename: string; content: string }[] = [];
-  const campaigns = structure.campaigns;
+  // Enforce Google Ads character limits before generating CSVs
+  const { structure: validatedStructure, warnings } = enforceCharLimits(structure);
+  if (warnings.length) {
+    console.warn("Character limit warnings:", warnings);
+  }
+  const campaigns = validatedStructure.campaigns;
 
   // 1. Campaigns.csv
   let campaignsCsv = "Campaign,Campaign Type,Campaign Daily Budget,Campaign Status,Networks,Location,Language,Bid Strategy Type\n";

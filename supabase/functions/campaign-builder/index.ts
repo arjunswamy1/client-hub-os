@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { messages, build_id, client_context, action, campaign_structure } = body;
+    const { messages, build_id, client_context, action, campaign_structure, client_name } = body;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
 
     // If action is "generate_csvs", generate CSV files from the structure
     if (action === "generate_csvs") {
-      return await generateCSVs(supabase, campaign_structure, build_id);
+      return await generateCSVs(supabase, campaign_structure, build_id, client_name);
     }
 
     // Build enhanced system prompt with client context
@@ -262,6 +262,7 @@ async function generateCSVs(
   supabase: any,
   structure: any,
   buildId: string,
+  clientName?: string,
 ) {
   if (!structure?.campaigns?.length) {
     return new Response(JSON.stringify({ error: "No campaign structure provided" }), {
@@ -386,13 +387,24 @@ async function generateCSVs(
   }
   const xlsxBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
+  // Build file naming prefix: Client_CampaignName_Date (e.g. Billy.com_HVAC_41326)
+  const sanitize = (s: string) => (s || '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  const now = new Date();
+  const dateStr = `${now.getMonth() + 1}${now.getDate()}${String(now.getFullYear()).slice(-2)}`;
+  const firstCampaignName = campaigns[0]?.campaign_name || 'Campaign';
+  // Extract a short campaign label (first meaningful segment)
+  const campaignLabel = sanitize(firstCampaignName.split(' - ')[0] || firstCampaignName);
+  const clientSlug = sanitize(clientName || 'Client');
+  const prefix = `${clientSlug}_${campaignLabel}_${dateStr}`;
+
   // Upload to storage
   const uploadedFiles = [];
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const timestamp = now.toISOString().replace(/[:.]/g, '-');
   const folder = `${buildId || 'manual'}/${timestamp}`;
 
   // Upload Excel file first
-  const xlsxPath = `${folder}/Campaign Build - Master.xlsx`;
+  const xlsxFilename = `${prefix}_Master.xlsx`;
+  const xlsxPath = `${folder}/${xlsxFilename}`;
   const { error: xlsxErr } = await supabase.storage
     .from('campaign-build-files')
     .upload(xlsxPath, new Blob([xlsxBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), {
@@ -401,26 +413,28 @@ async function generateCSVs(
     });
   if (!xlsxErr) {
     const { data: xlsxUrl } = supabase.storage.from('campaign-build-files').getPublicUrl(xlsxPath);
-    uploadedFiles.push({ filename: 'Campaign Build - Master.xlsx', storage_url: xlsxUrl.publicUrl, file_type: 'xlsx' });
+    uploadedFiles.push({ filename: xlsxFilename, storage_url: xlsxUrl.publicUrl, file_type: 'xlsx' });
   } else {
     console.error('Excel upload error:', xlsxErr);
   }
 
   // Upload individual CSVs
   for (const file of files) {
-    const path = `${folder}/${file.filename}`;
+    const csvLabel = sanitize(file.filename.replace('.csv', ''));
+    const csvFilename = `${prefix}_${csvLabel}.csv`;
+    const path = `${folder}/${csvFilename}`;
     const { error } = await supabase.storage
       .from('campaign-build-files')
       .upload(path, new Blob([file.content], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
 
     if (error) {
-      console.error(`Upload error for ${file.filename}:`, error);
+      console.error(`Upload error for ${csvFilename}:`, error);
       continue;
     }
 
     const { data: urlData } = supabase.storage.from('campaign-build-files').getPublicUrl(path);
     uploadedFiles.push({
-      filename: file.filename,
+      filename: csvFilename,
       storage_url: urlData.publicUrl,
       file_type: 'csv',
     });

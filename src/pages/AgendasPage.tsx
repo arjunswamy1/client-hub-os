@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useClient } from '@/contexts/ClientContext';
@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
@@ -18,27 +20,26 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
-import { Separator } from '@/components/ui/separator';
-import { Plus, Calendar, FileText, ChevronRight, Copy, MoreVertical, Sparkles, LayoutTemplate, Bot, Loader2, RefreshCw, CheckCircle2, Clock, Send } from 'lucide-react';
-import { format, addDays, nextMonday } from 'date-fns';
+import {
+  Plus, Calendar, FileText, ChevronRight, Copy, MoreHorizontal,
+  Sparkles, LayoutTemplate, Bot, Loader2, RefreshCw, CheckCircle2,
+  Clock, Send, Search, ChevronDown, Zap, BarChart3, Phone, MessageSquare, ListChecks
+} from 'lucide-react';
+import { format, addDays, nextMonday, isThisWeek, isThisMonth } from 'date-fns';
 import { toast } from 'sonner';
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-muted text-muted-foreground',
-  published: 'bg-blue-500/10 text-blue-600',
-  completed: 'bg-green-500/10 text-green-600',
-};
+/* ───── Constants ───── */
 
-const STATUS_ICONS: Record<string, typeof Clock> = {
-  draft: Clock,
-  published: Send,
-  completed: CheckCircle2,
+const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
+  draft: { label: 'Draft', color: 'bg-amber-500/10 text-amber-600 border-amber-200', icon: Clock },
+  published: { label: 'Published', color: 'bg-blue-500/10 text-blue-600 border-blue-200', icon: Send },
+  completed: { label: 'Completed', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-200', icon: CheckCircle2 },
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  weekly: 'Weekly',
+  weekly: 'Weekly Review',
   adhoc: 'Ad Hoc',
-  strategy: 'Strategy',
+  strategy: 'Strategy Session',
   creative_review: 'Creative Review',
 };
 
@@ -55,20 +56,23 @@ interface AgendaSection {
   subsections?: AgendaSubsection[];
 }
 
+/* ───── Main Component ───── */
+
 export default function AgendasPage() {
   const { activeClient } = useClient();
   const { teamMember } = useAuth();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<'ai' | 'manual'>('ai');
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
   const [newType, setNewType] = useState('weekly');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('blank');
   const [aiContext, setAiContext] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch agendas
   const { data: agendas = [] } = useQuery({
     queryKey: ['agendas', activeClient?.id],
     queryFn: async () => {
@@ -84,7 +88,6 @@ export default function AgendasPage() {
     enabled: !!activeClient,
   });
 
-  // Fetch templates
   const { data: templates = [] } = useQuery({
     queryKey: ['agenda_templates', activeClient?.id],
     queryFn: async () => {
@@ -100,7 +103,6 @@ export default function AgendasPage() {
     enabled: !!activeClient,
   });
 
-  // Fetch action items
   const { data: actionItems = [] } = useQuery({
     queryKey: ['action_items', selectedId],
     queryFn: async () => {
@@ -116,35 +118,52 @@ export default function AgendasPage() {
     enabled: !!selectedId,
   });
 
-  // Create agenda
+  // Group agendas by time period
+  const groupedAgendas = useMemo(() => {
+    const filtered = searchQuery
+      ? agendas.filter((a: any) => a.title.toLowerCase().includes(searchQuery.toLowerCase()))
+      : agendas;
+
+    const groups: { label: string; items: any[] }[] = [];
+    const thisWeek: any[] = [];
+    const thisMonth: any[] = [];
+    const older: any[] = [];
+
+    for (const a of filtered) {
+      const d = new Date(a.call_date);
+      if (isThisWeek(d, { weekStartsOn: 1 })) thisWeek.push(a);
+      else if (isThisMonth(d)) thisMonth.push(a);
+      else older.push(a);
+    }
+
+    if (thisWeek.length) groups.push({ label: 'This Week', items: thisWeek });
+    if (thisMonth.length) groups.push({ label: 'This Month', items: thisMonth });
+    if (older.length) groups.push({ label: 'Earlier', items: older });
+
+    return groups;
+  }, [agendas, searchQuery]);
+
+  /* ───── Mutations ───── */
+
   const createAgenda = useMutation({
     mutationFn: async () => {
       let agendaContent: AgendaSection[];
       let templateId: string | null = null;
-
       if (selectedTemplateId !== 'blank') {
-        const template = templates.find((t: any) => t.id === selectedTemplateId);
-        if (template) {
-          agendaContent = template.sections as AgendaSection[];
-          templateId = template.id;
-        } else {
-          agendaContent = defaultSections();
-        }
-      } else {
-        agendaContent = defaultSections();
-      }
+        const tpl = templates.find((t: any) => t.id === selectedTemplateId);
+        if (tpl) { agendaContent = tpl.sections as AgendaSection[]; templateId = tpl.id; }
+        else agendaContent = defaultSections();
+      } else agendaContent = defaultSections();
 
-      const insertData: any = {
+      const { data, error } = await supabase.from('call_agendas').insert({
         client_id: activeClient!.id,
         title: newTitle,
         call_date: newDate,
         call_type: newType,
         created_by_id: teamMember?.id || null,
         agenda_content: agendaContent,
-      };
-      if (templateId) insertData.template_id = templateId;
-
-      const { data, error } = await supabase.from('call_agendas').insert(insertData).select().single();
+        ...(templateId ? { template_id: templateId } : {}),
+      } as any).select().single();
       if (error) throw error;
       return data;
     },
@@ -158,49 +177,36 @@ export default function AgendasPage() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  // AI Generate agenda content
   const generateWithAI = async (agendaId?: string) => {
     if (!activeClient) return;
     setIsGenerating(true);
     try {
-      // Get the template sections to pass to AI
       const defaultTemplate = templates.find((t: any) => t.is_default);
       const templateSections = defaultTemplate?.sections || defaultSections();
-
       const { data, error } = await supabase.functions.invoke('generate-agenda', {
-        body: {
-          client_id: activeClient.id,
-          agenda_id: agendaId,
-          template_sections: templateSections,
-          additional_context: aiContext,
-        },
+        body: { client_id: activeClient.id, agenda_id: agendaId, template_sections: templateSections, additional_context: aiContext },
       });
-
       if (error) throw error;
-
       if (agendaId) {
         queryClient.invalidateQueries({ queryKey: ['agendas'] });
         toast.success('Agenda populated with AI insights');
       }
-
       setAiContext('');
       return data;
     } catch (err: any) {
-      toast.error(err.message || 'Failed to generate agenda');
+      toast.error(err.message || 'Failed to generate');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Create + AI Generate in one step
   const createAndGenerate = async () => {
     if (!activeClient) return;
     setIsGenerating(true);
     try {
       const defaultTemplate = templates.find((t: any) => t.is_default);
       const templateSections = defaultTemplate?.sections || defaultSections();
-
-      const insertData: any = {
+      const { data: newAgenda, error: insertError } = await supabase.from('call_agendas').insert({
         client_id: activeClient.id,
         title: newTitle || 'Weekly Digital Marketing Review',
         call_date: newDate || format(nextMonday(new Date()), 'yyyy-MM-dd'),
@@ -208,23 +214,11 @@ export default function AgendasPage() {
         created_by_id: teamMember?.id || null,
         agenda_content: templateSections,
         template_id: defaultTemplate?.id || null,
-      };
-
-      const { data: newAgenda, error: insertError } = await supabase
-        .from('call_agendas')
-        .insert(insertData)
-        .select()
-        .single();
+      } as any).select().single();
       if (insertError) throw insertError;
 
-      // Now generate AI content
       const { error: genError } = await supabase.functions.invoke('generate-agenda', {
-        body: {
-          client_id: activeClient.id,
-          agenda_id: newAgenda.id,
-          template_sections: templateSections,
-          additional_context: aiContext,
-        },
+        body: { client_id: activeClient.id, agenda_id: newAgenda.id, template_sections: templateSections, additional_context: aiContext },
       });
       if (genError) throw genError;
 
@@ -241,63 +235,21 @@ export default function AgendasPage() {
     }
   };
 
-  // Duplicate agenda
   const duplicateAgenda = useMutation({
-    mutationFn: async (sourceAgenda: any) => {
-      const sourceDate = new Date(sourceAgenda.call_date);
-      const nextDate = nextMonday(addDays(sourceDate, 1));
-
-      const sourceSections = (sourceAgenda.agenda_content || []) as AgendaSection[];
-      const clearedSections = sourceSections.map((section: AgendaSection) => ({
-        ...section,
-        items: [],
-        subsections: section.subsections?.map((sub: AgendaSubsection) => ({
-          ...sub,
-          items: [],
-        })),
+    mutationFn: async ({ source, withContent }: { source: any; withContent: boolean }) => {
+      const nextDate = nextMonday(addDays(new Date(source.call_date), 1));
+      const sections = (source.agenda_content || []) as AgendaSection[];
+      const content = withContent ? sections : sections.map((s: AgendaSection) => ({
+        ...s, items: [], subsections: s.subsections?.map((sub: AgendaSubsection) => ({ ...sub, items: [] })),
       }));
-
       const { error } = await supabase.from('call_agendas').insert({
-        client_id: activeClient!.id,
-        title: sourceAgenda.title,
-        call_date: format(nextDate, 'yyyy-MM-dd'),
-        call_type: sourceAgenda.call_type,
-        created_by_id: teamMember?.id || null,
-        agenda_content: clearedSections,
-        source_agenda_id: sourceAgenda.id,
-        template_id: sourceAgenda.template_id,
+        client_id: activeClient!.id, title: source.title, call_date: format(nextDate, 'yyyy-MM-dd'),
+        call_type: source.call_type, created_by_id: teamMember?.id || null, agenda_content: content,
+        notes_content: [], source_agenda_id: source.id, template_id: source.template_id,
       } as any);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agendas'] });
-      toast.success('Agenda duplicated for next week');
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
-
-  const duplicateWithContent = useMutation({
-    mutationFn: async (sourceAgenda: any) => {
-      const sourceDate = new Date(sourceAgenda.call_date);
-      const nextDate = nextMonday(addDays(sourceDate, 1));
-
-      const { error } = await supabase.from('call_agendas').insert({
-        client_id: activeClient!.id,
-        title: sourceAgenda.title,
-        call_date: format(nextDate, 'yyyy-MM-dd'),
-        call_type: sourceAgenda.call_type,
-        created_by_id: teamMember?.id || null,
-        agenda_content: sourceAgenda.agenda_content,
-        notes_content: [],
-        source_agenda_id: sourceAgenda.id,
-        template_id: sourceAgenda.template_id,
-      } as any);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agendas'] });
-      toast.success('Agenda duplicated with content');
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['agendas'] }); toast.success('Agenda duplicated'); },
     onError: (err: any) => toast.error(err.message),
   });
 
@@ -321,10 +273,7 @@ export default function AgendasPage() {
 
   const addActionItem = useMutation({
     mutationFn: async ({ description }: { description: string }) => {
-      const { error } = await supabase.from('call_action_items').insert({
-        call_agenda_id: selectedId!,
-        description,
-      });
+      const { error } = await supabase.from('call_action_items').insert({ call_agenda_id: selectedId!, description });
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['action_items'] }),
@@ -341,22 +290,8 @@ export default function AgendasPage() {
   const selected = agendas.find((a: any) => a.id === selectedId);
 
   const resetCreateForm = () => {
-    setNewTitle('');
-    setNewDate('');
-    setNewType('weekly');
-    setSelectedTemplateId('blank');
-    setAiContext('');
-  };
-
-  const handleTemplateSelect = (templateId: string) => {
-    setSelectedTemplateId(templateId);
-    if (templateId !== 'blank') {
-      const template = templates.find((t: any) => t.id === templateId);
-      if (template && !newTitle) {
-        setNewTitle(template.name);
-        setNewType(template.template_type || 'weekly');
-      }
-    }
+    setNewTitle(''); setNewDate(''); setNewType('weekly');
+    setSelectedTemplateId('blank'); setAiContext(''); setCreateMode('ai');
   };
 
   if (!activeClient) {
@@ -364,416 +299,433 @@ export default function AgendasPage() {
   }
 
   return (
-    <div className="flex h-full gap-4">
-      {/* Left panel: agenda list */}
-      <div className="w-80 shrink-0 space-y-3 overflow-y-auto scrollbar-thin">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Agendas</h1>
-          <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="gap-1" onClick={() => { setIsCreateOpen(true); setSelectedTemplateId('ai'); }}>
-              <Bot className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">AI</span>
-            </Button>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="mr-1 h-4 w-4" /> New
-            </Button>
+    <div className="flex h-[calc(100vh-4rem)] gap-0">
+      {/* ───── LEFT PANEL: Agenda List ───── */}
+      <div className="w-[320px] shrink-0 border-r flex flex-col bg-card">
+        {/* Header */}
+        <div className="p-4 border-b space-y-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-base font-semibold tracking-tight">Agendas</h1>
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs border-primary/20 text-primary hover:bg-primary/5"
+                onClick={() => { setCreateMode('ai'); setIsCreateOpen(true); }}
+              >
+                <Sparkles className="h-3.5 w-3.5" /> AI
+              </Button>
+              <Button size="sm" className="h-8 gap-1" onClick={() => { setCreateMode('manual'); setIsCreateOpen(true); }}>
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              className="h-8 pl-8 text-xs bg-muted/50 border-0"
+              placeholder="Search agendas..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
           </div>
         </div>
 
-        {agendas.map((agenda: any) => {
-          const StatusIcon = STATUS_ICONS[agenda.status] || Clock;
-          return (
-            <Card
-              key={agenda.id}
-              className={`cursor-pointer transition-all hover:shadow-sm ${selectedId === agenda.id ? 'ring-2 ring-primary/30 bg-accent/30' : ''}`}
-              onClick={() => setSelectedId(agenda.id)}
-            >
-              <CardContent className="p-3">
+        {/* Agenda List */}
+        <ScrollArea className="flex-1">
+          <div className="p-2 space-y-1">
+            {groupedAgendas.map(group => (
+              <div key={group.label}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 py-2">
+                  {group.label}
+                </p>
+                {group.items.map((agenda: any) => {
+                  const cfg = STATUS_CONFIG[agenda.status] || STATUS_CONFIG.draft;
+                  const isActive = selectedId === agenda.id;
+                  return (
+                    <div
+                      key={agenda.id}
+                      className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer transition-all ${
+                        isActive
+                          ? 'bg-primary/8 ring-1 ring-primary/20'
+                          : 'hover:bg-muted/60'
+                      }`}
+                      onClick={() => setSelectedId(agenda.id)}
+                    >
+                      <div className={`shrink-0 w-2 h-2 rounded-full ${
+                        agenda.status === 'completed' ? 'bg-emerald-500'
+                        : agenda.status === 'published' ? 'bg-blue-500'
+                        : 'bg-amber-400'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate leading-tight">{agenda.title}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[11px] text-muted-foreground">
+                            {format(new Date(agenda.call_date), 'MMM d')}
+                          </span>
+                          <span className="text-muted-foreground/30">·</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {TYPE_LABELS[agenda.call_type]?.split(' ')[0] || agenda.call_type}
+                          </span>
+                          {(agenda as any).ai_context && (
+                            <>
+                              <span className="text-muted-foreground/30">·</span>
+                              <Sparkles className="h-2.5 w-2.5 text-primary/60" />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-muted">
+                            <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: agenda, withContent: false })}>
+                            <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate (Empty)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: agenda, withContent: true })}>
+                            <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate with Content
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => { setSelectedId(agenda.id); generateWithAI(agenda.id); }}>
+                            <Sparkles className="mr-2 h-3.5 w-3.5" /> Regenerate with AI
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            {groupedAgendas.length === 0 && (
+              <div className="text-center py-16 space-y-3">
+                <div className="w-12 h-12 rounded-full bg-muted/60 flex items-center justify-center mx-auto">
+                  <FileText className="h-5 w-5 text-muted-foreground/40" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">No agendas yet</p>
+                  <p className="text-xs text-muted-foreground/60 mt-0.5">Create your first one</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* ───── RIGHT PANEL: Detail ───── */}
+      <div className="flex-1 overflow-hidden">
+        {selected ? (
+          <ScrollArea className="h-full">
+            <div className="max-w-3xl mx-auto py-6 px-8 space-y-6">
+              {/* Header */}
+              <div className="space-y-1">
                 <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{agenda.title}</p>
+                  <div>
+                    <h2 className="text-xl font-semibold tracking-tight">{selected.title}</h2>
                     <div className="flex items-center gap-2 mt-1">
-                      <Calendar className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(agenda.call_date), 'MMM d, yyyy')}
+                      <span className="text-sm text-muted-foreground">
+                        {format(new Date(selected.call_date), 'EEEE, MMMM d, yyyy')}
                       </span>
+                      <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[selected.status]?.color || ''}`}>
+                        {STATUS_CONFIG[selected.status]?.label || selected.status}
+                      </Badge>
                     </div>
-                    {(agenda as any).created_by?.name && (
-                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">by {(agenda as any).created_by.name}</p>
-                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <div className="flex flex-col items-end gap-1">
-                      <Badge variant="secondary" className={`text-[10px] gap-1 ${STATUS_COLORS[agenda.status] || ''}`}>
-                        <StatusIcon className="h-2.5 w-2.5" />
-                        {agenda.status}
-                      </Badge>
-                      <Badge variant="outline" className="text-[10px]">
-                        {TYPE_LABELS[agenda.call_type] || agenda.call_type}
-                      </Badge>
-                      {(agenda as any).ai_context && (
-                        <Badge variant="outline" className="text-[10px] gap-0.5 text-primary border-primary/20">
-                          <Sparkles className="h-2.5 w-2.5" /> AI
-                        </Badge>
-                      )}
-                    </div>
+                  <div className="flex gap-2">
+                    {selected.status === 'draft' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1.5 text-xs"
+                        onClick={() => generateWithAI(selected.id)}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                        AI Populate
+                      </Button>
+                    )}
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                          <MoreVertical className="h-3.5 w-3.5" />
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                          <Copy className="h-3.5 w-3.5" /> Duplicate
+                          <ChevronDown className="h-3 w-3 opacity-50" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenuItem onClick={() => duplicateAgenda.mutate(agenda)}>
-                          <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate (Empty)
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: selected, withContent: false })}>
+                          Empty (structure only)
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => duplicateWithContent.mutate(agenda)}>
-                          <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate with Content
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => {
-                          setSelectedId(agenda.id);
-                          generateWithAI(agenda.id);
-                        }}>
-                          <Sparkles className="mr-2 h-3.5 w-3.5" /> Regenerate with AI
+                        <DropdownMenuItem onClick={() => duplicateAgenda.mutate({ source: selected, withContent: true })}>
+                          With current content
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-
-        {agendas.length === 0 && (
-          <div className="text-center py-12 space-y-3">
-            <FileText className="mx-auto h-10 w-10 text-muted-foreground/20" />
-            <p className="text-sm text-muted-foreground">No agendas yet</p>
-            <Button size="sm" variant="outline" className="gap-1" onClick={() => { setIsCreateOpen(true); setSelectedTemplateId('ai'); }}>
-              <Bot className="h-3.5 w-3.5" /> Generate First Agenda with AI
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Right panel: agenda detail */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {selected ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">{selected.title}</h2>
-                <p className="text-sm text-muted-foreground">
-                  {format(new Date(selected.call_date), 'EEEE, MMMM d, yyyy')} · {TYPE_LABELS[selected.call_type]}
-                  {(selected as any).source_agenda_id && (
-                    <span className="ml-2 text-xs text-muted-foreground/60">· duplicated</span>
-                  )}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {selected.status === 'draft' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() => generateWithAI(selected.id)}
-                    disabled={isGenerating}
-                  >
-                    {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                    {isGenerating ? 'Generating...' : 'AI Populate'}
-                  </Button>
-                )}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="outline">
-                      <Copy className="mr-1 h-3.5 w-3.5" /> Duplicate
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => duplicateAgenda.mutate(selected)}>
-                      Empty (structure only)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => duplicateWithContent.mutate(selected)}>
-                      With current content
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {selected.status === 'draft' && (
-                  <Button size="sm" onClick={() => updateStatus.mutate({ id: selected.id, status: 'published' })}>
-                    <Send className="mr-1 h-3.5 w-3.5" /> Publish
-                  </Button>
-                )}
-                {selected.status === 'published' && (
-                  <Button size="sm" variant="outline" onClick={() => updateStatus.mutate({ id: selected.id, status: 'completed' })}>
-                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Complete
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* AI generation overlay */}
-            {isGenerating && (
-              <Card className="border-primary/30 bg-primary/5">
-                <CardContent className="p-4 flex items-center gap-3">
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <div>
-                    <p className="text-sm font-medium text-primary">Generating agenda with AI...</p>
-                    <p className="text-xs text-muted-foreground">Analyzing performance data, context feed, and open action items</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Agenda Content */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">Agenda</CardTitle></CardHeader>
-              <CardContent>
-                <RichAgendaEditor
-                  content={(selected.agenda_content as any) || []}
-                  onChange={(content) => updateContent.mutate({ id: selected.id, field: 'agenda_content', value: content })}
-                  readOnly={selected.status === 'completed'}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Notes */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">Meeting Notes</CardTitle></CardHeader>
-              <CardContent>
-                <RichAgendaEditor
-                  content={(selected.notes_content as any) || []}
-                  onChange={(content) => updateContent.mutate({ id: selected.id, field: 'notes_content', value: content })}
-                  readOnly={selected.status !== 'completed' && selected.status !== 'published'}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Action Items */}
-            <Card>
-              <CardHeader className="flex-row items-center justify-between">
-                <CardTitle className="text-base">Action Items</CardTitle>
-                {actionItems.length > 0 && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    {actionItems.filter((i: any) => i.completed).length}/{actionItems.length} done
-                  </Badge>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {actionItems.map((item: any) => (
-                  <div key={item.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={item.completed}
-                      onChange={() => toggleActionItem.mutate({ id: item.id, completed: !item.completed })}
-                      className="rounded"
-                    />
-                    <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
-                      {item.description}
-                    </span>
-                    {item.assignee && (
-                      <Badge variant="outline" className="text-[10px]">{item.assignee.name}</Badge>
+                    {selected.status === 'draft' && (
+                      <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => updateStatus.mutate({ id: selected.id, status: 'published' })}>
+                        <Send className="h-3.5 w-3.5" /> Publish
+                      </Button>
+                    )}
+                    {selected.status === 'published' && (
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => updateStatus.mutate({ id: selected.id, status: 'completed' })}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                      </Button>
                     )}
                   </div>
-                ))}
-                <ActionItemInput onAdd={(desc) => addActionItem.mutate({ description: desc })} />
-              </CardContent>
-            </Card>
+                </div>
+              </div>
 
-            {/* AI Context indicator */}
-            {(selected as any).ai_context && (
-              <Card className="border-primary/20 bg-primary/5">
-                <CardContent className="p-3 flex items-center gap-2 text-sm text-primary">
-                  <Sparkles className="h-4 w-4" />
-                  <span>This agenda was populated with AI insights</span>
+              {/* AI generating overlay */}
+              {isGenerating && (
+                <div className="rounded-xl border border-primary/20 bg-gradient-to-r from-primary/5 to-primary/10 p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Generating with AI...</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Analyzing dashboards, Ringba, context feed, and open items</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Agenda Content */}
+              <div className="space-y-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agenda</h3>
+                <div className="rounded-xl border bg-card overflow-hidden">
+                  <RichAgendaEditor
+                    content={(selected.agenda_content as any) || []}
+                    onChange={(c) => updateContent.mutate({ id: selected.id, field: 'agenda_content', value: c })}
+                    readOnly={selected.status === 'completed'}
+                  />
+                </div>
+              </div>
+
+              {/* Meeting Notes */}
+              <div className="space-y-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Meeting Notes</h3>
+                <div className="rounded-xl border bg-card overflow-hidden">
+                  <RichAgendaEditor
+                    content={(selected.notes_content as any) || []}
+                    onChange={(c) => updateContent.mutate({ id: selected.id, field: 'notes_content', value: c })}
+                    readOnly={selected.status !== 'completed' && selected.status !== 'published'}
+                  />
+                </div>
+              </div>
+
+              {/* Action Items */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Action Items</h3>
+                  {actionItems.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {actionItems.filter((i: any) => i.completed).length}/{actionItems.length} complete
+                    </span>
+                  )}
+                </div>
+                <div className="rounded-xl border bg-card p-4 space-y-2">
+                  {actionItems.map((item: any) => (
+                    <div key={item.id} className="flex items-center gap-3 group">
+                      <button
+                        onClick={() => toggleActionItem.mutate({ id: item.id, completed: !item.completed })}
+                        className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          item.completed
+                            ? 'bg-emerald-500 border-emerald-500'
+                            : 'border-muted-foreground/30 hover:border-primary/50'
+                        }`}
+                      >
+                        {item.completed && <CheckCircle2 className="h-3 w-3 text-white" />}
+                      </button>
+                      <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground/50' : ''}`}>
+                        {item.description}
+                      </span>
+                      {item.assignee && (
+                        <Badge variant="secondary" className="text-[10px] font-normal">{item.assignee.name}</Badge>
+                      )}
+                    </div>
+                  ))}
+                  <ActionItemInput onAdd={(desc) => addActionItem.mutate({ description: desc })} />
+                </div>
+              </div>
+
+              {/* AI badge */}
+              {(selected as any).ai_context && (
+                <div className="flex items-center justify-between rounded-xl border border-primary/10 bg-primary/5 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <span className="text-xs text-primary font-medium">AI-assisted agenda</span>
+                  </div>
                   <Button
-                    size="sm"
-                    variant="ghost"
-                    className="ml-auto h-7 gap-1 text-xs"
+                    size="sm" variant="ghost"
+                    className="h-7 text-xs gap-1 text-primary hover:text-primary"
                     onClick={() => generateWithAI(selected.id)}
                     disabled={isGenerating}
                   >
                     <RefreshCw className={`h-3 w-3 ${isGenerating ? 'animate-spin' : ''}`} /> Refresh
                   </Button>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         ) : (
           <div className="flex h-full items-center justify-center">
-            <div className="text-center space-y-4">
-              <FileText className="mx-auto h-12 w-12 text-muted-foreground/20" />
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Select an agenda to view</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">or create a new one with AI</p>
+            <div className="text-center space-y-6 max-w-xs">
+              <div className="w-16 h-16 rounded-2xl bg-muted/40 flex items-center justify-center mx-auto">
+                <FileText className="h-7 w-7 text-muted-foreground/30" />
               </div>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setIsCreateOpen(true); setSelectedTemplateId('ai'); }}>
-                <Bot className="h-3.5 w-3.5" /> Generate with AI
-              </Button>
+              <div>
+                <p className="text-sm font-medium">No agenda selected</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Choose one from the list or generate a new agenda with AI
+                </p>
+              </div>
+              <div className="flex gap-2 justify-center">
+                <Button size="sm" variant="outline" className="gap-1.5 h-9" onClick={() => { setCreateMode('manual'); setIsCreateOpen(true); }}>
+                  <Plus className="h-3.5 w-3.5" /> Manual
+                </Button>
+                <Button size="sm" className="gap-1.5 h-9" onClick={() => { setCreateMode('ai'); setIsCreateOpen(true); }}>
+                  <Sparkles className="h-3.5 w-3.5" /> AI Generate
+                </Button>
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Create Dialog */}
+      {/* ───── CREATE DIALOG ───── */}
       <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetCreateForm(); }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedTemplateId === 'ai' ? (
-                <>
-                  <Bot className="h-5 w-5 text-primary" />
-                  Generate Agenda with AI
-                </>
-              ) : (
-                'New Agenda'
-              )}
-            </DialogTitle>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
+          {/* Tabs header */}
+          <div className="flex border-b">
+            <button
+              className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
+                createMode === 'ai'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setCreateMode('ai')}
+            >
+              <Sparkles className="h-4 w-4" /> AI Generate
+            </button>
+            <button
+              className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
+                createMode === 'manual'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setCreateMode('manual')}
+            >
+              <FileText className="h-4 w-4" /> Manual
+            </button>
+          </div>
 
-          <div className="space-y-4">
-            {/* Mode toggle */}
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={selectedTemplateId === 'ai' ? 'default' : 'outline'}
-                className="flex-1 gap-1.5"
-                onClick={() => setSelectedTemplateId('ai')}
-              >
-                <Sparkles className="h-3.5 w-3.5" /> AI Generate
-              </Button>
-              <Button
-                size="sm"
-                variant={selectedTemplateId !== 'ai' ? 'default' : 'outline'}
-                className="flex-1 gap-1.5"
-                onClick={() => setSelectedTemplateId('blank')}
-              >
-                <FileText className="h-3.5 w-3.5" /> Manual
-              </Button>
-            </div>
-
-            {selectedTemplateId === 'ai' ? (
+          <div className="p-5 space-y-4">
+            {createMode === 'ai' ? (
               <>
-                <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">AI will analyze:</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {['📊 Performance dashboards', '📞 Ringba call data', '💬 Context feed', '✅ Open action items', '🤖 AI recommendations', '📋 Previous agendas'].map(item => (
-                      <p key={item} className="text-xs">{item}</p>
-                    ))}
-                  </div>
+                {/* AI data sources */}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { icon: BarChart3, label: 'Dashboards', desc: 'Meta + Google performance' },
+                    { icon: Phone, label: 'Ringba', desc: 'Call data & revenue' },
+                    { icon: MessageSquare, label: 'Context', desc: 'Comms & feed items' },
+                  ].map(src => (
+                    <div key={src.label} className="rounded-lg border bg-muted/30 p-2.5 text-center">
+                      <src.icon className="h-4 w-4 mx-auto text-muted-foreground mb-1" />
+                      <p className="text-[11px] font-medium">{src.label}</p>
+                      <p className="text-[10px] text-muted-foreground">{src.desc}</p>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Call Date</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Call Date</Label>
                     <Input
-                      type="date"
+                      type="date" className="h-9 text-sm"
                       value={newDate || format(nextMonday(new Date()), 'yyyy-MM-dd')}
                       onChange={e => setNewDate(e.target.value)}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Type</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Type</Label>
                     <Select value={newType} onValueChange={setNewType}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="weekly">Weekly Review</SelectItem>
                         <SelectItem value="adhoc">Ad Hoc</SelectItem>
-                        <SelectItem value="strategy">Strategy</SelectItem>
+                        <SelectItem value="strategy">Strategy Session</SelectItem>
                         <SelectItem value="creative_review">Creative Review</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-xs">Additional Context (optional)</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Additional Context <span className="text-muted-foreground font-normal">(optional)</span></Label>
                   <Textarea
-                    placeholder="Add any extra context for the AI... e.g. 'Focus on Bathroom Remodel launch prep' or 'Client mentioned budget concerns'"
+                    placeholder="e.g. 'Focus on Bathroom Remodel launch' or 'Client raised budget concerns'"
                     value={aiContext}
                     onChange={e => setAiContext(e.target.value)}
-                    className="h-20 text-xs"
+                    className="h-20 text-sm resize-none"
                   />
                 </div>
 
-                <Button
-                  className="w-full gap-1.5"
-                  onClick={createAndGenerate}
-                  disabled={isGenerating}
-                >
+                <Button className="w-full h-10 gap-2" onClick={createAndGenerate} disabled={isGenerating}>
                   {isGenerating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Generating...
-                    </>
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Analyzing & generating...</>
                   ) : (
-                    <>
-                      <Sparkles className="h-4 w-4" /> Generate Agenda
-                    </>
+                    <><Sparkles className="h-4 w-4" /> Generate Agenda</>
                   )}
                 </Button>
               </>
             ) : (
               <form onSubmit={e => { e.preventDefault(); createAgenda.mutate(); }} className="space-y-4">
                 {templates.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-1.5">
-                      <LayoutTemplate className="h-3.5 w-3.5" /> Template
-                    </Label>
-                    <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1.5"><LayoutTemplate className="h-3.5 w-3.5" /> Template</Label>
+                    <Select value={selectedTemplateId} onValueChange={(v) => {
+                      setSelectedTemplateId(v);
+                      if (v !== 'blank') {
+                        const t = templates.find((t: any) => t.id === v);
+                        if (t && !newTitle) { setNewTitle(t.name); setNewType(t.template_type || 'weekly'); }
+                      }
+                    }}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="blank">Blank Agenda</SelectItem>
                         {templates.map((t: any) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            {t.name} {t.is_default && '★'}
-                          </SelectItem>
+                          <SelectItem key={t.id} value={t.id}>{t.name} {t.is_default && '★'}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <Label>Title</Label>
-                  <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Weekly Digital Marketing Review" required />
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Title</Label>
+                  <Input className="h-9" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Weekly Digital Marketing Review" required />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Call Date</Label>
-                    <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Call Date</Label>
+                    <Input type="date" className="h-9" value={newDate} onChange={e => setNewDate(e.target.value)} required />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Type</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Type</Label>
                     <Select value={newType} onValueChange={setNewType}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="weekly">Weekly Review</SelectItem>
                         <SelectItem value="adhoc">Ad Hoc</SelectItem>
-                        <SelectItem value="strategy">Strategy</SelectItem>
+                        <SelectItem value="strategy">Strategy Session</SelectItem>
                         <SelectItem value="creative_review">Creative Review</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                {selectedTemplateId !== 'blank' && selectedTemplateId !== 'ai' && (
-                  <div className="rounded-md border bg-muted/50 p-3 space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Template Sections</p>
-                    {(templates.find((t: any) => t.id === selectedTemplateId)?.sections as AgendaSection[] || []).map((s: AgendaSection, i: number) => (
-                      <div key={i} className="text-xs text-foreground">
-                        • {s.section}
-                        {s.subsections && s.subsections.length > 0 && (
-                          <span className="text-muted-foreground ml-1">
-                            ({s.subsections.map(sub => sub.title).join(', ')})
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <Button type="submit" className="w-full" disabled={createAgenda.isPending}>Create Agenda</Button>
+                <Button type="submit" className="w-full h-10" disabled={createAgenda.isPending}>Create Agenda</Button>
               </form>
             )}
           </div>
@@ -782,6 +734,8 @@ export default function AgendasPage() {
     </div>
   );
 }
+
+/* ───── Default Sections ───── */
 
 function defaultSections(): AgendaSection[] {
   return [
@@ -806,128 +760,140 @@ function defaultSections(): AgendaSection[] {
   ];
 }
 
-// Rich agenda editor with subsection support
+/* ───── Section icons ───── */
+const SECTION_ICONS: Record<string, typeof FileText> = {
+  'Development Update': Zap,
+  'Marketing Strategy': BarChart3,
+  'General Connect Paid Media Needs': ListChecks,
+  'Notes from Billy.com Team': MessageSquare,
+  'Notes from Client': MessageSquare,
+};
+
+/* ───── Rich Agenda Editor ───── */
+
 function RichAgendaEditor({ content, onChange, readOnly }: { content: AgendaSection[]; onChange: (c: AgendaSection[]) => void; readOnly: boolean }) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [newItem, setNewItem] = useState('');
-
   const sections = Array.isArray(content) ? content : [];
 
-  const addItem = (sectionIdx: number, subIdx?: number) => {
+  const addItem = (si: number, subIdx?: number) => {
     if (!newItem.trim()) return;
     const updated = JSON.parse(JSON.stringify(sections));
-    if (subIdx !== undefined && updated[sectionIdx].subsections) {
-      updated[sectionIdx].subsections[subIdx].items.push(newItem.trim());
+    if (subIdx !== undefined && updated[si].subsections) {
+      updated[si].subsections[subIdx].items.push(newItem.trim());
     } else {
-      if (!updated[sectionIdx].items) updated[sectionIdx].items = [];
-      updated[sectionIdx].items.push(newItem.trim());
+      if (!updated[si].items) updated[si].items = [];
+      updated[si].items.push(newItem.trim());
     }
     onChange(updated);
     setNewItem('');
     setEditingKey(null);
   };
 
-  const removeItem = (sectionIdx: number, itemIdx: number, subIdx?: number) => {
+  const removeItem = (si: number, ii: number, subIdx?: number) => {
     const updated = JSON.parse(JSON.stringify(sections));
-    if (subIdx !== undefined && updated[sectionIdx].subsections) {
-      updated[sectionIdx].subsections[subIdx].items.splice(itemIdx, 1);
-    } else {
-      updated[sectionIdx].items?.splice(itemIdx, 1);
-    }
+    if (subIdx !== undefined && updated[si].subsections) updated[si].subsections[subIdx].items.splice(ii, 1);
+    else updated[si].items?.splice(ii, 1);
     onChange(updated);
   };
 
   if (sections.length === 0) {
-    return <p className="text-sm text-muted-foreground">No content yet.</p>;
+    return <div className="p-6 text-center"><p className="text-sm text-muted-foreground">No content yet.</p></div>;
   }
 
   return (
-    <div className="space-y-5">
-      {sections.map((section, si) => (
-        <div key={si}>
-          <h4 className="text-sm font-semibold mb-2 text-foreground border-b pb-1">{section.section}</h4>
+    <div className="divide-y">
+      {sections.map((section, si) => {
+        const Icon = SECTION_ICONS[section.section] || FileText;
+        return (
+          <div key={si} className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-6 h-6 rounded-md bg-muted/60 flex items-center justify-center">
+                <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+              <h4 className="text-sm font-semibold">{section.section}</h4>
+            </div>
 
-          {section.subsections ? (
-            <div className="space-y-3 pl-1">
-              {section.subsections.map((sub, subi) => {
-                const key = `${si}-${subi}`;
-                return (
-                  <div key={subi}>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{sub.title}</h5>
-                      {sub.ai_populatable && (
-                        <span title="AI can populate this section"><Sparkles className="h-3 w-3 text-primary/50" /></span>
+            {section.subsections ? (
+              <div className="space-y-4 pl-8">
+                {section.subsections.map((sub, subi) => {
+                  const key = `${si}-${subi}`;
+                  return (
+                    <div key={subi}>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <h5 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{sub.title}</h5>
+                        {sub.ai_populatable && (
+                          <Sparkles className="h-2.5 w-2.5 text-primary/40" />
+                        )}
+                      </div>
+                      <ul className="space-y-1">
+                        {sub.items?.map((item, ii) => (
+                          <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
+                            <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
+                            <span className="flex-1">{item}</span>
+                            {!readOnly && (
+                              <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii, subi)}>×</button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                      {sub.items?.length === 0 && readOnly && (
+                        <p className="text-xs text-muted-foreground/40 italic">—</p>
                       )}
-                    </div>
-                    <ul className="space-y-1">
-                      {sub.items?.map((item, ii) => (
-                        <li key={ii} className="flex items-start gap-2 text-sm">
-                          <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground" />
-                          <span className="flex-1">{item}</span>
-                          {!readOnly && (
-                            <button className="text-xs text-destructive hover:underline shrink-0" onClick={() => removeItem(si, ii, subi)}>×</button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                    {sub.items?.length === 0 && readOnly && (
-                      <p className="text-xs text-muted-foreground/60 italic pl-5">No items</p>
-                    )}
-                    {!readOnly && (
-                      <div className="flex gap-1 mt-1.5">
+                      {!readOnly && (
                         <Input
-                          className="h-7 text-xs"
+                          className="h-7 text-xs mt-1.5 border-dashed border-muted-foreground/15 bg-transparent focus:bg-card"
                           placeholder={sub.placeholder || 'Add item...'}
                           value={editingKey === key ? newItem : ''}
                           onFocus={() => { setEditingKey(key); setNewItem(''); }}
                           onChange={e => setNewItem(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si, subi))}
                         />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="pl-1">
-              <ul className="space-y-1">
-                {section.items?.map((item, ii) => (
-                  <li key={ii} className="flex items-start gap-2 text-sm">
-                    <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground" />
-                    <span className="flex-1">{item}</span>
-                    {!readOnly && (
-                      <button className="text-xs text-destructive hover:underline" onClick={() => removeItem(si, ii)}>×</button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {!readOnly && (
-                <div className="flex gap-1 mt-1.5">
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="pl-8">
+                <ul className="space-y-1">
+                  {section.items?.map((item, ii) => (
+                    <li key={ii} className="flex items-start gap-2 text-[13px] leading-relaxed group/item">
+                      <ChevronRight className="h-3 w-3 mt-1 shrink-0 text-muted-foreground/40" />
+                      <span className="flex-1">{item}</span>
+                      {!readOnly && (
+                        <button className="opacity-0 group-hover/item:opacity-100 text-xs text-destructive/60 hover:text-destructive shrink-0 transition-opacity" onClick={() => removeItem(si, ii)}>×</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {!readOnly && (
                   <Input
-                    className="h-7 text-xs"
+                    className="h-7 text-xs mt-1.5 border-dashed border-muted-foreground/15 bg-transparent focus:bg-card"
                     placeholder="Add item..."
                     value={editingKey === `${si}-flat` ? newItem : ''}
                     onFocus={() => { setEditingKey(`${si}-flat`); setNewItem(''); }}
                     onChange={e => setNewItem(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem(si))}
                   />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
+/* ───── Action Item Input ───── */
+
 function ActionItemInput({ onAdd }: { onAdd: (desc: string) => void }) {
   const [value, setValue] = useState('');
   return (
-    <div className="flex gap-1 mt-2">
+    <div className="flex gap-2 mt-3 pt-3 border-t border-dashed">
       <Input
-        className="h-7 text-xs"
+        className="h-8 text-sm bg-transparent border-dashed"
         placeholder="Add action item..."
         value={value}
         onChange={e => setValue(e.target.value)}
@@ -939,7 +905,7 @@ function ActionItemInput({ onAdd }: { onAdd: (desc: string) => void }) {
           }
         }}
       />
-      <Button size="sm" className="h-7 text-xs" onClick={() => { if (value.trim()) { onAdd(value.trim()); setValue(''); } }}>
+      <Button size="sm" variant="secondary" className="h-8 text-xs shrink-0" onClick={() => { if (value.trim()) { onAdd(value.trim()); setValue(''); } }}>
         Add
       </Button>
     </div>

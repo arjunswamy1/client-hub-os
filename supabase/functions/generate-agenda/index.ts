@@ -260,7 +260,7 @@ ${templateDesc}
 Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays.`;
 
     // Call AI
-    const aiResponse = await fetch('https://ai.lovable.dev/api/v1/chat/completions', {
+    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

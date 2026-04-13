@@ -55,18 +55,16 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { messages, build_id, client_context, action, campaign_structure, client_name } = body;
-
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { messages, build_id, client_context, action, campaign_structure, client_name, zipcodes, campaign_names } = body;
 
     // If action is "generate_csvs", generate CSV files from the structure
     if (action === "generate_csvs") {
       return await generateCSVs(supabase, campaign_structure, build_id, client_name);
+    }
+
+    // If action is "generate_locations", generate bulk locations CSV from zip codes
+    if (action === "generate_locations") {
+      return await generateLocationsCsv(supabase, LOVABLE_API_KEY, zipcodes, campaign_names, build_id, client_name);
     }
 
     // Build enhanced system prompt with client context

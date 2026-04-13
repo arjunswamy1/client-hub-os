@@ -303,6 +303,47 @@ export default function CampaignBuildPage() {
     sendMessage('IMPORTANT: You MUST call the generate_campaign_structure tool now. Do NOT respond with text. Regenerate the full campaign structure with improvements — better keywords, tighter ad copy within character limits, and optimized structure. Keep the same goals, targeting, and landing page. Output the complete structure via the tool call immediately.');
   };
 
+  // Generate bulk locations CSV from zip codes
+  const handleGenerateLocations = async () => {
+    if (!zipcodesInput.trim() || !campaignStructure || !activeBuildId) return;
+    const zips = zipcodesInput.split(/[\s,;\n]+/).map(z => z.trim()).filter(z => /^\d{5}$/.test(z));
+    if (zips.length === 0) {
+      toast({ title: 'Invalid zip codes', description: 'Enter valid 5-digit US zip codes separated by commas or newlines.', variant: 'destructive' });
+      return;
+    }
+    const campNames = campaignStructure.campaigns?.map((c: any) => c.name) || [];
+    if (campNames.length === 0) return;
+
+    setIsGeneratingLocations(true);
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-builder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          action: 'generate_locations',
+          zipcodes: zips,
+          campaign_names: campNames,
+          build_id: activeBuildId,
+          client_name: activeClient?.name,
+        }),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        setLocationFiles(data.files);
+        toast({ title: 'Locations CSV Generated', description: `${data.locations_count} zip codes × ${data.campaigns_count} campaigns ready for download.` });
+      } else {
+        throw new Error(data.error || 'Failed to generate locations');
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setIsGeneratingLocations(false);
+    }
+  };
+
   if (!activeClient) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">

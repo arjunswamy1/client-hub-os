@@ -250,8 +250,6 @@ async function generateCSVs(
   supabase: any,
   structure: any,
   buildId: string,
-  clientName: string,
-  supabaseUrl: string,
 ) {
   if (!structure?.campaigns?.length) {
     return new Response(JSON.stringify({ error: "No campaign structure provided" }), {

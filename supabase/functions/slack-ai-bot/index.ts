@@ -981,6 +981,9 @@ function buildDeterministicMetricReply(
   }
 
   const lines: string[] = [`*${scope}* — ${dateLabel}`];
+  if (summary.usesRingbaRevenue && summary.ringbaTotalCalls > 0) {
+    lines.push(`_Revenue from Ringba calls (${summary.ringbaTotalCalls} calls, ${summary.ringbaConvertedCalls} converted)_`);
+  }
 
   if (metricIntent === 'spend') {
     lines.push(`• Spend: *${formatCurrency(summary.totalSpend)}*`);

@@ -728,16 +728,6 @@ async function getClientData(
   }
 
   let ringbaData = '';
-  const filteredCalls = (ringbaRes.data || []).filter((call) => {
-    if (!verticalId || Object.keys(verticalPatterns).length === 0) return true;
-    const config = verticalPatterns.ringba;
-    if (!config || config.patterns.length === 0) return true;
-    const name = (call.campaign_name || '').toLowerCase();
-    if (config.exactMatch) {
-      return config.patterns.some((pattern) => name === pattern.toLowerCase());
-    }
-    return config.patterns.some((pattern) => name.includes(pattern.toLowerCase()));
-  });
 
   if (filteredCalls.length > 0) {
     const totalCalls = filteredCalls.length;

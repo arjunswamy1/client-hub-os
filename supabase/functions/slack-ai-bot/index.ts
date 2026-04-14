@@ -384,6 +384,10 @@ async function resolveUserName(token: string, userId: string): Promise<string> {
 // ─── AI call ───────────────────────────────────────────────────────────────
 
 async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
+  // Log prompt size for debugging
+  const totalChars = messages.reduce((s, m) => s + (m.content?.length || 0), 0);
+  console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total`);
+
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -398,11 +402,25 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
     console.error('AI error:', res.status, errText);
     if (res.status === 429) return "I'm being rate limited right now. Try again in a moment! 🕐";
     if (res.status === 402) return 'AI credits have been exhausted. Please top up workspace usage.';
-    return 'Sorry, I hit an error generating a response. Please try again.';
+    return `Sorry, I hit an error (${res.status}). Please try again.`;
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || "I couldn't generate a response.";
+  const content = data.choices?.[0]?.message?.content;
+  const finishReason = data.choices?.[0]?.finish_reason;
+  
+  console.log('AI response: finish_reason=', finishReason, 'content_length=', content?.length || 0, 'has_tool_calls=', !!data.choices?.[0]?.message?.tool_calls);
+  
+  if (!content && data.choices?.[0]?.message?.tool_calls) {
+    console.log('AI returned tool_calls instead of content:', JSON.stringify(data.choices[0].message.tool_calls).substring(0, 500));
+  }
+  
+  if (!content) {
+    console.error('Empty AI response. Full response:', JSON.stringify(data).substring(0, 1000));
+    return "Let me try that again — I had trouble generating a response. Could you rephrase your question?";
+  }
+  
+  return content;
 }
 
 // ─── Slack messaging ───────────────────────────────────────────────────────

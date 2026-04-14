@@ -55,30 +55,34 @@ Deno.serve(async (req) => {
       { data: slackSummaries },
       { data: slackMessages },
       { data: recentTasks },
+      { data: dailyMetrics },
+      { data: topCreatives },
+      { data: fathomMeetings },
+      { data: adSets },
     ] = await Promise.all([
-      // Recent context feed items
+      // Recent context feed items (all sources including fathom, slack, manual)
       supabase
         .from('context_items')
-        .select('title, content, content_type, source, occurred_at')
+        .select('title, content, content_type, source, occurred_at, metadata')
         .eq('client_id', client_id)
-        .gte('occurred_at', sevenDaysAgo)
+        .gte('occurred_at', thirtyDaysAgo)
         .order('occurred_at', { ascending: false })
-        .limit(20),
+        .limit(50),
       // Campaign performance last 7 days
       supabase
         .from('ad_campaigns')
-        .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status')
+        .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status, account_id, roas, daily_budget, bidding_strategy_type')
         .eq('client_id', client_id)
         .gte('date', sevenDaysAgo)
         .lte('date', todayStr)
-        .limit(200),
+        .limit(500),
       // Ringba calls last 7 days
       supabase
         .from('ringba_calls')
-        .select('campaign_name, revenue, payout, converted, duration_seconds')
+        .select('campaign_name, revenue, payout, converted, duration_seconds, target_name')
         .eq('client_id', client_id)
         .gte('call_date', sevenDaysAgo)
-        .limit(200),
+        .limit(500),
       // Open action items from previous agendas
       supabase
         .from('call_action_items')
@@ -127,14 +131,49 @@ Deno.serve(async (req) => {
         .gte('occurred_at', sevenDaysAgo)
         .order('occurred_at', { ascending: false })
         .limit(50),
-      // Recently created tasks (especially Slack-generated)
+      // Recently created tasks (especially Slack-generated and Fathom-generated)
       supabase
         .from('tasks')
         .select('title, description, status, priority, tags')
         .eq('client_id', client_id)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
+        .limit(30),
+      // Daily aggregated metrics from dashboard (last 7 days)
+      supabase
+        .from('ad_daily_metrics')
+        .select('date, platform, spend, revenue, impressions, clicks, conversions, cost_per_conversion')
+        .eq('client_id', client_id)
+        .gte('date', sevenDaysAgo)
+        .lte('date', todayStr)
+        .order('date', { ascending: false })
+        .limit(100),
+      // Top performing ad creatives (last 30 days for context)
+      supabase
+        .from('ad_creatives')
+        .select('campaign_name, ad_name, platform, spend, impressions, clicks, conversions, ctr, cpa, roas, headline, status, vertical')
+        .eq('client_id', client_id)
+        .gte('date_from', thirtyDaysAgo)
+        .order('spend', { ascending: false })
         .limit(20),
+      // Fathom meeting recordings (last 30 days)
+      supabase
+        .from('context_items')
+        .select('title, content, occurred_at, metadata')
+        .eq('client_id', client_id)
+        .eq('source', 'fathom')
+        .gte('occurred_at', thirtyDaysAgo)
+        .order('occurred_at', { ascending: false })
+        .limit(10),
+      // Ad set level data for deeper insights
+      supabase
+        .from('ad_sets')
+        .select('adset_name, campaign_name, platform, spend, revenue, conversions, clicks, impressions, cpa, status')
+        .eq('client_id', client_id)
+        .gte('date', sevenDaysAgo)
+        .lte('date', todayStr)
+        .order('spend', { ascending: false })
+        .limit(50),
     ]);
 
     // Vertical detection patterns
@@ -212,6 +251,52 @@ Deno.serve(async (req) => {
       status: t.status,
       priority: t.priority,
       from_slack: t.tags?.includes('slack-auto'),
+      from_fathom: t.tags?.includes('fathom-auto'),
+    }));
+
+    // Build daily metrics summary (aggregate by platform)
+    const dailyMetricsSummary: Record<string, { spend: number; revenue: number; clicks: number; impressions: number; conversions: number; days: number }> = {};
+    for (const dm of dailyMetrics || []) {
+      const p = dm.platform || 'unknown';
+      if (!dailyMetricsSummary[p]) dailyMetricsSummary[p] = { spend: 0, revenue: 0, clicks: 0, impressions: 0, conversions: 0, days: 0 };
+      dailyMetricsSummary[p].spend += Number(dm.spend);
+      dailyMetricsSummary[p].revenue += Number(dm.revenue);
+      dailyMetricsSummary[p].clicks += Number(dm.clicks);
+      dailyMetricsSummary[p].impressions += Number(dm.impressions);
+      dailyMetricsSummary[p].conversions += Number(dm.conversions);
+      dailyMetricsSummary[p].days++;
+    }
+
+    // Top creatives summary
+    const topCreativesSummary = (topCreatives || []).slice(0, 10).map((c: any) => ({
+      name: c.ad_name || c.headline || c.campaign_name,
+      platform: c.platform,
+      spend: c.spend,
+      conversions: c.conversions,
+      cpa: c.cpa,
+      ctr: c.ctr,
+      roas: c.roas,
+      vertical: c.vertical,
+    }));
+
+    // Fathom meeting summaries
+    const fathomMeetingSummaries = (fathomMeetings || []).map((m: any) => ({
+      title: m.title,
+      date: m.occurred_at,
+      summary: m.content?.slice(0, 500),
+      recording_url: m.metadata?.recording_url,
+      action_items_count: m.metadata?.action_items_count || 0,
+    }));
+
+    // Ad set insights (top spenders)
+    const adSetInsights = (adSets || []).slice(0, 15).map((s: any) => ({
+      adset: s.adset_name,
+      campaign: s.campaign_name,
+      platform: s.platform,
+      spend: s.spend,
+      conversions: s.conversions,
+      cpa: s.cpa,
+      status: s.status,
     }));
 
     // Build context summary for AI
@@ -222,17 +307,23 @@ Deno.serve(async (req) => {
       vertical_performance: verticalMetrics,
       ringba_performance: ringbaAgg,
       ringba_by_vertical: ringbaByVertical,
-      recent_context_items: (contextItems || []).map(ci => ({
+      daily_metrics_summary: dailyMetricsSummary,
+      top_creatives: topCreativesSummary,
+      ad_set_insights: adSetInsights,
+      recent_context_items: (contextItems || []).filter((ci: any) => ci.source !== 'slack' && ci.source !== 'fathom').map((ci: any) => ({
         title: ci.title,
         type: ci.content_type,
         source: ci.source,
         date: ci.occurred_at,
-        snippet: ci.content?.slice(0, 200),
+        snippet: ci.content?.slice(0, 300),
       })),
-      open_action_items: (actionItems || []).map(ai => ai.description),
+      fathom_meetings: fathomMeetingSummaries,
+      open_action_items: (actionItems || []).map((ai: any) => ai.description),
       last_agenda_date: lastAgenda?.[0]?.call_date,
-      pending_recommendations: (recommendations || []).map(r => ({
+      last_agenda_notes: lastAgenda?.[0]?.notes_content,
+      pending_recommendations: (recommendations || []).map((r: any) => ({
         title: r.title,
+        description: r.description?.slice(0, 200),
         severity: r.severity,
         platform: r.platform,
       })),
@@ -253,14 +344,14 @@ Deno.serve(async (req) => {
       .join('\n\n');
 
     const systemPrompt = `You are an expert digital marketing account manager preparing a weekly client call agenda.
-You analyze the TRAILING 7 DAYS of performance data ending on the agenda date.
+You analyze the TRAILING 7 DAYS of performance data ending on the agenda date, supplemented by broader context from the last 30 days (meeting notes, creative performance, communications).
 
 The agenda follows a specific template structure. The structure has:
 1. "Marketing Updates" — a top-level section for links/resources. Leave items empty.
 2. Per-vertical sections (Pest Control, Porta Potty, Flights, HVAC, Bathroom Remodel, Garage Doors) each with subsections: Google, Meta, Bing, Ringba / Calls, Notes.
    - For platform subsections marked [AI SHOULD POPULATE], generate 2-5 concise bullet points with actual spend, conversions, CPA, and notable campaign callouts. Format like: "Spend: $X | Y conversions | $Z CPA" on the first bullet, then specific campaign callouts.
    - If a vertical has no data for a platform, OMIT that platform subsection entirely (do not include it). Only include platforms that have real activity data.
-   - For "Notes" subsections: Pre-fill with relevant behind-the-scenes context from Slack conversations — strategy discussions, campaign changes, creative updates, tracking issues. This helps the team remember what happened internally that week. If no Slack context is relevant, leave empty.
+   - For "Notes" subsections: Pre-fill with relevant behind-the-scenes context from Slack conversations, Fathom meeting recordings, and recent tasks — strategy discussions, campaign changes, creative updates, tracking issues, action items from calls. This helps the team remember what happened internally that week. If no context is relevant, leave empty.
 3. "Feedback from Client" — leave items empty for manual input.
 
 ABSOLUTE RULES — VIOLATION = FAILURE:
@@ -269,12 +360,14 @@ ABSOLUTE RULES — VIOLATION = FAILURE:
 3. Ringba call data is the ONLY source of call-based revenue. Use the exact totals provided.
 4. If a vertical or platform has NO rows in the data, write "No activity this period."
 5. NEVER use placeholder numbers, industry benchmarks, or estimates. Every dollar figure must come from the data below.
-6. ALL metrics are for the trailing 7-day window (${contextSummary.period}) ONLY.
+6. ALL performance metrics are for the trailing 7-day window (${contextSummary.period}) ONLY.
 7. Use the client's actual campaign names when referencing specific campaigns.
 8. Keep each bullet point concise (1-2 sentences max).
 9. Reference open action items from previous calls if any exist.
 10. Format spend/revenue as dollars with commas (e.g. $2,322.37). Format ROAS to 2 decimal places.
 11. For the first bullet in each platform subsection, lead with the summary line: "Spend: $X | Y conversions | $Z CPA"
+12. Reference relevant meeting discussion points from Fathom recordings when they relate to a vertical's strategy or performance.
+13. Call out top-performing or underperforming ad creatives/ad sets when the data is available.
 
 Return ONLY valid JSON matching the template structure.`;
 
@@ -284,8 +377,17 @@ DATA PERIOD: ${contextSummary.period} (trailing 7 days ending ${todayStr}).
 === OVERALL PLATFORM PERFORMANCE (use these exact numbers — do NOT make up figures) ===
 ${JSON.stringify(contextSummary.platform_performance, null, 2)}
 
+=== DASHBOARD DAILY METRICS SUMMARY (aggregated from dashboard — cross-reference with above) ===
+${JSON.stringify(contextSummary.daily_metrics_summary, null, 2)}
+
 === PERFORMANCE BROKEN DOWN BY VERTICAL (use for vertical-specific sections) ===
 ${JSON.stringify(contextSummary.vertical_performance, null, 2)}
+
+=== TOP AD SET PERFORMANCE (adset-level insights) ===
+${JSON.stringify(contextSummary.ad_set_insights, null, 2)}
+
+=== TOP CREATIVE PERFORMANCE (last 30 days — use for creative callouts) ===
+${JSON.stringify(contextSummary.top_creatives, null, 2)}
 
 === OVERALL RINGBA CALL DATA ===
 ${JSON.stringify(contextSummary.ringba_performance, null, 2)}
@@ -293,20 +395,27 @@ ${JSON.stringify(contextSummary.ringba_performance, null, 2)}
 === RINGBA CALLS BY VERTICAL ===
 ${JSON.stringify(contextSummary.ringba_by_vertical, null, 2)}
 
+=== FATHOM MEETING RECORDINGS (recent call summaries & action items) ===
+${JSON.stringify(contextSummary.fathom_meetings, null, 2)}
+
 === SLACK INTELLIGENCE SUMMARY (behind-the-scenes team activity) ===
 ${contextSummary.slack_intelligence || 'No Slack data available this period.'}
 
 === SLACK CONVERSATION HIGHLIGHTS (recent channel discussions) ===
 ${JSON.stringify(contextSummary.slack_conversation_highlights, null, 2)}
 
-=== RECENT TASKS (including auto-created from Slack) ===
+=== RECENT TASKS (including auto-created from Slack and Fathom) ===
 ${JSON.stringify(contextSummary.recent_tasks, null, 2)}
 
-=== RECENT CONTEXT/COMMUNICATIONS ===
+=== RECENT CONTEXT/COMMUNICATIONS (manual notes, emails, other sources) ===
 ${JSON.stringify(contextSummary.recent_context_items, null, 2)}
 
 === OPEN ACTION ITEMS FROM PREVIOUS CALLS ===
 ${JSON.stringify(contextSummary.open_action_items, null, 2)}
+
+=== LAST AGENDA NOTES (what was discussed last call) ===
+${contextSummary.last_agenda_date ? `Last call: ${contextSummary.last_agenda_date}` : 'No previous agenda found.'}
+${contextSummary.last_agenda_notes ? JSON.stringify(contextSummary.last_agenda_notes, null, 2) : ''}
 
 === PENDING OPTIMIZATION RECOMMENDATIONS ===
 ${JSON.stringify(contextSummary.pending_recommendations, null, 2)}
@@ -316,9 +425,14 @@ ${contextSummary.additional_context ? `=== ADDITIONAL CONTEXT FROM TEAM ===\n${c
 TEMPLATE STRUCTURE TO FOLLOW:
 ${templateDesc}
 
-IMPORTANT: Use the Slack intelligence and conversation highlights to inform the "Notes" subsections of each vertical. If internal Slack discussions mention strategy changes, campaign launches, creative updates, tracking issues, or client requests — reference them in the Notes. This gives the team a reminder of what happened behind the scenes that week.
+IMPORTANT: 
+- Use Slack intelligence, Fathom meeting summaries, and conversation highlights to inform the "Notes" subsections of each vertical.
+- If internal discussions mention strategy changes, campaign launches, creative updates, tracking issues, or client requests — reference them in the Notes.
+- Call out notable creative or ad set performance where relevant (e.g. "Top performer: [ad name] with $X CPA").
+- Reference action items from recent Fathom meetings if they relate to a vertical.
+- This gives the team a comprehensive reminder of what happened behind the scenes that week.
 
-Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays UNLESS there is relevant Slack context to pre-fill Notes with.`;
+Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays UNLESS there is relevant context to pre-fill Notes with.`;
 
     console.log('Calling AI with', Object.keys(contextSummary.vertical_performance).length, 'verticals,', Object.keys(contextSummary.platform_performance).length, 'platforms');
 

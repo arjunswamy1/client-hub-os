@@ -1076,7 +1076,7 @@ async function processSlackMessage(event: any) {
 
     const userContext = await resolveUserContext(token, event.user);
     const userName = userContext.name;
-    const dateRange = parseDateIntent(cleanText, userContext.tzOffsetSeconds);
+    const dateRange = parseDateIntent(cleanText, userContext);
 
     let dataContext = '';
     let clientData: ClientData | null = null;

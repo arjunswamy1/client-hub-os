@@ -23,9 +23,12 @@ interface OnboardingClient {
 
 function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<'existing' | 'new'>('new');
   const [clientId, setClientId] = useState('');
   const [clientName, setClientName] = useState('');
   const [company, setCompany] = useState('');
+  const [slug, setSlug] = useState('');
+  const [color, setColor] = useState('#3CAB7A');
   const [clients, setClients] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
 
@@ -37,25 +40,72 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
     }
   }, [open]);
 
+  // Auto-generate slug from client name
+  useEffect(() => {
+    if (mode === 'new' && clientName) {
+      setSlug(clientName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+    }
+  }, [clientName, mode]);
+
   const handleCreate = async () => {
-    if (!clientId) { toast.error('Select a client'); return; }
+    if (mode === 'new') {
+      if (!clientName.trim()) { toast.error('Client name is required'); return; }
+      if (!slug.trim()) { toast.error('Slug is required'); return; }
+    } else {
+      if (!clientId) { toast.error('Select a client'); return; }
+    }
+
     setCreating(true);
+    let finalClientId = clientId;
+    let finalClientName = clientName;
+
+    // If new client, create the client first
+    if (mode === 'new') {
+      const { data: newClient, error: clientErr } = await supabase
+        .from('clients')
+        .insert({
+          name: clientName.trim(),
+          slug: slug.trim(),
+          color,
+          status: 'active',
+        })
+        .select('id, name')
+        .single();
+
+      if (clientErr) {
+        toast.error(`Failed to create client: ${clientErr.message}`);
+        setCreating(false);
+        return;
+      }
+      finalClientId = newClient.id;
+      finalClientName = newClient.name;
+    } else {
+      const selectedClient = clients.find(c => c.id === clientId);
+      if (!finalClientName) finalClientName = selectedClient?.name || '';
+    }
+
     const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-    const selectedClient = clients.find(c => c.id === clientId);
     
     const { error } = await supabase.from('onboarding_tokens').insert({
       token,
-      client_id: clientId,
-      client_name: clientName || selectedClient?.name || '',
-      company,
+      client_id: finalClientId,
+      client_name: finalClientName,
+      company: company || null,
       status: 'invited',
     });
 
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success('Token created!');
+      const url = `${window.location.origin}/onboarding/${token}`;
+      navigator.clipboard.writeText(url);
+      toast.success('Client created & onboarding link copied to clipboard!');
       setOpen(false);
+      setClientName('');
+      setCompany('');
+      setSlug('');
+      setClientId('');
+      setMode('new');
       onCreated();
     }
     setCreating(false);
@@ -66,34 +116,89 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
       <DialogTrigger asChild>
         <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Generate Onboarding Link</Button>
       </DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Create Onboarding Token</DialogTitle></DialogHeader>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Set Up New Client Onboarding</DialogTitle></DialogHeader>
         <div className="space-y-4 pt-2">
-          <div>
-            <label className="text-sm font-medium">Client</label>
-            <select
-              value={clientId}
-              onChange={e => {
-                setClientId(e.target.value);
-                const c = clients.find(cl => cl.id === e.target.value);
-                if (c) setClientName(c.name);
-              }}
-              className="w-full mt-1 rounded-md border bg-background px-3 py-2 text-sm"
+          {/* Mode toggle */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMode('new')}
+              className={`flex-1 text-sm font-medium py-2 px-3 rounded-md border transition-all ${
+                mode === 'new' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'
+              }`}
             >
-              <option value="">Select...</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+              New Client
+            </button>
+            <button
+              onClick={() => setMode('existing')}
+              className={`flex-1 text-sm font-medium py-2 px-3 rounded-md border transition-all ${
+                mode === 'existing' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'
+              }`}
+            >
+              Existing Client
+            </button>
           </div>
+
+          {mode === 'existing' ? (
+            <div>
+              <label className="text-sm font-medium">Client</label>
+              <select
+                value={clientId}
+                onChange={e => {
+                  setClientId(e.target.value);
+                  const c = clients.find(cl => cl.id === e.target.value);
+                  if (c) setClientName(c.name);
+                }}
+                className="w-full mt-1 rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Select...</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          ) : null}
+
           <div>
-            <label className="text-sm font-medium">Display Name</label>
-            <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client name shown in onboarding" />
+            <label className="text-sm font-medium">Client Name {mode === 'new' && <span className="text-destructive">*</span>}</label>
+            <Input
+              value={clientName}
+              onChange={e => setClientName(e.target.value)}
+              placeholder="e.g. Acme Insurance Group"
+            />
           </div>
+
+          {mode === 'new' && (
+            <>
+              <div>
+                <label className="text-sm font-medium">Slug <span className="text-destructive">*</span></label>
+                <Input
+                  value={slug}
+                  onChange={e => setSlug(e.target.value)}
+                  placeholder="acme-insurance"
+                />
+                <p className="text-xs text-muted-foreground mt-1">URL-friendly identifier, auto-generated from name</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Brand Color</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={e => setColor(e.target.value)}
+                    className="w-8 h-8 rounded border cursor-pointer"
+                  />
+                  <Input value={color} onChange={e => setColor(e.target.value)} className="flex-1" />
+                </div>
+              </div>
+            </>
+          )}
+
           <div>
-            <label className="text-sm font-medium">Company (optional)</label>
-            <Input value={company} onChange={e => setCompany(e.target.value)} />
+            <label className="text-sm font-medium">Company Name (optional)</label>
+            <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Parent company or DBA" />
           </div>
+
           <Button onClick={handleCreate} disabled={creating} className="w-full">
-            {creating ? 'Creating...' : 'Create Token'}
+            {creating ? 'Creating...' : mode === 'new' ? 'Create Client & Generate Link' : 'Generate Onboarding Link'}
           </Button>
         </div>
       </DialogContent>

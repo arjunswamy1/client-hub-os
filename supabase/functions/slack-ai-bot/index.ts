@@ -4,8 +4,9 @@ declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
 };
 
-const SLACK_BOT_TOKEN = Deno.env.get('SLACK_BOT_TOKEN')!;
 const SLACK_SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET')!;
+const SLACK_CLIENT_ID = Deno.env.get('SLACK_CLIENT_ID')!;
+const SLACK_CLIENT_SECRET = Deno.env.get('SLACK_CLIENT_SECRET')!;
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;
 
 const supabase = createClient(
@@ -15,6 +16,101 @@ const supabase = createClient(
 
 const DIRECT_CHANNEL_TYPES = new Set(['im', 'app_home']);
 const PENDING_REPLY_TEXT = 'Got it — thinking…';
+
+// ─── Token rotation helpers ────────────────────────────────────────────────
+
+async function getValidBotToken(): Promise<string> {
+  // Try DB first
+  const { data: row } = await supabase
+    .from('slack_tokens')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (row) {
+    const expiresAt = new Date(row.expires_at);
+    const now = new Date();
+    // Refresh if expiring in < 5 minutes
+    if (expiresAt.getTime() - now.getTime() > 5 * 60 * 1000) {
+      return row.bot_access_token;
+    }
+    // Refresh the token
+    console.log('Token expired or expiring soon, refreshing...');
+    return await refreshToken(row.refresh_token, row.workspace_id);
+  }
+
+  // No row yet — try to exchange the static env token for a rotating pair
+  const staticToken = Deno.env.get('SLACK_BOT_TOKEN');
+  if (staticToken) {
+    console.log('Exchanging static bot token for rotating tokens...');
+    return await exchangeStaticToken(staticToken);
+  }
+
+  throw new Error('No Slack bot token available. Set SLACK_BOT_TOKEN or seed slack_tokens table.');
+}
+
+async function exchangeStaticToken(token: string): Promise<string> {
+  const res = await fetch('https://slack.com/api/oauth.v2.exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: SLACK_CLIENT_ID,
+      client_secret: SLACK_CLIENT_SECRET,
+      token,
+    }),
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    console.error('oauth.v2.exchange failed:', data.error);
+    // Fallback to static token if exchange fails (e.g. already exchanged)
+    return token;
+  }
+  const expiresAt = new Date(Date.now() + (data.expires_in || 43200) * 1000);
+  const workspaceId = data.team?.id || 'default';
+
+  await supabase.from('slack_tokens').upsert({
+    workspace_id: workspaceId,
+    bot_access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: expiresAt.toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'workspace_id' });
+
+  console.log('Token exchange successful, stored rotating tokens');
+  return data.access_token;
+}
+
+async function refreshToken(refreshToken: string, workspaceId: string): Promise<string> {
+  const res = await fetch('https://slack.com/api/oauth.v2.access', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: SLACK_CLIENT_ID,
+      client_secret: SLACK_CLIENT_SECRET,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    throw new Error(`Token refresh failed: ${data.error}`);
+  }
+  const expiresAt = new Date(Date.now() + (data.expires_in || 43200) * 1000);
+
+  await supabase.from('slack_tokens').upsert({
+    workspace_id: workspaceId,
+    bot_access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: expiresAt.toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'workspace_id' });
+
+  console.log('Token refreshed successfully');
+  return data.access_token;
+}
+
+// ─── Slack helpers ─────────────────────────────────────────────────────────
 
 async function verifySlackSignature(body: string, timestamp: string, signature: string): Promise<boolean> {
   try {
@@ -54,11 +150,11 @@ function mapSlackMessagesToConversation(messages: any[], botUserId: string | nul
     .filter((m: any) => m.content.length > 0 && m.content !== PENDING_REPLY_TEXT);
 }
 
-async function getBotUserId(): Promise<string | null> {
+async function getBotUserId(token: string): Promise<string | null> {
   const authRes = await fetch('https://slack.com/api/auth.test', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${SLACK_BOT_TOKEN}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
   });
@@ -67,6 +163,7 @@ async function getBotUserId(): Promise<string | null> {
 }
 
 async function getConversationHistory(
+  token: string,
   channel: string,
   threadTs: string,
   isDirectConversation: boolean,
@@ -76,20 +173,20 @@ async function getConversationHistory(
     : `https://slack.com/api/conversations.replies?channel=${channel}&ts=${threadTs}&limit=20`;
 
   const res = await fetch(endpoint, {
-    headers: { 'Authorization': `Bearer ${SLACK_BOT_TOKEN}` },
+    headers: { 'Authorization': `Bearer ${token}` },
   });
   const data = await res.json();
   if (!data.ok || !data.messages) return [];
 
-  const botUserId = await getBotUserId();
+  const botUserId = await getBotUserId(token);
 
   const orderedMessages = isDirectConversation ? [...data.messages].reverse() : data.messages;
   return mapSlackMessagesToConversation(orderedMessages, botUserId);
 }
 
-async function getChannelContext(channelId: string): Promise<string> {
+async function getChannelContext(token: string, channelId: string): Promise<string> {
   const chanRes = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
-    headers: { 'Authorization': `Bearer ${SLACK_BOT_TOKEN}` },
+    headers: { 'Authorization': `Bearer ${token}` },
   });
   const chanData = await chanRes.json();
   const channelName = chanData.channel?.name || 'unknown';
@@ -169,9 +266,9 @@ async function getChannelContext(channelId: string): Promise<string> {
   return contextInfo;
 }
 
-async function resolveUserName(userId: string): Promise<string> {
+async function resolveUserName(token: string, userId: string): Promise<string> {
   const res = await fetch(`https://slack.com/api/users.info?user=${userId}`, {
-    headers: { 'Authorization': `Bearer ${SLACK_BOT_TOKEN}` },
+    headers: { 'Authorization': `Bearer ${token}` },
   });
   const data = await res.json();
   return data.user?.profile?.display_name || data.user?.real_name || 'Someone';
@@ -202,11 +299,11 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
   return data.choices?.[0]?.message?.content || "I couldn't generate a response.";
 }
 
-async function postSlackMessage(channel: string, text: string, threadTs?: string) {
+async function postSlackMessage(token: string, channel: string, text: string, threadTs?: string) {
   const res = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${SLACK_BOT_TOKEN}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -224,11 +321,11 @@ async function postSlackMessage(channel: string, text: string, threadTs?: string
   return data as { ok: boolean; ts: string };
 }
 
-async function addReaction(channel: string, timestamp: string, emoji: string) {
+async function addReaction(token: string, channel: string, timestamp: string, emoji: string) {
   const res = await fetch('https://slack.com/api/reactions.add', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${SLACK_BOT_TOKEN}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ channel, timestamp, name: emoji }),
@@ -246,13 +343,16 @@ async function processSlackMessage(event: any) {
   const cleanText = getCleanMessageText(event.text || '');
 
   try {
-    console.log('Processing Slack event:', event.type, event.channel, historyAnchorTs, 'channel_type:', event.channel_type, 'direct:', isDirectConversation);
-    await addReaction(event.channel, event.ts, 'brain');
-    await postSlackMessage(event.channel, PENDING_REPLY_TEXT, replyThreadTs);
+    // Get a valid (possibly refreshed) bot token
+    const token = await getValidBotToken();
 
-    const userName = await resolveUserName(event.user);
-    const channelContext = await getChannelContext(event.channel);
-    let conversationHistory = await getConversationHistory(event.channel, historyAnchorTs, isDirectConversation);
+    console.log('Processing Slack event:', event.type, event.channel, historyAnchorTs, 'channel_type:', event.channel_type, 'direct:', isDirectConversation);
+    await addReaction(token, event.channel, event.ts, 'brain');
+    await postSlackMessage(token, event.channel, PENDING_REPLY_TEXT, replyThreadTs);
+
+    const userName = await resolveUserName(token, event.user);
+    const channelContext = await getChannelContext(token, event.channel);
+    let conversationHistory = await getConversationHistory(token, event.channel, historyAnchorTs, isDirectConversation);
 
     if (conversationHistory.length === 0 && cleanText) {
       conversationHistory = [{ role: 'user', content: cleanText }];
@@ -282,12 +382,15 @@ Guidelines:
     ];
 
     const response = await callAI(aiMessages);
-    await postSlackMessage(event.channel, response, replyThreadTs);
+    await postSlackMessage(token, event.channel, response, replyThreadTs);
     console.log('Reply sent successfully');
   } catch (error) {
     console.error('Error processing Slack event:', error);
     try {
-      await postSlackMessage(event.channel, 'Sorry, I hit an error while processing that. Please try again! 🔧', replyThreadTs);
+      const fallbackToken = Deno.env.get('SLACK_BOT_TOKEN') || '';
+      if (fallbackToken) {
+        await postSlackMessage(fallbackToken, event.channel, 'Sorry, I hit an error while processing that. Please try again! 🔧', replyThreadTs);
+      }
     } catch (replyError) {
       console.error('Failed to send Slack error message:', replyError);
     }

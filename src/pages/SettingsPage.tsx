@@ -6,7 +6,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { LinkIcon, Loader2, CheckCircle2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { LinkIcon, Loader2, CheckCircle2, KeyRound } from 'lucide-react';
 import { GoogleAdsIcon, MetaIcon, SlackIcon, TeamsIcon, GmailIcon, FathomIcon, GoogleDriveIcon } from '@/components/icons/BrandIcons';
 import { toast } from 'sonner';
 
@@ -26,6 +28,73 @@ const INTEGRATIONS: Integration[] = [
   { name: 'Fathom', icon: FathomIcon, description: 'Call recordings & transcripts' },
   { name: 'Google Drive', icon: GoogleDriveIcon, description: 'Shared folders and documents' },
 ];
+
+function ChangePasswordCard() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast.success('Password updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update password');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <KeyRound className="h-4 w-4" /> Change Password
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="new-password">New Password</Label>
+          <Input
+            id="new-password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Enter new password"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="confirm-password">Confirm New Password</Label>
+          <Input
+            id="confirm-password"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm new password"
+          />
+        </div>
+        <Button onClick={handleChangePassword} disabled={saving || !newPassword || !confirmPassword}>
+          {saving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+          Update Password
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const { activeClient } = useClient();
@@ -125,6 +194,8 @@ export default function SettingsPage() {
           {activeClient ? `Settings for ${activeClient.name}` : 'Global settings'}
         </p>
       </div>
+
+      <ChangePasswordCard />
 
       <Card>
         <CardHeader>

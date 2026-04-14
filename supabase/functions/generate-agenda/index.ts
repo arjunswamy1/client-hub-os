@@ -52,6 +52,9 @@ Deno.serve(async (req) => {
       { data: lastAgenda },
       { data: recommendations },
       { data: clientInfo },
+      { data: slackSummaries },
+      { data: slackMessages },
+      { data: recentTasks },
     ] = await Promise.all([
       // Recent context feed items
       supabase
@@ -104,6 +107,34 @@ Deno.serve(async (req) => {
         .select('name, slug')
         .eq('id', client_id)
         .single(),
+      // Slack AI summaries (last 7 days)
+      supabase
+        .from('context_items')
+        .select('content, metadata, occurred_at')
+        .eq('client_id', client_id)
+        .eq('source', 'slack')
+        .eq('content_type', 'ai_summary')
+        .gte('occurred_at', sevenDaysAgo)
+        .order('occurred_at', { ascending: false })
+        .limit(5),
+      // Recent Slack messages for behind-the-scenes context
+      supabase
+        .from('context_items')
+        .select('title, content, participants, occurred_at, metadata')
+        .eq('client_id', client_id)
+        .eq('source', 'slack')
+        .eq('content_type', 'message')
+        .gte('occurred_at', sevenDaysAgo)
+        .order('occurred_at', { ascending: false })
+        .limit(50),
+      // Recently created tasks (especially Slack-generated)
+      supabase
+        .from('tasks')
+        .select('title, description, status, priority, tags')
+        .eq('client_id', client_id)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(20),
     ]);
 
     // Vertical detection patterns

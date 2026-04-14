@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 const SLACK_BOT_TOKEN = Deno.env.get('SLACK_BOT_TOKEN')!;
 const SLACK_SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET')!;
@@ -10,13 +9,26 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-// Verify Slack request signature
-function verifySlackSignature(body: string, timestamp: string, signature: string): boolean {
-  const sigBasestring = `v0:${timestamp}:${body}`;
-  const hmac = createHmac('sha256', SLACK_SIGNING_SECRET);
-  hmac.update(sigBasestring);
-  const mySignature = `v0=${hmac.digest('hex')}`;
-  return mySignature === signature;
+// Verify Slack request signature using Web Crypto API
+async function verifySlackSignature(body: string, timestamp: string, signature: string): Promise<boolean> {
+  try {
+    const sigBasestring = `v0:${timestamp}:${body}`;
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(SLACK_SIGNING_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(sigBasestring));
+    const hashHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const mySignature = `v0=${hashHex}`;
+    return mySignature === signature;
+  } catch (e) {
+    console.error('Signature verification error:', e);
+    return false;
+  }
 }
 
 // Get conversation thread history for context
@@ -218,7 +230,7 @@ Deno.serve(async (req) => {
   }
 
   // Verify signature (skip during url_verification)
-  if (!verifySlackSignature(bodyText, timestamp, slackSignature)) {
+  if (!(await verifySlackSignature(bodyText, timestamp, slackSignature))) {
     console.error('Invalid Slack signature');
     return new Response('Unauthorized', { status: 401 });
   }
@@ -226,6 +238,7 @@ Deno.serve(async (req) => {
   // Handle events
   if (body.type === 'event_callback') {
     const event = body.event;
+    console.log('Received event:', event.type, 'channel_type:', event.channel_type, 'user:', event.user, 'bot_id:', event.bot_id);
 
     // Ignore bot messages and message edits
     if (event.bot_id || event.subtype) {
@@ -234,26 +247,24 @@ Deno.serve(async (req) => {
 
     // Handle app_mention and direct messages
     if (event.type === 'app_mention' || (event.type === 'message' && event.channel_type === 'im')) {
-      // Respond async - return 200 immediately to avoid Slack retry
-      const processMessage = async () => {
-        try {
-          // Add thinking reaction
-          await addReaction(event.channel, event.ts, 'brain');
+      try {
+        // Add thinking reaction
+        await addReaction(event.channel, event.ts, 'brain');
 
-          const userName = await resolveUserName(event.user);
-          const channelContext = await getChannelContext(event.channel);
+        const userName = await resolveUserName(event.user);
+        const channelContext = await getChannelContext(event.channel);
 
-          // Get thread history if in a thread, otherwise just this message
-          const threadTs = event.thread_ts || event.ts;
-          let conversationHistory = await getThreadHistory(event.channel, threadTs);
+        // Get thread history if in a thread, otherwise just this message
+        const threadTs = event.thread_ts || event.ts;
+        let conversationHistory = await getThreadHistory(event.channel, threadTs);
 
-          // If no thread history, use just this message
-          if (conversationHistory.length === 0) {
-            const cleanText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
-            conversationHistory = [{ role: 'user', content: cleanText }];
-          }
+        // If no thread history, use just this message
+        if (conversationHistory.length === 0) {
+          const cleanText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
+          conversationHistory = [{ role: 'user', content: cleanText }];
+        }
 
-          const systemPrompt = `You are CPM Bot, an AI assistant for Connect Paid Media (CPM), a digital advertising agency. You help the team with client management, campaign strategy, media buying insights, and task coordination.
+        const systemPrompt = `You are CPM Bot, an AI assistant for Connect Paid Media (CPM), a digital advertising agency. You help the team with client management, campaign strategy, media buying insights, and task coordination.
 
 You have access to the following context about the current conversation:
 ${channelContext}
@@ -270,21 +281,20 @@ Guidelines:
 - Format responses for Slack (use *bold*, _italic_, \`code\`, and bullet points)
 - Keep responses under 2000 characters when possible`;
 
-          const aiMessages = [
-            { role: 'system', content: systemPrompt },
-            ...conversationHistory,
-          ];
+        const aiMessages = [
+          { role: 'system', content: systemPrompt },
+          ...conversationHistory,
+        ];
 
-          const response = await callAI(aiMessages);
-          await sendSlackReply(event.channel, threadTs, response);
-        } catch (err) {
-          console.error('Error processing message:', err);
-          await sendSlackReply(event.channel, event.thread_ts || event.ts, "Sorry, I hit an error. Please try again! 🔧");
-        }
-      };
-
-      // Fire and forget - don't await
-      processMessage();
+        console.log('Calling AI with', aiMessages.length, 'messages');
+        const response = await callAI(aiMessages);
+        console.log('AI response length:', response.length);
+        await sendSlackReply(event.channel, threadTs, response);
+        console.log('Reply sent successfully');
+      } catch (err) {
+        console.error('Error processing message:', err);
+        await sendSlackReply(event.channel, event.thread_ts || event.ts, "Sorry, I hit an error. Please try again! 🔧");
+      }
 
       return new Response('ok', { status: 200 });
     }

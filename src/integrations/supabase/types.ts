@@ -2226,6 +2226,36 @@ export type Database = {
           },
         ]
       }
+      slack_tokens: {
+        Row: {
+          bot_access_token: string
+          created_at: string
+          expires_at: string
+          id: string
+          refresh_token: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          bot_access_token: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          refresh_token: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          bot_access_token?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          refresh_token?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
       task_comments: {
         Row: {
           author_id: string

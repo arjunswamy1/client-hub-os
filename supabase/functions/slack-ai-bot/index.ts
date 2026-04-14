@@ -394,7 +394,7 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
       'Authorization': `Bearer ${LOVABLE_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ model: 'google/gemini-2.5-flash', messages }),
+    body: JSON.stringify({ model: 'google/gemini-3-flash-preview', messages }),
   });
 
   if (!res.ok) {

@@ -1,0 +1,2 @@
+ALTER TABLE public.context_items DROP CONSTRAINT context_items_content_type_check;
+ALTER TABLE public.context_items ADD CONSTRAINT context_items_content_type_check CHECK (content_type = ANY (ARRAY['message', 'email', 'transcript', 'document', 'metric', 'file', 'note', 'meeting_recording', 'ai_summary']));

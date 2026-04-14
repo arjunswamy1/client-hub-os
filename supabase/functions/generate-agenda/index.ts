@@ -251,6 +251,52 @@ Deno.serve(async (req) => {
       status: t.status,
       priority: t.priority,
       from_slack: t.tags?.includes('slack-auto'),
+      from_fathom: t.tags?.includes('fathom-auto'),
+    }));
+
+    // Build daily metrics summary (aggregate by platform)
+    const dailyMetricsSummary: Record<string, { spend: number; revenue: number; clicks: number; impressions: number; conversions: number; days: number }> = {};
+    for (const dm of dailyMetrics || []) {
+      const p = dm.platform || 'unknown';
+      if (!dailyMetricsSummary[p]) dailyMetricsSummary[p] = { spend: 0, revenue: 0, clicks: 0, impressions: 0, conversions: 0, days: 0 };
+      dailyMetricsSummary[p].spend += Number(dm.spend);
+      dailyMetricsSummary[p].revenue += Number(dm.revenue);
+      dailyMetricsSummary[p].clicks += Number(dm.clicks);
+      dailyMetricsSummary[p].impressions += Number(dm.impressions);
+      dailyMetricsSummary[p].conversions += Number(dm.conversions);
+      dailyMetricsSummary[p].days++;
+    }
+
+    // Top creatives summary
+    const topCreativesSummary = (topCreatives || []).slice(0, 10).map((c: any) => ({
+      name: c.ad_name || c.headline || c.campaign_name,
+      platform: c.platform,
+      spend: c.spend,
+      conversions: c.conversions,
+      cpa: c.cpa,
+      ctr: c.ctr,
+      roas: c.roas,
+      vertical: c.vertical,
+    }));
+
+    // Fathom meeting summaries
+    const fathomMeetingSummaries = (fathomMeetings || []).map((m: any) => ({
+      title: m.title,
+      date: m.occurred_at,
+      summary: m.content?.slice(0, 500),
+      recording_url: m.metadata?.recording_url,
+      action_items_count: m.metadata?.action_items_count || 0,
+    }));
+
+    // Ad set insights (top spenders)
+    const adSetInsights = (adSets || []).slice(0, 15).map((s: any) => ({
+      adset: s.adset_name,
+      campaign: s.campaign_name,
+      platform: s.platform,
+      spend: s.spend,
+      conversions: s.conversions,
+      cpa: s.cpa,
+      status: s.status,
     }));
 
     // Build context summary for AI
@@ -261,17 +307,23 @@ Deno.serve(async (req) => {
       vertical_performance: verticalMetrics,
       ringba_performance: ringbaAgg,
       ringba_by_vertical: ringbaByVertical,
-      recent_context_items: (contextItems || []).map(ci => ({
+      daily_metrics_summary: dailyMetricsSummary,
+      top_creatives: topCreativesSummary,
+      ad_set_insights: adSetInsights,
+      recent_context_items: (contextItems || []).filter((ci: any) => ci.source !== 'slack' && ci.source !== 'fathom').map((ci: any) => ({
         title: ci.title,
         type: ci.content_type,
         source: ci.source,
         date: ci.occurred_at,
-        snippet: ci.content?.slice(0, 200),
+        snippet: ci.content?.slice(0, 300),
       })),
-      open_action_items: (actionItems || []).map(ai => ai.description),
+      fathom_meetings: fathomMeetingSummaries,
+      open_action_items: (actionItems || []).map((ai: any) => ai.description),
       last_agenda_date: lastAgenda?.[0]?.call_date,
-      pending_recommendations: (recommendations || []).map(r => ({
+      last_agenda_notes: lastAgenda?.[0]?.notes_content,
+      pending_recommendations: (recommendations || []).map((r: any) => ({
         title: r.title,
+        description: r.description?.slice(0, 200),
         severity: r.severity,
         platform: r.platform,
       })),

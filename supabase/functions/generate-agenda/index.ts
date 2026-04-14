@@ -52,6 +52,9 @@ Deno.serve(async (req) => {
       { data: lastAgenda },
       { data: recommendations },
       { data: clientInfo },
+      { data: slackSummaries },
+      { data: slackMessages },
+      { data: recentTasks },
     ] = await Promise.all([
       // Recent context feed items
       supabase
@@ -104,6 +107,34 @@ Deno.serve(async (req) => {
         .select('name, slug')
         .eq('id', client_id)
         .single(),
+      // Slack AI summaries (last 7 days)
+      supabase
+        .from('context_items')
+        .select('content, metadata, occurred_at')
+        .eq('client_id', client_id)
+        .eq('source', 'slack')
+        .eq('content_type', 'ai_summary')
+        .gte('occurred_at', sevenDaysAgo)
+        .order('occurred_at', { ascending: false })
+        .limit(5),
+      // Recent Slack messages for behind-the-scenes context
+      supabase
+        .from('context_items')
+        .select('title, content, participants, occurred_at, metadata')
+        .eq('client_id', client_id)
+        .eq('source', 'slack')
+        .eq('content_type', 'message')
+        .gte('occurred_at', sevenDaysAgo)
+        .order('occurred_at', { ascending: false })
+        .limit(50),
+      // Recently created tasks (especially Slack-generated)
+      supabase
+        .from('tasks')
+        .select('title, description, status, priority, tags')
+        .eq('client_id', client_id)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(20),
     ]);
 
     // Vertical detection patterns
@@ -167,6 +198,22 @@ Deno.serve(async (req) => {
       ringbaByVertical[v].totalPayout += Number(call.payout);
     }
 
+    // Build Slack intelligence summaries
+    const slackIntelligence = (slackSummaries || []).map((s: any) => s.content).join('\n\n');
+    const slackConversationHighlights = (slackMessages || []).slice(0, 30).map((m: any) => ({
+      channel: m.title,
+      who: m.participants?.[0] || 'Unknown',
+      what: m.content?.slice(0, 150),
+      when: m.occurred_at,
+      channel_context: m.metadata?.channel_context || '',
+    }));
+    const recentTasksList = (recentTasks || []).map((t: any) => ({
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      from_slack: t.tags?.includes('slack-auto'),
+    }));
+
     // Build context summary for AI
     const contextSummary = {
       client_name: clientInfo?.name || 'Unknown',
@@ -189,6 +236,9 @@ Deno.serve(async (req) => {
         severity: r.severity,
         platform: r.platform,
       })),
+      slack_intelligence: slackIntelligence,
+      slack_conversation_highlights: slackConversationHighlights,
+      recent_tasks: recentTasksList,
       additional_context: additional_context || '',
     };
 
@@ -210,7 +260,7 @@ The agenda follows a specific template structure. The structure has:
 2. Per-vertical sections (Pest Control, Porta Potty, Flights, HVAC, Bathroom Remodel, Garage Doors) each with subsections: Google, Meta, Bing, Ringba / Calls, Notes.
    - For platform subsections marked [AI SHOULD POPULATE], generate 2-5 concise bullet points with actual spend, conversions, CPA, and notable campaign callouts. Format like: "Spend: $X | Y conversions | $Z CPA" on the first bullet, then specific campaign callouts.
    - If a vertical has no data for a platform, OMIT that platform subsection entirely (do not include it). Only include platforms that have real activity data.
-   - For "Notes" subsections (not AI populatable), leave items empty for manual input.
+   - For "Notes" subsections: Pre-fill with relevant behind-the-scenes context from Slack conversations — strategy discussions, campaign changes, creative updates, tracking issues. This helps the team remember what happened internally that week. If no Slack context is relevant, leave empty.
 3. "Feedback from Client" — leave items empty for manual input.
 
 ABSOLUTE RULES — VIOLATION = FAILURE:
@@ -243,6 +293,15 @@ ${JSON.stringify(contextSummary.ringba_performance, null, 2)}
 === RINGBA CALLS BY VERTICAL ===
 ${JSON.stringify(contextSummary.ringba_by_vertical, null, 2)}
 
+=== SLACK INTELLIGENCE SUMMARY (behind-the-scenes team activity) ===
+${contextSummary.slack_intelligence || 'No Slack data available this period.'}
+
+=== SLACK CONVERSATION HIGHLIGHTS (recent channel discussions) ===
+${JSON.stringify(contextSummary.slack_conversation_highlights, null, 2)}
+
+=== RECENT TASKS (including auto-created from Slack) ===
+${JSON.stringify(contextSummary.recent_tasks, null, 2)}
+
 === RECENT CONTEXT/COMMUNICATIONS ===
 ${JSON.stringify(contextSummary.recent_context_items, null, 2)}
 
@@ -257,7 +316,9 @@ ${contextSummary.additional_context ? `=== ADDITIONAL CONTEXT FROM TEAM ===\n${c
 TEMPLATE STRUCTURE TO FOLLOW:
 ${templateDesc}
 
-Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays.`;
+IMPORTANT: Use the Slack intelligence and conversation highlights to inform the "Notes" subsections of each vertical. If internal Slack discussions mention strategy changes, campaign launches, creative updates, tracking issues, or client requests — reference them in the Notes. This gives the team a reminder of what happened behind the scenes that week.
+
+Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays UNLESS there is relevant Slack context to pre-fill Notes with.`;
 
     console.log('Calling AI with', Object.keys(contextSummary.vertical_performance).length, 'verticals,', Object.keys(contextSummary.platform_performance).length, 'platforms');
 

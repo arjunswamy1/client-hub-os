@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   MessageSquare, Mail, Phone, FileText, BarChart3,
-  Search, Database as DatabaseIcon, RefreshCw, Link2, Hash, Loader2, Check, X
+  Search, Database as DatabaseIcon, RefreshCw, Link2, Hash, Loader2, Check
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';

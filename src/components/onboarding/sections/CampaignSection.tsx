@@ -3,7 +3,7 @@ import { SectionData } from '@/hooks/useOnboarding';
 
 const VERTICALS = [
   'Final Expense', 'Affordable Care Act', 'U65 Insurance', 'Medicare',
-  'Solar', 'Auto', 'Debt Consolidation', 'Other',
+  'Solar', 'Auto', 'Debt Consolidation', 'Bathroom Remodel', 'HVAC', 'Roofing', 'Other',
 ];
 
 interface CampaignSectionProps {

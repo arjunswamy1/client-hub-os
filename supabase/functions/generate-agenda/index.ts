@@ -55,30 +55,34 @@ Deno.serve(async (req) => {
       { data: slackSummaries },
       { data: slackMessages },
       { data: recentTasks },
+      { data: dailyMetrics },
+      { data: topCreatives },
+      { data: fathomMeetings },
+      { data: adSets },
     ] = await Promise.all([
-      // Recent context feed items
+      // Recent context feed items (all sources including fathom, slack, manual)
       supabase
         .from('context_items')
-        .select('title, content, content_type, source, occurred_at')
+        .select('title, content, content_type, source, occurred_at, metadata')
         .eq('client_id', client_id)
-        .gte('occurred_at', sevenDaysAgo)
+        .gte('occurred_at', thirtyDaysAgo)
         .order('occurred_at', { ascending: false })
-        .limit(20),
+        .limit(50),
       // Campaign performance last 7 days
       supabase
         .from('ad_campaigns')
-        .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status')
+        .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status, account_id, roas, daily_budget, bidding_strategy_type')
         .eq('client_id', client_id)
         .gte('date', sevenDaysAgo)
         .lte('date', todayStr)
-        .limit(200),
+        .limit(500),
       // Ringba calls last 7 days
       supabase
         .from('ringba_calls')
-        .select('campaign_name, revenue, payout, converted, duration_seconds')
+        .select('campaign_name, revenue, payout, converted, duration_seconds, target_name')
         .eq('client_id', client_id)
         .gte('call_date', sevenDaysAgo)
-        .limit(200),
+        .limit(500),
       // Open action items from previous agendas
       supabase
         .from('call_action_items')
@@ -127,14 +131,49 @@ Deno.serve(async (req) => {
         .gte('occurred_at', sevenDaysAgo)
         .order('occurred_at', { ascending: false })
         .limit(50),
-      // Recently created tasks (especially Slack-generated)
+      // Recently created tasks (especially Slack-generated and Fathom-generated)
       supabase
         .from('tasks')
         .select('title, description, status, priority, tags')
         .eq('client_id', client_id)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
+        .limit(30),
+      // Daily aggregated metrics from dashboard (last 7 days)
+      supabase
+        .from('ad_daily_metrics')
+        .select('date, platform, spend, revenue, impressions, clicks, conversions, cost_per_conversion')
+        .eq('client_id', client_id)
+        .gte('date', sevenDaysAgo)
+        .lte('date', todayStr)
+        .order('date', { ascending: false })
+        .limit(100),
+      // Top performing ad creatives (last 30 days for context)
+      supabase
+        .from('ad_creatives')
+        .select('campaign_name, ad_name, platform, spend, impressions, clicks, conversions, ctr, cpa, roas, headline, status, vertical')
+        .eq('client_id', client_id)
+        .gte('date_from', thirtyDaysAgo)
+        .order('spend', { ascending: false })
         .limit(20),
+      // Fathom meeting recordings (last 30 days)
+      supabase
+        .from('context_items')
+        .select('title, content, occurred_at, metadata')
+        .eq('client_id', client_id)
+        .eq('source', 'fathom')
+        .gte('occurred_at', thirtyDaysAgo)
+        .order('occurred_at', { ascending: false })
+        .limit(10),
+      // Ad set level data for deeper insights
+      supabase
+        .from('ad_sets')
+        .select('adset_name, campaign_name, platform, spend, revenue, conversions, clicks, impressions, cpa, status')
+        .eq('client_id', client_id)
+        .gte('date', sevenDaysAgo)
+        .lte('date', todayStr)
+        .order('spend', { ascending: false })
+        .limit(50),
     ]);
 
     // Vertical detection patterns

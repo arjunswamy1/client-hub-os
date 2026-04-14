@@ -24,6 +24,7 @@ import AdminPage from "./pages/AdminPage";
 import AMHomePage from "./pages/AMHomePage";
 import CampaignBuildPage from "./pages/CampaignBuildPage";
 import NotFound from "./pages/NotFound";
+import OnboardingPage from "./pages/OnboardingPage";
 
 const queryClient = new QueryClient();
 
@@ -125,6 +126,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
+            <Route path="/onboarding/:token" element={<OnboardingPage />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </AuthProvider>

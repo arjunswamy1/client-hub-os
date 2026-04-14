@@ -293,6 +293,15 @@ ${JSON.stringify(contextSummary.ringba_performance, null, 2)}
 === RINGBA CALLS BY VERTICAL ===
 ${JSON.stringify(contextSummary.ringba_by_vertical, null, 2)}
 
+=== SLACK INTELLIGENCE SUMMARY (behind-the-scenes team activity) ===
+${contextSummary.slack_intelligence || 'No Slack data available this period.'}
+
+=== SLACK CONVERSATION HIGHLIGHTS (recent channel discussions) ===
+${JSON.stringify(contextSummary.slack_conversation_highlights, null, 2)}
+
+=== RECENT TASKS (including auto-created from Slack) ===
+${JSON.stringify(contextSummary.recent_tasks, null, 2)}
+
 === RECENT CONTEXT/COMMUNICATIONS ===
 ${JSON.stringify(contextSummary.recent_context_items, null, 2)}
 
@@ -307,7 +316,9 @@ ${contextSummary.additional_context ? `=== ADDITIONAL CONTEXT FROM TEAM ===\n${c
 TEMPLATE STRUCTURE TO FOLLOW:
 ${templateDesc}
 
-Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays.`;
+IMPORTANT: Use the Slack intelligence and conversation highlights to inform the "Notes" subsections of each vertical. If internal Slack discussions mention strategy changes, campaign launches, creative updates, tracking issues, or client requests — reference them in the Notes. This gives the team a reminder of what happened behind the scenes that week.
+
+Return the complete agenda_content as a JSON array of sections matching the template structure. For ai_populatable subsections, fill in the items array with relevant bullet points using ONLY the real data above. For non-ai_populatable subsections, keep items as empty arrays UNLESS there is relevant Slack context to pre-fill Notes with.`;
 
     console.log('Calling AI with', Object.keys(contextSummary.vertical_performance).length, 'verticals,', Object.keys(contextSummary.platform_performance).length, 'platforms');
 

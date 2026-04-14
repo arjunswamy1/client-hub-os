@@ -97,7 +97,8 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
     if (error) {
       toast.error(error.message);
     } else {
-      const url = `${window.location.origin}/onboarding/${token}`;
+      const publishedBase = 'https://connectpaidmedia.lovable.app';
+      const url = `${publishedBase}/onboarding/${token}`;
       navigator.clipboard.writeText(url);
       toast.success('Client created & onboarding link copied to clipboard!');
       setOpen(false);
@@ -311,7 +312,8 @@ export function ClientOnboardingView() {
   };
 
   const copyLink = (token: string) => {
-    const url = `${window.location.origin}/onboarding/${token}`;
+    const publishedBase = 'https://connectpaidmedia.lovable.app';
+    const url = `${publishedBase}/onboarding/${token}`;
     navigator.clipboard.writeText(url);
     toast.success('Link copied!');
   };

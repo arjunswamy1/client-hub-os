@@ -766,6 +766,32 @@ async function getClientData(
       const latestDateRows = latestFiltered.filter((campaign) => campaign.date === latestDate);
       const latestSummary = summarizeCampaignRows(latestDateRows);
       if (latestSummary) {
+        // Also merge Ringba revenue for the latest date if applicable
+        if (usesRingbaRevenue) {
+          const { data: latestRingba } = await supabase
+            .from('ringba_calls')
+            .select('revenue, converted')
+            .eq('client_id', clientId)
+            .gte('call_date', `${latestDate}T00:00:00`)
+            .lte('call_date', `${latestDate}T23:59:59`)
+            .limit(500);
+
+          if (latestRingba && latestRingba.length > 0) {
+            let rRev = 0;
+            let rConv = 0;
+            for (const c of latestRingba) {
+              rRev += Number(c.revenue) || 0;
+              if (c.converted) rConv++;
+            }
+            latestSummary.totalRevenue = rRev;
+            latestSummary.totalConversions = rConv;
+            latestSummary.totalRoas = latestSummary.totalSpend > 0 ? rRev / latestSummary.totalSpend : null;
+            latestSummary.totalCpa = rConv > 0 ? latestSummary.totalSpend / rConv : null;
+            latestSummary.ringbaRevenue = rRev;
+            latestSummary.ringbaConvertedCalls = rConv;
+            latestSummary.usesRingbaRevenue = true;
+          }
+        }
         latestAvailable = {
           date: latestDate,
           summary: latestSummary,

@@ -1049,6 +1049,38 @@ export type Database = {
           },
         ]
       }
+      client_context: {
+        Row: {
+          ai_summary: Json | null
+          client_id: string
+          full_context: Json
+          id: string
+          last_updated: string
+        }
+        Insert: {
+          ai_summary?: Json | null
+          client_id: string
+          full_context?: Json
+          id?: string
+          last_updated?: string
+        }
+        Update: {
+          ai_summary?: Json | null
+          client_id?: string
+          full_context?: Json
+          id?: string
+          last_updated?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_context_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_drive_config: {
         Row: {
           client_id: string
@@ -1093,6 +1125,48 @@ export type Database = {
             columns: ["connected_by_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_users: {
+        Row: {
+          client_id: string
+          created_at: string
+          display_name: string | null
+          id: string
+          onboarding_token_id: string | null
+          user_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          onboarding_token_id?: string | null
+          user_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          onboarding_token_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_users_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_users_onboarding_token_id_fkey"
+            columns: ["onboarding_token_id"]
+            isOneToOne: false
+            referencedRelation: "onboarding_tokens"
             referencedColumns: ["id"]
           },
         ]
@@ -1989,6 +2063,94 @@ export type Database = {
             columns: ["recipient_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      onboarding_responses: {
+        Row: {
+          client_id: string
+          completed_at: string | null
+          created_at: string
+          data: Json
+          id: string
+          section: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_id: string
+          completed_at?: string | null
+          created_at?: string
+          data?: Json
+          id?: string
+          section: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_id?: string
+          completed_at?: string | null
+          created_at?: string
+          data?: Json
+          id?: string
+          section?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_responses_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      onboarding_tokens: {
+        Row: {
+          assigned_emails: string[] | null
+          client_id: string
+          client_name: string
+          company: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          status: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_emails?: string[] | null
+          client_id: string
+          client_name: string
+          company?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          status?: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_emails?: string[] | null
+          client_id?: string
+          client_name?: string
+          company?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          status?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_tokens_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]

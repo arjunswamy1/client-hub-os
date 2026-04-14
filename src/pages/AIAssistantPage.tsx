@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Bot, Send, User, Sparkles, Lightbulb, AlertCircle } from 'lucide-react';
+import { Bot, Send, Sparkles, Lightbulb } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Source {

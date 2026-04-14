@@ -33,6 +33,15 @@ export function CampaignSection({ data, onUpdate, onNext, errors }: CampaignSect
             selected={data.verticals || []}
             onChange={v => onUpdate('verticals', v)}
           />
+          {(data.verticals || []).includes('Other') && (
+            <div className="mt-3">
+              <OnboardingTextInput
+                value={data.verticals_other || ''}
+                onChange={v => onUpdate('verticals_other', v)}
+                placeholder="Please specify your vertical(s)..."
+              />
+            </div>
+          )}
         </OnboardingField>
 
         <FieldDivider />

@@ -430,6 +430,10 @@ function summarizeCampaignRows(campaignRows: Array<{
     byPlatform,
     campaignCount: campaignRows.length,
     topCampaigns,
+    ringbaRevenue: 0,
+    ringbaConvertedCalls: 0,
+    ringbaTotalCalls: 0,
+    usesRingbaRevenue: false,
   };
 }
 

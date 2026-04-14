@@ -215,7 +215,7 @@ You should answer questions about campaign performance, meeting summaries, actio
     });
 
     // Call AI via Lovable gateway
-    const aiRes = await fetch('https://ai-gateway.lovable.dev/v1/chat/completions', {
+    const aiRes = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

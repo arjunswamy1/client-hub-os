@@ -203,6 +203,10 @@ interface MetricSummary {
   totalImpressions: number;
   totalRoas: number | null;
   totalCpa: number | null;
+  ringbaRevenue: number;
+  ringbaConvertedCalls: number;
+  ringbaTotalCalls: number;
+  usesRingbaRevenue: boolean;
   totalCtr: number | null;
   byPlatform: Record<string, PlatformSummary>;
   campaignCount: number;
@@ -426,6 +430,10 @@ function summarizeCampaignRows(campaignRows: Array<{
     byPlatform,
     campaignCount: campaignRows.length,
     topCampaigns,
+    ringbaRevenue: 0,
+    ringbaConvertedCalls: 0,
+    ringbaTotalCalls: 0,
+    usesRingbaRevenue: false,
   };
 }
 
@@ -496,7 +504,7 @@ async function getClientData(
     campaignQuery = campaignQuery.eq('platform', platformFilter);
   }
 
-  const [campaignsRes, tasksRes, contextRes, ringbaRes] = await Promise.all([
+  const [campaignsRes, tasksRes, contextRes, ringbaRes, dashConfigRes] = await Promise.all([
     campaignQuery,
     supabase
       .from('tasks')
@@ -518,13 +526,32 @@ async function getClientData(
       .gte('call_date', dateRange.from)
       .lte('call_date', dateRange.to)
       .order('call_date', { ascending: false })
-      .limit(500),
+      .limit(1000),
+    supabase
+      .from('dashboard_configs')
+      .select('revenue_source')
+      .eq('client_id', clientId)
+      .maybeSingle(),
   ]);
+
+  const usesRingbaRevenue = dashConfigRes.data?.revenue_source === 'ringba';
 
   const filteredCampaigns = (campaignsRes.data || []).filter((campaign) => {
     if (!campaignMatchesVertical(campaign.campaign_name, campaign.platform)) return false;
     if (!accountMatchesVertical(campaign.account_id, campaign.platform)) return false;
     return true;
+  });
+
+  // Pre-filter Ringba calls by vertical
+  const filteredCalls = (ringbaRes.data || []).filter((call: any) => {
+    if (!verticalId || Object.keys(verticalPatterns).length === 0) return true;
+    const config = verticalPatterns.ringba;
+    if (!config || config.patterns.length === 0) return true;
+    const name = (call.campaign_name || '').toLowerCase();
+    if (config.exactMatch) {
+      return config.patterns.some((pattern: string) => name === pattern.toLowerCase());
+    }
+    return config.patterns.some((pattern: string) => name.includes(pattern.toLowerCase()));
   });
 
   let summary: MetricSummary | null = null;
@@ -600,6 +627,35 @@ async function getClientData(
         status: value.status,
       }));
 
+    // If client uses Ringba as revenue source, override revenue & conversions with Ringba data
+    let ringbaRev = 0;
+    let ringbaConv = 0;
+    let ringbaTotal = 0;
+
+    if (usesRingbaRevenue && filteredCalls.length > 0) {
+      for (const call of filteredCalls) {
+        ringbaRev += Number(call.revenue) || 0;
+        if (call.converted) ringbaConv++;
+        ringbaTotal++;
+      }
+      // Replace ad platform revenue with Ringba revenue
+      totalRevenue = ringbaRev;
+      totalConversions = ringbaConv;
+
+      // Also update daily breakdown with Ringba revenue
+      for (const [dateKey] of Object.entries(byDate)) {
+        byDate[dateKey].revenue = 0;
+        byDate[dateKey].conversions = 0;
+      }
+      for (const call of filteredCalls) {
+        const callDateKey = (call.call_date || '').split('T')[0];
+        if (callDateKey && byDate[callDateKey]) {
+          byDate[callDateKey].revenue += Number(call.revenue) || 0;
+          if (call.converted) byDate[callDateKey].conversions++;
+        }
+      }
+    }
+
     const totalRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
     const totalCpa = totalConversions > 0 ? totalSpend / totalConversions : null;
     const totalCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
@@ -616,6 +672,10 @@ async function getClientData(
       byPlatform,
       campaignCount: filteredCampaigns.length,
       topCampaigns,
+      ringbaRevenue: ringbaRev,
+      ringbaConvertedCalls: ringbaConv,
+      ringbaTotalCalls: ringbaTotal,
+      usesRingbaRevenue,
     };
 
     const verticalLabel = verticalId ? VERTICAL_KEYWORDS[verticalId]?.label || verticalId : 'All Verticals';
@@ -668,16 +728,6 @@ async function getClientData(
   }
 
   let ringbaData = '';
-  const filteredCalls = (ringbaRes.data || []).filter((call) => {
-    if (!verticalId || Object.keys(verticalPatterns).length === 0) return true;
-    const config = verticalPatterns.ringba;
-    if (!config || config.patterns.length === 0) return true;
-    const name = (call.campaign_name || '').toLowerCase();
-    if (config.exactMatch) {
-      return config.patterns.some((pattern) => name === pattern.toLowerCase());
-    }
-    return config.patterns.some((pattern) => name.includes(pattern.toLowerCase()));
-  });
 
   if (filteredCalls.length > 0) {
     const totalCalls = filteredCalls.length;
@@ -716,6 +766,32 @@ async function getClientData(
       const latestDateRows = latestFiltered.filter((campaign) => campaign.date === latestDate);
       const latestSummary = summarizeCampaignRows(latestDateRows);
       if (latestSummary) {
+        // Also merge Ringba revenue for the latest date if applicable
+        if (usesRingbaRevenue) {
+          const { data: latestRingba } = await supabase
+            .from('ringba_calls')
+            .select('revenue, converted')
+            .eq('client_id', clientId)
+            .gte('call_date', `${latestDate}T00:00:00`)
+            .lte('call_date', `${latestDate}T23:59:59`)
+            .limit(500);
+
+          if (latestRingba && latestRingba.length > 0) {
+            let rRev = 0;
+            let rConv = 0;
+            for (const c of latestRingba) {
+              rRev += Number(c.revenue) || 0;
+              if (c.converted) rConv++;
+            }
+            latestSummary.totalRevenue = rRev;
+            latestSummary.totalConversions = rConv;
+            latestSummary.totalRoas = latestSummary.totalSpend > 0 ? rRev / latestSummary.totalSpend : null;
+            latestSummary.totalCpa = rConv > 0 ? latestSummary.totalSpend / rConv : null;
+            latestSummary.ringbaRevenue = rRev;
+            latestSummary.ringbaConvertedCalls = rConv;
+            latestSummary.usesRingbaRevenue = true;
+          }
+        }
         latestAvailable = {
           date: latestDate,
           summary: latestSummary,
@@ -905,6 +981,9 @@ function buildDeterministicMetricReply(
   }
 
   const lines: string[] = [`*${scope}* — ${dateLabel}`];
+  if (summary.usesRingbaRevenue && summary.ringbaTotalCalls > 0) {
+    lines.push(`_Revenue from Ringba calls (${summary.ringbaTotalCalls} calls, ${summary.ringbaConvertedCalls} converted)_`);
+  }
 
   if (metricIntent === 'spend') {
     lines.push(`• Spend: *${formatCurrency(summary.totalSpend)}*`);

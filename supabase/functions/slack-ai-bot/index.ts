@@ -615,6 +615,35 @@ async function getClientData(
         status: value.status,
       }));
 
+    // If client uses Ringba as revenue source, override revenue & conversions with Ringba data
+    let ringbaRev = 0;
+    let ringbaConv = 0;
+    let ringbaTotal = 0;
+
+    if (usesRingbaRevenue && filteredCalls.length > 0) {
+      for (const call of filteredCalls) {
+        ringbaRev += Number(call.revenue) || 0;
+        if (call.converted) ringbaConv++;
+        ringbaTotal++;
+      }
+      // Replace ad platform revenue with Ringba revenue
+      totalRevenue = ringbaRev;
+      totalConversions = ringbaConv;
+
+      // Also update daily breakdown with Ringba revenue
+      for (const [dateKey] of Object.entries(byDate)) {
+        byDate[dateKey].revenue = 0;
+        byDate[dateKey].conversions = 0;
+      }
+      for (const call of filteredCalls) {
+        const callDateKey = (call.call_date || '').split('T')[0];
+        if (callDateKey && byDate[callDateKey]) {
+          byDate[callDateKey].revenue += Number(call.revenue) || 0;
+          if (call.converted) byDate[callDateKey].conversions++;
+        }
+      }
+    }
+
     const totalRoas = totalSpend > 0 ? totalRevenue / totalSpend : null;
     const totalCpa = totalConversions > 0 ? totalSpend / totalConversions : null;
     const totalCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
@@ -631,6 +660,10 @@ async function getClientData(
       byPlatform,
       campaignCount: filteredCampaigns.length,
       topCampaigns,
+      ringbaRevenue: ringbaRev,
+      ringbaConvertedCalls: ringbaConv,
+      ringbaTotalCalls: ringbaTotal,
+      usesRingbaRevenue,
     };
 
     const verticalLabel = verticalId ? VERTICAL_KEYWORDS[verticalId]?.label || verticalId : 'All Verticals';

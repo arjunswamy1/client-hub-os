@@ -57,12 +57,18 @@ Deno.serve(async (req) => {
     let tasksCreated = 0;
     const errors: string[] = [];
 
-    // Paginate through all meetings with summary + action items
+    const maxPages = body.max_pages || 5;
+    let page = 0;
+
+    // Paginate through meetings with summary + action items
     do {
+      page++;
+      if (page > maxPages) break;
+
       const params = new URLSearchParams({
         include_summary: 'true',
         include_action_items: 'true',
-        include_transcript: 'false', // skip transcript for backfill speed; summaries are enough
+        include_transcript: 'false',
       });
       if (cursor) params.set('cursor', cursor);
 

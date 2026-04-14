@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 const SLACK_BOT_TOKEN = Deno.env.get('SLACK_BOT_TOKEN')!;
 const SLACK_SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET')!;
@@ -10,13 +9,26 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-// Verify Slack request signature
-function verifySlackSignature(body: string, timestamp: string, signature: string): boolean {
-  const sigBasestring = `v0:${timestamp}:${body}`;
-  const hmac = createHmac('sha256', SLACK_SIGNING_SECRET);
-  hmac.update(sigBasestring);
-  const mySignature = `v0=${hmac.digest('hex')}`;
-  return mySignature === signature;
+// Verify Slack request signature using Web Crypto API
+async function verifySlackSignature(body: string, timestamp: string, signature: string): Promise<boolean> {
+  try {
+    const sigBasestring = `v0:${timestamp}:${body}`;
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(SLACK_SIGNING_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(sigBasestring));
+    const hashHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const mySignature = `v0=${hashHex}`;
+    return mySignature === signature;
+  } catch (e) {
+    console.error('Signature verification error:', e);
+    return false;
+  }
 }
 
 // Get conversation thread history for context

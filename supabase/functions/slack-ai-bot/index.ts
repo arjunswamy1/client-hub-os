@@ -831,8 +831,7 @@ function buildDeterministicMetricReply(
       }
     }
 
-    return lines.join('
-');
+    return lines.join('\n');
   }
 
   const lines: string[] = [`*${scope}* — ${dateLabel}`];
@@ -887,8 +886,7 @@ function buildDeterministicMetricReply(
     }
   }
 
-  return lines.join('
-');
+  return lines.join('\n');
 }
 
 // ─── AI call ───────────────────────────────────────────────────────────────

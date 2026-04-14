@@ -244,7 +244,7 @@ Deno.serve(async (req) => {
                 if (match) assigneeId = match.id;
               }
 
-              const { error: taskError } = await supabase.from('tasks').insert({
+              const { data: taskData, error: taskError } = await supabase.from('tasks').insert({
                 client_id,
                 title: task.title,
                 description: `[Auto-created from Slack #${task.channel}]\n\n${task.context}`,
@@ -253,9 +253,32 @@ Deno.serve(async (req) => {
                 assignee_id: assigneeId,
                 tags: ['slack-auto', task.channel],
                 position: 0,
-              });
+              }).select('id').single();
 
-              if (!taskError) tasksCreated++;
+              if (!taskError) {
+                tasksCreated++;
+
+                // Auto-create creative brief for tasks from #cpm_malena (creative-specific channel)
+                const CREATIVE_CHANNELS = ['#cpm_malena', 'cpm_malena'];
+                if (CREATIVE_CHANNELS.includes(task.channel)) {
+                  try {
+                    const briefPriority = task.priority === 'high' ? 'high' : task.priority === 'low' ? 'low' : 'medium';
+                    const { error: briefError } = await supabase.from('creative_briefs').insert({
+                      client_id,
+                      title: task.title,
+                      status: 'draft',
+                      priority: briefPriority,
+                      creative_type: 'static',
+                      assigned_to_id: assigneeId,
+                      notes: `[Auto-created from Slack ${task.channel}]\n\n${task.context}`,
+                    });
+                    if (briefError) console.error('Creative brief creation error:', briefError);
+                    else console.log('Creative brief auto-created for task:', task.title);
+                  } catch (briefErr) {
+                    console.error('Creative brief creation exception:', briefErr);
+                  }
+                }
+              }
               else console.error('Task creation error:', taskError);
             }
           }

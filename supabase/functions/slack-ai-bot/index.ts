@@ -504,7 +504,7 @@ async function getClientData(
     campaignQuery = campaignQuery.eq('platform', platformFilter);
   }
 
-  const [campaignsRes, tasksRes, contextRes, ringbaRes] = await Promise.all([
+  const [campaignsRes, tasksRes, contextRes, ringbaRes, dashConfigRes] = await Promise.all([
     campaignQuery,
     supabase
       .from('tasks')
@@ -526,8 +526,15 @@ async function getClientData(
       .gte('call_date', dateRange.from)
       .lte('call_date', dateRange.to)
       .order('call_date', { ascending: false })
-      .limit(500),
+      .limit(1000),
+    supabase
+      .from('dashboard_configs')
+      .select('revenue_source')
+      .eq('client_id', clientId)
+      .maybeSingle(),
   ]);
+
+  const usesRingbaRevenue = dashConfigRes.data?.revenue_source === 'ringba';
 
   const filteredCampaigns = (campaignsRes.data || []).filter((campaign) => {
     if (!campaignMatchesVertical(campaign.campaign_name, campaign.platform)) return false;

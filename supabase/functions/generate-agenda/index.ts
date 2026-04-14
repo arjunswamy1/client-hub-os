@@ -198,6 +198,22 @@ Deno.serve(async (req) => {
       ringbaByVertical[v].totalPayout += Number(call.payout);
     }
 
+    // Build Slack intelligence summaries
+    const slackIntelligence = (slackSummaries || []).map((s: any) => s.content).join('\n\n');
+    const slackConversationHighlights = (slackMessages || []).slice(0, 30).map((m: any) => ({
+      channel: m.title,
+      who: m.participants?.[0] || 'Unknown',
+      what: m.content?.slice(0, 150),
+      when: m.occurred_at,
+      channel_context: m.metadata?.channel_context || '',
+    }));
+    const recentTasksList = (recentTasks || []).map((t: any) => ({
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      from_slack: t.tags?.includes('slack-auto'),
+    }));
+
     // Build context summary for AI
     const contextSummary = {
       client_name: clientInfo?.name || 'Unknown',
@@ -220,6 +236,9 @@ Deno.serve(async (req) => {
         severity: r.severity,
         platform: r.platform,
       })),
+      slack_intelligence: slackIntelligence,
+      slack_conversation_highlights: slackConversationHighlights,
+      recent_tasks: recentTasksList,
       additional_context: additional_context || '',
     };
 

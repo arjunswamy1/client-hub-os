@@ -20,7 +20,6 @@ const PENDING_REPLY_TEXT = 'Got it — thinking…';
 // ─── Token rotation helpers ────────────────────────────────────────────────
 
 async function getValidBotToken(): Promise<string> {
-  // Try DB first
   const { data: row } = await supabase
     .from('slack_tokens')
     .select('*')
@@ -30,24 +29,20 @@ async function getValidBotToken(): Promise<string> {
 
   if (row) {
     const expiresAt = new Date(row.expires_at);
-    const now = new Date();
-    // Refresh if expiring in < 5 minutes
-    if (expiresAt.getTime() - now.getTime() > 5 * 60 * 1000) {
+    if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {
       return row.bot_access_token;
     }
-    // Refresh the token
     console.log('Token expired or expiring soon, refreshing...');
     return await refreshToken(row.refresh_token, row.workspace_id);
   }
 
-  // No row yet — try to exchange the static env token for a rotating pair
   const staticToken = Deno.env.get('SLACK_BOT_TOKEN');
   if (staticToken) {
     console.log('Exchanging static bot token for rotating tokens...');
     return await exchangeStaticToken(staticToken);
   }
 
-  throw new Error('No Slack bot token available. Set SLACK_BOT_TOKEN or seed slack_tokens table.');
+  throw new Error('No Slack bot token available.');
 }
 
 async function exchangeStaticToken(token: string): Promise<string> {
@@ -63,7 +58,6 @@ async function exchangeStaticToken(token: string): Promise<string> {
   const data = await res.json();
   if (!data.ok) {
     console.error('oauth.v2.exchange failed:', data.error);
-    // Fallback to static token if exchange fails (e.g. already exchanged)
     return token;
   }
   const expiresAt = new Date(Date.now() + (data.expires_in || 43200) * 1000);
@@ -77,11 +71,10 @@ async function exchangeStaticToken(token: string): Promise<string> {
     updated_at: new Date().toISOString(),
   }, { onConflict: 'workspace_id' });
 
-  console.log('Token exchange successful, stored rotating tokens');
   return data.access_token;
 }
 
-async function refreshToken(refreshToken: string, workspaceId: string): Promise<string> {
+async function refreshToken(rt: string, workspaceId: string): Promise<string> {
   const res = await fetch('https://slack.com/api/oauth.v2.access', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -89,13 +82,11 @@ async function refreshToken(refreshToken: string, workspaceId: string): Promise<
       client_id: SLACK_CLIENT_ID,
       client_secret: SLACK_CLIENT_SECRET,
       grant_type: 'refresh_token',
-      refresh_token: refreshToken,
+      refresh_token: rt,
     }),
   });
   const data = await res.json();
-  if (!data.ok) {
-    throw new Error(`Token refresh failed: ${data.error}`);
-  }
+  if (!data.ok) throw new Error(`Token refresh failed: ${data.error}`);
   const expiresAt = new Date(Date.now() + (data.expires_in || 43200) * 1000);
 
   await supabase.from('slack_tokens').upsert({
@@ -106,7 +97,6 @@ async function refreshToken(refreshToken: string, workspaceId: string): Promise<
     updated_at: new Date().toISOString(),
   }, { onConflict: 'workspace_id' });
 
-  console.log('Token refreshed successfully');
   return data.access_token;
 }
 
@@ -116,13 +106,7 @@ async function verifySlackSignature(body: string, timestamp: string, signature: 
   try {
     const sigBasestring = `v0:${timestamp}:${body}`;
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(SLACK_SIGNING_SECRET),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
+    const key = await crypto.subtle.importKey('raw', encoder.encode(SLACK_SIGNING_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(sigBasestring));
     const hashHex = Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
     return `v0=${hashHex}` === signature;
@@ -151,119 +135,242 @@ function mapSlackMessagesToConversation(messages: any[], botUserId: string | nul
 }
 
 async function getBotUserId(token: string): Promise<string | null> {
-  const authRes = await fetch('https://slack.com/api/auth.test', {
+  const res = await fetch('https://slack.com/api/auth.test', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
   });
-  const authData = await authRes.json();
-  return authData.ok ? authData.user_id : null;
+  const data = await res.json();
+  return data.ok ? data.user_id : null;
 }
 
 async function getConversationHistory(
-  token: string,
-  channel: string,
-  threadTs: string,
-  isDirectConversation: boolean,
+  token: string, channel: string, threadTs: string, isDirectConversation: boolean,
 ): Promise<Array<{ role: string; content: string }>> {
   const endpoint = isDirectConversation
     ? `https://slack.com/api/conversations.history?channel=${channel}&limit=12`
     : `https://slack.com/api/conversations.replies?channel=${channel}&ts=${threadTs}&limit=20`;
 
-  const res = await fetch(endpoint, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
+  const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` } });
   const data = await res.json();
   if (!data.ok || !data.messages) return [];
 
   const botUserId = await getBotUserId(token);
-
   const orderedMessages = isDirectConversation ? [...data.messages].reverse() : data.messages;
   return mapSlackMessagesToConversation(orderedMessages, botUserId);
 }
 
-async function getChannelContext(token: string, channelId: string): Promise<string> {
+// ─── Client detection & data retrieval ─────────────────────────────────────
+
+const CLIENT_PATTERNS: Record<string, string[]> = {
+  billy: ['billy', 'kwca', 'billy.com'],
+  'tinned-fish-club': ['tinned', 'tfc', 'tinned fish'],
+  phantasmagorical: ['phantas', 'phant', 'phantasmagorical'],
+};
+
+async function detectClientFromText(text: string): Promise<{ id: string; name: string; slug: string } | null> {
+  const lower = text.toLowerCase();
+  for (const [slug, keywords] of Object.entries(CLIENT_PATTERNS)) {
+    if (keywords.some((k) => lower.includes(k))) {
+      const { data: client } = await supabase
+        .from('clients')
+        .select('id, name, slug')
+        .eq('slug', slug)
+        .maybeSingle();
+      if (client) return client;
+    }
+  }
+  return null;
+}
+
+async function detectClientFromChannel(token: string, channelId: string): Promise<{ id: string; name: string; slug: string } | null> {
   const chanRes = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
     headers: { 'Authorization': `Bearer ${token}` },
   });
   const chanData = await chanRes.json();
-  const channelName = chanData.channel?.name || 'unknown';
+  const channelName = chanData.channel?.name || '';
+  if (!channelName) return null;
+  return detectClientFromText(channelName);
+}
 
-  let clientSlug = '';
-  const PATTERNS: Record<string, string[]> = {
-    billy: ['billy', 'kwca'],
-    'tinned-fish-club': ['tinned', 'tfc'],
-    phantasmagorical: ['phantas', 'phant'],
-  };
+interface ClientData {
+  recentMetrics: string;
+  campaignBreakdown: string;
+  tasks: string;
+  recentContext: string;
+  ringbaData: string;
+}
 
-  for (const [slug, keywords] of Object.entries(PATTERNS)) {
-    if (keywords.some((k) => channelName.toLowerCase().includes(k))) {
-      clientSlug = slug;
-      break;
+async function getClientData(clientId: string, dateRange: { from: string; to: string }): Promise<ClientData> {
+  // Parallel fetch all data
+  const [metricsRes, campaignsRes, tasksRes, contextRes, ringbaRes] = await Promise.all([
+    supabase
+      .from('ad_daily_metrics')
+      .select('date, platform, spend, revenue, conversions, clicks, impressions')
+      .eq('client_id', clientId)
+      .gte('date', dateRange.from)
+      .lte('date', dateRange.to)
+      .order('date', { ascending: false }),
+    supabase
+      .from('ad_campaigns')
+      .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status, date')
+      .eq('client_id', clientId)
+      .gte('date', dateRange.from)
+      .lte('date', dateRange.to)
+      .order('spend', { ascending: false })
+      .limit(20),
+    supabase
+      .from('tasks')
+      .select('title, status, priority, due_date')
+      .eq('client_id', clientId)
+      .in('status', ['todo', 'in_progress'])
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('context_items')
+      .select('title, content, occurred_at')
+      .eq('client_id', clientId)
+      .order('occurred_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('ringba_calls')
+      .select('call_date, revenue, payout, converted, connected, duration_seconds, campaign_name, target_name')
+      .eq('client_id', clientId)
+      .gte('call_date', dateRange.from)
+      .lte('call_date', dateRange.to)
+      .order('call_date', { ascending: false })
+      .limit(100),
+  ]);
+
+  // Aggregate daily metrics by platform
+  let recentMetrics = '';
+  if (metricsRes.data?.length) {
+    const byPlatform: Record<string, { spend: number; revenue: number; conversions: number; clicks: number; impressions: number }> = {};
+    let totalSpend = 0, totalRevenue = 0, totalConversions = 0;
+
+    for (const m of metricsRes.data) {
+      const p = m.platform || 'unknown';
+      if (!byPlatform[p]) byPlatform[p] = { spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0 };
+      byPlatform[p].spend += m.spend || 0;
+      byPlatform[p].revenue += m.revenue || 0;
+      byPlatform[p].conversions += m.conversions || 0;
+      byPlatform[p].clicks += m.clicks || 0;
+      byPlatform[p].impressions += m.impressions || 0;
+      totalSpend += m.spend || 0;
+      totalRevenue += m.revenue || 0;
+      totalConversions += m.conversions || 0;
+    }
+
+    recentMetrics = `📊 Performance (${dateRange.from} to ${dateRange.to}):\n`;
+    recentMetrics += `Total: Spend $${totalSpend.toFixed(2)} | Revenue $${totalRevenue.toFixed(2)} | Conversions ${totalConversions}\n`;
+    for (const [platform, data] of Object.entries(byPlatform)) {
+      const ctr = data.impressions > 0 ? ((data.clicks / data.impressions) * 100).toFixed(2) : '0';
+      const cpa = data.conversions > 0 ? (data.spend / data.conversions).toFixed(2) : 'N/A';
+      recentMetrics += `  ${platform}: Spend $${data.spend.toFixed(2)} | Rev $${data.revenue.toFixed(2)} | Conv ${data.conversions} | CPA $${cpa} | CTR ${ctr}%\n`;
+    }
+
+    // Daily breakdown
+    const byDate: Record<string, { spend: number; conversions: number }> = {};
+    for (const m of metricsRes.data) {
+      if (!byDate[m.date]) byDate[m.date] = { spend: 0, conversions: 0 };
+      byDate[m.date].spend += m.spend || 0;
+      byDate[m.date].conversions += m.conversions || 0;
+    }
+    recentMetrics += '\nDaily breakdown:\n';
+    for (const [date, data] of Object.entries(byDate).slice(0, 7)) {
+      recentMetrics += `  ${date}: $${data.spend.toFixed(2)} spend, ${data.conversions} conversions\n`;
     }
   }
 
-  let contextInfo = `Channel: #${channelName}\n`;
-
-  if (!clientSlug) return contextInfo;
-
-  const { data: client } = await supabase
-    .from('clients')
-    .select('id, name')
-    .eq('slug', clientSlug)
-    .maybeSingle();
-
-  if (!client) return contextInfo;
-
-  contextInfo += `Client: ${client.name}\n`;
-
-  const { data: recentContext } = await supabase
-    .from('context_items')
-    .select('title, content, occurred_at')
-    .eq('client_id', client.id)
-    .eq('content_type', 'slack_summary')
-    .order('occurred_at', { ascending: false })
-    .limit(3);
-
-  if (recentContext?.length) {
-    contextInfo += '\nRecent activity summaries:\n';
-    for (const item of recentContext) {
-      contextInfo += `- ${item.title}: ${item.content?.substring(0, 300)}\n`;
+  // Campaign breakdown
+  let campaignBreakdown = '';
+  if (campaignsRes.data?.length) {
+    campaignBreakdown = `\n🎯 Top Campaigns:\n`;
+    for (const c of campaignsRes.data.slice(0, 10)) {
+      const cpa = c.conversions && c.conversions > 0 ? (c.spend / c.conversions).toFixed(2) : 'N/A';
+      campaignBreakdown += `  • ${c.campaign_name} (${c.platform}): $${(c.spend || 0).toFixed(2)} spend, ${c.conversions || 0} conv, CPA $${cpa}\n`;
     }
   }
 
-  const { data: tasks } = await supabase
-    .from('tasks')
-    .select('title, status, priority')
-    .eq('client_id', client.id)
-    .in('status', ['todo', 'in_progress'])
-    .order('created_at', { ascending: false })
-    .limit(10);
-
-  if (tasks?.length) {
-    contextInfo += `\nOpen tasks (${tasks.length}):\n`;
-    for (const task of tasks) {
-      contextInfo += `- [${task.priority}] ${task.title} (${task.status})\n`;
+  // Tasks
+  let tasksStr = '';
+  if (tasksRes.data?.length) {
+    tasksStr = `\n📋 Open Tasks (${tasksRes.data.length}):\n`;
+    for (const t of tasksRes.data) {
+      tasksStr += `  • [${t.priority}] ${t.title} (${t.status})${t.due_date ? ` due ${t.due_date}` : ''}\n`;
     }
   }
 
-  const { data: metrics } = await supabase
-    .from('ad_daily_metrics')
-    .select('spend, revenue, conversions')
-    .eq('client_id', client.id)
-    .order('date', { ascending: false })
-    .limit(14);
-
-  if (metrics?.length) {
-    const totalSpend = metrics.reduce((sum, item) => sum + (item.spend || 0), 0);
-    const totalRevenue = metrics.reduce((sum, item) => sum + (item.revenue || 0), 0);
-    const totalConversions = metrics.reduce((sum, item) => sum + (item.conversions || 0), 0);
-    contextInfo += `\nRecent metrics: Spend $${totalSpend.toFixed(0)}, Revenue $${totalRevenue.toFixed(0)}, Conversions ${totalConversions}\n`;
+  // Context
+  let recentContext = '';
+  if (contextRes.data?.length) {
+    recentContext = `\n📝 Recent Notes:\n`;
+    for (const item of contextRes.data) {
+      recentContext += `  • ${item.title}: ${item.content?.substring(0, 200)}\n`;
+    }
   }
 
-  return contextInfo;
+  // Ringba calls
+  let ringbaData = '';
+  if (ringbaRes.data?.length) {
+    const totalCalls = ringbaRes.data.length;
+    const connectedCalls = ringbaRes.data.filter(c => c.connected).length;
+    const convertedCalls = ringbaRes.data.filter(c => c.converted).length;
+    const totalRevenue = ringbaRes.data.reduce((s, c) => s + (c.revenue || 0), 0);
+    const totalPayout = ringbaRes.data.reduce((s, c) => s + (c.payout || 0), 0);
+    const avgDuration = ringbaRes.data.reduce((s, c) => s + (c.duration_seconds || 0), 0) / totalCalls;
+
+    ringbaData = `\n📞 Ringba Calls (${dateRange.from} to ${dateRange.to}):\n`;
+    ringbaData += `  Total: ${totalCalls} calls | Connected: ${connectedCalls} | Converted: ${convertedCalls}\n`;
+    ringbaData += `  Revenue: $${totalRevenue.toFixed(2)} | Payout: $${totalPayout.toFixed(2)} | Avg Duration: ${Math.round(avgDuration)}s\n`;
+
+    // By target
+    const byTarget: Record<string, { calls: number; revenue: number; converted: number }> = {};
+    for (const c of ringbaRes.data) {
+      const t = c.target_name || 'Unknown';
+      if (!byTarget[t]) byTarget[t] = { calls: 0, revenue: 0, converted: 0 };
+      byTarget[t].calls++;
+      byTarget[t].revenue += c.revenue || 0;
+      if (c.converted) byTarget[t].converted++;
+    }
+    const topTargets = Object.entries(byTarget).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 5);
+    if (topTargets.length) {
+      ringbaData += '  Top targets:\n';
+      for (const [name, data] of topTargets) {
+        ringbaData += `    • ${name}: ${data.calls} calls, $${data.revenue.toFixed(2)} rev, ${data.converted} converted\n`;
+      }
+    }
+  }
+
+  return { recentMetrics, campaignBreakdown, tasks: tasksStr, recentContext, ringbaData };
+}
+
+function parseDateIntent(text: string): { from: string; to: string } {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const lower = text.toLowerCase();
+
+  if (lower.includes('today')) {
+    return { from: today, to: today };
+  }
+  if (lower.includes('yesterday')) {
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    return { from: y.toISOString().split('T')[0], to: y.toISOString().split('T')[0] };
+  }
+  if (lower.includes('this week') || lower.includes('past week') || lower.includes('last 7')) {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    return { from: weekAgo.toISOString().split('T')[0], to: today };
+  }
+  if (lower.includes('this month') || lower.includes('past month') || lower.includes('last 30')) {
+    const monthAgo = new Date(now);
+    monthAgo.setDate(monthAgo.getDate() - 30);
+    return { from: monthAgo.toISOString().split('T')[0], to: today };
+  }
+  // Default: last 7 days
+  const weekAgo = new Date(now);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  return { from: weekAgo.toISOString().split('T')[0], to: today };
 }
 
 async function resolveUserName(token: string, userId: string): Promise<string> {
@@ -274,6 +381,8 @@ async function resolveUserName(token: string, userId: string): Promise<string> {
   return data.user?.profile?.display_name || data.user?.real_name || 'Someone';
 }
 
+// ─── AI call ───────────────────────────────────────────────────────────────
+
 async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
@@ -281,10 +390,7 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
       'Authorization': `Bearer ${LOVABLE_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
-      messages,
-    }),
+    body: JSON.stringify({ model: 'google/gemini-2.5-flash', messages }),
   });
 
   if (!res.ok) {
@@ -299,82 +405,127 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
   return data.choices?.[0]?.message?.content || "I couldn't generate a response.";
 }
 
+// ─── Slack messaging ───────────────────────────────────────────────────────
+
 async function postSlackMessage(token: string, channel: string, text: string, threadTs?: string) {
   const res = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      channel,
-      text,
-      ...(threadTs ? { thread_ts: threadTs } : {}),
-    }),
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) }),
   });
-
   const data = await res.json();
-  if (!data.ok) {
-    throw new Error(`chat.postMessage failed: ${data.error || 'unknown_error'}`);
-  }
-
+  if (!data.ok) throw new Error(`chat.postMessage failed: ${data.error || 'unknown_error'}`);
   return data as { ok: boolean; ts: string };
 }
 
 async function addReaction(token: string, channel: string, timestamp: string, emoji: string) {
-  const res = await fetch('https://slack.com/api/reactions.add', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ channel, timestamp, name: emoji }),
-  });
-  const data = await res.json();
-  if (!data.ok && data.error !== 'already_reacted') {
-    console.error('reactions.add failed:', data.error);
+  try {
+    const res = await fetch('https://slack.com/api/reactions.add', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, timestamp, name: emoji }),
+    });
+    const data = await res.json();
+    if (!data.ok && data.error !== 'already_reacted') {
+      console.warn('reactions.add failed:', data.error);
+    }
+  } catch (e) {
+    console.warn('reactions.add error (non-fatal):', e);
   }
 }
+
+// ─── Main handler ──────────────────────────────────────────────────────────
 
 async function processSlackMessage(event: any) {
   const isDirectConversation = isDirectConversationEvent(event);
   const historyAnchorTs = event.thread_ts || event.ts;
-  const replyThreadTs = isDirectConversation ? undefined : historyAnchorTs;
+  // ALWAYS reply in thread — for DMs use the message's own ts as thread anchor
+  const replyThreadTs = historyAnchorTs;
   const cleanText = getCleanMessageText(event.text || '');
 
   try {
-    // Get a valid (possibly refreshed) bot token
     const token = await getValidBotToken();
 
-    console.log('Processing Slack event:', event.type, event.channel, historyAnchorTs, 'channel_type:', event.channel_type, 'direct:', isDirectConversation);
-    await addReaction(token, event.channel, event.ts, 'brain');
+    console.log('Processing:', event.type, event.channel, 'thread:', historyAnchorTs, 'direct:', isDirectConversation);
+    
+    // Non-blocking reaction (don't fail if missing scope)
+    addReaction(token, event.channel, event.ts, 'brain');
     await postSlackMessage(token, event.channel, PENDING_REPLY_TEXT, replyThreadTs);
 
-    const userName = await resolveUserName(token, event.user);
-    const channelContext = await getChannelContext(token, event.channel);
+    // Detect client from message text first, then from channel name
+    let client = await detectClientFromText(cleanText);
+    if (!client && !isDirectConversation) {
+      client = await detectClientFromChannel(token, event.channel);
+    }
+
+    // If still no client from channel, check full conversation history for mentions
     let conversationHistory = await getConversationHistory(token, event.channel, historyAnchorTs, isDirectConversation);
+    if (!client && conversationHistory.length > 0) {
+      const allText = conversationHistory.map(m => m.content).join(' ');
+      client = await detectClientFromText(allText);
+    }
 
     if (conversationHistory.length === 0 && cleanText) {
       conversationHistory = [{ role: 'user', content: cleanText }];
     }
 
+    const userName = await resolveUserName(token, event.user);
+    const dateRange = parseDateIntent(cleanText);
+
+    // Build rich context with actual data
+    let dataContext = '';
+    if (client) {
+      console.log('Detected client:', client.name, 'date range:', dateRange.from, '-', dateRange.to);
+      const clientData = await getClientData(client.id, dateRange);
+      dataContext = `\n--- CLIENT DATA FOR ${client.name.toUpperCase()} ---\n`;
+      dataContext += clientData.recentMetrics || 'No ad metrics found for this period.\n';
+      dataContext += clientData.campaignBreakdown || '';
+      dataContext += clientData.ringbaData || '';
+      dataContext += clientData.tasks || '';
+      dataContext += clientData.recentContext || '';
+      dataContext += `--- END CLIENT DATA ---\n`;
+    }
+
+    // Get all clients list for general queries
+    let clientList = '';
+    if (!client) {
+      const { data: allClients } = await supabase
+        .from('clients')
+        .select('name, slug')
+        .eq('status', 'active');
+      if (allClients?.length) {
+        clientList = `\nAvailable clients: ${allClients.map(c => c.name).join(', ')}\n`;
+      }
+    }
+
+    // Channel context for non-DM
+    let channelInfo = '';
+    if (!isDirectConversation) {
+      const chanRes = await fetch(`https://slack.com/api/conversations.info?channel=${event.channel}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const chanData = await chanRes.json();
+      channelInfo = chanData.channel?.name ? `Channel: #${chanData.channel.name}\n` : '';
+    }
+
     const systemPrompt = `You are CPM Bot, an AI assistant for Connect Paid Media (CPM), a digital advertising agency. You help the team with client management, campaign strategy, media buying insights, and task coordination.
 
-You have access to the following context about the current conversation:
-${channelContext}
+${channelInfo}${clientList}${dataContext}
 
 The person talking to you is: ${userName}
+Today's date: ${new Date().toISOString().split('T')[0]}
 
 Guidelines:
-- Be concise and actionable in Slack — use bullet points and short paragraphs
-- When discussing metrics, reference specific numbers from the context
-- If asked about tasks, reference the open tasks list
-- For campaign strategy questions, consider the client's verticals and current performance
+- Be concise and actionable — use bullet points and short paragraphs
+- When discussing metrics, ALWAYS reference the specific numbers from the CLIENT DATA section above
+- If asked about spend, revenue, conversions etc., USE THE DATA PROVIDED — do not say you don't have access
+- If asked about a specific date range and the data doesn't cover it, say what data you have and offer to check a different range
+- If no client is detected, ask which client they're asking about and list available clients
+- For campaign strategy questions, use the actual campaign performance data
 - Use emoji sparingly but naturally 🎯
-- If you don't have enough context, say so honestly
 - Format responses for Slack (use *bold*, _italic_, \`code\`, and bullet points)
 - Keep responses under 2000 characters when possible
-- In direct messages or App Home chat, reply as a normal conversation and do not reference thread behavior`;
+- When the user mentions "billy" or "billy.com", that refers to the Billy.com client`;
 
     const aiMessages = [
       { role: 'system', content: systemPrompt },
@@ -383,16 +534,16 @@ Guidelines:
 
     const response = await callAI(aiMessages);
     await postSlackMessage(token, event.channel, response, replyThreadTs);
-    console.log('Reply sent successfully');
+    console.log('Reply sent successfully for client:', client?.name || 'none detected');
   } catch (error) {
     console.error('Error processing Slack event:', error);
     try {
-      const fallbackToken = Deno.env.get('SLACK_BOT_TOKEN') || '';
+      const fallbackToken = await getValidBotToken().catch(() => Deno.env.get('SLACK_BOT_TOKEN') || '');
       if (fallbackToken) {
         await postSlackMessage(fallbackToken, event.channel, 'Sorry, I hit an error while processing that. Please try again! 🔧', replyThreadTs);
       }
     } catch (replyError) {
-      console.error('Failed to send Slack error message:', replyError);
+      console.error('Failed to send error message:', replyError);
     }
   }
 }

@@ -205,11 +205,6 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
     </Dialog>
   );
 }
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function ResponseViewer({ responses, context }: { responses: any[]; context: any }) {
   const sections = ['campaign', 'creative', 'access', 'other'];

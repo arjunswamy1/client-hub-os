@@ -727,6 +727,8 @@ async function getClientData(
   return { recentMetrics, campaignBreakdown, tasks, recentContext, ringbaData, summary, latestAvailable };
 }
 
+const DEFAULT_BUSINESS_TIME_ZONE = 'America/New_York';
+
 function padDatePart(value: number): string {
   return String(value).padStart(2, '0');
 }
@@ -735,40 +737,108 @@ function formatShiftedDate(date: Date): string {
   return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}`;
 }
 
-function getShiftedNow(tzOffsetSeconds: number): Date {
-  return new Date(Date.now() + tzOffsetSeconds * 1000);
+function normalizeDateParts(year: number, month: number, day: number): string | null {
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return formatShiftedDate(candidate);
 }
 
-function shiftLocalDays(date: Date, days: number): Date {
-  const shifted = new Date(date);
+function parseExplicitDate(text: string, fallbackYear: number): string | null {
+  const isoMatch = text.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+  if (isoMatch) {
+    return normalizeDateParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
+  }
+
+  const slashMatch = text.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  if (!slashMatch) {
+    return null;
+  }
+
+  const yearToken = slashMatch[3];
+  const year = !yearToken
+    ? fallbackYear
+    : yearToken.length === 2
+      ? 2000 + Number(yearToken)
+      : Number(yearToken);
+
+  return normalizeDateParts(year, Number(slashMatch[1]), Number(slashMatch[2]));
+}
+
+function formatDateInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) {
+    return formatShiftedDate(date);
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function getResolvedToday(userContext: Pick<UserContext, 'tzOffsetSeconds' | 'timeZone'>): string {
+  const timeZone = userContext.timeZone?.trim();
+  if (timeZone && timeZone.toLowerCase() !== 'utc' && timeZone.toLowerCase() !== 'etc/utc') {
+    return formatDateInTimeZone(new Date(), timeZone);
+  }
+
+  if (userContext.tzOffsetSeconds !== 0) {
+    return formatShiftedDate(new Date(Date.now() + userContext.tzOffsetSeconds * 1000));
+  }
+
+  return formatDateInTimeZone(new Date(), DEFAULT_BUSINESS_TIME_ZONE);
+}
+
+function shiftIsoDate(dateValue: string, days: number): string {
+  const shifted = new Date(`${dateValue}T12:00:00.000Z`);
   shifted.setUTCDate(shifted.getUTCDate() + days);
-  return shifted;
+  return formatShiftedDate(shifted);
 }
 
-function parseDateIntent(text: string, tzOffsetSeconds = 0): { from: string; to: string; userToday: string } {
-  const localNow = getShiftedNow(tzOffsetSeconds);
-  const today = formatShiftedDate(localNow);
+function parseDateIntent(
+  text: string,
+  userContext: Pick<UserContext, 'tzOffsetSeconds' | 'timeZone'>,
+): { from: string; to: string; userToday: string } {
+  const today = getResolvedToday(userContext);
   const lower = text.toLowerCase();
+  const explicitDate = parseExplicitDate(lower, Number(today.slice(0, 4)));
 
+  if (explicitDate) {
+    return { from: explicitDate, to: explicitDate, userToday: today };
+  }
   if (lower.includes('today')) {
     return { from: today, to: today, userToday: today };
   }
   if (lower.includes('yesterday')) {
-    const yesterday = shiftLocalDays(localNow, -1);
-    const value = formatShiftedDate(yesterday);
-    return { from: value, to: value, userToday: today };
+    const yesterday = shiftIsoDate(today, -1);
+    return { from: yesterday, to: yesterday, userToday: today };
   }
   if (lower.includes('this week') || lower.includes('past week') || lower.includes('last 7')) {
-    const weekAgo = shiftLocalDays(localNow, -7);
-    return { from: formatShiftedDate(weekAgo), to: today, userToday: today };
+    return { from: shiftIsoDate(today, -7), to: today, userToday: today };
   }
   if (lower.includes('this month') || lower.includes('past month') || lower.includes('last 30')) {
-    const monthAgo = shiftLocalDays(localNow, -30);
-    return { from: formatShiftedDate(monthAgo), to: today, userToday: today };
+    return { from: shiftIsoDate(today, -30), to: today, userToday: today };
   }
 
-  const weekAgo = shiftLocalDays(localNow, -7);
-  return { from: formatShiftedDate(weekAgo), to: today, userToday: today };
+  return { from: shiftIsoDate(today, -7), to: today, userToday: today };
 }
 
 async function resolveUserContext(token: string, userId: string): Promise<UserContext> {
@@ -1006,7 +1076,7 @@ async function processSlackMessage(event: any) {
 
     const userContext = await resolveUserContext(token, event.user);
     const userName = userContext.name;
-    const dateRange = parseDateIntent(cleanText, userContext.tzOffsetSeconds);
+    const dateRange = parseDateIntent(cleanText, userContext);
 
     let dataContext = '';
     let clientData: ClientData | null = null;

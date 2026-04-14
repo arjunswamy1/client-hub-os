@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { OnboardingField, CheckboxGrid, OnboardingTextInput, OnboardingTextarea, FieldDivider } from '../OnboardingField';
 import { SectionData } from '@/hooks/useOnboarding';
 

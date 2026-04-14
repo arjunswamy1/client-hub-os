@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useOnboarding, useOnboardingToken } from '@/hooks/useOnboarding';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
@@ -8,7 +8,6 @@ import { CampaignSection } from '@/components/onboarding/sections/CampaignSectio
 import { CreativeSection } from '@/components/onboarding/sections/CreativeSection';
 import { AccessSection } from '@/components/onboarding/sections/AccessSection';
 import { OtherSection } from '@/components/onboarding/sections/OtherSection';
-import { toast } from 'sonner';
 
 function CreateAccountStep({ tokenData, onAccountCreated }: {
   tokenData: any;
@@ -32,7 +31,7 @@ function CreateAccountStep({ tokenData, onAccountCreated }: {
     setErrors({});
 
     // Try sign up
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {

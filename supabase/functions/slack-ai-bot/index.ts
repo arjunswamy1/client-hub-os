@@ -542,6 +542,18 @@ async function getClientData(
     return true;
   });
 
+  // Pre-filter Ringba calls by vertical
+  const filteredCalls = (ringbaRes.data || []).filter((call: any) => {
+    if (!verticalId || Object.keys(verticalPatterns).length === 0) return true;
+    const config = verticalPatterns.ringba;
+    if (!config || config.patterns.length === 0) return true;
+    const name = (call.campaign_name || '').toLowerCase();
+    if (config.exactMatch) {
+      return config.patterns.some((pattern: string) => name === pattern.toLowerCase());
+    }
+    return config.patterns.some((pattern: string) => name.includes(pattern.toLowerCase()));
+  });
+
   let summary: MetricSummary | null = null;
   let latestAvailable: LatestAvailableData | null = null;
   let recentMetrics = '';

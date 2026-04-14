@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
   }
 
   // Verify signature (skip during url_verification)
-  if (!verifySlackSignature(bodyText, timestamp, slackSignature)) {
+  if (!(await verifySlackSignature(bodyText, timestamp, slackSignature))) {
     console.error('Invalid Slack signature');
     return new Response('Unauthorized', { status: 401 });
   }

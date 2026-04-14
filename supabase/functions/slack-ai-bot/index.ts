@@ -886,8 +886,7 @@ function buildDeterministicMetricReply(
     }
   }
 
-  return lines.join('
-');
+  return lines.join('\n');
 }
 
 // ─── AI call ───────────────────────────────────────────────────────────────

@@ -1,26 +1,33 @@
 import { useState, useRef, useEffect } from 'react';
 import { useClient } from '@/contexts/ClientContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bot, Send, User, Sparkles, Lightbulb } from 'lucide-react';
+import { Bot, Send, User, Sparkles, Lightbulb, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface Source {
+  title: string;
+  source: string;
+}
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  sources?: { title: string; source: string }[];
+  sources?: Source[];
 }
 
 const SUGGESTED_QUESTIONS = [
   "Summarize all communication this week",
   "What are the open action items from our last call?",
-  "What creative concepts have we tested?",
+  "How are our campaigns performing this week?",
   "Draft a weekly call agenda based on recent activity",
   "What was the Meta CPL trend over the last 4 weeks?",
+  "Which verticals are performing best right now?",
 ];
 
 export default function AIAssistantPage() {
@@ -40,7 +47,7 @@ export default function AIAssistantPage() {
   }
 
   const sendMessage = async (content: string) => {
-    if (!content.trim()) return;
+    if (!content.trim() || isLoading) return;
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -53,32 +60,56 @@ export default function AIAssistantPage() {
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response (will be replaced with real API in Phase 5)
-    setTimeout(() => {
+    try {
+      // Build conversation history for context
+      const conversationHistory = messages.slice(-6).map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const { data, error } = await supabase.functions.invoke('ai-assistant', {
+        body: {
+          client_id: activeClient.id,
+          question: content.trim(),
+          conversation_history: conversationHistory,
+        },
+      });
+
+      if (error) throw error;
+
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `I'm the AI Assistant for **${activeClient.name}**. Once the Context Engine is connected (Phase 2), I'll be able to answer questions using data from your Slack, Teams, Gmail, Fathom recordings, and ad platform metrics.\n\nFor now, this is a preview of the chat interface. Your question was: "${content.trim()}"`,
+        content: data.answer || 'Sorry, I could not generate a response.',
         timestamp: new Date(),
-        sources: [
-          { title: 'Context Engine integration pending', source: 'System' },
-        ],
+        sources: data.sources || [],
       };
       setMessages(prev => [...prev, assistantMsg]);
+    } catch (err: any) {
+      console.error('AI Assistant error:', err);
+      const errorMsg: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Sorry, I encountered an error processing your question. Please try again.\n\n_Error: ${err.message || 'Unknown error'}_`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMsg]);
+      toast.error('Failed to get AI response');
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const initials = teamMember?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || '?';
 
   return (
     <div className="flex h-full gap-4">
-      {/* Chat area */}
       <div className="flex flex-1 flex-col">
         <div className="flex items-center gap-2 pb-3 border-b mb-4">
           <Bot className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold">AI Assistant</h1>
           <span className="text-xs text-muted-foreground">— {activeClient.name}</span>
+          <span className="ml-auto text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">Live — Context Engine Connected</span>
         </div>
 
         {/* Messages */}
@@ -88,7 +119,7 @@ export default function AIAssistantPage() {
               <Sparkles className="h-10 w-10 text-primary/20 mb-3" />
               <h3 className="text-base font-medium mb-1">Ask me anything about {activeClient.name}</h3>
               <p className="text-sm text-muted-foreground mb-6 max-w-md">
-                I can summarize communications, review metrics, draft agendas, and find information across all your client data.
+                I have access to your ad platform data, Fathom recordings, Slack communications, Ringba calls, tasks, and meeting agendas — all in real time.
               </p>
               <div className="flex flex-wrap justify-center gap-2 max-w-lg">
                 {SUGGESTED_QUESTIONS.map((q) => (
@@ -124,7 +155,7 @@ export default function AIAssistantPage() {
                 <p className="whitespace-pre-wrap">{msg.content}</p>
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-border/30">
-                    <p className="text-[10px] font-medium opacity-70 mb-1">Sources:</p>
+                    <p className="text-[10px] font-medium opacity-70 mb-1">Sources referenced:</p>
                     {msg.sources.map((s, i) => (
                       <p key={i} className="text-[10px] opacity-60">• {s.title} ({s.source})</p>
                     ))}
@@ -147,10 +178,13 @@ export default function AIAssistantPage() {
                 </AvatarFallback>
               </Avatar>
               <div className="bg-accent rounded-lg px-4 py-3">
-                <div className="flex gap-1">
-                  <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">Analyzing context & dashboard data…</span>
                 </div>
               </div>
             </div>
@@ -182,7 +216,7 @@ export default function AIAssistantPage() {
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground mt-1">
-            AI responses are generated previews. Full RAG integration coming in Phase 5.
+            Powered by Context Engine — querying Fathom, Slack, ad platforms, Ringba, and task data in real time.
           </p>
         </div>
       </div>

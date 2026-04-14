@@ -9,6 +9,9 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
+const DIRECT_CHANNEL_TYPES = new Set(['im', 'app_home']);
+const PENDING_REPLY_TEXT = 'Got it — thinking…';
+
 async function verifySlackSignature(body: string, timestamp: string, signature: string): Promise<boolean> {
   try {
     const sigBasestring = `v0:${timestamp}:${body}`;
@@ -33,6 +36,20 @@ function getCleanMessageText(text: string) {
   return text.replace(/<@[A-Z0-9]+>/g, '').trim();
 }
 
+function isDirectConversationEvent(event: any) {
+  return event.type === 'message' && DIRECT_CHANNEL_TYPES.has(event.channel_type || '');
+}
+
+function mapSlackMessagesToConversation(messages: any[], botUserId: string | null) {
+  return messages
+    .filter((m: any) => !m.subtype)
+    .map((m: any) => ({
+      role: m.user === botUserId ? 'assistant' : 'user',
+      content: getCleanMessageText(m.text || ''),
+    }))
+    .filter((m: any) => m.content.length > 0 && m.content !== PENDING_REPLY_TEXT);
+}
+
 async function getBotUserId(): Promise<string | null> {
   const authRes = await fetch('https://slack.com/api/auth.test', {
     method: 'POST',
@@ -45,8 +62,16 @@ async function getBotUserId(): Promise<string | null> {
   return authData.ok ? authData.user_id : null;
 }
 
-async function getThreadHistory(channel: string, threadTs: string): Promise<Array<{ role: string; content: string }>> {
-  const res = await fetch(`https://slack.com/api/conversations.replies?channel=${channel}&ts=${threadTs}&limit=20`, {
+async function getConversationHistory(
+  channel: string,
+  threadTs: string,
+  isDirectConversation: boolean,
+): Promise<Array<{ role: string; content: string }>> {
+  const endpoint = isDirectConversation
+    ? `https://slack.com/api/conversations.history?channel=${channel}&limit=12`
+    : `https://slack.com/api/conversations.replies?channel=${channel}&ts=${threadTs}&limit=20`;
+
+  const res = await fetch(endpoint, {
     headers: { 'Authorization': `Bearer ${SLACK_BOT_TOKEN}` },
   });
   const data = await res.json();
@@ -54,13 +79,8 @@ async function getThreadHistory(channel: string, threadTs: string): Promise<Arra
 
   const botUserId = await getBotUserId();
 
-  return data.messages
-    .filter((m: any) => !m.subtype)
-    .map((m: any) => ({
-      role: m.user === botUserId ? 'assistant' : 'user',
-      content: getCleanMessageText(m.text || ''),
-    }))
-    .filter((m: any) => m.content.length > 0);
+  const orderedMessages = isDirectConversation ? [...data.messages].reverse() : data.messages;
+  return mapSlackMessagesToConversation(orderedMessages, botUserId);
 }
 
 async function getChannelContext(channelId: string): Promise<string> {
@@ -92,7 +112,7 @@ async function getChannelContext(channelId: string): Promise<string> {
     .from('clients')
     .select('id, name')
     .eq('slug', clientSlug)
-    .single();
+    .maybeSingle();
 
   if (!client) return contextInfo;
 
@@ -216,17 +236,19 @@ async function addReaction(channel: string, timestamp: string, emoji: string) {
 }
 
 async function processSlackMessage(event: any) {
-  const threadTs = event.thread_ts || event.ts;
+  const isDirectConversation = isDirectConversationEvent(event);
+  const historyAnchorTs = event.thread_ts || event.ts;
+  const replyThreadTs = isDirectConversation ? undefined : historyAnchorTs;
   const cleanText = getCleanMessageText(event.text || '');
 
   try {
-    console.log('Processing Slack event:', event.type, event.channel, threadTs);
+    console.log('Processing Slack event:', event.type, event.channel, historyAnchorTs, 'channel_type:', event.channel_type, 'direct:', isDirectConversation);
     await addReaction(event.channel, event.ts, 'brain');
-    await postSlackMessage(event.channel, 'Got it — thinking…', threadTs);
+    await postSlackMessage(event.channel, PENDING_REPLY_TEXT, replyThreadTs);
 
     const userName = await resolveUserName(event.user);
     const channelContext = await getChannelContext(event.channel);
-    let conversationHistory = await getThreadHistory(event.channel, threadTs);
+    let conversationHistory = await getConversationHistory(event.channel, historyAnchorTs, isDirectConversation);
 
     if (conversationHistory.length === 0 && cleanText) {
       conversationHistory = [{ role: 'user', content: cleanText }];
@@ -247,7 +269,8 @@ Guidelines:
 - Use emoji sparingly but naturally 🎯
 - If you don't have enough context, say so honestly
 - Format responses for Slack (use *bold*, _italic_, \`code\`, and bullet points)
-- Keep responses under 2000 characters when possible`;
+- Keep responses under 2000 characters when possible
+- In direct messages or App Home chat, reply as a normal conversation and do not reference thread behavior`;
 
     const aiMessages = [
       { role: 'system', content: systemPrompt },
@@ -255,12 +278,12 @@ Guidelines:
     ];
 
     const response = await callAI(aiMessages);
-    await postSlackMessage(event.channel, response, threadTs);
+    await postSlackMessage(event.channel, response, replyThreadTs);
     console.log('Reply sent successfully');
   } catch (error) {
     console.error('Error processing Slack event:', error);
     try {
-      await postSlackMessage(event.channel, 'Sorry, I hit an error while processing that. Please try again! 🔧', threadTs);
+      await postSlackMessage(event.channel, 'Sorry, I hit an error while processing that. Please try again! 🔧', replyThreadTs);
     } catch (replyError) {
       console.error('Failed to send Slack error message:', replyError);
     }
@@ -301,7 +324,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (event.type === 'app_mention' || (event.type === 'message' && event.channel_type === 'im')) {
+    if (event.type === 'app_mention' || isDirectConversationEvent(event)) {
       EdgeRuntime.waitUntil(processSlackMessage(event));
       return new Response(JSON.stringify({ ok: true, status: 'received' }), {
         status: 200,

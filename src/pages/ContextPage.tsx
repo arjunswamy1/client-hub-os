@@ -82,11 +82,40 @@ export default function ContextPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      toast.success(`Synced ${data.synced} messages from Slack`);
+      const parts = [`Synced ${data.synced} messages`];
+      if (data.tasks_created > 0) parts.push(`${data.tasks_created} tasks auto-created`);
+      toast.success(parts.join(' · '));
       queryClient.invalidateQueries({ queryKey: ['context_items'] });
     },
     onError: (err: any) => {
       toast.error(`Slack sync failed: ${err.message}`);
+    },
+  });
+
+  // Auto-map channels mutation
+  const autoMap = useMutation({
+    mutationFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-slack`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ action: 'auto_map' }),
+        }
+      );
+      if (!res.ok) throw new Error('Auto-map failed');
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast.success(`Auto-mapped ${data.mapped} of ${data.total_channels} channels`);
+      queryClient.invalidateQueries({ queryKey: ['slack_channel_mappings'] });
+    },
+    onError: (err: any) => {
+      toast.error(`Auto-map failed: ${err.message}`);
     },
   });
 

@@ -17,6 +17,13 @@ const supabase = createClient(
 const DIRECT_CHANNEL_TYPES = new Set(['im', 'app_home']);
 const PENDING_REPLY_TEXT = 'Got it — thinking…';
 
+// Models to try in order — if one returns empty, try the next
+const AI_MODELS = [
+  'openai/gpt-5-mini',
+  'google/gemini-2.5-flash',
+  'openai/gpt-5-nano',
+];
+
 // ─── Token rotation helpers ────────────────────────────────────────────────
 
 async function getValidBotToken(): Promise<string> {
@@ -192,6 +199,38 @@ async function detectClientFromChannel(token: string, channelId: string): Promis
   return detectClientFromText(channelName);
 }
 
+// ─── Vertical detection ───────────────────────────────────────────────────
+
+interface VerticalFilter {
+  name: string;
+  patterns: string[];
+  accountIds: string[];
+  exactMatch?: boolean;
+}
+
+const VERTICAL_KEYWORDS: Record<string, { keywords: string[]; label: string }> = {
+  'pest-control': { keywords: ['pest', 'pest control', 'bed bug', 'bedbug'], label: 'Pest Control' },
+  flights: { keywords: ['flight', 'flights', 'airline'], label: 'Flights' },
+  'porta-potties': { keywords: ['porta', 'potty', 'porta potty', 'portapotty'], label: 'Porta Potties' },
+};
+
+function detectVerticalFromText(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const [id, { keywords }] of Object.entries(VERTICAL_KEYWORDS)) {
+    if (keywords.some(k => lower.includes(k))) return id;
+  }
+  return null;
+}
+
+function detectPlatformFromText(text: string): string | null {
+  const lower = text.toLowerCase();
+  if (lower.includes('google') || lower.includes('search ads') || lower.includes('ppc')) return 'google';
+  if (lower.includes('meta') || lower.includes('facebook') || lower.includes('instagram') || lower.includes('fb')) return 'meta';
+  return null;
+}
+
+// ─── Data retrieval (vertical + platform aware) ───────────────────────────
+
 interface ClientData {
   recentMetrics: string;
   campaignBreakdown: string;
@@ -200,24 +239,97 @@ interface ClientData {
   ringbaData: string;
 }
 
-async function getClientData(clientId: string, dateRange: { from: string; to: string }): Promise<ClientData> {
+async function getClientData(
+  clientId: string,
+  dateRange: { from: string; to: string },
+  verticalId: string | null,
+  platformFilter: string | null,
+): Promise<ClientData> {
+  // Load vertical config for filtering
+  let verticalPatterns: Record<string, VerticalFilter> = {};
+  if (verticalId) {
+    // Check hardcoded verticals first
+    const hardcoded: Record<string, { meta: string[]; google: string[]; ringba: string[]; googleAccounts?: string[]; metaAccounts?: string[]; ringbaExact?: boolean }> = {
+      'pest-control': {
+        meta: ['Pest', 'PestControl', 'Bed Bug', 'BedBug'],
+        google: ['Pest', 'Bed Bug', 'BedBug'],
+        ringba: ['Pest Control US Call Flow'],
+        googleAccounts: ['1939246766'],
+        metaAccounts: ['448669084867269', '1779578786137314'],
+        ringbaExact: true,
+      },
+      flights: {
+        meta: ['Flight'], google: ['Flight'], ringba: ['Flight'],
+      },
+      'porta-potties': {
+        meta: ['Porta', 'Potty'], google: ['Porta', 'Potty'], ringba: ['Porta', 'Potty', 'Portapotty'],
+        googleAccounts: ['1939246766'],
+      },
+    };
+
+    if (hardcoded[verticalId]) {
+      const v = hardcoded[verticalId];
+      verticalPatterns = {
+        meta: { name: verticalId, patterns: v.meta, accountIds: v.metaAccounts || [] },
+        google: { name: verticalId, patterns: v.google, accountIds: v.googleAccounts || [] },
+        ringba: { name: verticalId, patterns: v.ringba, accountIds: [], exactMatch: v.ringbaExact },
+      };
+    }
+
+    // Also check DB for custom verticals
+    const { data: dbVerticals } = await supabase
+      .from('client_verticals')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('vertical_id', verticalId)
+      .maybeSingle();
+
+    if (dbVerticals) {
+      verticalPatterns = {
+        meta: { name: verticalId, patterns: dbVerticals.meta_patterns, accountIds: dbVerticals.meta_account_ids },
+        google: { name: verticalId, patterns: dbVerticals.google_patterns, accountIds: dbVerticals.google_account_ids },
+        ringba: { name: verticalId, patterns: dbVerticals.ringba_patterns, accountIds: [], exactMatch: dbVerticals.ringba_exact_match },
+      };
+    }
+  }
+
+  // Helper to check if campaign matches vertical
+  function campaignMatchesVertical(campaignName: string, platform: string): boolean {
+    if (!verticalId || Object.keys(verticalPatterns).length === 0) return true;
+    const config = verticalPatterns[platform];
+    if (!config || config.patterns.length === 0) return true;
+    const lower = campaignName.toLowerCase();
+    if (config.exactMatch) {
+      return config.patterns.some(p => lower === p.toLowerCase());
+    }
+    return config.patterns.some(p => lower.includes(p.toLowerCase()));
+  }
+
+  function accountMatchesVertical(accountId: string | null, platform: string): boolean {
+    if (!verticalId || Object.keys(verticalPatterns).length === 0) return true;
+    const config = verticalPatterns[platform];
+    if (!config || config.accountIds.length === 0) return true;
+    if (!accountId) return false;
+    return config.accountIds.includes(accountId);
+  }
+
+  // Build campaign query
+  let campaignQuery = supabase
+    .from('ad_campaigns')
+    .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status, date, account_id')
+    .eq('client_id', clientId)
+    .gte('date', dateRange.from)
+    .lte('date', dateRange.to)
+    .order('spend', { ascending: false })
+    .limit(200);
+
+  if (platformFilter) {
+    campaignQuery = campaignQuery.eq('platform', platformFilter);
+  }
+
   // Parallel fetch all data
-  const [metricsRes, campaignsRes, tasksRes, contextRes, ringbaRes] = await Promise.all([
-    supabase
-      .from('ad_daily_metrics')
-      .select('date, platform, spend, revenue, conversions, clicks, impressions')
-      .eq('client_id', clientId)
-      .gte('date', dateRange.from)
-      .lte('date', dateRange.to)
-      .order('date', { ascending: false }),
-    supabase
-      .from('ad_campaigns')
-      .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status, date')
-      .eq('client_id', clientId)
-      .gte('date', dateRange.from)
-      .lte('date', dateRange.to)
-      .order('spend', { ascending: false })
-      .limit(20),
+  const [campaignsRes, tasksRes, contextRes, ringbaRes] = await Promise.all([
+    campaignQuery,
     supabase
       .from('tasks')
       .select('title, status, priority, due_date')
@@ -238,56 +350,89 @@ async function getClientData(clientId: string, dateRange: { from: string; to: st
       .gte('call_date', dateRange.from)
       .lte('call_date', dateRange.to)
       .order('call_date', { ascending: false })
-      .limit(100),
+      .limit(500),
   ]);
 
-  // Aggregate daily metrics by platform
+  // Filter campaigns by vertical + account
+  const allCampaigns = (campaignsRes.data || []).filter(c => {
+    if (!campaignMatchesVertical(c.campaign_name, c.platform)) return false;
+    if (!accountMatchesVertical(c.account_id, c.platform)) return false;
+    return true;
+  });
+
+  // Aggregate metrics from filtered campaigns
   let recentMetrics = '';
-  if (metricsRes.data?.length) {
+  if (allCampaigns.length > 0) {
+    const verticalLabel = verticalId ? VERTICAL_KEYWORDS[verticalId]?.label || verticalId : 'All Verticals';
+    const platformLabel = platformFilter ? ` (${platformFilter})` : '';
+
     const byPlatform: Record<string, { spend: number; revenue: number; conversions: number; clicks: number; impressions: number }> = {};
     let totalSpend = 0, totalRevenue = 0, totalConversions = 0;
 
-    for (const m of metricsRes.data) {
-      const p = m.platform || 'unknown';
+    for (const c of allCampaigns) {
+      const p = c.platform || 'unknown';
       if (!byPlatform[p]) byPlatform[p] = { spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0 };
-      byPlatform[p].spend += m.spend || 0;
-      byPlatform[p].revenue += m.revenue || 0;
-      byPlatform[p].conversions += m.conversions || 0;
-      byPlatform[p].clicks += m.clicks || 0;
-      byPlatform[p].impressions += m.impressions || 0;
-      totalSpend += m.spend || 0;
-      totalRevenue += m.revenue || 0;
-      totalConversions += m.conversions || 0;
+      byPlatform[p].spend += Number(c.spend) || 0;
+      byPlatform[p].revenue += Number(c.revenue) || 0;
+      byPlatform[p].conversions += Number(c.conversions) || 0;
+      byPlatform[p].clicks += Number(c.clicks) || 0;
+      byPlatform[p].impressions += Number(c.impressions) || 0;
+      totalSpend += Number(c.spend) || 0;
+      totalRevenue += Number(c.revenue) || 0;
+      totalConversions += Number(c.conversions) || 0;
     }
 
-    recentMetrics = `📊 Performance (${dateRange.from} to ${dateRange.to}):\n`;
-    recentMetrics += `Total: Spend $${totalSpend.toFixed(2)} | Revenue $${totalRevenue.toFixed(2)} | Conversions ${totalConversions}\n`;
+    const totalRoas = totalSpend > 0 ? (totalRevenue / totalSpend).toFixed(2) : 'N/A';
+    const totalCpa = totalConversions > 0 ? (totalSpend / totalConversions).toFixed(2) : 'N/A';
+
+    recentMetrics = `📊 ${verticalLabel}${platformLabel} Performance (${dateRange.from} to ${dateRange.to}):\n`;
+    recentMetrics += `*Total:* Spend $${totalSpend.toFixed(2)} | Revenue $${totalRevenue.toFixed(2)} | ROAS ${totalRoas}x | Conversions ${totalConversions} | CPA $${totalCpa}\n`;
+
     for (const [platform, data] of Object.entries(byPlatform)) {
       const ctr = data.impressions > 0 ? ((data.clicks / data.impressions) * 100).toFixed(2) : '0';
       const cpa = data.conversions > 0 ? (data.spend / data.conversions).toFixed(2) : 'N/A';
-      recentMetrics += `  ${platform}: Spend $${data.spend.toFixed(2)} | Rev $${data.revenue.toFixed(2)} | Conv ${data.conversions} | CPA $${cpa} | CTR ${ctr}%\n`;
+      const roas = data.spend > 0 ? (data.revenue / data.spend).toFixed(2) : 'N/A';
+      recentMetrics += `  ${platform}: Spend $${data.spend.toFixed(2)} | Rev $${data.revenue.toFixed(2)} | ROAS ${roas}x | Conv ${data.conversions} | CPA $${cpa} | CTR ${ctr}%\n`;
     }
 
     // Daily breakdown
-    const byDate: Record<string, { spend: number; conversions: number }> = {};
-    for (const m of metricsRes.data) {
-      if (!byDate[m.date]) byDate[m.date] = { spend: 0, conversions: 0 };
-      byDate[m.date].spend += m.spend || 0;
-      byDate[m.date].conversions += m.conversions || 0;
+    const byDate: Record<string, { spend: number; conversions: number; revenue: number }> = {};
+    for (const c of allCampaigns) {
+      if (!byDate[c.date]) byDate[c.date] = { spend: 0, conversions: 0, revenue: 0 };
+      byDate[c.date].spend += Number(c.spend) || 0;
+      byDate[c.date].conversions += Number(c.conversions) || 0;
+      byDate[c.date].revenue += Number(c.revenue) || 0;
     }
-    recentMetrics += '\nDaily breakdown:\n';
-    for (const [date, data] of Object.entries(byDate).slice(0, 7)) {
-      recentMetrics += `  ${date}: $${data.spend.toFixed(2)} spend, ${data.conversions} conversions\n`;
+    const sortedDates = Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 7);
+    if (sortedDates.length > 0) {
+      recentMetrics += '\nDaily breakdown:\n';
+      for (const [date, data] of sortedDates) {
+        const dayRoas = data.spend > 0 ? (data.revenue / data.spend).toFixed(2) : 'N/A';
+        recentMetrics += `  ${date}: $${data.spend.toFixed(2)} spend, $${data.revenue.toFixed(2)} rev, ${data.conversions} conv, ROAS ${dayRoas}x\n`;
+      }
     }
   }
 
-  // Campaign breakdown
+  // Campaign breakdown (top campaigns)
   let campaignBreakdown = '';
-  if (campaignsRes.data?.length) {
+  if (allCampaigns.length > 0) {
+    // Aggregate by campaign name
+    const byCampaign: Record<string, { platform: string; spend: number; revenue: number; conversions: number; clicks: number; status: string }> = {};
+    for (const c of allCampaigns) {
+      const key = `${c.campaign_name}|${c.platform}`;
+      if (!byCampaign[key]) byCampaign[key] = { platform: c.platform, spend: 0, revenue: 0, conversions: 0, clicks: 0, status: c.status || 'unknown' };
+      byCampaign[key].spend += Number(c.spend) || 0;
+      byCampaign[key].revenue += Number(c.revenue) || 0;
+      byCampaign[key].conversions += Number(c.conversions) || 0;
+      byCampaign[key].clicks += Number(c.clicks) || 0;
+    }
+    const sortedCampaigns = Object.entries(byCampaign).sort((a, b) => b[1].spend - a[1].spend).slice(0, 10);
     campaignBreakdown = `\n🎯 Top Campaigns:\n`;
-    for (const c of campaignsRes.data.slice(0, 10)) {
-      const cpa = c.conversions && c.conversions > 0 ? (c.spend / c.conversions).toFixed(2) : 'N/A';
-      campaignBreakdown += `  • ${c.campaign_name} (${c.platform}): $${(c.spend || 0).toFixed(2)} spend, ${c.conversions || 0} conv, CPA $${cpa}\n`;
+    for (const [key, data] of sortedCampaigns) {
+      const name = key.split('|')[0];
+      const cpa = data.conversions > 0 ? (data.spend / data.conversions).toFixed(2) : 'N/A';
+      const roas = data.spend > 0 ? (data.revenue / data.spend).toFixed(2) : 'N/A';
+      campaignBreakdown += `  • ${name} (${data.platform}): $${data.spend.toFixed(2)} spend, ${data.conversions} conv, CPA $${cpa}, ROAS ${roas}x [${data.status}]\n`;
     }
   }
 
@@ -309,15 +454,26 @@ async function getClientData(clientId: string, dateRange: { from: string; to: st
     }
   }
 
-  // Ringba calls
+  // Ringba calls (filtered by vertical)
   let ringbaData = '';
-  if (ringbaRes.data?.length) {
-    const totalCalls = ringbaRes.data.length;
-    const connectedCalls = ringbaRes.data.filter(c => c.connected).length;
-    const convertedCalls = ringbaRes.data.filter(c => c.converted).length;
-    const totalRevenue = ringbaRes.data.reduce((s, c) => s + (c.revenue || 0), 0);
-    const totalPayout = ringbaRes.data.reduce((s, c) => s + (c.payout || 0), 0);
-    const avgDuration = ringbaRes.data.reduce((s, c) => s + (c.duration_seconds || 0), 0) / totalCalls;
+  const filteredCalls = (ringbaRes.data || []).filter(c => {
+    if (!verticalId || Object.keys(verticalPatterns).length === 0) return true;
+    const config = verticalPatterns['ringba'];
+    if (!config || config.patterns.length === 0) return true;
+    const name = (c.campaign_name || '').toLowerCase();
+    if (config.exactMatch) {
+      return config.patterns.some(p => name === p.toLowerCase());
+    }
+    return config.patterns.some(p => name.includes(p.toLowerCase()));
+  });
+
+  if (filteredCalls.length > 0) {
+    const totalCalls = filteredCalls.length;
+    const connectedCalls = filteredCalls.filter(c => c.connected).length;
+    const convertedCalls = filteredCalls.filter(c => c.converted).length;
+    const totalRevenue = filteredCalls.reduce((s, c) => s + (Number(c.revenue) || 0), 0);
+    const totalPayout = filteredCalls.reduce((s, c) => s + (Number(c.payout) || 0), 0);
+    const avgDuration = filteredCalls.reduce((s, c) => s + (c.duration_seconds || 0), 0) / totalCalls;
 
     ringbaData = `\n📞 Ringba Calls (${dateRange.from} to ${dateRange.to}):\n`;
     ringbaData += `  Total: ${totalCalls} calls | Connected: ${connectedCalls} | Converted: ${convertedCalls}\n`;
@@ -325,11 +481,11 @@ async function getClientData(clientId: string, dateRange: { from: string; to: st
 
     // By target
     const byTarget: Record<string, { calls: number; revenue: number; converted: number }> = {};
-    for (const c of ringbaRes.data) {
+    for (const c of filteredCalls) {
       const t = c.target_name || 'Unknown';
       if (!byTarget[t]) byTarget[t] = { calls: 0, revenue: 0, converted: 0 };
       byTarget[t].calls++;
-      byTarget[t].revenue += c.revenue || 0;
+      byTarget[t].revenue += Number(c.revenue) || 0;
       if (c.converted) byTarget[t].converted++;
     }
     const topTargets = Object.entries(byTarget).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 5);
@@ -381,46 +537,54 @@ async function resolveUserName(token: string, userId: string): Promise<string> {
   return data.user?.profile?.display_name || data.user?.real_name || 'Someone';
 }
 
-// ─── AI call ───────────────────────────────────────────────────────────────
+// ─── AI call with multi-model retry ────────────────────────────────────────
 
 async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
-  // Log prompt size for debugging
   const totalChars = messages.reduce((s, m) => s + (m.content?.length || 0), 0);
   console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total`);
 
-  const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model: 'google/gemini-3-flash-preview', messages }),
-  });
+  for (const model of AI_MODELS) {
+    try {
+      console.log(`Trying model: ${model}`);
+      const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: 1500,
+          temperature: 0.7,
+        }),
+      });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error('AI error:', res.status, errText);
-    if (res.status === 429) return "I'm being rate limited right now. Try again in a moment! 🕐";
-    if (res.status === 402) return 'AI credits have been exhausted. Please top up workspace usage.';
-    return `Sorry, I hit an error (${res.status}). Please try again.`;
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`Model ${model} HTTP error:`, res.status, errText);
+        if (res.status === 429) return "I'm being rate limited right now. Try again in a moment! 🕐";
+        if (res.status === 402) return 'AI credits have been exhausted. Please top up workspace usage.';
+        continue; // Try next model
+      }
+
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      const finishReason = data.choices?.[0]?.finish_reason;
+
+      console.log(`Model ${model}: finish_reason=${finishReason}, content_length=${content?.length || 0}`);
+
+      if (content && content.trim().length > 0) {
+        return content;
+      }
+
+      console.warn(`Model ${model} returned empty content, trying next...`);
+    } catch (err) {
+      console.error(`Model ${model} exception:`, err);
+    }
   }
 
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  const finishReason = data.choices?.[0]?.finish_reason;
-  
-  console.log('AI response: finish_reason=', finishReason, 'content_length=', content?.length || 0, 'has_tool_calls=', !!data.choices?.[0]?.message?.tool_calls);
-  
-  if (!content && data.choices?.[0]?.message?.tool_calls) {
-    console.log('AI returned tool_calls instead of content:', JSON.stringify(data.choices[0].message.tool_calls).substring(0, 500));
-  }
-  
-  if (!content) {
-    console.error('Empty AI response. Full response:', JSON.stringify(data).substring(0, 1000));
-    return "Let me try that again — I had trouble generating a response. Could you rephrase your question?";
-  }
-  
-  return content;
+  return "I couldn't generate a response right now. Please try again in a moment! 🔧";
 }
 
 // ─── Slack messaging ───────────────────────────────────────────────────────
@@ -457,7 +621,6 @@ async function addReaction(token: string, channel: string, timestamp: string, em
 async function processSlackMessage(event: any) {
   const isDirectConversation = isDirectConversationEvent(event);
   const historyAnchorTs = event.thread_ts || event.ts;
-  // ALWAYS reply in thread — for DMs use the message's own ts as thread anchor
   const replyThreadTs = historyAnchorTs;
   const cleanText = getCleanMessageText(event.text || '');
 
@@ -466,17 +629,18 @@ async function processSlackMessage(event: any) {
 
     console.log('Processing:', event.type, event.channel, 'thread:', historyAnchorTs, 'direct:', isDirectConversation);
     
-    // Non-blocking reaction (don't fail if missing scope)
     addReaction(token, event.channel, event.ts, 'brain');
     await postSlackMessage(token, event.channel, PENDING_REPLY_TEXT, replyThreadTs);
 
-    // Detect client from message text first, then from channel name
+    // Detect client, vertical, and platform from message text
     let client = await detectClientFromText(cleanText);
+    const verticalId = detectVerticalFromText(cleanText);
+    const platformFilter = detectPlatformFromText(cleanText);
+
     if (!client && !isDirectConversation) {
       client = await detectClientFromChannel(token, event.channel);
     }
 
-    // If still no client from channel, check full conversation history for mentions
     let conversationHistory = await getConversationHistory(token, event.channel, historyAnchorTs, isDirectConversation);
     if (!client && conversationHistory.length > 0) {
       const allText = conversationHistory.map(m => m.content).join(' ');
@@ -490,12 +654,15 @@ async function processSlackMessage(event: any) {
     const userName = await resolveUserName(token, event.user);
     const dateRange = parseDateIntent(cleanText);
 
-    // Build rich context with actual data
+    // Build rich context with actual data (now vertical + platform aware)
     let dataContext = '';
     if (client) {
-      console.log('Detected client:', client.name, 'date range:', dateRange.from, '-', dateRange.to);
-      const clientData = await getClientData(client.id, dateRange);
-      dataContext = `\n--- CLIENT DATA FOR ${client.name.toUpperCase()} ---\n`;
+      const verticalLabel = verticalId ? (VERTICAL_KEYWORDS[verticalId]?.label || verticalId) : 'All Verticals';
+      const platformLabel = platformFilter || 'all platforms';
+      console.log(`Detected: client=${client.name}, vertical=${verticalLabel}, platform=${platformLabel}, dates=${dateRange.from}-${dateRange.to}`);
+
+      const clientData = await getClientData(client.id, dateRange, verticalId, platformFilter);
+      dataContext = `\n--- CLIENT DATA FOR ${client.name.toUpperCase()} (${verticalLabel}, ${platformLabel}) ---\n`;
       dataContext += clientData.recentMetrics || 'No ad metrics found for this period.\n';
       dataContext += clientData.campaignBreakdown || '';
       dataContext += clientData.ringbaData || '';
@@ -543,7 +710,8 @@ Guidelines:
 - Use emoji sparingly but naturally 🎯
 - Format responses for Slack (use *bold*, _italic_, \`code\`, and bullet points)
 - Keep responses under 2000 characters when possible
-- When the user mentions "billy" or "billy.com", that refers to the Billy.com client`;
+- When the user mentions "billy" or "billy.com", that refers to the Billy.com client
+- The data above is REAL and CURRENT — present it confidently`;
 
     const aiMessages = [
       { role: 'system', content: systemPrompt },

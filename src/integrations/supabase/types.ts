@@ -2185,6 +2185,47 @@ export type Database = {
           },
         ]
       }
+      slack_channel_mappings: {
+        Row: {
+          channel_id: string
+          channel_name: string
+          client_id: string
+          created_at: string
+          id: string
+          last_synced_ts: string | null
+          sync_enabled: boolean
+          updated_at: string
+        }
+        Insert: {
+          channel_id: string
+          channel_name: string
+          client_id: string
+          created_at?: string
+          id?: string
+          last_synced_ts?: string | null
+          sync_enabled?: boolean
+          updated_at?: string
+        }
+        Update: {
+          channel_id?: string
+          channel_name?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          last_synced_ts?: string | null
+          sync_enabled?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_channel_mappings_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_comments: {
         Row: {
           author_id: string

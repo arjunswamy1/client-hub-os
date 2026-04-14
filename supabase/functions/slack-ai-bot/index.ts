@@ -216,6 +216,17 @@ interface MetricSummary {
   }>;
 }
 
+interface LatestAvailableData {
+  date: string;
+  summary: MetricSummary;
+}
+
+interface UserContext {
+  name: string;
+  tzOffsetSeconds: number;
+  timeZone: string | null;
+}
+
 interface ClientData {
   recentMetrics: string;
   campaignBreakdown: string;
@@ -223,6 +234,7 @@ interface ClientData {
   recentContext: string;
   ringbaData: string;
   summary: MetricSummary | null;
+  latestAvailable: LatestAvailableData | null;
 }
 
 async function detectClientFromText(text: string): Promise<{ id: string; name: string; slug: string } | null> {
@@ -332,6 +344,91 @@ function getVerticalConfig(verticalId: string | null): Record<string, VerticalFi
   return hardcoded[verticalId] || {};
 }
 
+function summarizeCampaignRows(campaignRows: Array<{
+  campaign_name: string;
+  platform: string;
+  spend: number | string | null;
+  revenue: number | string | null;
+  conversions: number | string | null;
+  clicks: number | string | null;
+  impressions: number | string | null;
+  status?: string | null;
+}>): MetricSummary | null {
+  if (campaignRows.length === 0) return null;
+
+  const byPlatform: Record<string, PlatformSummary> = {};
+  const byCampaign: Record<string, { platform: string; spend: number; revenue: number; conversions: number; status: string }> = {};
+  let totalSpend = 0;
+  let totalRevenue = 0;
+  let totalConversions = 0;
+  let totalClicks = 0;
+  let totalImpressions = 0;
+
+  for (const campaign of campaignRows) {
+    const platform = campaign.platform || 'unknown';
+    const spend = Number(campaign.spend) || 0;
+    const revenue = Number(campaign.revenue) || 0;
+    const conversions = Number(campaign.conversions) || 0;
+    const clicks = Number(campaign.clicks) || 0;
+    const impressions = Number(campaign.impressions) || 0;
+
+    if (!byPlatform[platform]) {
+      byPlatform[platform] = { spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0 };
+    }
+    byPlatform[platform].spend += spend;
+    byPlatform[platform].revenue += revenue;
+    byPlatform[platform].conversions += conversions;
+    byPlatform[platform].clicks += clicks;
+    byPlatform[platform].impressions += impressions;
+
+    const campaignKey = `${campaign.campaign_name}|${platform}`;
+    if (!byCampaign[campaignKey]) {
+      byCampaign[campaignKey] = {
+        platform,
+        spend: 0,
+        revenue: 0,
+        conversions: 0,
+        status: campaign.status || 'unknown',
+      };
+    }
+    byCampaign[campaignKey].spend += spend;
+    byCampaign[campaignKey].revenue += revenue;
+    byCampaign[campaignKey].conversions += conversions;
+
+    totalSpend += spend;
+    totalRevenue += revenue;
+    totalConversions += conversions;
+    totalClicks += clicks;
+    totalImpressions += impressions;
+  }
+
+  const topCampaigns = Object.entries(byCampaign)
+    .sort((a, b) => b[1].spend - a[1].spend)
+    .slice(0, 10)
+    .map(([key, value]) => ({
+      name: key.split('|')[0],
+      platform: value.platform,
+      spend: value.spend,
+      revenue: value.revenue,
+      conversions: value.conversions,
+      status: value.status,
+    }));
+
+  return {
+    totalSpend,
+    totalRevenue,
+    totalConversions,
+    totalClicks,
+    totalImpressions,
+    totalRoas: totalSpend > 0 ? totalRevenue / totalSpend : null,
+    totalCpa: totalConversions > 0 ? totalSpend / totalConversions : null,
+    totalCtr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null,
+    byPlatform,
+    campaignCount: campaignRows.length,
+    topCampaigns,
+  };
+}
+
 async function getClientData(
   clientId: string,
   dateRange: { from: string; to: string },
@@ -431,6 +528,7 @@ async function getClientData(
   });
 
   let summary: MetricSummary | null = null;
+  let latestAvailable: LatestAvailableData | null = null;
   let recentMetrics = '';
   let campaignBreakdown = '';
 
@@ -594,45 +692,95 @@ async function getClientData(
     ringbaData += `  Revenue: ${formatCurrency(totalRevenue)} | Payout: ${formatCurrency(totalPayout)} | Avg Duration: ${Math.round(avgDuration)}s\n`;
   }
 
-  return { recentMetrics, campaignBreakdown, tasks, recentContext, ringbaData, summary };
+  if (!summary) {
+    let latestQuery = supabase
+      .from('ad_campaigns')
+      .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, status, date, account_id')
+      .eq('client_id', clientId)
+      .order('date', { ascending: false })
+      .limit(1000);
+
+    if (platformFilter) {
+      latestQuery = latestQuery.eq('platform', platformFilter);
+    }
+
+    const { data: latestRows } = await latestQuery;
+    const latestFiltered = (latestRows || []).filter((campaign) => {
+      if (!campaignMatchesVertical(campaign.campaign_name, campaign.platform)) return false;
+      if (!accountMatchesVertical(campaign.account_id, campaign.platform)) return false;
+      return true;
+    });
+
+    if (latestFiltered.length > 0) {
+      const latestDate = latestFiltered[0].date;
+      const latestDateRows = latestFiltered.filter((campaign) => campaign.date === latestDate);
+      const latestSummary = summarizeCampaignRows(latestDateRows);
+      if (latestSummary) {
+        latestAvailable = {
+          date: latestDate,
+          summary: latestSummary,
+        };
+      }
+    }
+  }
+
+  return { recentMetrics, campaignBreakdown, tasks, recentContext, ringbaData, summary, latestAvailable };
 }
 
-function parseDateIntent(text: string): { from: string; to: string } {
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
+function padDatePart(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function formatShiftedDate(date: Date): string {
+  return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}`;
+}
+
+function getShiftedNow(tzOffsetSeconds: number): Date {
+  return new Date(Date.now() + tzOffsetSeconds * 1000);
+}
+
+function shiftLocalDays(date: Date, days: number): Date {
+  const shifted = new Date(date);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted;
+}
+
+function parseDateIntent(text: string, tzOffsetSeconds = 0): { from: string; to: string; userToday: string } {
+  const localNow = getShiftedNow(tzOffsetSeconds);
+  const today = formatShiftedDate(localNow);
   const lower = text.toLowerCase();
 
   if (lower.includes('today')) {
-    return { from: today, to: today };
+    return { from: today, to: today, userToday: today };
   }
   if (lower.includes('yesterday')) {
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const value = yesterday.toISOString().split('T')[0];
-    return { from: value, to: value };
+    const yesterday = shiftLocalDays(localNow, -1);
+    const value = formatShiftedDate(yesterday);
+    return { from: value, to: value, userToday: today };
   }
   if (lower.includes('this week') || lower.includes('past week') || lower.includes('last 7')) {
-    const weekAgo = new Date(now);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    return { from: weekAgo.toISOString().split('T')[0], to: today };
+    const weekAgo = shiftLocalDays(localNow, -7);
+    return { from: formatShiftedDate(weekAgo), to: today, userToday: today };
   }
   if (lower.includes('this month') || lower.includes('past month') || lower.includes('last 30')) {
-    const monthAgo = new Date(now);
-    monthAgo.setDate(monthAgo.getDate() - 30);
-    return { from: monthAgo.toISOString().split('T')[0], to: today };
+    const monthAgo = shiftLocalDays(localNow, -30);
+    return { from: formatShiftedDate(monthAgo), to: today, userToday: today };
   }
 
-  const weekAgo = new Date(now);
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  return { from: weekAgo.toISOString().split('T')[0], to: today };
+  const weekAgo = shiftLocalDays(localNow, -7);
+  return { from: formatShiftedDate(weekAgo), to: today, userToday: today };
 }
 
-async function resolveUserName(token: string, userId: string): Promise<string> {
+async function resolveUserContext(token: string, userId: string): Promise<UserContext> {
   const res = await fetch(`https://slack.com/api/users.info?user=${userId}`, {
     headers: { 'Authorization': `Bearer ${token}` },
   });
   const data = await res.json();
-  return data.user?.profile?.display_name || data.user?.real_name || 'Someone';
+  return {
+    name: data.user?.profile?.display_name || data.user?.real_name || 'Someone',
+    tzOffsetSeconds: data.user?.tz_offset || 0,
+    timeZone: data.user?.tz || null,
+  };
 }
 
 function buildDeterministicMetricReply(
@@ -642,6 +790,7 @@ function buildDeterministicMetricReply(
   verticalId: string | null,
   platformFilter: string | null,
   summary: MetricSummary | null,
+  latestAvailable: LatestAvailableData | null,
 ): string {
   const metricIntent = getMetricIntent(text) || 'performance';
   const verticalLabel = verticalId ? VERTICAL_KEYWORDS[verticalId]?.label || verticalId : null;
@@ -650,7 +799,40 @@ function buildDeterministicMetricReply(
   const dateLabel = dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from} to ${dateRange.to}`;
 
   if (!summary || summary.campaignCount === 0) {
-    return `I couldn't find campaign data for *${scope}* during *${dateLabel}*.`;
+    if (!latestAvailable) {
+      return `I couldn't find campaign data for *${scope}* during *${dateLabel}*.`;
+    }
+
+    const lines: string[] = [
+      `I don't have *${scope}* data for *${dateLabel}* yet.`,
+      `• Latest available date: *${latestAvailable.date}*`,
+    ];
+
+    if (metricIntent === 'spend') {
+      lines.push(`• Latest spend: *${formatCurrency(latestAvailable.summary.totalSpend)}*`);
+      lines.push(`• Latest revenue: ${formatCurrency(latestAvailable.summary.totalRevenue)}`);
+      lines.push(`• Latest ROAS: ${formatRatio(latestAvailable.summary.totalRoas)}`);
+    } else if (metricIntent === 'revenue') {
+      lines.push(`• Latest revenue: *${formatCurrency(latestAvailable.summary.totalRevenue)}*`);
+      lines.push(`• Latest spend: ${formatCurrency(latestAvailable.summary.totalSpend)}`);
+      lines.push(`• Latest ROAS: ${formatRatio(latestAvailable.summary.totalRoas)}`);
+    } else {
+      lines.push(`• Latest spend: ${formatCurrency(latestAvailable.summary.totalSpend)}`);
+      lines.push(`• Latest revenue: ${formatCurrency(latestAvailable.summary.totalRevenue)}`);
+      lines.push(`• Latest conversions: ${latestAvailable.summary.totalConversions}`);
+      lines.push(`• Latest ROAS: ${formatRatio(latestAvailable.summary.totalRoas)}`);
+    }
+
+    if (!platformFilter && Object.keys(latestAvailable.summary.byPlatform).length > 1) {
+      lines.push('• Latest platform breakdown:');
+      for (const [platform, data] of Object.entries(latestAvailable.summary.byPlatform)) {
+        const roas = data.spend > 0 ? data.revenue / data.spend : null;
+        lines.push(`  ◦ ${platform}: ${formatCurrency(data.spend)} spend, ${formatCurrency(data.revenue)} revenue, ${formatRatio(roas)} ROAS`);
+      }
+    }
+
+    return lines.join('
+');
   }
 
   const lines: string[] = [`*${scope}* — ${dateLabel}`];
@@ -705,7 +887,8 @@ function buildDeterministicMetricReply(
     }
   }
 
-  return lines.join('\n');
+  return lines.join('
+');
 }
 
 // ─── AI call ───────────────────────────────────────────────────────────────
@@ -823,8 +1006,9 @@ async function processSlackMessage(event: any) {
       conversationHistory = [{ role: 'user', content: cleanText }];
     }
 
-    const userName = await resolveUserName(token, event.user);
-    const dateRange = parseDateIntent(cleanText);
+    const userContext = await resolveUserContext(token, event.user);
+    const userName = userContext.name;
+    const dateRange = parseDateIntent(cleanText, userContext.tzOffsetSeconds);
 
     let dataContext = '';
     let clientData: ClientData | null = null;
@@ -832,7 +1016,7 @@ async function processSlackMessage(event: any) {
     if (client) {
       const verticalLabel = verticalId ? VERTICAL_KEYWORDS[verticalId]?.label || verticalId : 'All Verticals';
       const platformLabel = platformFilter || 'all platforms';
-      console.log(`Detected: client=${client.name}, vertical=${verticalLabel}, platform=${platformLabel}, dates=${dateRange.from}-${dateRange.to}`);
+      console.log(`Detected: client=${client.name}, vertical=${verticalLabel}, platform=${platformLabel}, dates=${dateRange.from}-${dateRange.to}, user_today=${dateRange.userToday}, tz_offset=${userContext.tzOffsetSeconds}`);
 
       clientData = await getClientData(client.id, dateRange, verticalId, platformFilter);
       dataContext = `\n--- CLIENT DATA FOR ${client.name.toUpperCase()} (${verticalLabel}, ${platformLabel}) ---\n`;
@@ -852,6 +1036,7 @@ async function processSlackMessage(event: any) {
         verticalId,
         platformFilter,
         clientData.summary,
+        clientData.latestAvailable,
       );
       await postSlackMessage(token, event.channel, directReply, replyThreadTs);
       console.log('Deterministic metric reply sent for client:', client.name);
@@ -883,7 +1068,7 @@ async function processSlackMessage(event: any) {
 ${channelInfo}${clientList}${dataContext}
 
 The person talking to you is: ${userName}
-Today's date: ${new Date().toISOString().split('T')[0]}
+Today's date: ${dateRange.userToday}
 
 Guidelines:
 - Be concise and actionable — use bullet points and short paragraphs

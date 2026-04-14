@@ -203,6 +203,10 @@ interface MetricSummary {
   totalImpressions: number;
   totalRoas: number | null;
   totalCpa: number | null;
+  ringbaRevenue: number;
+  ringbaConvertedCalls: number;
+  ringbaTotalCalls: number;
+  usesRingbaRevenue: boolean;
   totalCtr: number | null;
   byPlatform: Record<string, PlatformSummary>;
   campaignCount: number;

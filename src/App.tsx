@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -6,6 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ClientProvider } from "@/contexts/ClientContext";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
 import TasksPage from "./pages/TasksPage";

@@ -260,7 +260,7 @@ The agenda follows a specific template structure. The structure has:
 2. Per-vertical sections (Pest Control, Porta Potty, Flights, HVAC, Bathroom Remodel, Garage Doors) each with subsections: Google, Meta, Bing, Ringba / Calls, Notes.
    - For platform subsections marked [AI SHOULD POPULATE], generate 2-5 concise bullet points with actual spend, conversions, CPA, and notable campaign callouts. Format like: "Spend: $X | Y conversions | $Z CPA" on the first bullet, then specific campaign callouts.
    - If a vertical has no data for a platform, OMIT that platform subsection entirely (do not include it). Only include platforms that have real activity data.
-   - For "Notes" subsections (not AI populatable), leave items empty for manual input.
+   - For "Notes" subsections: Pre-fill with relevant behind-the-scenes context from Slack conversations — strategy discussions, campaign changes, creative updates, tracking issues. This helps the team remember what happened internally that week. If no Slack context is relevant, leave empty.
 3. "Feedback from Client" — leave items empty for manual input.
 
 ABSOLUTE RULES — VIOLATION = FAILURE:

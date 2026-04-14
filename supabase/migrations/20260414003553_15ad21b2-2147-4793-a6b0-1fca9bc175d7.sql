@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS context_items_source_id_unique ON public.context_items(source_id) WHERE source_id IS NOT NULL;

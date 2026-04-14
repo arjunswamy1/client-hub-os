@@ -24,8 +24,54 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+function ForcePasswordChange() {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirm) { toast.error('Passwords do not match'); return; }
+    if (newPassword.length < 8) { toast.error('Min 8 characters'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+        data: { must_change_password: false },
+      });
+      if (error) throw error;
+      toast.success('Password updated!');
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="w-full max-w-sm rounded-lg border bg-card p-6 shadow-lg space-y-4">
+        <h2 className="text-lg font-semibold">Change Your Password</h2>
+        <p className="text-sm text-muted-foreground">You must set a new password before continuing.</p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input type="password" placeholder="New password" value={newPassword}
+            onChange={e => setNewPassword(e.target.value)} required minLength={8}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          <input type="password" placeholder="Confirm password" value={confirm}
+            onChange={e => setConfirm(e.target.value)} required minLength={8}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          <button type="submit" disabled={saving}
+            className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
+            {saving ? 'Updating...' : 'Set New Password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function ProtectedRoutes() {
-  const { session, isLoading, isAdmin, isAccountManager } = useAuth();
+  const { session, user, isLoading, isAdmin, isAccountManager } = useAuth();
 
   if (isLoading) {
     return (
@@ -36,6 +82,10 @@ function ProtectedRoutes() {
   }
 
   if (!session) return <Navigate to="/auth" replace />;
+
+  if (user?.user_metadata?.must_change_password) {
+    return <ForcePasswordChange />;
+  }
 
   return (
     <ClientProvider>

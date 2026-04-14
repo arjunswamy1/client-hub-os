@@ -1,5 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+declare const EdgeRuntime: {
+  waitUntil(promise: Promise<unknown>): void;
+};
+
 const SLACK_BOT_TOKEN = Deno.env.get('SLACK_BOT_TOKEN')!;
 const SLACK_SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET')!;
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;

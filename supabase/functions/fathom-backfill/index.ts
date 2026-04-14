@@ -50,10 +50,10 @@ Deno.serve(async (req) => {
       .select('id, name, email')
       .eq('is_active', true);
 
-    let cursor: string | null = null;
-    let totalMeetings = 0;
-    let matched = 0;
-    let contextSaved = 0;
+    const maxPages = body.max_pages || 50;
+    const startCursor = body.cursor || null;
+    let page = 0;
+    let lastCursor: string | null = null;
     let tasksCreated = 0;
     const errors: string[] = [];
 

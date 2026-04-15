@@ -210,9 +210,10 @@ RULES:
 4. When referencing performance, always specify the time period.
 5. Cite sources (e.g., "from the Fathom meeting on 4/10" or "per Google Ads data").
 6. Format currency with $ and commas. Format percentages to 1 decimal.
-7. If the question relates to a specific vertical (pest control, flights, porta potty, etc.), filter your response to that vertical's data.
-8. Reference meeting notes and Slack conversations when relevant to provide full context.
-9. Keep responses focused and under 500 words unless the user asks for a deep dive.
+7. If the question relates to a specific vertical (pest control, flights, porta potty, etc.), filter your response to that vertical's data. Match verticals by campaign name patterns (e.g. "Flight" for flights).
+8. CRITICAL: For lead-gen / call-based verticals, Ringba calls ARE the primary conversions — not ad platform conversions. Always check the "Per-Campaign Ringba Breakdown" section when discussing conversions or performance. Ad platform "conversions" often only track landing page events, while Ringba tracks actual monetized phone calls and revenue.
+9. Reference meeting notes and Slack conversations when relevant to provide full context.
+10. Keep responses focused and under 500 words unless the user asks for a deep dive.
 
 You should answer questions about campaign performance, meeting summaries, action items, creative performance, optimization opportunities, and general client strategy.`
       }

@@ -112,13 +112,27 @@ Deno.serve(async (req) => {
       platformAgg[p].impressions += Number(c.impressions);
     }
 
-    // Aggregate ringba
+    // Aggregate ringba — total and per-campaign
     const ringbaAgg = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
+    const ringbaByCampaign: Record<string, { calls: number; converted: number; revenue: number; payout: number; avgDuration: number; totalDuration: number }> = {};
     for (const call of ringbaCalls || []) {
       ringbaAgg.totalCalls++;
       if (call.converted) ringbaAgg.converted++;
-      ringbaAgg.totalRevenue += Number(call.revenue);
-      ringbaAgg.totalPayout += Number(call.payout);
+      ringbaAgg.totalRevenue += Number(call.revenue || 0);
+      ringbaAgg.totalPayout += Number(call.payout || 0);
+      
+      const cName = call.campaign_name || 'Unknown';
+      if (!ringbaByCampaign[cName]) ringbaByCampaign[cName] = { calls: 0, converted: 0, revenue: 0, payout: 0, avgDuration: 0, totalDuration: 0 };
+      ringbaByCampaign[cName].calls++;
+      if (call.converted) ringbaByCampaign[cName].converted++;
+      ringbaByCampaign[cName].revenue += Number(call.revenue || 0);
+      ringbaByCampaign[cName].payout += Number(call.payout || 0);
+      ringbaByCampaign[cName].totalDuration += Number(call.duration_seconds || 0);
+    }
+    // Compute avg duration
+    for (const key of Object.keys(ringbaByCampaign)) {
+      const c = ringbaByCampaign[key];
+      c.avgDuration = c.calls > 0 ? Math.round(c.totalDuration / c.calls) : 0;
     }
 
     // Categorize context items
@@ -139,6 +153,9 @@ ${JSON.stringify(dailyMetrics?.slice(0, 14) || [], null, 2)}
 
 === RINGBA CALLS (Last 7 Days) ===
 Total calls: ${ringbaAgg.totalCalls}, Converted: ${ringbaAgg.converted}, Revenue: $${ringbaAgg.totalRevenue.toFixed(2)}, Payout: $${ringbaAgg.totalPayout.toFixed(2)}
+
+Per-Campaign Ringba Breakdown:
+${Object.entries(ringbaByCampaign).sort((a, b) => b[1].revenue - a[1].revenue).map(([name, d]) => `  ${name}: ${d.calls} calls, ${d.converted} converted, $${d.revenue.toFixed(2)} revenue, $${d.payout.toFixed(2)} payout, avg ${d.avgDuration}s`).join('\n')}
 
 === TOP CAMPAIGNS ===
 ${(campaigns || []).slice(0, 15).map((c: any) => `${c.campaign_name} (${c.platform}): $${c.spend} spend, ${c.conversions} conv, ROAS ${c.roas || 'N/A'}`).join('\n')}
@@ -193,9 +210,10 @@ RULES:
 4. When referencing performance, always specify the time period.
 5. Cite sources (e.g., "from the Fathom meeting on 4/10" or "per Google Ads data").
 6. Format currency with $ and commas. Format percentages to 1 decimal.
-7. If the question relates to a specific vertical (pest control, flights, porta potty, etc.), filter your response to that vertical's data.
-8. Reference meeting notes and Slack conversations when relevant to provide full context.
-9. Keep responses focused and under 500 words unless the user asks for a deep dive.
+7. If the question relates to a specific vertical (pest control, flights, porta potty, etc.), filter your response to that vertical's data. Match verticals by campaign name patterns (e.g. "Flight" for flights).
+8. CRITICAL: For lead-gen / call-based verticals, Ringba calls ARE the primary conversions — not ad platform conversions. Always check the "Per-Campaign Ringba Breakdown" section when discussing conversions or performance. Ad platform "conversions" often only track landing page events, while Ringba tracks actual monetized phone calls and revenue.
+9. Reference meeting notes and Slack conversations when relevant to provide full context.
+10. Keep responses focused and under 500 words unless the user asks for a deep dive.
 
 You should answer questions about campaign performance, meeting summaries, action items, creative performance, optimization opportunities, and general client strategy.`
       }

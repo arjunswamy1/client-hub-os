@@ -351,6 +351,39 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
     });
   }
 
+  // Resolve full-size thumbnails for creatives that have small/expiring CDN thumbnails
+  const creativeIdsForThumbnail = ads
+    .filter(ad => ad.creative?.id && (!ad.creative?.image_url || ad.creative?.image_url?.includes('p64x64')))
+    .map(ad => ad.creative.id);
+  
+  const thumbnailMap = new Map<string, string>();
+  for (let i = 0; i < creativeIdsForThumbnail.length; i += 10) {
+    const chunk = creativeIdsForThumbnail.slice(i, i + 10);
+    await Promise.all(chunk.map(async (cid) => {
+      try {
+        const res = await fetch(`https://graph.facebook.com/v21.0/${cid}?fields=thumbnail_url,image_url&thumbnail_width=400&thumbnail_height=400&access_token=${accessToken}`);
+        if (res.ok) {
+          const data = await res.json();
+          const url = data.image_url || data.thumbnail_url;
+          if (url) thumbnailMap.set(cid, url);
+        }
+      } catch { /* skip */ }
+    }));
+  }
+  
+  // Update batch items with better thumbnails
+  for (let idx = 0; idx < batch.length; idx++) {
+    const ad = ads[idx];
+    const creativeId = ad?.creative?.id;
+    if (creativeId && thumbnailMap.has(creativeId)) {
+      const betterUrl = thumbnailMap.get(creativeId)!;
+      // Only replace if current thumbnail is missing or is a tiny CDN URL
+      if (!batch[idx].creative_thumbnail_url || batch[idx].creative_thumbnail_url.includes('p64x64')) {
+        batch[idx].creative_thumbnail_url = betterUrl;
+      }
+    }
+  }
+
   // Resolve video_ids to actual playable source URLs
   const videoIds = [...new Set(batch.filter(b => b.creative_type === "video" && b.video_url && !b.video_url.startsWith("http")).map(b => b.video_url))];
   const videoSourceMap = new Map<string, string>();

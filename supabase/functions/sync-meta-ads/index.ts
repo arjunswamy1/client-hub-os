@@ -190,7 +190,7 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
 
 async function syncAdCreatives(supabase: any, accountId: string, accessToken: string, clientId: string | null, since: string, until: string): Promise<number> {
   // Step 1: Get all ads with their creative details and performance
-  const adFields = "id,name,status,campaign_id,adset_id,creative{id,thumbnail_url,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}";
+  const adFields = "id,name,status,campaign_id,adset_id,creative{id,thumbnail_url,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,image_hash}";
   let ads: any[] = [];
   let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/ads?fields=${adFields}&effective_status=["ACTIVE","PAUSED","PENDING_REVIEW","IN_PROCESS","WITH_ISSUES"]&limit=200&access_token=${accessToken}`;
 
@@ -276,7 +276,7 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
     const perf = perfMap.get(ad.id);
 
     // Extract creative details
-    let thumbnailUrl = creative.thumbnail_url || creative.image_url || null;
+    let thumbnailUrl = creative.image_url || creative.thumbnail_url || null;
     let primaryText = "";
     let headlineText = "";
     let descriptionText = "";
@@ -349,6 +349,39 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
       date_from: perf?.dateFrom || null,
       date_to: perf?.dateTo || null,
     });
+  }
+
+  // Resolve full-size thumbnails for creatives that have small/expiring CDN thumbnails
+  const creativeIdsForThumbnail = ads
+    .filter(ad => ad.creative?.id && (!ad.creative?.image_url || ad.creative?.image_url?.includes('p64x64')))
+    .map(ad => ad.creative.id);
+  
+  const thumbnailMap = new Map<string, string>();
+  for (let i = 0; i < creativeIdsForThumbnail.length; i += 10) {
+    const chunk = creativeIdsForThumbnail.slice(i, i + 10);
+    await Promise.all(chunk.map(async (cid) => {
+      try {
+        const res = await fetch(`https://graph.facebook.com/v21.0/${cid}?fields=thumbnail_url,image_url&thumbnail_width=400&thumbnail_height=400&access_token=${accessToken}`);
+        if (res.ok) {
+          const data = await res.json();
+          const url = data.image_url || data.thumbnail_url;
+          if (url) thumbnailMap.set(cid, url);
+        }
+      } catch { /* skip */ }
+    }));
+  }
+  
+  // Update batch items with better thumbnails
+  for (let idx = 0; idx < batch.length; idx++) {
+    const ad = ads[idx];
+    const creativeId = ad?.creative?.id;
+    if (creativeId && thumbnailMap.has(creativeId)) {
+      const betterUrl = thumbnailMap.get(creativeId)!;
+      // Only replace if current thumbnail is missing or is a tiny CDN URL
+      if (!batch[idx].creative_thumbnail_url || batch[idx].creative_thumbnail_url.includes('p64x64')) {
+        batch[idx].creative_thumbnail_url = betterUrl;
+      }
+    }
   }
 
   // Resolve video_ids to actual playable source URLs

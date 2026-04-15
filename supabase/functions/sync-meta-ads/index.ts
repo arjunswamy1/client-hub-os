@@ -276,7 +276,7 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
     const perf = perfMap.get(ad.id);
 
     // Extract creative details
-    let thumbnailUrl = creative.thumbnail_url || creative.image_url || null;
+    let thumbnailUrl = creative.image_url || creative.thumbnail_url || null;
     let primaryText = "";
     let headlineText = "";
     let descriptionText = "";

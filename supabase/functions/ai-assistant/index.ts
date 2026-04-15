@@ -112,13 +112,27 @@ Deno.serve(async (req) => {
       platformAgg[p].impressions += Number(c.impressions);
     }
 
-    // Aggregate ringba
+    // Aggregate ringba — total and per-campaign
     const ringbaAgg = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
+    const ringbaByCampaign: Record<string, { calls: number; converted: number; revenue: number; payout: number; avgDuration: number; totalDuration: number }> = {};
     for (const call of ringbaCalls || []) {
       ringbaAgg.totalCalls++;
       if (call.converted) ringbaAgg.converted++;
-      ringbaAgg.totalRevenue += Number(call.revenue);
-      ringbaAgg.totalPayout += Number(call.payout);
+      ringbaAgg.totalRevenue += Number(call.revenue || 0);
+      ringbaAgg.totalPayout += Number(call.payout || 0);
+      
+      const cName = call.campaign_name || 'Unknown';
+      if (!ringbaByCampaign[cName]) ringbaByCampaign[cName] = { calls: 0, converted: 0, revenue: 0, payout: 0, avgDuration: 0, totalDuration: 0 };
+      ringbaByCampaign[cName].calls++;
+      if (call.converted) ringbaByCampaign[cName].converted++;
+      ringbaByCampaign[cName].revenue += Number(call.revenue || 0);
+      ringbaByCampaign[cName].payout += Number(call.payout || 0);
+      ringbaByCampaign[cName].totalDuration += Number(call.duration_seconds || 0);
+    }
+    // Compute avg duration
+    for (const key of Object.keys(ringbaByCampaign)) {
+      const c = ringbaByCampaign[key];
+      c.avgDuration = c.calls > 0 ? Math.round(c.totalDuration / c.calls) : 0;
     }
 
     // Categorize context items

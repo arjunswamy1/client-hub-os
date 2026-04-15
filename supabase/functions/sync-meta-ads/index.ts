@@ -190,7 +190,7 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
 
 async function syncAdCreatives(supabase: any, accountId: string, accessToken: string, clientId: string | null, since: string, until: string): Promise<number> {
   // Step 1: Get all ads with their creative details and performance
-  const adFields = "id,name,status,campaign_id,adset_id,creative{id,thumbnail_url,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}";
+  const adFields = "id,name,status,campaign_id,adset_id,creative{id,thumbnail_url,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,image_hash}";
   let ads: any[] = [];
   let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/ads?fields=${adFields}&effective_status=["ACTIVE","PAUSED","PENDING_REVIEW","IN_PROCESS","WITH_ISSUES"]&limit=200&access_token=${accessToken}`;
 

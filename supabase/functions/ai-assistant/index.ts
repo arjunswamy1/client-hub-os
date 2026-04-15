@@ -154,6 +154,9 @@ ${JSON.stringify(dailyMetrics?.slice(0, 14) || [], null, 2)}
 === RINGBA CALLS (Last 7 Days) ===
 Total calls: ${ringbaAgg.totalCalls}, Converted: ${ringbaAgg.converted}, Revenue: $${ringbaAgg.totalRevenue.toFixed(2)}, Payout: $${ringbaAgg.totalPayout.toFixed(2)}
 
+Per-Campaign Ringba Breakdown:
+${Object.entries(ringbaByCampaign).sort((a, b) => b[1].revenue - a[1].revenue).map(([name, d]) => `  ${name}: ${d.calls} calls, ${d.converted} converted, $${d.revenue.toFixed(2)} revenue, $${d.payout.toFixed(2)} payout, avg ${d.avgDuration}s`).join('\n')}
+
 === TOP CAMPAIGNS ===
 ${(campaigns || []).slice(0, 15).map((c: any) => `${c.campaign_name} (${c.platform}): $${c.spend} spend, ${c.conversions} conv, ROAS ${c.roas || 'N/A'}`).join('\n')}
 

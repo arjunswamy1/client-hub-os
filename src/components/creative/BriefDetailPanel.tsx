@@ -294,13 +294,34 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
 
           {/* Deliverables Tab */}
           <TabsContent value="deliverables" className="p-5 space-y-3">
-            {deliverables.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No deliverables generated yet.</p>
+            {/* Upload button for designers */}
+            {isDesigner && ['in_design', 'revision_requested'].includes(brief.status) && (
+              <label className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 p-4 cursor-pointer hover:bg-primary/10 transition-colors">
+                <Upload className="h-5 w-5 text-primary" />
+                <span className="text-sm font-medium text-primary">
+                  {isUploading ? 'Uploading...' : 'Upload Completed Assets'}
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.psd,.ai,.fig,.sketch,.pdf"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                />
+              </label>
+            )}
+            <p className="text-[10px] text-muted-foreground">
+              Files are auto-organized: <span className="font-mono">{brief.client?.name || 'Client'} / {brief.title?.slice(0, 30)}</span>
+            </p>
+
+            {deliverables.length === 0 && !isUploading ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No deliverables yet. Upload your completed assets above.</p>
             ) : (
               deliverables.map((d: any) => (
                 <div key={d.id} className="flex items-center gap-3 rounded-lg border p-3">
                   <div className="h-12 w-12 rounded bg-accent flex items-center justify-center shrink-0">
-                    {d.file_url ? (
+                    {d.file_url && (d.file_type?.startsWith('image/') || !d.file_type) ? (
                       <img src={d.file_url} alt="" className="h-full w-full object-cover rounded" />
                     ) : (
                       <ImageIcon className="h-5 w-5 text-muted-foreground" />
@@ -311,6 +332,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span>v{d.version}</span>
                       {d.uploaded_at && <span>• {format(new Date(d.uploaded_at), 'MMM d, HH:mm')}</span>}
+                      {d.uploaded_by?.name && <span>• {d.uploaded_by.name}</span>}
                     </div>
                     {d.revision_note && (
                       <p className="text-xs text-orange-600 mt-1">⚠ {d.revision_note}</p>

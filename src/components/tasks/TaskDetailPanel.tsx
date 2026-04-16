@@ -314,8 +314,8 @@ function TypeDetailsView({ taskType, data }: { taskType: TaskType; data: any }) 
         <Field label="Tracking">
           <span className="inline-flex items-center gap-1">
             {data.tracking_confirmed
-              ? <><CheckCircle2 className="h-3 w-3 text-green-500" /> Confirmed</>
-              : <><AlertCircle className="h-3 w-3 text-yellow-500" /> Not confirmed</>}
+              ? <><CheckCircle2 className="h-3 w-3 text-primary" /> Confirmed</>
+              : <><AlertCircle className="h-3 w-3 text-destructive" /> Not confirmed</>}
           </span>
         </Field>
         {!data.tracking_confirmed && data.tracking_notes && (

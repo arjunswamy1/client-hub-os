@@ -54,6 +54,17 @@ export function KanbanBoard({ tasks, onTaskClick, onStatusChange }: KanbanBoardP
                               snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''
                             }`}
                           >
+                            {task.client?.name && (
+                              <div className="mb-1.5 flex items-center gap-1.5">
+                                <div
+                                  className="h-1.5 w-1.5 rounded-full"
+                                  style={{ backgroundColor: task.client.color || 'hsl(var(--muted-foreground))' }}
+                                />
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                  {task.client.name}
+                                </span>
+                              </div>
+                            )}
                             <p className="text-sm font-medium leading-snug">{task.title}</p>
 
                             <div className="mt-2 flex items-center gap-1.5 flex-wrap">

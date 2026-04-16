@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -26,6 +27,7 @@ interface CreateTaskDialogProps {
 
 export function CreateTaskDialog({ open, onOpenChange, clientId, teamMembers, currentMemberId }: CreateTaskDialogProps) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [step, setStep] = useState<'type' | 'details'>('type');
   const [taskType, setTaskType] = useState<TaskType | null>(null);
   const [typeData, setTypeData] = useState<any>({});
@@ -99,7 +101,19 @@ export function CreateTaskDialog({ open, onOpenChange, clientId, teamMembers, cu
               <button
                 key={t}
                 type="button"
-                onClick={() => { setTaskType(t); setStep('details'); }}
+                onClick={() => {
+                  // Creative briefs are managed in Creative Production, not the task tracker.
+                  if (t === 'creative_brief') {
+                    handleClose(false);
+                    const params = new URLSearchParams();
+                    params.set('newBrief', '1');
+                    if (clientId) params.set('clientId', clientId);
+                    navigate(`/creative?${params.toString()}`);
+                    return;
+                  }
+                  setTaskType(t);
+                  setStep('details');
+                }}
                 className="flex flex-col items-start gap-1 rounded-lg border bg-card p-3 text-left hover:border-primary hover:bg-accent/50 transition-colors"
               >
                 <span className="text-xl">{TASK_TYPE_CONFIG[t].emoji}</span>

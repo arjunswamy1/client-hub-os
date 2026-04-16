@@ -133,9 +133,45 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
             </TabsTrigger>
           </TabsList>
 
-          {/* Details Tab */}
           <TabsContent value="details" className="p-5 space-y-5">
             <h2 className="text-lg font-semibold">{brief.title}</h2>
+
+            {/* Time Tracking Card */}
+            {(estimatedHours || actualHours > 0) && (
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    Time Tracking
+                  </span>
+                  <span className={`font-mono font-semibold ${
+                    estimatedHours && actualHours > estimatedHours ? 'text-destructive' : 'text-foreground'
+                  }`}>
+                    {actualHours}h {estimatedHours ? `/ ${estimatedHours}h est.` : 'logged'}
+                  </span>
+                </div>
+                {estimatedHours && (
+                  <>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          actualHours > estimatedHours ? 'bg-destructive' :
+                          actualHours / estimatedHours > 0.7 ? 'bg-yellow-500' : 'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.min(120, (actualHours / estimatedHours) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {actualHours > estimatedHours
+                        ? `⚠ Over by ${(actualHours - estimatedHours).toFixed(1)}h — update future estimates`
+                        : actualHours / estimatedHours > 0.7
+                        ? `Getting close — ${(estimatedHours - actualHours).toFixed(1)}h remaining`
+                        : `${(estimatedHours - actualHours).toFixed(1)}h remaining of estimate`}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <InfoField label="Creative Type(s)" value={(brief.creative_types || [brief.creative_type]).join(', ')} />

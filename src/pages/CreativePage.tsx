@@ -1,5 +1,6 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { Button } from '@/components/ui/button';
@@ -69,6 +70,20 @@ export default function CreativePage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [traffickingClient, setTraffickingClient] = useState<Client | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [prefilledClientId, setPrefilledClientId] = useState<string | undefined>();
+
+  // Auto-open brief form when navigated from task tracker (?newBrief=1)
+  useEffect(() => {
+    if (searchParams.get('newBrief') === '1') {
+      setPrefilledClientId(searchParams.get('clientId') || undefined);
+      setIsCreateOpen(true);
+      // Clean the URL
+      searchParams.delete('newBrief');
+      searchParams.delete('clientId');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const selected = briefs.find((b: any) => b.id === selectedId);
 
@@ -208,7 +223,8 @@ export default function CreativePage() {
 
         <BriefSubmissionForm
           open={isCreateOpen}
-          onOpenChange={setIsCreateOpen}
+          onOpenChange={(o) => { setIsCreateOpen(o); if (!o) setPrefilledClientId(undefined); }}
+          clientId={prefilledClientId}
         />
       </div>
     </DateRangeProvider>

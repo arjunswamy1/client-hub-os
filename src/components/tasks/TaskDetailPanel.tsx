@@ -6,12 +6,16 @@ import { TASK_STATUS_CONFIG, TASK_PRIORITY_CONFIG } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { X, Clock, MessageSquare, Send, ExternalLink, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Clock, MessageSquare, Send, ExternalLink, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { TASK_TYPE_CONFIG, TaskType } from './taskTypes';
 import { MentionTextarea } from './MentionTextarea';
 import { createNotification } from '@/hooks/useNotifications';
@@ -23,10 +27,12 @@ interface TaskDetailPanelProps {
 }
 
 export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelProps) {
-  const { teamMember } = useAuth();
+  const { teamMember, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [comment, setComment] = useState('');
   const [mentionIds, setMentionIds] = useState<string[]>([]);
+
+  const canDelete = isAdmin || task.created_by_id === teamMember?.id || task.assignee_id === teamMember?.id;
 
   const { data: comments = [] } = useQuery({
     queryKey: ['task_comments', task.id],
@@ -60,6 +66,19 @@ export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelP
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+  });
+
+  const deleteTask = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('tasks').delete().eq('id', task.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success('Task deleted');
+      onClose();
+    },
+    onError: (err: any) => toast.error(err.message),
   });
 
   const addComment = useMutation({
@@ -146,9 +165,37 @@ export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelP
             {TASK_STATUS_CONFIG[task.status as keyof typeof TASK_STATUS_CONFIG]?.label}
           </Badge>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          {canDelete && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently remove "{task.title}" along with its comments and time entries. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteTask.mutate()}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Content */}

@@ -3,7 +3,7 @@ export type TaskType = 'general' | 'landing_page' | 'creative_brief' | 'media_bu
 export const TASK_TYPE_CONFIG: Record<TaskType, { label: string; emoji: string; description: string }> = {
   general: { label: 'General', emoji: '📝', description: 'A standard task.' },
   landing_page: { label: 'Landing Page', emoji: '🌐', description: 'Page build, with tracking + must-haves.' },
-  creative_brief: { label: 'Creative Brief', emoji: '🎨', description: 'Briefs to write, ad counts, deadlines.' },
+  creative_brief: { label: 'Creative Brief', emoji: '🎨', description: 'Opens a draft brief in Creative Production.' },
   media_build: { label: 'Media Build', emoji: '📊', description: 'Platform + vertical campaign build.' },
 };
 

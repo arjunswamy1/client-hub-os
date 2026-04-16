@@ -23,13 +23,16 @@ interface Props {
 
 export function BriefDetailPanel({ brief, onClose }: Props) {
   const { teamMember, isDesigner } = useAuth();
+  const queryClient = useQueryClient();
   const { data: deliverables = [] } = useCreativeDeliverables(brief.id);
   const { data: reviews = [] } = useCreativeReviews(brief.id);
   const { data: comments = [] } = useBriefComments(brief.id);
+  const { data: timeEntries = [] } = useTimeEntries(brief.id);
   const { updateStatus, addComment, addReview } = useBriefMutations();
 
   const [reviewComments, setReviewComments] = useState('');
   const [commentText, setCommentText] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
@@ -38,10 +41,68 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
   const uploadedCount = deliverables.filter((d: any) => d.status !== 'pending').length;
   const totalCount = deliverables.length;
 
+  // Actual hours logged
+  const actualMinutes = timeEntries.reduce((sum: number, e: any) => sum + (e.duration_minutes || 0), 0);
+  const actualHours = +(actualMinutes / 60).toFixed(1);
+  const estimatedHours = brief.estimated_hours || null;
+  const overEstimate = estimatedHours && actualHours > estimatedHours;
+
   const handleComment = () => {
     if (!commentText.trim()) return;
     addComment.mutate({ briefId: brief.id, content: commentText });
     setCommentText('');
+  };
+
+  // Upload assets to storage bucket organized by client
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length || !teamMember) return;
+
+    setIsUploading(true);
+    try {
+      const clientName = brief.client?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
+      const briefSlug = brief.title?.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40) || brief.id.slice(0, 8);
+      const basePath = `${clientName}/${briefSlug}`;
+
+      for (const file of Array.from(files)) {
+        const filePath = `${basePath}/${Date.now()}_${file.name}`;
+        
+        // Upload to storage
+        const { error: uploadError } = await supabase.storage
+          .from('creative-assets')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from('creative-assets')
+          .getPublicUrl(filePath);
+
+        // Create deliverable record
+        const { error: dbError } = await supabase.from('creative_deliverables').insert({
+          brief_id: brief.id,
+          file_name: file.name,
+          file_url: urlData.publicUrl,
+          file_type: file.type,
+          file_size_bytes: file.size,
+          uploaded_by_id: teamMember.id,
+          status: 'uploaded',
+          concept_label: 'Upload',
+          size_label: file.name,
+          version: 1,
+        });
+        if (dbError) throw dbError;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['creative_deliverables'] });
+      toast.success(`${files.length} file${files.length > 1 ? 's' : ''} uploaded`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
   };
 
   const copySuggestions = Array.isArray(brief.copy_suggestions) ? brief.copy_suggestions : [];

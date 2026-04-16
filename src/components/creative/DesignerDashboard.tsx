@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
-  Play, Square, Clock, Flame, CheckCircle2, Upload, Timer,
+  Play, Square, Clock, Flame, Timer,
   TrendingUp, AlertTriangle, ChevronRight, Zap, Target
 } from 'lucide-react';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, isSameDay } from 'date-fns';
@@ -314,7 +314,7 @@ function TaskCard({ brief, actualHours, isTimerActive, onStart, onStop, onClick,
   highlight?: 'revision';
 }) {
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
-  const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
+  const _priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
   const dueDate = brief.due_date ? new Date(brief.due_date) : null;
   const isOverdue = dueDate && isPast(dueDate) && !['approved', 'delivered'].includes(brief.status);
   const daysLeft = dueDate ? differenceInDays(dueDate, new Date()) : null;

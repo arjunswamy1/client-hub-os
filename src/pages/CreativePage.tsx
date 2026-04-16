@@ -11,6 +11,7 @@ import { BriefSubmissionForm } from '@/components/creative/BriefSubmissionForm';
 import { BriefKanban } from '@/components/creative/BriefKanban';
 import { BriefDetailPanel } from '@/components/creative/BriefDetailPanel';
 import { DesignerWorkspace } from '@/components/creative/DesignerWorkspace';
+import { DesignerDashboard } from '@/components/creative/DesignerDashboard';
 import { TraffickingQueue } from '@/components/creative/TraffickingQueue';
 import { HoursDashboard } from '@/components/creative/HoursDashboard';
 import { DateRangeProvider } from '@/contexts/DateRangeContext';
@@ -75,14 +76,19 @@ export default function CreativePage() {
   if (isDesigner) {
     return (
       <div className="space-y-6">
-        <Tabs defaultValue="queue">
+        <Tabs defaultValue="dashboard">
           <div className="flex items-center justify-between">
             <TabsList>
+              <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
               <TabsTrigger value="queue">My Queue</TabsTrigger>
-              <TabsTrigger value="planner">Daily Planner</TabsTrigger>
+              <TabsTrigger value="planner">Planner</TabsTrigger>
               <TabsTrigger value="hours">Hours</TabsTrigger>
             </TabsList>
           </div>
+
+          <TabsContent value="dashboard" className="mt-4">
+            <DesignerDashboard onBriefClick={setSelectedId} />
+          </TabsContent>
 
           <TabsContent value="queue" className="mt-4">
             <DesignerWorkspace onBriefClick={setSelectedId} view="queue" />

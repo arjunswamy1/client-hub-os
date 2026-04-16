@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,11 +7,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, FolderOpen } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
-import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations } from '@/hooks/useCreativeBriefs';
+import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 interface Props {
   brief: any;

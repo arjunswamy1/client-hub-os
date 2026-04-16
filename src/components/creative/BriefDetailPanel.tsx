@@ -13,7 +13,7 @@ import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 interface Props {
@@ -45,7 +45,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
   const actualMinutes = timeEntries.reduce((sum: number, e: any) => sum + (e.duration_minutes || 0), 0);
   const actualHours = +(actualMinutes / 60).toFixed(1);
   const estimatedHours = brief.estimated_hours || null;
-  const overEstimate = estimatedHours && actualHours > estimatedHours;
+  
 
   const handleComment = () => {
     if (!commentText.trim()) return;

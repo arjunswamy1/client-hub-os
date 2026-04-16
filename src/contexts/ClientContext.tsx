@@ -49,10 +49,20 @@ export function ClientProvider({ children }: { children: ReactNode }) {
         }
         query = supabase.from('clients').select('*').in('id', clientIds).order('name');
       } else {
-        // External client users — will use client_members table when migrated
-        setClients([]);
-        setIsLoading(false);
-        return;
+        // External client users — check client_users table
+        const { data: clientUserRows } = await supabase
+          .from('client_users')
+          .select('client_id')
+          .eq('user_id', user.id);
+
+        const clientIds = clientUserRows?.map(r => r.client_id) || [];
+        if (clientIds.length === 0) {
+          setClients([]);
+          setActiveClient(null);
+          setIsLoading(false);
+          return;
+        }
+        query = supabase.from('clients').select('*').in('id', clientIds).order('name');
       }
 
       const { data } = await query;

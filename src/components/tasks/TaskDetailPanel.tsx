@@ -6,12 +6,16 @@ import { TASK_STATUS_CONFIG, TASK_PRIORITY_CONFIG } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { X, Clock, MessageSquare, Send, ExternalLink, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Clock, MessageSquare, Send, ExternalLink, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { TASK_TYPE_CONFIG, TaskType } from './taskTypes';
 import { MentionTextarea } from './MentionTextarea';
 import { createNotification } from '@/hooks/useNotifications';
@@ -23,10 +27,12 @@ interface TaskDetailPanelProps {
 }
 
 export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelProps) {
-  const { teamMember } = useAuth();
+  const { teamMember, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [comment, setComment] = useState('');
   const [mentionIds, setMentionIds] = useState<string[]>([]);
+
+  const canDelete = isAdmin || task.created_by_id === teamMember?.id || task.assignee_id === teamMember?.id;
 
   const { data: comments = [] } = useQuery({
     queryKey: ['task_comments', task.id],

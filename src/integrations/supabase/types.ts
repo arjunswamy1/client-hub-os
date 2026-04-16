@@ -2469,6 +2469,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          mentioned_ids: string[]
           task_id: string
         }
         Insert: {
@@ -2476,6 +2477,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          mentioned_ids?: string[]
           task_id: string
         }
         Update: {
@@ -2483,6 +2485,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          mentioned_ids?: string[]
           task_id?: string
         }
         Relationships: [
@@ -2565,7 +2568,9 @@ export type Database = {
           priority: string
           status: string
           tags: string[] | null
+          task_type: string
           title: string
+          type_data: Json
           updated_at: string
         }
         Insert: {
@@ -2582,7 +2587,9 @@ export type Database = {
           priority?: string
           status?: string
           tags?: string[] | null
+          task_type?: string
           title: string
+          type_data?: Json
           updated_at?: string
         }
         Update: {
@@ -2599,7 +2606,9 @@ export type Database = {
           priority?: string
           status?: string
           tags?: string[] | null
+          task_type?: string
           title?: string
+          type_data?: Json
           updated_at?: string
         }
         Relationships: [

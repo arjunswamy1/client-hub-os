@@ -7,11 +7,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles } from 'lucide-react';
+import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
-import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations } from '@/hooks/useCreativeBriefs';
+import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 interface Props {
   brief: any;
@@ -20,13 +23,16 @@ interface Props {
 
 export function BriefDetailPanel({ brief, onClose }: Props) {
   const { teamMember, isDesigner } = useAuth();
+  const queryClient = useQueryClient();
   const { data: deliverables = [] } = useCreativeDeliverables(brief.id);
   const { data: reviews = [] } = useCreativeReviews(brief.id);
   const { data: comments = [] } = useBriefComments(brief.id);
+  const { data: timeEntries = [] } = useTimeEntries(brief.id);
   const { updateStatus, addComment, addReview } = useBriefMutations();
 
   const [reviewComments, setReviewComments] = useState('');
   const [commentText, setCommentText] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
@@ -35,10 +41,68 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
   const uploadedCount = deliverables.filter((d: any) => d.status !== 'pending').length;
   const totalCount = deliverables.length;
 
+  // Actual hours logged
+  const actualMinutes = timeEntries.reduce((sum: number, e: any) => sum + (e.duration_minutes || 0), 0);
+  const actualHours = +(actualMinutes / 60).toFixed(1);
+  const estimatedHours = brief.estimated_hours || null;
+  
+
   const handleComment = () => {
     if (!commentText.trim()) return;
     addComment.mutate({ briefId: brief.id, content: commentText });
     setCommentText('');
+  };
+
+  // Upload assets to storage bucket organized by client
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length || !teamMember) return;
+
+    setIsUploading(true);
+    try {
+      const clientName = brief.client?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
+      const briefSlug = brief.title?.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40) || brief.id.slice(0, 8);
+      const basePath = `${clientName}/${briefSlug}`;
+
+      for (const file of Array.from(files)) {
+        const filePath = `${basePath}/${Date.now()}_${file.name}`;
+        
+        // Upload to storage
+        const { error: uploadError } = await supabase.storage
+          .from('creative-assets')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from('creative-assets')
+          .getPublicUrl(filePath);
+
+        // Create deliverable record
+        const { error: dbError } = await supabase.from('creative_deliverables').insert({
+          brief_id: brief.id,
+          file_name: file.name,
+          file_url: urlData.publicUrl,
+          file_type: file.type,
+          file_size_bytes: file.size,
+          uploaded_by_id: teamMember.id,
+          status: 'uploaded',
+          concept_label: 'Upload',
+          size_label: file.name,
+          version: 1,
+        });
+        if (dbError) throw dbError;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['creative_deliverables'] });
+      toast.success(`${files.length} file${files.length > 1 ? 's' : ''} uploaded`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
   };
 
   const copySuggestions = Array.isArray(brief.copy_suggestions) ? brief.copy_suggestions : [];
@@ -69,9 +133,45 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
             </TabsTrigger>
           </TabsList>
 
-          {/* Details Tab */}
           <TabsContent value="details" className="p-5 space-y-5">
             <h2 className="text-lg font-semibold">{brief.title}</h2>
+
+            {/* Time Tracking Card */}
+            {(estimatedHours || actualHours > 0) && (
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    Time Tracking
+                  </span>
+                  <span className={`font-mono font-semibold ${
+                    estimatedHours && actualHours > estimatedHours ? 'text-destructive' : 'text-foreground'
+                  }`}>
+                    {actualHours}h {estimatedHours ? `/ ${estimatedHours}h est.` : 'logged'}
+                  </span>
+                </div>
+                {estimatedHours && (
+                  <>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          actualHours > estimatedHours ? 'bg-destructive' :
+                          actualHours / estimatedHours > 0.7 ? 'bg-yellow-500' : 'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.min(120, (actualHours / estimatedHours) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {actualHours > estimatedHours
+                        ? `⚠ Over by ${(actualHours - estimatedHours).toFixed(1)}h — update future estimates`
+                        : actualHours / estimatedHours > 0.7
+                        ? `Getting close — ${(estimatedHours - actualHours).toFixed(1)}h remaining`
+                        : `${(estimatedHours - actualHours).toFixed(1)}h remaining of estimate`}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <InfoField label="Creative Type(s)" value={(brief.creative_types || [brief.creative_type]).join(', ')} />
@@ -194,13 +294,34 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
 
           {/* Deliverables Tab */}
           <TabsContent value="deliverables" className="p-5 space-y-3">
-            {deliverables.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No deliverables generated yet.</p>
+            {/* Upload button for designers */}
+            {isDesigner && ['in_design', 'revision_requested'].includes(brief.status) && (
+              <label className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 p-4 cursor-pointer hover:bg-primary/10 transition-colors">
+                <Upload className="h-5 w-5 text-primary" />
+                <span className="text-sm font-medium text-primary">
+                  {isUploading ? 'Uploading...' : 'Upload Completed Assets'}
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.psd,.ai,.fig,.sketch,.pdf"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                />
+              </label>
+            )}
+            <p className="text-[10px] text-muted-foreground">
+              Files are auto-organized: <span className="font-mono">{brief.client?.name || 'Client'} / {brief.title?.slice(0, 30)}</span>
+            </p>
+
+            {deliverables.length === 0 && !isUploading ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No deliverables yet. Upload your completed assets above.</p>
             ) : (
               deliverables.map((d: any) => (
                 <div key={d.id} className="flex items-center gap-3 rounded-lg border p-3">
                   <div className="h-12 w-12 rounded bg-accent flex items-center justify-center shrink-0">
-                    {d.file_url ? (
+                    {d.file_url && (d.file_type?.startsWith('image/') || !d.file_type) ? (
                       <img src={d.file_url} alt="" className="h-full w-full object-cover rounded" />
                     ) : (
                       <ImageIcon className="h-5 w-5 text-muted-foreground" />
@@ -211,6 +332,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span>v{d.version}</span>
                       {d.uploaded_at && <span>• {format(new Date(d.uploaded_at), 'MMM d, HH:mm')}</span>}
+                      {d.uploaded_by?.name && <span>• {d.uploaded_by.name}</span>}
                     </div>
                     {d.revision_note && (
                       <p className="text-xs text-orange-600 mt-1">⚠ {d.revision_note}</p>

@@ -1,16 +1,17 @@
-import { Search, LogOut } from 'lucide-react';
+import { Search, LogOut, Eye } from 'lucide-react';
 import { NotificationBell } from '@/components/creative/NotificationBell';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 
 export function TopBar() {
-  const { user, teamMember, signOut } = useAuth();
+  const { user, teamMember, isAdmin, signOut } = useAuth();
   const { activeClient } = useClient();
 
   const initials = teamMember?.name
@@ -38,6 +39,17 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
+        {(isAdmin) && activeClient && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs text-muted-foreground"
+            onClick={() => window.open('/client-portal-preview', '_blank')}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            View as Client
+          </Button>
+        )}
         <button className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
           <Search className="h-4 w-4" />
         </button>

@@ -37,7 +37,21 @@ export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelP
   const [comment, setComment] = useState('');
   const [mentionIds, setMentionIds] = useState<string[]>([]);
 
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(task.title);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [descDraft, setDescDraft] = useState(task.description || '');
+
+  // Reset drafts when switching to a different task
+  useEffect(() => {
+    setTitleDraft(task.title);
+    setDescDraft(task.description || '');
+    setEditingTitle(false);
+    setEditingDesc(false);
+  }, [task.id]);
+
   const canDelete = isAdmin || task.created_by_id === teamMember?.id || task.assignee_id === teamMember?.id;
+  const canEdit = canDelete; // same permission rule
 
   const { data: comments = [] } = useQuery({
     queryKey: ['task_comments', task.id],

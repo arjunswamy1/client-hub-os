@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,8 +6,13 @@ import { TASK_STATUS_CONFIG, TASK_PRIORITY_CONFIG } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { X, Clock, MessageSquare, Send, ExternalLink, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { X, Clock, MessageSquare, Send, ExternalLink, CheckCircle2, AlertCircle, Trash2, Pencil, Check, CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
@@ -32,7 +37,21 @@ export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelP
   const [comment, setComment] = useState('');
   const [mentionIds, setMentionIds] = useState<string[]>([]);
 
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(task.title);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [descDraft, setDescDraft] = useState(task.description || '');
+
+  // Reset drafts when switching to a different task
+  useEffect(() => {
+    setTitleDraft(task.title);
+    setDescDraft(task.description || '');
+    setEditingTitle(false);
+    setEditingDesc(false);
+  }, [task.id]);
+
   const canDelete = isAdmin || task.created_by_id === teamMember?.id || task.assignee_id === teamMember?.id;
+  const canEdit = canDelete; // same permission rule
 
   const { data: comments = [] } = useQuery({
     queryKey: ['task_comments', task.id],
@@ -200,10 +219,85 @@ export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelP
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-thin">
-        <h2 className="text-lg font-semibold">{task.title}</h2>
+        {/* Editable title */}
+        {editingTitle && canEdit ? (
+          <div className="flex gap-2 items-start">
+            <Input
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              className="text-lg font-semibold h-auto py-1"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  updateTask.mutate({ title: titleDraft.trim() || task.title });
+                  setEditingTitle(false);
+                } else if (e.key === 'Escape') {
+                  setTitleDraft(task.title);
+                  setEditingTitle(false);
+                }
+              }}
+            />
+            <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => {
+              updateTask.mutate({ title: titleDraft.trim() || task.title });
+              setEditingTitle(false);
+            }}>
+              <Check className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <div className="group flex items-start gap-2">
+            <h2 className="text-lg font-semibold flex-1">{task.title}</h2>
+            {canEdit && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => setEditingTitle(true)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        )}
 
-        {task.description && (
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{task.description}</p>
+        {/* Editable description */}
+        {editingDesc && canEdit ? (
+          <div className="space-y-2">
+            <Textarea
+              value={descDraft}
+              onChange={(e) => setDescDraft(e.target.value)}
+              className="text-sm min-h-[100px]"
+              autoFocus
+              placeholder="Add a description..."
+            />
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="ghost" onClick={() => {
+                setDescDraft(task.description || '');
+                setEditingDesc(false);
+              }}>Cancel</Button>
+              <Button size="sm" onClick={() => {
+                updateTask.mutate({ description: descDraft });
+                setEditingDesc(false);
+              }}>Save</Button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'group relative rounded-md',
+              canEdit && 'cursor-text hover:bg-muted/40 -mx-2 px-2 py-1'
+            )}
+            onClick={() => canEdit && setEditingDesc(true)}
+          >
+            {task.description ? (
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{task.description}</p>
+            ) : canEdit ? (
+              <p className="text-sm italic text-muted-foreground/60">Click to add a description…</p>
+            ) : null}
+            {canEdit && task.description && (
+              <Pencil className="absolute top-1 right-1 h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+            )}
+          </div>
         )}
 
         {/* Type-specific details */}
@@ -238,6 +332,60 @@ export function TaskDetailPanel({ task, teamMembers, onClose }: TaskDetailPanelP
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Priority</p>
+            <Select
+              value={task.priority}
+              onValueChange={(v) => updateTask.mutate({ priority: v })}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(TASK_PRIORITY_CONFIG).map(([k, v]: [string, any]) => (
+                  <SelectItem key={k} value={k}>
+                    <span style={{ color: v.color }}>{v.label || k}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Due Date</p>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    'h-8 w-full justify-start text-xs font-normal',
+                    !task.due_date && 'text-muted-foreground'
+                  )}
+                >
+                  <CalendarIcon className="h-3 w-3 mr-2" />
+                  {task.due_date ? format(new Date(task.due_date), 'MMM d, yyyy') : 'No due date'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={task.due_date ? new Date(task.due_date) : undefined}
+                  onSelect={(date) => updateTask.mutate({ due_date: date ? format(date, 'yyyy-MM-dd') : null })}
+                  initialFocus
+                  className={cn('p-3 pointer-events-auto')}
+                />
+                {task.due_date && (
+                  <div className="border-t p-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => updateTask.mutate({ due_date: null })}
+                    >
+                      Clear due date
+                    </Button>
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 

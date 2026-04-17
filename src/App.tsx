@@ -27,7 +27,6 @@ import NotFound from "./pages/NotFound";
 import OnboardingPage from "./pages/OnboardingPage";
 import DemoPage from "./pages/DemoPage";
 import ClientPortalPage from "./pages/ClientPortalPage";
-import DemoPage from "./pages/DemoPage";
 
 const queryClient = new QueryClient();
 

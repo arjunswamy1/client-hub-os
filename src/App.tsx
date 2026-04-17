@@ -26,6 +26,7 @@ import CampaignBuildPage from "./pages/CampaignBuildPage";
 import NotFound from "./pages/NotFound";
 import OnboardingPage from "./pages/OnboardingPage";
 import DemoPage from "./pages/DemoPage";
+import ClientPortalPage from "./pages/ClientPortalPage";
 
 const queryClient = new QueryClient();
 
@@ -76,7 +77,7 @@ function ForcePasswordChange() {
 }
 
 function ProtectedRoutes() {
-  const { session, user, isLoading, isAdmin, isAccountManager } = useAuth();
+  const { session, user, isLoading, isAdmin, isAccountManager, isClientUser, clientUser } = useAuth();
 
   if (isLoading) {
     return (
@@ -90,6 +91,15 @@ function ProtectedRoutes() {
 
   if (user?.user_metadata?.must_change_password) {
     return <ForcePasswordChange />;
+  }
+
+  // Client portal users get a completely different layout
+  if (isClientUser) {
+    return (
+      <ClientProvider>
+        <ClientPortalPage />
+      </ClientProvider>
+    );
   }
 
   return (
@@ -111,6 +121,7 @@ function ProtectedRoutes() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}
+          <Route path="/client-portal-preview" element={<ClientPortalPage isAdminPreview adminName={user?.email || 'Admin'} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AppLayout>

@@ -3,6 +3,7 @@ import { TeamManagement } from '@/components/admin/TeamManagement';
 import { ClientManagement } from '@/components/admin/ClientManagement';
 import { AssignmentMatrix } from '@/components/admin/AssignmentMatrix';
 import { ClientOnboardingView } from '@/components/admin/ClientOnboardingView';
+import { ClientAccessManagement } from '@/components/admin/ClientAccessManagement';
 
 export default function AdminPage() {
   return (
@@ -17,6 +18,7 @@ export default function AdminPage() {
           <TabsTrigger value="team">Team</TabsTrigger>
           <TabsTrigger value="clients">Clients</TabsTrigger>
           <TabsTrigger value="assignments">Assignments</TabsTrigger>
+          <TabsTrigger value="client-access">Client Access</TabsTrigger>
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
@@ -29,6 +31,9 @@ export default function AdminPage() {
         </TabsContent>
         <TabsContent value="assignments">
           <AssignmentMatrix />
+        </TabsContent>
+        <TabsContent value="client-access">
+          <ClientAccessManagement />
         </TabsContent>
         <TabsContent value="onboarding">
           <ClientOnboardingView />

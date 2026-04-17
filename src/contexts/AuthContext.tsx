@@ -3,14 +3,24 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { TeamMember } from '@/types';
 
+interface ClientUserRecord {
+  id: string;
+  client_id: string;
+  user_id: string;
+  display_name: string | null;
+  client_role: string;
+}
+
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   teamMember: TeamMember | null;
+  clientUser: ClientUserRecord | null;
   isLoading: boolean;
   isAdmin: boolean;
   isAccountManager: boolean;
   isDesigner: boolean;
+  isClientUser: boolean;
   signOut: () => Promise<void>;
 }
 
@@ -20,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [teamMember, setTeamMember] = useState<TeamMember | null>(null);
+  const [clientUser, setClientUser] = useState<ClientUserRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -38,24 +49,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!user?.email) {
+    if (!user) {
       setTeamMember(null);
+      setClientUser(null);
       return;
     }
 
-    const fetchTeamMember = async () => {
-      const { data } = await supabase
-        .from('team_members')
-        .select('*')
-        .eq('email', user.email!)
-        .eq('is_active', true)
+    const fetchUserRole = async () => {
+      // Check team_members first (internal users)
+      if (user.email) {
+        const { data: tm } = await supabase
+          .from('team_members')
+          .select('*')
+          .eq('email', user.email)
+          .eq('is_active', true)
+          .maybeSingle();
+        
+        if (tm) {
+          setTeamMember(tm as TeamMember);
+          setClientUser(null);
+          return;
+        }
+      }
+
+      // Check client_users (external client portal users)
+      const { data: cu } = await supabase
+        .from('client_users')
+        .select('id, client_id, user_id, display_name, client_role')
+        .eq('user_id', user.id)
         .maybeSingle();
-      
-      setTeamMember(data as TeamMember | null);
+
+      setTeamMember(null);
+      setClientUser(cu as ClientUserRecord | null);
     };
 
-    fetchTeamMember();
-  }, [user?.email]);
+    fetchUserRole();
+  }, [user?.id, user?.email]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -64,11 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = teamMember?.role === 'admin';
   const isAccountManager = teamMember?.role === 'account_manager';
   const isDesigner = teamMember?.role === 'designer';
+  const isClientUser = !!clientUser && !teamMember;
 
   return (
     <AuthContext.Provider value={{
-      session, user, teamMember, isLoading,
-      isAdmin, isAccountManager, isDesigner, signOut
+      session, user, teamMember, clientUser, isLoading,
+      isAdmin, isAccountManager, isDesigner, isClientUser, signOut
     }}>
       {children}
     </AuthContext.Provider>

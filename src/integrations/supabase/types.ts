@@ -1129,9 +1129,64 @@ export type Database = {
           },
         ]
       }
+      client_invites: {
+        Row: {
+          accepted_at: string | null
+          client_id: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by_id: string | null
+          role: string
+          status: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          client_id: string
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          invited_by_id?: string | null
+          role?: string
+          status?: string
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          client_id?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by_id?: string | null
+          role?: string
+          status?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_invites_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_invites_invited_by_id_fkey"
+            columns: ["invited_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_users: {
         Row: {
           client_id: string
+          client_role: string
           created_at: string
           display_name: string | null
           id: string
@@ -1140,6 +1195,7 @@ export type Database = {
         }
         Insert: {
           client_id: string
+          client_role?: string
           created_at?: string
           display_name?: string | null
           id?: string
@@ -1148,6 +1204,7 @@ export type Database = {
         }
         Update: {
           client_id?: string
+          client_role?: string
           created_at?: string
           display_name?: string | null
           id?: string

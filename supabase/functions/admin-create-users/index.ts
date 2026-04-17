@@ -40,13 +40,19 @@ Deno.serve(async (req) => {
     let userData = await userRes.json();
     let userId = userData?.id;
 
-    // If user already exists, look them up and update password
-    if (!userRes.ok && (userData?.msg || userData?.message || "").toString().toLowerCase().includes("already")) {
-      const listRes = await fetch(`${supabaseUrl}/auth/v1/admin/users?filter=email.eq.${encodeURIComponent(u.email)}`, {
-        headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
-      });
-      const listData = await listRes.json();
-      const existing = listData?.users?.find((x: any) => x.email?.toLowerCase() === u.email.toLowerCase());
+    // If user already exists (or any failure), look them up and update password
+    if (!userRes.ok || !userId) {
+      // Page through users to find by email (admin list API)
+      let existing: any = null;
+      for (let page = 1; page <= 20 && !existing; page++) {
+        const listRes = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=200`, {
+          headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
+        });
+        const listData = await listRes.json();
+        const arr = listData?.users || [];
+        existing = arr.find((x: any) => x.email?.toLowerCase() === u.email.toLowerCase());
+        if (arr.length < 200) break;
+      }
       if (existing) {
         userId = existing.id;
         await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {

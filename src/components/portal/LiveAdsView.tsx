@@ -166,9 +166,7 @@ export function LiveAdsView() {
                     <PlatformIcon className="h-3 w-3" />
                     <span className="capitalize">{ad.platform}</span>
                   </div>
-                  <Badge className="absolute right-2 top-2 bg-emerald-500/90 text-[10px] text-white hover:bg-emerald-500/90">
-                    Active
-                  </Badge>
+                  <Badge className="absolute right-2 top-2 text-[10px]">Active</Badge>
                 </div>
 
                 {/* Body */}

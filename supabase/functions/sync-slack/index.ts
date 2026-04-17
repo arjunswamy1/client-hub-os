@@ -233,6 +233,9 @@ Deno.serve(async (req) => {
 
           // Create tasks from extracted action items
           if (aiResult.tasks && aiResult.tasks.length > 0) {
+            // Channels whose action items should ONLY become creative briefs (never tasks)
+            const CREATIVE_ONLY_CHANNELS = ['cpm_malena', '#cpm_malena'];
+
             for (const task of aiResult.tasks) {
               // Match assignee by name
               let assigneeId: string | null = null;
@@ -244,41 +247,45 @@ Deno.serve(async (req) => {
                 if (match) assigneeId = match.id;
               }
 
-              const { data: taskData, error: taskError } = await supabase.from('tasks').insert({
+              // Normalize channel name (strip leading #)
+              const normalizedChannel = (task.channel || '').replace(/^#+/, '');
+              const isCreativeOnly = CREATIVE_ONLY_CHANNELS.includes(normalizedChannel) ||
+                                     CREATIVE_ONLY_CHANNELS.includes(task.channel);
+
+              // ──── Creative-only channels: create brief, SKIP task entirely ────
+              if (isCreativeOnly) {
+                try {
+                  const briefPriority = task.priority === 'high' ? 'high' : task.priority === 'low' ? 'low' : 'medium';
+                  const { error: briefError } = await supabase.from('creative_briefs').insert({
+                    client_id,
+                    title: task.title,
+                    status: 'draft',
+                    priority: briefPriority,
+                    creative_type: 'static',
+                    assigned_to_id: assigneeId,
+                    notes: `[Auto-created from Slack #${normalizedChannel}]\n\n${task.context}`,
+                  });
+                  if (briefError) console.error('Creative brief creation error:', briefError);
+                  else console.log('Creative brief auto-created (no task) for:', task.title);
+                } catch (briefErr) {
+                  console.error('Creative brief creation exception:', briefErr);
+                }
+                continue; // Skip task creation for creative-only channels
+              }
+
+              // ──── Normal channel: create a task ────
+              const { error: taskError } = await supabase.from('tasks').insert({
                 client_id,
                 title: task.title,
-                description: `[Auto-created from Slack #${task.channel}]\n\n${task.context}`,
+                description: `[Auto-created from Slack #${normalizedChannel}]\n\n${task.context}`,
                 status: 'todo',
                 priority: task.priority || 'medium',
                 assignee_id: assigneeId,
-                tags: ['slack-auto', task.channel],
+                tags: ['slack-auto', normalizedChannel],
                 position: 0,
-              }).select('id').single();
+              });
 
-              if (!taskError) {
-                tasksCreated++;
-
-                // Auto-create creative brief for tasks from #cpm_malena (creative-specific channel)
-                const CREATIVE_CHANNELS = ['#cpm_malena', 'cpm_malena'];
-                if (CREATIVE_CHANNELS.includes(task.channel)) {
-                  try {
-                    const briefPriority = task.priority === 'high' ? 'high' : task.priority === 'low' ? 'low' : 'medium';
-                    const { error: briefError } = await supabase.from('creative_briefs').insert({
-                      client_id,
-                      title: task.title,
-                      status: 'draft',
-                      priority: briefPriority,
-                      creative_type: 'static',
-                      assigned_to_id: assigneeId,
-                      notes: `[Auto-created from Slack ${task.channel}]\n\n${task.context}`,
-                    });
-                    if (briefError) console.error('Creative brief creation error:', briefError);
-                    else console.log('Creative brief auto-created for task:', task.title);
-                  } catch (briefErr) {
-                    console.error('Creative brief creation exception:', briefErr);
-                  }
-                }
-              }
+              if (!taskError) tasksCreated++;
               else console.error('Task creation error:', taskError);
             }
           }

@@ -10,7 +10,7 @@ interface ClientPortalPageProps {
 }
 
 export default function ClientPortalPage({ isAdminPreview, adminName }: ClientPortalPageProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'live-ads'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'live-ads'>('live-ads');
 
   return (
     <DateRangeProvider>

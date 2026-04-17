@@ -2,14 +2,11 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useClient } from '@/contexts/ClientContext';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowUpDown, Chrome, Facebook, Image, Video, Layers } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
-type SortField = 'spend' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cpa';
-type SortDir = 'asc' | 'desc';
+import { Chrome, Facebook, Image as ImageIcon, Video, Layers, ImageOff } from 'lucide-react';
+import { useClientVerticals } from '@/hooks/useClientVerticals';
+import { BILLY_VERTICALS, matchesVertical, matchesVerticalAccount, VerticalConfig } from '@/config/billyVerticals';
 
 const DATE_RANGES = [
   { label: 'Last 7 days', days: 7 },
@@ -31,26 +28,25 @@ function formatPct(v: number | null) {
   return `${(v * 100).toFixed(2)}%`;
 }
 
-const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  active: { label: 'Active', variant: 'default' },
-  paused: { label: 'Paused', variant: 'secondary' },
-  in_review: { label: 'In Review', variant: 'outline' },
-};
-
-const formatIcons: Record<string, typeof Image> = {
-  image: Image,
+const formatIcons: Record<string, typeof ImageIcon> = {
+  image: ImageIcon,
   video: Video,
   carousel: Layers,
-  static: Image,
+  static: ImageIcon,
 };
 
 export function LiveAdsView() {
   const { activeClient } = useClient();
+  const { dbVerticals } = useClientVerticals();
   const [days, setDays] = useState(30);
   const [platformFilter, setPlatformFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [sortField, setSortField] = useState<SortField>('spend');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [verticalFilter, setVerticalFilter] = useState('all');
+
+  const verticals = useMemo<VerticalConfig[]>(() => {
+    const existingIds = new Set(BILLY_VERTICALS.map(v => v.id));
+    const custom = dbVerticals.filter(v => !existingIds.has(v.id));
+    return [...BILLY_VERTICALS, ...custom];
+  }, [dbVerticals]);
 
   const dateFrom = useMemo(() => {
     const d = new Date();
@@ -59,48 +55,50 @@ export function LiveAdsView() {
   }, [days]);
 
   const { data: ads = [], isLoading } = useQuery({
-    queryKey: ['portal-live-ads', activeClient?.id, dateFrom, platformFilter, statusFilter],
+    queryKey: ['portal-live-ads', activeClient?.id, dateFrom, platformFilter],
     enabled: !!activeClient?.id,
     queryFn: async () => {
       let query = supabase
         .from('ad_creatives')
         .select('*')
         .eq('client_id', activeClient!.id)
+        .eq('status', 'active')
         .gte('date_from', dateFrom);
 
       if (platformFilter !== 'all') query = query.eq('platform', platformFilter);
-      if (statusFilter !== 'all') query = query.eq('status', statusFilter);
 
-      const { data, error } = await query.order('spend', { ascending: false }).limit(200);
+      const { data, error } = await query.order('spend', { ascending: false }).limit(500);
       if (error) throw error;
       return data || [];
     },
   });
 
-  const sorted = useMemo(() => {
-    return [...ads].sort((a, b) => {
-      const av = (a as any)[sortField] ?? 0;
-      const bv = (b as any)[sortField] ?? 0;
-      return sortDir === 'desc' ? bv - av : av - bv;
+  const activeVertical = verticals.find(v => v.id === verticalFilter);
+
+  const filtered = useMemo(() => {
+    if (!activeVertical || activeVertical.id === 'all') return ads;
+    return ads.filter(ad => {
+      const platform = (ad.platform === 'google' ? 'google' : 'meta') as 'meta' | 'google';
+      const accountOk = matchesVerticalAccount(null, activeVertical, platform);
+      const nameOk = matchesVertical(ad.campaign_name || '', activeVertical, platform);
+      return accountOk && nameOk;
     });
-  }, [ads, sortField, sortDir]);
+  }, [ads, activeVertical]);
 
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
-    else { setSortField(field); setSortDir('desc'); }
-  };
-
-  const campaigns = useMemo(() => {
-    const set = new Set(ads.map(a => a.campaign_name));
-    return Array.from(set).sort();
-  }, [ads]);
+  const sorted = useMemo(
+    () => [...filtered].sort((a, b) => (b.spend || 0) - (a.spend || 0)),
+    [filtered],
+  );
 
   if (!activeClient) return null;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-semibold">Live Ads</h2>
+        <div>
+          <h2 className="text-xl font-semibold">Live Ads</h2>
+          <p className="text-xs text-muted-foreground">Currently active creatives — share with your buyers</p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={String(days)} onValueChange={v => setDays(Number(v))}>
             <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
@@ -110,20 +108,22 @@ export function LiveAdsView() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={verticalFilter} onValueChange={setVerticalFilter}>
+            <SelectTrigger className="w-[170px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {verticals.map(v => (
+                <SelectItem key={v.id} value={v.id}>
+                  <span className="mr-1.5">{v.emoji}</span>{v.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={platformFilter} onValueChange={setPlatformFilter}>
-            <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-[130px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Platforms</SelectItem>
               <SelectItem value="meta">Meta</SelectItem>
               <SelectItem value="google">Google</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="paused">Paused</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -135,131 +135,80 @@ export function LiveAdsView() {
         </div>
       ) : sorted.length === 0 ? (
         <div className="rounded-lg border p-12 text-center text-sm text-muted-foreground">
-          No ads found for the selected filters.
+          No live ads currently running for the selected filters.
         </div>
       ) : (
-        <>
-          {/* Desktop table */}
-          <div className="hidden overflow-x-auto rounded-lg border md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[200px]">Ad Name</TableHead>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead>Platform</TableHead>
-                  <TableHead>Format</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="cursor-pointer" onClick={() => toggleSort('spend')}>
-                    <span className="flex items-center gap-1">Spend <ArrowUpDown className="h-3 w-3" /></span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer" onClick={() => toggleSort('impressions')}>
-                    <span className="flex items-center gap-1">Impressions <ArrowUpDown className="h-3 w-3" /></span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer" onClick={() => toggleSort('clicks')}>
-                    <span className="flex items-center gap-1">Clicks <ArrowUpDown className="h-3 w-3" /></span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer" onClick={() => toggleSort('ctr')}>
-                    <span className="flex items-center gap-1">CTR <ArrowUpDown className="h-3 w-3" /></span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer" onClick={() => toggleSort('conversions')}>
-                    <span className="flex items-center gap-1">Conv. <ArrowUpDown className="h-3 w-3" /></span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer" onClick={() => toggleSort('cpa')}>
-                    <span className="flex items-center gap-1">CPA <ArrowUpDown className="h-3 w-3" /></span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sorted.map(ad => {
-                  const status = statusConfig[ad.status || 'active'] || statusConfig.active;
-                  const PlatformIcon = ad.platform === 'google' ? Chrome : Facebook;
-                  const FormatIcon = formatIcons[(ad.format || 'static').toLowerCase()] || Image;
-                  return (
-                    <TableRow key={ad.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {ad.creative_thumbnail_url && (
-                            <img src={ad.creative_thumbnail_url} className="h-8 w-8 rounded object-cover" alt="" />
-                          )}
-                          <span className="text-sm font-medium line-clamp-1">{ad.ad_name || ad.headline || 'Untitled'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground line-clamp-1 max-w-[160px]">{ad.campaign_name}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <PlatformIcon className="h-3.5 w-3.5" />
-                          <span className="text-xs capitalize">{ad.platform}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <FormatIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-xs capitalize">{ad.format || 'Static'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={status.variant} className="text-[10px]">{status.label}</Badge>
-                      </TableCell>
-                      <TableCell className="font-medium">{formatCurrency(ad.spend)}</TableCell>
-                      <TableCell>{formatNumber(ad.impressions)}</TableCell>
-                      <TableCell>{formatNumber(ad.clicks)}</TableCell>
-                      <TableCell>{formatPct(ad.ctr)}</TableCell>
-                      <TableCell>{formatNumber(ad.conversions)}</TableCell>
-                      <TableCell>{formatCurrency(ad.cpa)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Mobile card layout */}
-          <div className="space-y-3 md:hidden">
-            {sorted.map(ad => {
-              const status = statusConfig[ad.status || 'active'] || statusConfig.active;
-              const PlatformIcon = ad.platform === 'google' ? Chrome : Facebook;
-              return (
-                <div key={ad.id} className="rounded-lg border bg-card p-4 space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {ad.creative_thumbnail_url && (
-                        <img src={ad.creative_thumbnail_url} className="h-10 w-10 rounded object-cover shrink-0" alt="" />
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{ad.ad_name || ad.headline || 'Untitled'}</p>
-                        <p className="text-xs text-muted-foreground truncate">{ad.campaign_name}</p>
-                      </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {sorted.map(ad => {
+            const PlatformIcon = ad.platform === 'google' ? Chrome : Facebook;
+            const FormatIcon = formatIcons[(ad.format || 'static').toLowerCase()] || ImageIcon;
+            const thumb = ad.creative_thumbnail_url;
+            return (
+              <div
+                key={ad.id}
+                className="group flex flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
+              >
+                {/* Visual */}
+                <div className="relative aspect-square w-full overflow-hidden bg-muted">
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt={ad.ad_name || ad.headline || 'Ad creative'}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                      <ImageOff className="h-10 w-10" />
                     </div>
-                    <Badge variant={status.variant} className="text-[10px] shrink-0">{status.label}</Badge>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  )}
+                  <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm">
                     <PlatformIcon className="h-3 w-3" />
                     <span className="capitalize">{ad.platform}</span>
-                    <span>•</span>
+                  </div>
+                  <Badge className="absolute right-2 top-2 text-[10px]">Active</Badge>
+                </div>
+
+                {/* Body */}
+                <div className="flex flex-1 flex-col gap-2 p-3">
+                  <div>
+                    <p className="line-clamp-1 text-sm font-medium">
+                      {ad.ad_name || ad.headline || 'Untitled'}
+                    </p>
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{ad.campaign_name}</p>
+                  </div>
+
+                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <FormatIcon className="h-3 w-3" />
                     <span className="capitalize">{ad.format || 'Static'}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-center">
+
+                  <div className="mt-auto grid grid-cols-3 gap-1.5 border-t pt-2 text-center">
                     <div>
-                      <p className="text-xs text-muted-foreground">Spend</p>
-                      <p className="text-sm font-medium">{formatCurrency(ad.spend)}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Spend</p>
+                      <p className="text-xs font-semibold">{formatCurrency(ad.spend)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Clicks</p>
-                      <p className="text-sm font-medium">{formatNumber(ad.clicks)}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">CTR</p>
+                      <p className="text-xs font-semibold">{formatPct(ad.ctr)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Conv.</p>
-                      <p className="text-sm font-medium">{formatNumber(ad.conversions)}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Conv</p>
+                      <p className="text-xs font-semibold">{formatNumber(ad.conversions)}</p>
                     </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      <p className="text-xs text-muted-foreground">{sorted.length} ad{sorted.length !== 1 ? 's' : ''} found</p>
+      {!isLoading && sorted.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {sorted.length} live ad{sorted.length !== 1 ? 's' : ''} shown
+        </p>
+      )}
     </div>
   );
 }

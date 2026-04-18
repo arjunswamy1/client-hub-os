@@ -1093,7 +1093,63 @@ async function addReaction(token: string, channel: string, timestamp: string, em
   }
 }
 
-// ─── Main handler ──────────────────────────────────────────────────────────
+async function uploadChartToSlack(
+  token: string,
+  channel: string,
+  chart: { url: string; title: string },
+  threadTs?: string,
+) {
+  try {
+    const imgRes = await fetch(chart.url);
+    if (!imgRes.ok) {
+      console.warn('QuickChart fetch failed:', imgRes.status);
+      return;
+    }
+    const blob = await imgRes.blob();
+    const fileSize = blob.size;
+    const filename = `${chart.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
+
+    // Step 1: get upload URL
+    const getUrlRes = await fetch(
+      `https://slack.com/api/files.getUploadURLExternal?filename=${encodeURIComponent(filename)}&length=${fileSize}`,
+      { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } },
+    );
+    const getUrlData = await getUrlRes.json();
+    if (!getUrlData.ok) {
+      console.warn('files.getUploadURLExternal failed:', getUrlData.error);
+      return;
+    }
+
+    // Step 2: upload bytes
+    const uploadRes = await fetch(getUrlData.upload_url, {
+      method: 'POST',
+      body: blob,
+    });
+    if (!uploadRes.ok) {
+      console.warn('chart upload PUT failed:', uploadRes.status);
+      return;
+    }
+
+    // Step 3: complete and post into thread
+    const completeBody: Record<string, unknown> = {
+      files: [{ id: getUrlData.file_id, title: chart.title }],
+      channel_id: channel,
+    };
+    if (threadTs) completeBody.thread_ts = threadTs;
+
+    const completeRes = await fetch('https://slack.com/api/files.completeUploadExternal', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(completeBody),
+    });
+    const completeData = await completeRes.json();
+    if (!completeData.ok) {
+      console.warn('files.completeUploadExternal failed:', completeData.error);
+    }
+  } catch (e) {
+    console.warn('uploadChartToSlack error (non-fatal):', e);
+  }
+}
 
 async function processSlackMessage(event: any) {
   const isDirectConversation = isDirectConversationEvent(event);

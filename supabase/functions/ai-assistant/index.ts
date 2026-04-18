@@ -339,7 +339,7 @@ You should answer questions about campaign performance, meeting summaries, actio
 
     // Call Anthropic Claude (with chart tool enabled)
     const aiRes = await callAnthropic(messages, {
-      max_tokens: 2048,
+      max_tokens: 4096,
       temperature: 0.3,
       enableCharts: true,
     });

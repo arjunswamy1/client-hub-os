@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callAnthropic } from "../_shared/anthropic.ts";
+import { callAnthropic, truncate } from "../_shared/anthropic.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -510,14 +510,14 @@ async function getClientData(
       .in('status', ['todo', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(25),
-    // CONTEXT FEED — full Slack + Fathom + email feed (90 days, more items, longer content)
+    // CONTEXT FEED — Slack/Fathom/email trimmed to 30 days, 80 items
     supabase
       .from('context_items')
       .select('title, content, content_type, source, occurred_at, participants, metadata')
       .eq('client_id', clientId)
-      .gte('occurred_at', new Date(Date.now() - 90 * 86400000).toISOString())
+      .gte('occurred_at', new Date(Date.now() - 30 * 86400000).toISOString())
       .order('occurred_at', { ascending: false })
-      .limit(120),
+      .limit(80),
     supabase
       .from('ringba_calls')
       .select('call_date, revenue, payout, converted, connected, duration_seconds, campaign_name, target_name')
@@ -525,28 +525,28 @@ async function getClientData(
       .gte('call_date', dateRange.from)
       .lte('call_date', dateRange.to)
       .order('call_date', { ascending: false })
-      .limit(2000),
+      .limit(1500),
     supabase
       .from('dashboard_configs')
       .select('revenue_source')
       .eq('client_id', clientId)
       .maybeSingle(),
-    // FULL CREATIVES TABLE
+    // CREATIVES — top 30 by spend
     supabase
       .from('ad_creatives')
       .select('campaign_name, ad_name, platform, spend, revenue, conversions, ctr, cpa, roas, headline, status, creative_type, format')
       .eq('client_id', clientId)
       .gte('date_from', dateRange.from)
       .order('spend', { ascending: false })
-      .limit(50),
-    // GOOGLE KEYWORDS
+      .limit(30),
+    // GOOGLE KEYWORDS — top 30 by spend
     supabase
       .from('campaign_keywords')
       .select('keyword, ad_group, campaign_name, match_type, platform, spend, clicks, conversions, ctr, cpc, cpa, quality_score, is_negative')
       .eq('client_id', clientId)
       .gte('date', dateRange.from)
       .order('spend', { ascending: false })
-      .limit(50),
+      .limit(30),
   ]);
 
   const usesRingbaRevenue = dashConfigRes.data?.revenue_source === 'ringba';
@@ -742,27 +742,27 @@ async function getClientData(
     const other = contextRes.data.filter((c: any) => !['fathom', 'slack', 'email', 'gmail'].includes(c.source));
 
     if (fathom.length) {
-      recentContext += `\n🎙️ Fathom Meeting Recordings (last 90d):\n`;
-      for (const m of fathom.slice(0, 15)) {
-        recentContext += `  • [${(m.occurred_at || '').slice(0, 10)}] ${m.title}${(m.participants || []).length ? ' — ' + (m.participants || []).join(', ') : ''}\n    ${(m.content || '').slice(0, 600).replace(/\n/g, ' ')}\n`;
+      recentContext += `\n🎙️ Fathom Meeting Recordings (last 30d):\n`;
+      for (const m of fathom.slice(0, 10)) {
+        recentContext += `  • [${(m.occurred_at || '').slice(0, 10)}] ${m.title}${(m.participants || []).length ? ' — ' + (m.participants || []).join(', ') : ''}\n    ${truncate((m.content || '').replace(/\n/g, ' '), 400)}\n`;
       }
     }
     if (slack.length) {
-      recentContext += `\n💬 Slack Communications (last 90d):\n`;
-      for (const s of slack.slice(0, 50)) {
-        recentContext += `  • [${(s.occurred_at || '').slice(0, 10)}] ${s.title || s.content_type}: ${(s.content || '').slice(0, 400).replace(/\n/g, ' ')}\n`;
+      recentContext += `\n💬 Slack Communications (last 30d):\n`;
+      for (const s of slack.slice(0, 30)) {
+        recentContext += `  • [${(s.occurred_at || '').slice(0, 10)}] ${s.title || s.content_type}: ${truncate((s.content || '').replace(/\n/g, ' '), 250)}\n`;
       }
     }
     if (emails.length) {
-      recentContext += `\n✉️ Email Threads (last 90d):\n`;
-      for (const e of emails.slice(0, 15)) {
-        recentContext += `  • [${(e.occurred_at || '').slice(0, 10)}] ${e.title}: ${(e.content || '').slice(0, 350).replace(/\n/g, ' ')}\n`;
+      recentContext += `\n✉️ Email Threads (last 30d):\n`;
+      for (const e of emails.slice(0, 10)) {
+        recentContext += `  • [${(e.occurred_at || '').slice(0, 10)}] ${e.title}: ${truncate((e.content || '').replace(/\n/g, ' '), 250)}\n`;
       }
     }
     if (other.length) {
       recentContext += `\n📝 Other Notes/Docs:\n`;
-      for (const o of other.slice(0, 15)) {
-        recentContext += `  • [${o.source} • ${(o.occurred_at || '').slice(0, 10)}] ${o.title}: ${(o.content || '').slice(0, 300).replace(/\n/g, ' ')}\n`;
+      for (const o of other.slice(0, 10)) {
+        recentContext += `  • [${o.source} • ${(o.occurred_at || '').slice(0, 10)}] ${o.title}: ${truncate((o.content || '').replace(/\n/g, ' '), 200)}\n`;
       }
     }
   }
@@ -1118,6 +1118,10 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
     if (result.status === 429) return { text: "I'm being rate limited right now. Try again in a moment! 🕐", charts: [] };
     if (result.status === 401) return { text: 'Anthropic API key is invalid — please update ANTHROPIC_API_KEY.', charts: [] };
     return { text: "I couldn't generate a response right now. Please try again in a moment! 🔧", charts: [] };
+  }
+
+  if (result.usage) {
+    console.log(`[slack-ai-bot] Anthropic tokens — input: ${result.usage.input_tokens}, output: ${result.usage.output_tokens}`);
   }
 
   const text = result.content && result.content.trim().length > 0

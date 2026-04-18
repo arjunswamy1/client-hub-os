@@ -27,6 +27,7 @@ import CampaignBuildPage from "./pages/CampaignBuildPage";
 import NotFound from "./pages/NotFound";
 import OnboardingPage from "./pages/OnboardingPage";
 import DemoPage from "./pages/DemoPage";
+import DemoDashboardPage from "./pages/DemoDashboardPage";
 import SignupPage from "./pages/SignupPage";
 import ClientPortalPage from "./pages/ClientPortalPage";
 import UnsubscribePage from "./pages/UnsubscribePage";
@@ -143,6 +144,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/demo" element={<DemoPage />} />
+            <Route path="/demo/dashboard" element={<DemoDashboardPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route path="/onboarding/:token" element={<OnboardingPage />} />

@@ -80,7 +80,12 @@ export default function DemoPage() {
       if (signInError) throw signInError;
 
       toast.success("Welcome! Your demo dashboard is ready.");
-      navigate("/dashboard");
+      // Send to mobile-first demo dashboard with their tailored data
+      const params = new URLSearchParams({
+        company: form.companyName,
+        spend: form.monthlyAdSpend,
+      });
+      navigate(`/demo/dashboard?${params.toString()}`);
     } catch (err: any) {
       toast.error(err.message || "Something went wrong");
       setStep("signup");

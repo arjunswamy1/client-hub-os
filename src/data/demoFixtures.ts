@@ -134,7 +134,7 @@ const INDUSTRY_PROFILES: Record<DemoIndustry, {
       'Meta Retargeting': 0.18,
       'Call Tracking': 0.02,
     },
-    topCreativeThemes: ['Product Hero', 'UGC Testimonial', 'Carousel — Best Sellers', 'Lifestyle Video'],
+    topCreativeThemes: ['Product Hero', 'UGC Testimonial', 'Carousel - Best Sellers', 'Lifestyle Video'],
     industryLeak: 'Performance Max bleeding into low-intent placements',
     industryWin: 'Branded search defending +$1 LTV multiplier',
   },
@@ -310,7 +310,7 @@ export function generateDemoData(opts: {
   const rand = seedRand(seed);
   const jitter = (base: number, pct = 0.1) => base * (1 + (rand() - 0.5) * 2 * pct);
 
-  // Last 7 days view — weekly spend = monthly / 4.3
+  // Last 7 days view - weekly spend = monthly / 4.3
   const weeklySpend = monthlySpend / 4.3;
   const blendedRoas = jitter(profile.blendedRoas, 0.05);
   const weeklyRevenue = weeklySpend * blendedRoas;
@@ -418,12 +418,12 @@ export function generateDemoData(opts: {
       frequency: Number((isWinner ? 2.1 : isFatigued ? 8.4 : isUnder ? 5.8 : 3.2).toFixed(1)),
       status: isWinner ? 'winner' : isFatigued ? 'fatigued' : isUnder ? 'underperformer' : 'testing',
       insight: isWinner
-        ? `Carrying the account — drives ${Math.round((revenue / weeklyRevenue) * 100)}% of revenue. Scale variants this week.`
+        ? `Carrying the account - drives ${Math.round((revenue / weeklyRevenue) * 100)}% of revenue. Scale variants this week.`
         : isFatigued
-          ? `Frequency at 8.4x — CTR collapsed from 2.1% to 0.6%. Refresh or kill.`
+          ? `Frequency at 8.4x - CTR collapsed from 2.1% to 0.6%. Refresh or kill.`
           : isUnder
             ? `Negative ROAS contribution. Pause and reallocate to top performer.`
-            : `In testing — needs more spend to reach statistical significance.`,
+            : `In testing - needs more spend to reach statistical significance.`,
     };
   });
 
@@ -439,7 +439,7 @@ export function generateDemoData(opts: {
       severity: 'high',
       title: `${topChannel.channel} delivering ${topChannel.roas.toFixed(1)}x ROAS`,
       metric: `${topChannel.roas.toFixed(2)}x`,
-      description: `${topChannel.channel} is your strongest channel this week — ${fmtCurrency(topChannel.revenue)} in revenue from ${fmtCurrency(topChannel.spend)} spend.`,
+      description: `${topChannel.channel} is your strongest channel this week - ${fmtCurrency(topChannel.revenue)} in revenue from ${fmtCurrency(topChannel.spend)} spend.`,
       platform: topChannel.channel,
     },
     {
@@ -448,7 +448,7 @@ export function generateDemoData(opts: {
       severity: 'medium',
       title: `Top creative carrying the account`,
       metric: fmtCurrency(creatives[0].revenue),
-      description: `"${creatives[0].name}" drove ${Math.round((creatives[0].revenue / weeklyRevenue) * 100)}% of total revenue this week — clear winner to scale.`,
+      description: `"${creatives[0].name}" drove ${Math.round((creatives[0].revenue / weeklyRevenue) * 100)}% of total revenue this week - clear winner to scale.`,
       platform: 'Meta',
     },
     ...(wastedSpendChannel ? [{
@@ -468,7 +468,7 @@ export function generateDemoData(opts: {
       severity: 'high',
       title: 'Creative fatigue detected',
       metric: '8.4x frequency',
-      description: `Top retargeting ad shown 8.4x to same users this week. CTR dropped 71% — audience is burned out.`,
+      description: `Top retargeting ad shown 8.4x to same users this week. CTR dropped 71% - audience is burned out.`,
       recommendation: `Refresh creative or expand audience. Use top-performing variant as the new control.`,
       projectedImpact: `+18% CTR recovery`,
       platform: 'Meta',
@@ -490,7 +490,7 @@ export function generateDemoData(opts: {
       severity: 'high',
       title: 'Cross-channel halo effect untapped',
       metric: `+${Math.round(jitter(34, 0.2))}%`,
-      description: `Days when Meta spend is high, branded search clicks lift +34% — but you're not budgeting for the halo.`,
+      description: `Days when Meta spend is high, branded search clicks lift +34% - but you're not budgeting for the halo.`,
       recommendation: 'Increase Meta prospecting by 20% on days you push branded search.',
       projectedImpact: `+${fmtCurrency(weeklyRevenue * 0.12)} weekly`,
     },
@@ -512,7 +512,7 @@ export function generateDemoData(opts: {
       id: 'r2',
       priority: 'high',
       title: `Launch 3 variants of "${creatives[0].name}" this week`,
-      reasoning: `Your top creative is driving ${Math.round((creatives[0].revenue / weeklyRevenue) * 100)}% of revenue at ${creatives[0].roas.toFixed(1)}x ROAS. Single point of failure — and we're leaving scale on the table.`,
+      reasoning: `Your top creative is driving ${Math.round((creatives[0].revenue / weeklyRevenue) * 100)}% of revenue at ${creatives[0].roas.toFixed(1)}x ROAS. Single point of failure - and we're leaving scale on the table.`,
       action: `Brief 3 variants: hook change, format swap (video → carousel), and audience-specific cut.`,
       projectedImpact: `+${fmtCurrency(weeklyRevenue * 0.22)} potential weekly`,
       effort: 'medium',
@@ -553,7 +553,7 @@ export function generateDemoData(opts: {
   // ── Cross-channel attribution story ──
   const crossChannelStory = {
     title: 'Meta lifts Google performance by 34%',
-    summary: `On days you spend more on Meta prospecting, branded search clicks rise +34% and call volume rises +28% — pure halo effect that single-channel attribution misses.`,
+    summary: `On days you spend more on Meta prospecting, branded search clicks rise +34% and call volume rises +28% - pure halo effect that single-channel attribution misses.`,
     metaInfluencedSearchLift: 34,
     callsAttributedToMeta: Math.round(weeklyConversions * 0.18),
     incrementalRevenue: Math.round(weeklyRevenue * 0.21),

@@ -301,7 +301,7 @@ export default function DemoDashboardPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors min-h-[60px]',
+                  'relative flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors min-h-[60px]',
                   active ? 'text-[hsl(94,55%,60%)]' : 'text-white/55 hover:text-white/85'
                 )}
               >
@@ -309,7 +309,7 @@ export default function DemoDashboardPage() {
                 <span className={cn('text-[10px] font-semibold', active && 'text-[hsl(94,55%,60%)]')}>
                   {tab.label}
                 </span>
-                {active && <span className="absolute bottom-0 h-0.5 w-8 rounded-t-full bg-[hsl(94,55%,55%)]" />}
+                {active && <span className="absolute top-0 h-0.5 w-8 rounded-b-full bg-[hsl(94,55%,55%)]" />}
               </button>
             );
           })}

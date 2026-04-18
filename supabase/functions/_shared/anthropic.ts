@@ -221,7 +221,7 @@ export async function callAnthropic(
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(sanitizeForJson(body)),
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

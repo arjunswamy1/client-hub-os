@@ -96,11 +96,11 @@ export default function DemoPage() {
 
   if (step === "creating") {
     return (
-      <div className="min-h-screen bg-[hsl(222,47%,8%)] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center space-y-4">
-          <div className="h-10 w-10 mx-auto animate-spin rounded-full border-2 border-white border-t-transparent" />
-          <p className="text-white/80 text-lg">Setting up your dashboard…</p>
-          <p className="text-white/50 text-sm">This only takes a moment</p>
+          <div className="h-10 w-10 mx-auto animate-spin rounded-full border-2 border-[hsl(94,55%,38%)] border-t-transparent" />
+          <p className="text-slate-800 text-lg">Setting up your dashboard…</p>
+          <p className="text-slate-500 text-sm">This only takes a moment</p>
         </div>
       </div>
     );

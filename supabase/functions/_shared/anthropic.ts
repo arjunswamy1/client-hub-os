@@ -260,6 +260,7 @@ export async function callAnthropic(
   }
 
   const charts: GeneratedChart[] = [];
+  const totalUsage: TokenUsage = { input_tokens: 0, output_tokens: 0 };
   const maxRounds = options.maxToolRounds ?? 3;
 
   for (let round = 0; round < maxRounds; round++) {
@@ -286,13 +287,13 @@ export async function callAnthropic(
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error("Anthropic fetch exception:", message);
-      return { ok: false, status: 500, content: "", charts, error: message };
+      return { ok: false, status: 500, content: "", charts, usage: totalUsage, error: message };
     }
 
     if (!res.ok) {
       const errText = await res.text();
       console.error("Anthropic error:", res.status, errText.slice(0, 500));
-      return { ok: false, status: res.status, content: "", charts, error: errText.slice(0, 500) };
+      return { ok: false, status: res.status, content: "", charts, usage: totalUsage, error: errText.slice(0, 500) };
     }
 
     const data = await res.json();
@@ -300,9 +301,24 @@ export async function callAnthropic(
     const textOut = blocks.filter((b) => b.type === "text").map((b) => b.text).join("");
     const toolUses = blocks.filter((b) => b.type === "tool_use");
 
+    // Accumulate token usage across rounds
+    if (data.usage) {
+      totalUsage.input_tokens += data.usage.input_tokens || 0;
+      totalUsage.output_tokens += data.usage.output_tokens || 0;
+      if (data.usage.cache_creation_input_tokens) {
+        totalUsage.cache_creation_input_tokens =
+          (totalUsage.cache_creation_input_tokens || 0) + data.usage.cache_creation_input_tokens;
+      }
+      if (data.usage.cache_read_input_tokens) {
+        totalUsage.cache_read_input_tokens =
+          (totalUsage.cache_read_input_tokens || 0) + data.usage.cache_read_input_tokens;
+      }
+    }
+
     // No tool calls — we're done.
     if (toolUses.length === 0 || data.stop_reason !== "tool_use") {
-      return { ok: true, status: 200, content: textOut, charts };
+      console.log(`[anthropic] tokens — in: ${totalUsage.input_tokens}, out: ${totalUsage.output_tokens}, rounds: ${round + 1}`);
+      return { ok: true, status: 200, content: textOut, charts, usage: totalUsage };
     }
 
     // Echo assistant turn back into the conversation, then add tool_results.
@@ -347,10 +363,12 @@ export async function callAnthropic(
   }
 
   // Hit max rounds without final text.
+  console.log(`[anthropic] tokens — in: ${totalUsage.input_tokens}, out: ${totalUsage.output_tokens}, MAX ROUNDS`);
   return {
     ok: true,
     status: 200,
     content: "I generated the chart(s) above. Let me know if you'd like a different view.",
     charts,
+    usage: totalUsage,
   };
 }

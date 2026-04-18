@@ -68,8 +68,20 @@ export default function DemoPage() {
         },
       });
 
-      if (error) throw error;
+      // When the edge function returns non-2xx, `error` is a FunctionsHttpError
+      // but the JSON body (with our friendly `error` message) lives on `data`.
       if (data?.error) throw new Error(data.error);
+      if (error) {
+        // Try to extract a friendlier message from the response body
+        const ctx: any = (error as any).context;
+        try {
+          const body = await ctx?.json?.();
+          if (body?.error) throw new Error(body.error);
+        } catch {
+          // fall through
+        }
+        throw error;
+      }
 
       // Sign in the user
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -80,14 +92,21 @@ export default function DemoPage() {
       if (signInError) throw signInError;
 
       toast.success("Welcome! Your demo dashboard is ready.");
-      // Send to mobile-first demo dashboard with their tailored data
       const params = new URLSearchParams({
         company: form.companyName,
         spend: form.monthlyAdSpend,
       });
       navigate(`/demo/dashboard?${params.toString()}`);
     } catch (err: any) {
-      toast.error(err.message || "Something went wrong");
+      const msg = err?.message || "Something went wrong";
+      // If account already exists, offer to log in
+      if (msg.toLowerCase().includes("already exists")) {
+        toast.error(msg, {
+          action: { label: "Log in", onClick: () => navigate("/auth") },
+        });
+      } else {
+        toast.error(msg);
+      }
       setStep("signup");
     } finally {
       setIsSubmitting(false);

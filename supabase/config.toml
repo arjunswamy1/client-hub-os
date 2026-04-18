@@ -2,3 +2,6 @@ project_id = "bmwjwsxfpzzruitevnmx"
 
 [functions.admin-create-users]
 verify_jwt = false
+
+[functions.send-welcome-email]
+verify_jwt = false

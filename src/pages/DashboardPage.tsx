@@ -11,9 +11,6 @@ import { BookCallButton } from '@/components/portal/BookCallButton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart3, Chrome, Facebook, Sparkles } from 'lucide-react';
 
-/** Detect the fabricated demo client (Sample Client) — used to gate anonymized callouts. */
-const SAMPLE_CLIENT_ID = '9cd00cfb-82a3-44ad-8639-342a51944343';
-
 /** Detect if a client is Billy.com by slug or name */
 function isBillyClient(client: { slug: string; name: string } | null): boolean {
   if (!client) return false;

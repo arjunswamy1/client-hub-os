@@ -58,7 +58,9 @@ export default function DemoDashboardPage() {
   const userMeta = (user?.user_metadata || {}) as Record<string, string | undefined>;
   const initialCompany = searchParams.get('company') || userMeta.company_name || 'Acme Brand';
   const initialIndustry = (searchParams.get('industry') as DemoIndustry) || inferIndustryFromCompany(initialCompany);
-  const initialSpend = (searchParams.get('spend') as DemoSpendTier) || mapSpendStringToTier(userMeta.monthly_ad_spend) || '250k_plus';
+  const initialSpend =
+    (searchParams.get('spend') as DemoSpendTier) ||
+    (userMeta.monthly_ad_spend ? mapSpendStringToTier(userMeta.monthly_ad_spend) : '250k_plus');
 
   const [companyName, setCompanyName] = useState(initialCompany);
   const [industry, setIndustry] = useState<DemoIndustry>(initialIndustry);

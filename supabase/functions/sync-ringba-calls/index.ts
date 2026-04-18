@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -122,6 +123,7 @@ Deno.serve(async (req) => {
     let totalInserted = 0;
     let totalFetched = 0;
     let totalFiltered = 0;
+    let apiCallCount = 0;
     const allCampaigns = new Set<string>();
     const allPublishers = new Set<string>();
     const startTime = Date.now();
@@ -141,6 +143,7 @@ Deno.serve(async (req) => {
 
       // Paginate within each chunk using size/offset
       while (Date.now() - startTime < MAX_MS) {
+        apiCallCount++;
         const res = await fetch(ringbaUrl, {
           method: "POST",
           headers: {
@@ -228,6 +231,20 @@ Deno.serve(async (req) => {
     console.log(`Done: fetched=${totalFetched}, filtered(CPM+vertical)=${totalFiltered}, inserted=${totalInserted}`);
     console.log(`Campaigns: ${JSON.stringify([...allCampaigns])}`);
     console.log(`Publishers: ${JSON.stringify([...allPublishers])}`);
+
+    // Log integration usage — split evenly across synced clients
+    if (apiCallCount > 0 && clientIds.length > 0) {
+      const perClient = Math.max(1, Math.round(apiCallCount / clientIds.length));
+      for (const cId of clientIds) {
+        await logIntegrationCall({
+          client_id: cId,
+          service: "ringba_api",
+          surface: "sync-ringba-calls",
+          calls: perClient,
+          metadata: { days_back: daysBack, calls_fetched: totalFetched },
+        });
+      }
+    }
 
     return new Response(JSON.stringify({
       success: true,

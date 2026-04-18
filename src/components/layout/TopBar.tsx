@@ -24,33 +24,33 @@ export function TopBar() {
     : null;
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-card px-4">
-      <div className="flex items-center gap-3">
-        <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
+    <header className="flex h-14 items-center justify-between border-b bg-card px-3 sm:px-4 gap-2">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <SidebarTrigger className="text-muted-foreground hover:text-foreground shrink-0" />
         {activeClient && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div
-              className="h-2.5 w-2.5 rounded-full"
+              className="h-2.5 w-2.5 rounded-full shrink-0"
               style={{ backgroundColor: activeClient.color || 'hsl(220, 70%, 50%)' }}
             />
-            <span className="text-sm font-medium">{activeClient.name}</span>
+            <span className="text-sm font-medium truncate">{activeClient.name}</span>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
         {(isAdmin) && activeClient && (
           <Button
             variant="ghost"
             size="sm"
-            className="gap-1.5 text-xs text-muted-foreground"
+            className="hidden md:inline-flex gap-1.5 text-xs text-muted-foreground"
             onClick={() => window.open('/client-portal-preview', '_blank')}
           >
             <Eye className="h-3.5 w-3.5" />
             View as Client
           </Button>
         )}
-        <button className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+        <button className="hidden sm:inline-flex rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
           <Search className="h-4 w-4" />
         </button>
         <NotificationBell />

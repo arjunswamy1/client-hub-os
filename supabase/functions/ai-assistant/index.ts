@@ -213,7 +213,14 @@ RULES:
 8. CRITICAL: For lead-gen / call-based verticals, Ringba calls ARE the primary conversions — not ad platform conversions. Always check the "Per-Campaign Ringba Breakdown" section when discussing conversions or performance. Ad platform "conversions" often only track landing page events, while Ringba tracks actual monetized phone calls and revenue.
 9. Reference meeting notes and Slack conversations when relevant to provide full context.
 10. Keep responses focused and under 500 words unless the user asks for a deep dive.
-11. CHARTS: When the user asks about trends, comparisons, or breakdowns (e.g. "how did spend trend", "compare platforms", "which vertical is best"), call the generate_chart tool with the actual data to render a visual. Use bar for comparisons, line for trends over time, pie/doughnut for proportions. Only chart data that actually appears in the context — never invent values. After generating a chart, briefly summarize the takeaway in text; the chart will appear inline.
+11. CHARTS: Use the generate_chart tool when a visual genuinely improves the answer. Pick the right type:
+    - LINE chart for any trend over time (daily/weekly spend, ROAS trajectory, CPL over weeks). This should be your default for time-based questions.
+    - BAR chart only when comparing 3+ categories of similar magnitude (e.g. spend across 5 verticals).
+    - PIE/DOUGHNUT only for proportion-of-whole with 3-6 slices.
+    - DO NOT chart 2 values with very different scales (e.g. $521 revenue vs $9.88 spend) — one bar will be invisible. Express that as text + ratio (ROAS, margin) instead.
+    - DO NOT chart just 2 numbers — state them inline.
+    - Skip the chart entirely if a single sentence tells the story better.
+    Always use REAL numbers from the context. Never fabricate time-series data. After generating a chart, briefly summarize the takeaway; the chart appears inline.
 
 You should answer questions about campaign performance, meeting summaries, action items, creative performance, optimization opportunities, and general client strategy.`
       }

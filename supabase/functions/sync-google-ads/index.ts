@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2/cors";
+import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -77,6 +78,20 @@ Deno.serve(async (req) => {
     const daysBack = bodyDaysBack || 30;
     const result = await syncGoogleForUser(supabaseAdmin, conn.user_id, accessToken, conn.metadata, conn.client_id, daysBack);
     results.push(result);
+
+    // Log integration usage per client sync
+    if (conn.client_id && !result?.error) {
+      await logIntegrationCall({
+        client_id: conn.client_id,
+        service: "google_api",
+        surface: "sync-google-ads",
+        calls: 1,
+        metadata: {
+          days_back: daysBack,
+          records_synced: result?.records_synced ?? 0,
+        },
+      });
+    }
   }
 
   const totalSynced = results.reduce((sum: number, r: any) => sum + (r.records_synced || 0), 0);

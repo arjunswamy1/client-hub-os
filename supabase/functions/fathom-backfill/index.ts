@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -186,6 +187,18 @@ Deno.serve(async (req) => {
       last_sync_at: new Date().toISOString(),
       error_message: errors.length > 0 ? errors.slice(0, 5).join('; ') : null,
     });
+
+    // Log integration usage — sum of pages fetched across all accounts
+    const totalPages = accountResults.reduce((s: number, a: any) => s + (a.pages || 0), 0);
+    if (totalPages > 0) {
+      await logIntegrationCall({
+        client_id: client.id,
+        service: "fathom_api",
+        surface: "fathom-backfill",
+        calls: totalPages,
+        metadata: { meetings_scanned: totalMeetings, matched },
+      });
+    }
 
     return new Response(JSON.stringify({
       client: client.name,

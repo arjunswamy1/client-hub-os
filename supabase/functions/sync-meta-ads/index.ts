@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2/cors";
+import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -104,6 +105,21 @@ Deno.serve(async (req) => {
     const daysBack = bodyDaysBack || 90;
     const result = await syncMetaForUser(supabaseAdmin, conn.user_id, conn.access_token, adAccountsToSync, conn.client_id, daysBack);
     results.push(result);
+
+    // Log integration usage per client sync
+    if (conn.client_id) {
+      await logIntegrationCall({
+        client_id: conn.client_id,
+        service: "meta_api",
+        surface: "sync-meta-ads",
+        calls: 1,
+        metadata: {
+          days_back: daysBack,
+          ad_accounts: adAccountsToSync.length,
+          records_synced: result?.records_synced ?? 0,
+        },
+      });
+    }
   }
 
   return new Response(JSON.stringify({ results }), {

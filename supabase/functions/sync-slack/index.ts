@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

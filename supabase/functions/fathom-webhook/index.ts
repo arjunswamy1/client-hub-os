@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -269,6 +270,15 @@ Deno.serve(async (req) => {
       status: 'success',
       items_synced: 1 + tasksCreated,
       last_sync_at: new Date().toISOString(),
+    });
+
+    // Log integration usage (1 webhook event = 1 call)
+    await logIntegrationCall({
+      client_id: client.id,
+      service: "fathom_api",
+      surface: "fathom-webhook",
+      calls: 1,
+      metadata: { meeting: meetingTitle, tasks_created: tasksCreated },
     });
 
     return new Response(JSON.stringify({

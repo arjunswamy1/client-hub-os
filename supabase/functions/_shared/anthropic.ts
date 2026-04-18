@@ -6,6 +6,49 @@
 
 export const ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
 
+/**
+ * Recursively sanitize strings for safe JSON transmission to Anthropic.
+ * Removes lone UTF-16 surrogates (cause "no low surrogate" 400 errors)
+ * and disallowed control characters.
+ */
+function sanitizeString(s: string): string {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    // High surrogate — must be followed by a low surrogate
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = s.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += s[i] + s[i + 1];
+        i++;
+        continue;
+      }
+      out += "\uFFFD";
+      continue;
+    }
+    // Lone low surrogate
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      out += "\uFFFD";
+      continue;
+    }
+    // Strip C0 control chars except \t (9), \n (10), \r (13)
+    if (code < 0x20 && code !== 9 && code !== 10 && code !== 13) continue;
+    out += s[i];
+  }
+  return out;
+}
+
+function sanitizeForJson(value: any): any {
+  if (typeof value === "string") return sanitizeString(value);
+  if (Array.isArray(value)) return value.map(sanitizeForJson);
+  if (value && typeof value === "object") {
+    const out: Record<string, any> = {};
+    for (const k of Object.keys(value)) out[k] = sanitizeForJson(value[k]);
+    return out;
+  }
+  return value;
+}
+
 export interface ChatMessage {
   role: string;
   content: string;
@@ -221,7 +264,7 @@ export async function callAnthropic(
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(sanitizeForJson(body)),
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

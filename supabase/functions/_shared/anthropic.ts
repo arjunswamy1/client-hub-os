@@ -41,20 +41,29 @@ export interface AnthropicResult {
 const CHART_TOOL = {
   name: "generate_chart",
   description:
-    "Generate a chart visualization (bar, line, pie, doughnut, radar, or polarArea) from data. " +
-    "Use this whenever a comparison, trend, or breakdown would be clearer as a chart than as text. " +
-    "Pass actual numeric data — do NOT invent numbers. The tool returns a hosted PNG URL that the user will see inline.",
+    "Generate a chart visualization from data. Choose the chart type that best fits the story:\n" +
+    "- 'line' → trends over TIME (daily spend, weekly ROAS, CPL trajectory). ALWAYS prefer line for any time-series.\n" +
+    "- 'bar' → comparing 3+ discrete categories of SIMILAR magnitude (e.g. spend across 5 campaigns).\n" +
+    "- 'pie' / 'doughnut' → showing PROPORTIONS of a whole (max 6 slices, values must sum meaningfully).\n" +
+    "- 'radar' → comparing one entity across 4+ metrics (rare).\n\n" +
+    "CRITICAL RULES:\n" +
+    "1. NEVER use a bar/pie chart to compare just 2 values — state them in text instead (e.g. '$521 revenue vs $9.88 spend = 52.7x ROAS').\n" +
+    "2. NEVER plot two metrics with wildly different scales (e.g. revenue $500 vs spend $10) on the same axis — one bar will be invisible. Either use a line chart over time, OR show them as separate metrics in text, OR use ratio/derived values (ROAS, CPL, margin %).\n" +
+    "3. For time-series data, pass dates as labels in chronological order and use 'line'.\n" +
+    "4. Pass REAL data only — never invent numbers. If you don't have time-series data, don't fabricate it.\n" +
+    "5. Skip the chart entirely if the insight is better expressed as a single number or short sentence.\n\n" +
+    "The tool returns a hosted PNG URL that the user sees inline.",
   input_schema: {
     type: "object",
     properties: {
       title: {
         type: "string",
-        description: "Short chart title shown above the chart (e.g. 'Spend by Platform — Last 7 Days').",
+        description: "Short chart title shown above the chart (e.g. 'Daily Spend by Platform — Last 14 Days').",
       },
       chart_type: {
         type: "string",
         enum: ["bar", "line", "pie", "doughnut", "radar", "polarArea"],
-        description: "Chart type. Use 'bar' for comparisons, 'line' for trends, 'pie'/'doughnut' for proportions.",
+        description: "Chart type. Strongly prefer 'line' for time-series. Use 'bar' only for 3+ comparable categories.",
       },
       labels: {
         type: "array",

@@ -58,7 +58,9 @@ export default function DemoDashboardPage() {
   const userMeta = (user?.user_metadata || {}) as Record<string, string | undefined>;
   const initialCompany = searchParams.get('company') || userMeta.company_name || 'Acme Brand';
   const initialIndustry = (searchParams.get('industry') as DemoIndustry) || inferIndustryFromCompany(initialCompany);
-  const initialSpend = (searchParams.get('spend') as DemoSpendTier) || mapSpendStringToTier(userMeta.monthly_ad_spend);
+  const initialSpend =
+    (searchParams.get('spend') as DemoSpendTier) ||
+    (userMeta.monthly_ad_spend ? mapSpendStringToTier(userMeta.monthly_ad_spend) : '250k_plus');
 
   const [companyName, setCompanyName] = useState(initialCompany);
   const [industry, setIndustry] = useState<DemoIndustry>(initialIndustry);
@@ -108,7 +110,7 @@ export default function DemoDashboardPage() {
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-xl font-bold text-slate-900 truncate">{data.companyName}</h1>
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 <Badge className="text-[10px] py-0 h-4 bg-[hsl(94,55%,45%)]/15 text-[hsl(94,55%,28%)] border-[hsl(94,55%,45%)]/30">
                   {data.industryLabel}
                 </Badge>
@@ -180,10 +182,36 @@ export default function DemoDashboardPage() {
             </Card>
           )}
         </div>
+
+        {/* ─── Top Tab Nav ─── */}
+        <nav className="border-t border-slate-200 bg-white">
+          <div className="max-w-2xl mx-auto grid grid-cols-5">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'relative flex flex-col items-center justify-center gap-0.5 py-2 transition-colors min-h-[52px]',
+                    active ? 'text-[hsl(94,55%,32%)]' : 'text-slate-500 hover:text-slate-700'
+                  )}
+                >
+                  <Icon className={cn('h-4 w-4', active && 'scale-110')} strokeWidth={active ? 2.5 : 2} />
+                  <span className={cn('text-[10px] font-semibold', active && 'text-[hsl(94,55%,32%)]')}>
+                    {tab.label}
+                  </span>
+                  {active && <span className="absolute bottom-0 h-0.5 w-8 rounded-t-full bg-[hsl(94,55%,38%)]" />}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </header>
 
       {/* ─── Body ─── */}
-      <main className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-5">
+      <main className="max-w-2xl mx-auto px-4 py-4 pb-8 space-y-5">
         {activeTab === 'highlights' && (
           <>
             <DemoKpiGrid kpis={data.kpis} />
@@ -290,31 +318,6 @@ export default function DemoDashboardPage() {
         </Card>
       </main>
 
-      {/* ─── Bottom Tab Nav (mobile) ─── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-        <div className="max-w-2xl mx-auto grid grid-cols-5">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'relative flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors min-h-[60px]',
-                  active ? 'text-[hsl(94,55%,32%)]' : 'text-slate-500 hover:text-slate-700'
-                )}
-              >
-                <Icon className={cn('h-4 w-4', active && 'scale-110')} strokeWidth={active ? 2.5 : 2} />
-                <span className={cn('text-[10px] font-semibold', active && 'text-[hsl(94,55%,32%)]')}>
-                  {tab.label}
-                </span>
-                {active && <span className="absolute top-0 h-0.5 w-8 rounded-b-full bg-[hsl(94,55%,38%)]" />}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
     </div>
   );
 }

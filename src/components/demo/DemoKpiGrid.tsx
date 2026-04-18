@@ -44,18 +44,20 @@ export function DemoKpiGrid({ kpis }: { kpis: DemoKPI[] }) {
         return (
           <Card
             key={k.label}
-            className="p-4 bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow"
+            className="p-3 sm:p-4 bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
           >
-            <p className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{k.label}</p>
-            <div className="mt-1.5 flex items-baseline justify-between gap-2">
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">{k.value}</p>
-              {k.trend && <div className="text-[hsl(94,55%,38%)]"><Sparkline data={k.trend} /></div>}
-            </div>
-            <div className="mt-2 flex items-center gap-1">
+            <p className="text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-500 font-medium truncate">{k.label}</p>
+            <p className="mt-1.5 text-xl sm:text-2xl font-bold text-slate-900 tabular-nums leading-tight">{k.value}</p>
+            {k.trend && (
+              <div className="mt-1.5 text-[hsl(94,55%,38%)] w-full">
+                <Sparkline data={k.trend} />
+              </div>
+            )}
+            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
               {positive ? (
-                <TrendingUp className="h-3 w-3 text-[hsl(94,55%,38%)]" />
+                <TrendingUp className="h-3 w-3 text-[hsl(94,55%,38%)] shrink-0" />
               ) : (
-                <TrendingDown className="h-3 w-3 text-rose-600" />
+                <TrendingDown className="h-3 w-3 text-rose-600 shrink-0" />
               )}
               <span
                 className={cn(
@@ -65,7 +67,7 @@ export function DemoKpiGrid({ kpis }: { kpis: DemoKPI[] }) {
               >
                 {positive ? '+' : ''}{k.change}%
               </span>
-              <span className="text-[10px] text-slate-400 ml-1">vs last week</span>
+              <span className="text-[10px] text-slate-400 ml-0.5">vs last week</span>
             </div>
           </Card>
         );

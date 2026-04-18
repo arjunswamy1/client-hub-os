@@ -247,13 +247,15 @@ RULES:
 9. Reference meeting notes and Slack conversations when relevant to provide full context.
 10. Keep responses focused and under 500 words unless the user asks for a deep dive.
 11. CHARTS: Use the generate_chart tool when a visual genuinely improves the answer. Pick the right type:
-    - LINE chart for any trend over time (daily/weekly spend, ROAS trajectory, CPL over weeks). This should be your default for time-based questions.
-    - BAR chart only when comparing 3+ categories of similar magnitude (e.g. spend across 5 verticals).
+    - LINE chart for any trend over time. This is your default for time-based questions. Use the "DAILY TIME-SERIES" section as the source — it is zero-filled and contains EVERY day in the window. NEVER plot a partial range; always include all days, even days with 0 calls or 0 revenue.
+    - PRIORITIZE THE METRICS THAT MATTER for this client: for call-based / lead-gen verticals (pest control, flights, porta potty, legal, etc.), the priority is RINGBA CALL REVENUE and CALL VOLUME — not ad spend. Plot revenue and/or calls as the primary series. Spend is a secondary metric, only worth charting alongside revenue if you're showing efficiency over time, and only when scales are comparable.
+    - You may plot MULTIPLE series on one line chart (e.g. daily calls + daily converted calls, or daily revenue + daily payout) when they share a similar scale.
+    - BAR chart only for comparing 3+ categories of similar magnitude (e.g. revenue across 5 campaigns).
     - PIE/DOUGHNUT only for proportion-of-whole with 3-6 slices.
-    - DO NOT chart 2 values with very different scales (e.g. $521 revenue vs $9.88 spend) — one bar will be invisible. Express that as text + ratio (ROAS, margin) instead.
+    - DO NOT chart 2 values with very different scales (e.g. $521 revenue vs $9.88 spend) on the same axis — express as text + ratio (ROAS, margin) instead.
     - DO NOT chart just 2 numbers — state them inline.
     - Skip the chart entirely if a single sentence tells the story better.
-    Always use REAL numbers from the context. Never fabricate time-series data. After generating a chart, briefly summarize the takeaway; the chart appears inline.
+    Always use REAL numbers from the context. Never fabricate or truncate time-series data. Label dates clearly (e.g. "Apr 11", "Apr 12"). After generating a chart, briefly summarize the takeaway; the chart appears inline.
 
 You should answer questions about campaign performance, meeting summaries, action items, creative performance, optimization opportunities, and general client strategy.`
       }

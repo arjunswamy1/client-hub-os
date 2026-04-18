@@ -231,10 +231,11 @@ You should answer questions about campaign performance, meeting summaries, actio
       content: `Here is the current data for ${clientInfo?.name}:\n\n${dataContext}\n\n---\nQuestion: ${question}`
     });
 
-    // Call Anthropic Claude
+    // Call Anthropic Claude (with chart tool enabled)
     const aiRes = await callAnthropic(messages, {
       max_tokens: 2048,
       temperature: 0.3,
+      enableCharts: true,
     });
 
     if (!aiRes.ok) {
@@ -257,7 +258,7 @@ You should answer questions about campaign performance, meeting summaries, actio
     if (ringbaAgg.totalCalls > 0) sources.push({ title: `${ringbaAgg.totalCalls} Ringba calls`, source: 'Ringba' });
     if ((tasks || []).length > 0) sources.push({ title: `${(tasks || []).length} tasks`, source: 'Tasks' });
 
-    return new Response(JSON.stringify({ answer, sources }), {
+    return new Response(JSON.stringify({ answer, sources, charts: aiRes.charts }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {

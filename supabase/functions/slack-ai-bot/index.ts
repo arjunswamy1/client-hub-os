@@ -1035,28 +1035,33 @@ function buildDeterministicMetricReply(
 
 // ─── AI call ───────────────────────────────────────────────────────────────
 
-async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
+interface AIReply {
+  text: string;
+  charts: Array<{ url: string; title: string; chart_type: string }>;
+}
+
+async function callAI(messages: Array<{ role: string; content: string }>): Promise<AIReply> {
   const totalChars = messages.reduce((sum, message) => sum + (message.content?.length || 0), 0);
-  console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total — Anthropic Claude`);
+  console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total — Anthropic Claude (charts enabled)`);
 
   const result = await callAnthropic(messages, {
     max_tokens: 1200,
     temperature: 0.4,
+    enableCharts: true,
   });
 
   if (!result.ok) {
     console.error('Anthropic error:', result.status, result.error);
-    if (result.status === 429) return "I'm being rate limited right now. Try again in a moment! 🕐";
-    if (result.status === 401) return 'Anthropic API key is invalid — please update ANTHROPIC_API_KEY.';
-    return "I couldn't generate a response right now. Please try again in a moment! 🔧";
+    if (result.status === 429) return { text: "I'm being rate limited right now. Try again in a moment! 🕐", charts: [] };
+    if (result.status === 401) return { text: 'Anthropic API key is invalid — please update ANTHROPIC_API_KEY.', charts: [] };
+    return { text: "I couldn't generate a response right now. Please try again in a moment! 🔧", charts: [] };
   }
 
-  if (!result.content || result.content.trim().length === 0) {
-    console.warn('Anthropic returned empty content');
-    return "I couldn't generate a response right now. Please try again in a moment! 🔧";
-  }
+  const text = result.content && result.content.trim().length > 0
+    ? result.content
+    : (result.charts.length > 0 ? "Here's the chart you asked about:" : "I couldn't generate a response right now. Please try again in a moment! 🔧");
 
-  return result.content;
+  return { text, charts: result.charts };
 }
 
 // ─── Slack messaging ───────────────────────────────────────────────────────

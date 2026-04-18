@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callAnthropic } from "../_shared/anthropic.ts";
+import { callAnthropic, truncate } from "../_shared/anthropic.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -510,14 +510,14 @@ async function getClientData(
       .in('status', ['todo', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(25),
-    // CONTEXT FEED — full Slack + Fathom + email feed (90 days, more items, longer content)
+    // CONTEXT FEED — Slack/Fathom/email trimmed to 30 days, 80 items
     supabase
       .from('context_items')
       .select('title, content, content_type, source, occurred_at, participants, metadata')
       .eq('client_id', clientId)
-      .gte('occurred_at', new Date(Date.now() - 90 * 86400000).toISOString())
+      .gte('occurred_at', new Date(Date.now() - 30 * 86400000).toISOString())
       .order('occurred_at', { ascending: false })
-      .limit(120),
+      .limit(80),
     supabase
       .from('ringba_calls')
       .select('call_date, revenue, payout, converted, connected, duration_seconds, campaign_name, target_name')
@@ -525,28 +525,28 @@ async function getClientData(
       .gte('call_date', dateRange.from)
       .lte('call_date', dateRange.to)
       .order('call_date', { ascending: false })
-      .limit(2000),
+      .limit(1500),
     supabase
       .from('dashboard_configs')
       .select('revenue_source')
       .eq('client_id', clientId)
       .maybeSingle(),
-    // FULL CREATIVES TABLE
+    // CREATIVES — top 30 by spend
     supabase
       .from('ad_creatives')
       .select('campaign_name, ad_name, platform, spend, revenue, conversions, ctr, cpa, roas, headline, status, creative_type, format')
       .eq('client_id', clientId)
       .gte('date_from', dateRange.from)
       .order('spend', { ascending: false })
-      .limit(50),
-    // GOOGLE KEYWORDS
+      .limit(30),
+    // GOOGLE KEYWORDS — top 30 by spend
     supabase
       .from('campaign_keywords')
       .select('keyword, ad_group, campaign_name, match_type, platform, spend, clicks, conversions, ctr, cpc, cpa, quality_score, is_negative')
       .eq('client_id', clientId)
       .gte('date', dateRange.from)
       .order('spend', { ascending: false })
-      .limit(50),
+      .limit(30),
   ]);
 
   const usesRingbaRevenue = dashConfigRes.data?.revenue_source === 'ringba';

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callAnthropic, truncate } from "../_shared/anthropic.ts";
+import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/anthropic.ts";
+import { logAiUsage } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -369,6 +370,17 @@ You should answer questions about campaign performance, meeting summaries, actio
     const answer = aiRes.content || 'Sorry, I could not generate a response.';
     if (aiRes.usage) {
       console.log(`[ai-assistant] Anthropic tokens — input: ${aiRes.usage.input_tokens}, output: ${aiRes.usage.output_tokens}`);
+      // Fire-and-forget cost log
+      logAiUsage({
+        client_id,
+        surface: 'ai-assistant',
+        model: ANTHROPIC_DEFAULT_MODEL,
+        input_tokens: aiRes.usage.input_tokens,
+        output_tokens: aiRes.usage.output_tokens,
+        cache_read_tokens: aiRes.usage.cache_read_input_tokens,
+        cache_write_tokens: aiRes.usage.cache_creation_input_tokens,
+        metadata: { question_chars: question?.length ?? 0, charts: aiRes.charts.length },
+      }).catch((e) => console.error('logAiUsage failed:', e));
     }
 
     // Determine which sources were relevant

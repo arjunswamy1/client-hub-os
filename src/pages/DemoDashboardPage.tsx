@@ -273,7 +273,13 @@ export default function DemoDashboardPage() {
           <div className="flex gap-2">
             <Button
               className="flex-1 bg-[hsl(94,55%,40%)] hover:bg-[hsl(94,55%,35%)] text-white gap-1.5"
-              onClick={() => navigate('/demo')}
+              onClick={() =>
+                window.open(
+                  'https://calendly.com/charles-connectpaidmedia/30min',
+                  '_blank',
+                  'noopener,noreferrer'
+                )
+              }
             >
               <Calendar className="h-3.5 w-3.5" />
               Book a call
@@ -281,10 +287,10 @@ export default function DemoDashboardPage() {
             <Button
               variant="outline"
               className="border-white/15 bg-transparent text-white hover:bg-white/5 gap-1.5"
-              onClick={() => window.open('tel:+15551234567')}
+              onClick={() => navigate('/auth')}
             >
               <Phone className="h-3.5 w-3.5" />
-              Call
+              Sign in
             </Button>
           </div>
         </Card>
@@ -301,7 +307,7 @@ export default function DemoDashboardPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors min-h-[60px]',
+                  'relative flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors min-h-[60px]',
                   active ? 'text-[hsl(94,55%,60%)]' : 'text-white/55 hover:text-white/85'
                 )}
               >
@@ -309,7 +315,7 @@ export default function DemoDashboardPage() {
                 <span className={cn('text-[10px] font-semibold', active && 'text-[hsl(94,55%,60%)]')}>
                   {tab.label}
                 </span>
-                {active && <span className="absolute bottom-0 h-0.5 w-8 rounded-t-full bg-[hsl(94,55%,55%)]" />}
+                {active && <span className="absolute top-0 h-0.5 w-8 rounded-b-full bg-[hsl(94,55%,55%)]" />}
               </button>
             );
           })}

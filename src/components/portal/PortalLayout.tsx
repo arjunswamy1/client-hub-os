@@ -6,6 +6,7 @@ import { LogOut, LayoutDashboard, Megaphone } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import { BookCallButton } from '@/components/portal/BookCallButton';
 import { cn } from '@/lib/utils';
 
 interface PortalLayoutProps {
@@ -73,7 +74,9 @@ export function PortalLayout({ children, activeTab, onTabChange, isAdminPreview,
             ))}
           </nav>
 
-          {/* Right: User menu */}
+          {/* Right: Book a call + User menu */}
+          <div className="flex items-center gap-2">
+            <BookCallButton variant="outline" size="sm" className="hidden sm:inline-flex h-8 gap-1.5 text-xs" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-accent">
@@ -96,6 +99,7 @@ export function PortalLayout({ children, activeTab, onTabChange, isAdminPreview,
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
       </header>
 

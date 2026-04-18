@@ -96,18 +96,18 @@ export default function DemoPage() {
 
   if (step === "creating") {
     return (
-      <div className="min-h-screen bg-[hsl(222,47%,8%)] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center space-y-4">
-          <div className="h-10 w-10 mx-auto animate-spin rounded-full border-2 border-white border-t-transparent" />
-          <p className="text-white/80 text-lg">Setting up your dashboard…</p>
-          <p className="text-white/50 text-sm">This only takes a moment</p>
+          <div className="h-10 w-10 mx-auto animate-spin rounded-full border-2 border-[hsl(94,55%,38%)] border-t-transparent" />
+          <p className="text-slate-800 text-lg">Setting up your dashboard…</p>
+          <p className="text-slate-500 text-sm">This only takes a moment</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[hsl(222,47%,8%)] text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* Nav */}
       <nav className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 max-w-6xl mx-auto">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -116,12 +116,12 @@ export default function DemoPage() {
             alt="Connect Paid Media"
             className="h-8 w-8 rounded-lg object-contain shrink-0"
           />
-          <span className="font-semibold text-white/90 whitespace-nowrap">Connect Paid Media</span>
+          <span className="font-semibold text-slate-800 whitespace-nowrap">Connect Paid Media</span>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="text-white/60 hover:text-white hover:bg-white/10 shrink-0"
+          className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 shrink-0"
           onClick={() => navigate("/auth")}
         >
           <span className="hidden sm:inline">Already have an account? </span>Log in
@@ -133,15 +133,15 @@ export default function DemoPage() {
           <div className="py-20 space-y-20">
             {/* Hero */}
             <div className="text-center max-w-3xl mx-auto space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-white/70">
-                <ShieldCheck className="h-3.5 w-3.5 text-[hsl(94,55%,45%)]" />
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm text-slate-600 shadow-sm">
+                <ShieldCheck className="h-3.5 w-3.5 text-[hsl(94,55%,38%)]" />
                 Trusted by performance-driven brands
               </div>
-              <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-[1.1]">
+              <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-[1.1] text-slate-900">
                 Expose Leaks in Your{" "}
-                <span className="text-[hsl(94,55%,45%)]">Marketing Machine</span>
+                <span className="text-[hsl(94,55%,32%)]">Marketing Machine</span>
               </h1>
-              <p className="text-xl text-white/60 max-w-2xl mx-auto leading-relaxed">
+              <p className="text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
                 See exactly where your ad spend is underperforming—and how to fix it.
                 Get a live dashboard with real insights in under 60 seconds.
               </p>
@@ -149,7 +149,7 @@ export default function DemoPage() {
                 <Button
                   size="lg"
                   onClick={() => setStep("signup")}
-                  className="bg-[hsl(94,55%,35%)] hover:bg-[hsl(94,55%,30%)] text-white text-lg px-8 py-6 rounded-xl gap-2"
+                  className="bg-[hsl(94,55%,38%)] hover:bg-[hsl(94,55%,32%)] text-white text-lg px-8 py-6 rounded-xl gap-2 shadow-md"
                 >
                   Get Your Free Dashboard Demo
                   <ArrowRight className="h-5 w-5" />
@@ -158,7 +158,7 @@ export default function DemoPage() {
                   size="lg"
                   variant="outline"
                   onClick={() => navigate("/demo/dashboard")}
-                  className="border-white/20 bg-transparent text-white hover:bg-white/5 text-lg px-8 py-6 rounded-xl"
+                  className="border-slate-300 bg-white text-slate-800 hover:bg-slate-100 text-lg px-8 py-6 rounded-xl"
                 >
                   Preview the dashboard
                 </Button>
@@ -186,13 +186,13 @@ export default function DemoPage() {
               ].map((f) => (
                 <div
                   key={f.title}
-                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 space-y-4"
+                  className="rounded-2xl border border-slate-200 bg-white p-8 space-y-4 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="h-10 w-10 rounded-xl bg-[hsl(94,55%,35%)]/20 flex items-center justify-center">
-                    <f.icon className="h-5 w-5 text-[hsl(94,55%,45%)]" />
+                  <div className="h-10 w-10 rounded-xl bg-[hsl(94,55%,45%)]/15 flex items-center justify-center">
+                    <f.icon className="h-5 w-5 text-[hsl(94,55%,32%)]" />
                   </div>
-                  <h3 className="text-lg font-semibold">{f.title}</h3>
-                  <p className="text-white/50 leading-relaxed">{f.desc}</p>
+                  <h3 className="text-lg font-semibold text-slate-900">{f.title}</h3>
+                  <p className="text-slate-600 leading-relaxed">{f.desc}</p>
                 </div>
               ))}
             </div>
@@ -202,8 +202,8 @@ export default function DemoPage() {
         {step === "signup" && (
           <div className="py-16 max-w-md mx-auto">
             <div className="text-center space-y-3 mb-8">
-              <h2 className="text-3xl font-bold">Create Your Account</h2>
-              <p className="text-white/50">
+              <h2 className="text-3xl font-bold text-slate-900">Create Your Account</h2>
+              <p className="text-slate-600">
                 Fill in your details to access your personalized demo dashboard.
               </p>
             </div>
@@ -211,57 +211,57 @@ export default function DemoPage() {
             <form onSubmit={handleSignup} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-white/70 text-sm">First Name</Label>
+                  <Label className="text-slate-700 text-sm">First Name</Label>
                   <Input
                     required
                     value={form.firstName}
                     onChange={(e) => updateField("firstName", e.target.value)}
-                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                    className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
                     placeholder="John"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-white/70 text-sm">Last Name</Label>
+                  <Label className="text-slate-700 text-sm">Last Name</Label>
                   <Input
                     required
                     value={form.lastName}
                     onChange={(e) => updateField("lastName", e.target.value)}
-                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                    className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
                     placeholder="Smith"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-white/70 text-sm">Email</Label>
+                <Label className="text-slate-700 text-sm">Email</Label>
                 <Input
                   type="email"
                   required
                   value={form.email}
                   onChange={(e) => updateField("email", e.target.value)}
-                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                  className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
                   placeholder="john@company.com"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-white/70 text-sm">Company Name</Label>
+                <Label className="text-slate-700 text-sm">Company Name</Label>
                 <Input
                   required
                   value={form.companyName}
                   onChange={(e) => updateField("companyName", e.target.value)}
-                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                  className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
                   placeholder="Acme Corp"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-white/70 text-sm">Monthly Ad Spend</Label>
+                <Label className="text-slate-700 text-sm">Monthly Ad Spend</Label>
                 <Select
                   value={form.monthlyAdSpend}
                   onValueChange={(v) => updateField("monthlyAdSpend", v)}
                 >
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectTrigger className="bg-white border-slate-300 text-slate-900">
                     <SelectValue placeholder="Select a range" />
                   </SelectTrigger>
                   <SelectContent>
@@ -275,27 +275,27 @@ export default function DemoPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-white/70 text-sm">Password</Label>
+                <Label className="text-slate-700 text-sm">Password</Label>
                 <Input
                   type="password"
                   required
                   minLength={8}
                   value={form.password}
                   onChange={(e) => updateField("password", e.target.value)}
-                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                  className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
                   placeholder="Min 8 characters"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-white/70 text-sm">Confirm Password</Label>
+                <Label className="text-slate-700 text-sm">Confirm Password</Label>
                 <Input
                   type="password"
                   required
                   minLength={8}
                   value={form.confirmPassword}
                   onChange={(e) => updateField("confirmPassword", e.target.value)}
-                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                  className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
                   placeholder="Confirm your password"
                 />
               </div>
@@ -303,7 +303,7 @@ export default function DemoPage() {
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-[hsl(94,55%,35%)] hover:bg-[hsl(94,55%,30%)] text-white py-5 rounded-xl text-base gap-2"
+                className="w-full bg-[hsl(94,55%,38%)] hover:bg-[hsl(94,55%,32%)] text-white py-5 rounded-xl text-base gap-2 shadow-md"
               >
                 {isSubmitting ? "Creating Account…" : "Access Your Dashboard"}
                 <ArrowRight className="h-4 w-4" />
@@ -312,7 +312,7 @@ export default function DemoPage() {
               <button
                 type="button"
                 onClick={() => setStep("landing")}
-                className="w-full text-center text-sm text-white/40 hover:text-white/60 mt-2"
+                className="w-full text-center text-sm text-slate-500 hover:text-slate-700 mt-2"
               >
                 ← Back
               </button>
@@ -322,8 +322,8 @@ export default function DemoPage() {
       </div>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 mt-20 py-8 px-6">
-        <div className="max-w-6xl mx-auto text-center text-white/30 text-sm">
+      <footer className="border-t border-slate-200 mt-20 py-8 px-6">
+        <div className="max-w-6xl mx-auto text-center text-slate-500 text-sm">
           © {new Date().getFullYear()} Connect Paid Media. All rights reserved.
         </div>
       </footer>

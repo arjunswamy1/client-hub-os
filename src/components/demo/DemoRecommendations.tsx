@@ -7,18 +7,18 @@ import { Zap, Target, Layers, Compass, FileText, Sparkles } from 'lucide-react';
 const PRIORITY_STYLES = {
   critical: {
     label: 'Critical',
-    color: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+    color: 'bg-rose-100 text-rose-700 border-rose-200',
     border: 'border-l-rose-500',
   },
   high: {
     label: 'High',
-    color: 'bg-amber-400/20 text-amber-200 border-amber-400/30',
-    border: 'border-l-amber-400',
+    color: 'bg-amber-100 text-amber-800 border-amber-200',
+    border: 'border-l-amber-500',
   },
   medium: {
     label: 'Medium',
-    color: 'bg-white/10 text-white/65 border-white/20',
-    border: 'border-l-white/30',
+    color: 'bg-slate-100 text-slate-700 border-slate-200',
+    border: 'border-l-slate-400',
   },
 };
 
@@ -40,13 +40,13 @@ export function DemoRecommendations({ recommendations }: { recommendations: Demo
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-[hsl(94,55%,55%)]" />
-        <h3 className="text-sm font-semibold text-white">AI Recommendations</h3>
-        <Badge className="text-[10px] py-0 h-4 bg-[hsl(94,55%,45%)]/20 text-[hsl(94,55%,60%)] border-[hsl(94,55%,45%)]/30">
+        <Sparkles className="h-4 w-4 text-[hsl(94,55%,38%)]" />
+        <h3 className="text-sm font-semibold text-slate-900">AI Recommendations</h3>
+        <Badge className="text-[10px] py-0 h-4 bg-[hsl(94,55%,45%)]/15 text-[hsl(94,55%,28%)] border-[hsl(94,55%,45%)]/30">
           {recommendations.length} actions
         </Badge>
       </div>
-      <p className="text-[11px] text-white/50 -mt-1">Prioritized by impact · click to send to your team</p>
+      <p className="text-[11px] text-slate-500 -mt-1">Prioritized by impact · click to send to your team</p>
       <div className="space-y-2.5">
         {recommendations.map((r, idx) => {
           const p = PRIORITY_STYLES[r.priority];
@@ -55,41 +55,41 @@ export function DemoRecommendations({ recommendations }: { recommendations: Demo
             <Card
               key={r.id}
               className={cn(
-                'p-3.5 bg-white/[0.03] border-white/10 border-l-4',
+                'p-3.5 bg-white border-slate-200 border-l-4 shadow-sm',
                 p.border
               )}
             >
               <div className="flex items-start gap-3">
                 <div className="flex flex-col items-center gap-1 shrink-0">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5">
-                    <Icon className="h-4 w-4 text-white/70" />
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100">
+                    <Icon className="h-4 w-4 text-slate-600" />
                   </div>
-                  <span className="text-[10px] font-bold text-white/40 tabular-nums">#{idx + 1}</span>
+                  <span className="text-[10px] font-bold text-slate-400 tabular-nums">#{idx + 1}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <p className="text-sm font-semibold text-white leading-snug">{r.title}</p>
+                    <p className="text-sm font-semibold text-slate-900 leading-snug">{r.title}</p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap mb-2">
                     <Badge className={cn('text-[10px] py-0 h-5 px-2 font-bold', p.color)}>
                       {p.label}
                     </Badge>
-                    <span className="text-[10px] text-white/45">{EFFORT_LABEL[r.effort]}</span>
+                    <span className="text-[10px] text-slate-500">{EFFORT_LABEL[r.effort]}</span>
                   </div>
                   <div className="space-y-2">
                     <div>
-                      <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold mb-0.5">Why</p>
-                      <p className="text-[11px] text-white/65 leading-relaxed">{r.reasoning}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">Why</p>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">{r.reasoning}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold mb-0.5">Action</p>
-                      <p className="text-[11px] text-white/75 leading-relaxed">{r.action}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">Action</p>
+                      <p className="text-[11px] text-slate-700 leading-relaxed">{r.action}</p>
                     </div>
-                    <div className="rounded-lg bg-[hsl(94,55%,45%)]/10 border border-[hsl(94,55%,45%)]/20 p-2 flex items-start gap-1.5">
-                      <Sparkles className="h-3 w-3 shrink-0 text-[hsl(94,55%,60%)] mt-0.5" />
+                    <div className="rounded-lg bg-[hsl(94,55%,45%)]/10 border border-[hsl(94,55%,45%)]/30 p-2 flex items-start gap-1.5">
+                      <Sparkles className="h-3 w-3 shrink-0 text-[hsl(94,55%,38%)] mt-0.5" />
                       <p className="text-[11px] leading-relaxed">
-                        <span className="font-semibold text-[hsl(94,55%,65%)]">Projected impact: </span>
-                        <span className="text-[hsl(94,55%,75%)]">{r.projectedImpact}</span>
+                        <span className="font-semibold text-[hsl(94,55%,25%)]">Projected impact: </span>
+                        <span className="text-[hsl(94,55%,28%)]">{r.projectedImpact}</span>
                       </p>
                     </div>
                   </div>

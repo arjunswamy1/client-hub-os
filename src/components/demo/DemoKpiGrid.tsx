@@ -17,7 +17,7 @@ function Sparkline({ data }: { data: number[] }) {
     })
     .join(' ');
   return (
-    <svg width={w} height={h} className="opacity-70">
+    <svg width={w} height={h} className="opacity-80">
       <polyline
         points={points}
         fill="none"
@@ -38,28 +38,28 @@ export function DemoKpiGrid({ kpis }: { kpis: DemoKPI[] }) {
         return (
           <Card
             key={k.label}
-            className="p-4 bg-white/[0.03] border-white/10 hover:bg-white/[0.05] transition-colors"
+            className="p-4 bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow"
           >
-            <p className="text-[11px] uppercase tracking-wider text-white/50 font-medium">{k.label}</p>
+            <p className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{k.label}</p>
             <div className="mt-1.5 flex items-baseline justify-between gap-2">
-              <p className="text-2xl font-bold text-white tabular-nums">{k.value}</p>
-              {k.trend && <div className="text-[hsl(94,55%,55%)]"><Sparkline data={k.trend} /></div>}
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{k.value}</p>
+              {k.trend && <div className="text-[hsl(94,55%,38%)]"><Sparkline data={k.trend} /></div>}
             </div>
             <div className="mt-2 flex items-center gap-1">
               {positive ? (
-                <TrendingUp className="h-3 w-3 text-[hsl(94,55%,55%)]" />
+                <TrendingUp className="h-3 w-3 text-[hsl(94,55%,38%)]" />
               ) : (
-                <TrendingDown className="h-3 w-3 text-rose-400" />
+                <TrendingDown className="h-3 w-3 text-rose-600" />
               )}
               <span
                 className={cn(
                   'text-xs font-semibold tabular-nums',
-                  positive ? 'text-[hsl(94,55%,55%)]' : 'text-rose-400'
+                  positive ? 'text-[hsl(94,55%,32%)]' : 'text-rose-600'
                 )}
               >
                 {positive ? '+' : ''}{k.change}%
               </span>
-              <span className="text-[10px] text-white/40 ml-1">vs last week</span>
+              <span className="text-[10px] text-slate-400 ml-1">vs last week</span>
             </div>
           </Card>
         );

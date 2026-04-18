@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
 
-    // Gather all context in parallel
+    // Gather all context in parallel — full dashboard tables + rich context feed
     const [
       { data: clientInfo },
       { data: contextItems },
@@ -39,64 +39,96 @@ Deno.serve(async (req) => {
       { data: actionItems },
       { data: creatives },
       { data: adSets },
+      { data: keywords },
+      { data: searchTerms },
       { data: recommendations },
       { data: agendas },
+      { data: dashConfig },
+      { data: verticals },
     ] = await Promise.all([
       supabase.from('clients').select('name, slug').eq('id', client_id).single(),
+      // CONTEXT FEED — Slack messages, Fathom recordings, emails, notes (90-day window, more items, full content)
       supabase.from('context_items')
         .select('title, content, content_type, source, occurred_at, metadata, participants')
         .eq('client_id', client_id)
-        .gte('occurred_at', thirtyDaysAgo)
+        .gte('occurred_at', new Date(now.getTime() - 90 * 86400000).toISOString())
         .order('occurred_at', { ascending: false })
-        .limit(60),
+        .limit(200),
+      // FULL CAMPAIGN TABLE
       supabase.from('ad_campaigns')
-        .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, roas, status, daily_budget, bidding_strategy_type, account_id')
+        .select('campaign_name, platform, spend, revenue, conversions, clicks, impressions, roas, status, daily_budget, bidding_strategy_type, account_id, campaign_type, impression_share, date')
         .eq('client_id', client_id)
         .gte('date', sevenDaysAgo)
         .lte('date', todayStr)
-        .limit(500),
+        .limit(1000),
+      // DAILY METRICS (full 30-day window so trend analysis isn't capped)
       supabase.from('ad_daily_metrics')
-        .select('date, platform, spend, revenue, impressions, clicks, conversions, cost_per_conversion')
+        .select('date, platform, spend, revenue, impressions, clicks, conversions, cost_per_conversion, add_to_cart')
         .eq('client_id', client_id)
-        .gte('date', sevenDaysAgo)
+        .gte('date', thirtyDaysAgo)
         .order('date', { ascending: false })
-        .limit(100),
-      supabase.from('ringba_calls')
-        .select('campaign_name, revenue, payout, converted, duration_seconds, target_name, call_date')
-        .eq('client_id', client_id)
-        .gte('call_date', sevenDaysAgo)
         .limit(500),
+      // RINGBA — full 30-day window
+      supabase.from('ringba_calls')
+        .select('campaign_name, revenue, payout, converted, connected, duration_seconds, target_name, caller_number, inbound_number, call_date')
+        .eq('client_id', client_id)
+        .gte('call_date', thirtyDaysAgo)
+        .limit(2000),
       supabase.from('tasks')
-        .select('title, description, status, priority, tags, assignee_id')
+        .select('title, description, status, priority, tags, assignee_id, due_date')
         .eq('client_id', client_id)
         .order('created_at', { ascending: false })
-        .limit(30),
+        .limit(50),
       supabase.from('call_action_items')
         .select('description, completed, due_date')
         .eq('completed', false)
-        .limit(30),
+        .limit(50),
+      // FULL CREATIVES TABLE
       supabase.from('ad_creatives')
-        .select('campaign_name, ad_name, platform, spend, conversions, ctr, cpa, roas, headline, status, vertical')
+        .select('campaign_name, adset_name, ad_name, platform, spend, revenue, conversions, ctr, cpa, roas, headline, primary_text, status, vertical, creative_type, format, frequency, video_views_3s, video_views_25, video_views_50, video_views_95')
         .eq('client_id', client_id)
         .gte('date_from', thirtyDaysAgo)
         .order('spend', { ascending: false })
-        .limit(20),
+        .limit(75),
+      // AD SETS
       supabase.from('ad_sets')
-        .select('adset_name, campaign_name, platform, spend, revenue, conversions, cpa, status')
+        .select('adset_name, campaign_name, platform, spend, revenue, conversions, clicks, impressions, ctr, cpc, cpa, status, date')
         .eq('client_id', client_id)
         .gte('date', sevenDaysAgo)
         .order('spend', { ascending: false })
-        .limit(30),
+        .limit(100),
+      // GOOGLE KEYWORDS
+      supabase.from('campaign_keywords')
+        .select('keyword, ad_group, campaign_name, match_type, platform, spend, clicks, impressions, conversions, revenue, ctr, cpc, cpa, quality_score, impression_share, is_negative, intent')
+        .eq('client_id', client_id)
+        .gte('date', sevenDaysAgo)
+        .order('spend', { ascending: false })
+        .limit(75),
+      // SEARCH TERMS
+      supabase.from('search_terms')
+        .select('search_term, keyword_text, match_type, campaign_name, spend, clicks, impressions, conversions, revenue, ctr, cpc, cpa, date')
+        .eq('client_id', client_id)
+        .gte('date', sevenDaysAgo)
+        .order('spend', { ascending: false })
+        .limit(50),
       supabase.from('ai_optimization_recommendations')
-        .select('title, description, severity, platform, status')
+        .select('title, description, severity, platform, status, recommendation_type, current_metrics, projected_impact')
         .eq('client_id', client_id)
         .eq('status', 'pending')
-        .limit(10),
+        .limit(20),
       supabase.from('call_agendas')
-        .select('title, call_date, agenda_content, notes_content, status')
+        .select('title, call_date, agenda_content, notes_content, status, call_type')
         .eq('client_id', client_id)
         .order('call_date', { ascending: false })
-        .limit(3),
+        .limit(5),
+      supabase.from('dashboard_configs')
+        .select('revenue_source, enabled_kpis, enabled_platforms, custom_metrics')
+        .eq('client_id', client_id)
+        .maybeSingle(),
+      supabase.from('client_verticals')
+        .select('label, vertical_id, emoji, google_patterns, meta_patterns, ringba_patterns')
+        .eq('client_id', client_id)
+        .order('position'),
     ]);
 
     // Aggregate campaign metrics by platform

@@ -858,7 +858,7 @@ async function getClientData(
     }
   }
 
-  return { recentMetrics, campaignBreakdown, tasks, recentContext, ringbaData, summary, latestAvailable };
+  return { recentMetrics, campaignBreakdown, tasks, recentContext, ringbaData, creativesTable, keywordsTable, summary, latestAvailable };
 }
 
 const DEFAULT_BUSINESS_TIME_ZONE = 'America/New_York';

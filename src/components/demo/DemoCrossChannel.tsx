@@ -17,7 +17,7 @@ export function DemoCrossChannel({ data }: { data: DemoData }) {
       </div>
 
       {/* Hero insight */}
-      <Card className="p-4 bg-gradient-to-br from-amber-400/10 via-white/[0.03] to-[hsl(94,55%,45%)]/10 border-amber-400/20">
+      <Card className="p-4 bg-[hsl(222,47%,9%)] bg-gradient-to-br from-amber-400/10 via-white/[0.03] to-[hsl(94,55%,45%)]/10 border-amber-400/20">
         <div className="space-y-2">
           <p className="text-[11px] uppercase tracking-wider text-amber-300 font-bold">The Insight</p>
           <h4 className="text-lg font-bold text-white leading-tight">{story.title}</h4>

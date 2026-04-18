@@ -1,10 +1,11 @@
 project_id = "bmwjwsxfpzzruitevnmx"
 
-[functions.admin-create-users]
-verify_jwt = false
-
-[functions.send-welcome-email]
-verify_jwt = false
-
-[functions.process-email-queue]
-verify_jwt = true
+[functions]
+  [functions.admin-create-users]
+    verify_jwt = false
+  [functions.auth-email-hook]
+    verify_jwt = false
+  [functions.process-email-queue]
+    verify_jwt = true
+  [functions.send-welcome-email]
+    verify_jwt = false

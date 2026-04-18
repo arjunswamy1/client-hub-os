@@ -273,7 +273,13 @@ export default function DemoDashboardPage() {
           <div className="flex gap-2">
             <Button
               className="flex-1 bg-[hsl(94,55%,40%)] hover:bg-[hsl(94,55%,35%)] text-white gap-1.5"
-              onClick={() => navigate('/demo')}
+              onClick={() =>
+                window.open(
+                  'https://calendly.com/charles-connectpaidmedia/30min',
+                  '_blank',
+                  'noopener,noreferrer'
+                )
+              }
             >
               <Calendar className="h-3.5 w-3.5" />
               Book a call
@@ -281,10 +287,10 @@ export default function DemoDashboardPage() {
             <Button
               variant="outline"
               className="border-white/15 bg-transparent text-white hover:bg-white/5 gap-1.5"
-              onClick={() => window.open('tel:+15551234567')}
+              onClick={() => navigate('/auth')}
             >
               <Phone className="h-3.5 w-3.5" />
-              Call
+              Sign in
             </Button>
           </div>
         </Card>

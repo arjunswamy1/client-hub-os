@@ -179,10 +179,11 @@ Data period: ${sevenDaysAgo} to ${todayStr}
 === AD PLATFORM PERFORMANCE (Last 7 Days) ===
 ${JSON.stringify(platformAgg, null, 2)}
 
-=== DAILY METRICS ===
-${JSON.stringify(dailyMetrics?.slice(0, 14) || [], null, 2)}
+=== DAILY TIME-SERIES (Last 8 Days, includes today, zero-filled) ===
+This is the SINGLE SOURCE OF TRUTH for any daily trend chart. Every day in the window is present, even if values are 0.
+${dailySeries.map(d => `${d.date}: ${d.calls} calls, ${d.converted} converted, $${d.revenue.toFixed(2)} call revenue, $${d.payout.toFixed(2)} payout, $${d.spend.toFixed(2)} ad spend`).join('\n')}
 
-=== RINGBA CALLS (Last 7 Days) ===
+=== RINGBA CALLS TOTALS (Last 7 Days) ===
 Total calls: ${ringbaAgg.totalCalls}, Converted: ${ringbaAgg.converted}, Revenue: $${ringbaAgg.totalRevenue.toFixed(2)}, Payout: $${ringbaAgg.totalPayout.toFixed(2)}
 
 Per-Campaign Ringba Breakdown:

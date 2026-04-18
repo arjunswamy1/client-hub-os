@@ -2858,6 +2858,160 @@ export type Database = {
         }
         Relationships: []
       }
+      tech_pricing: {
+        Row: {
+          created_at: string
+          effective_from: string
+          effective_to: string | null
+          id: string
+          model: string | null
+          notes: string | null
+          rate_per_unit_usd: number
+          service: string
+          unit: string
+        }
+        Insert: {
+          created_at?: string
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          model?: string | null
+          notes?: string | null
+          rate_per_unit_usd: number
+          service: string
+          unit: string
+        }
+        Update: {
+          created_at?: string
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          model?: string | null
+          notes?: string | null
+          rate_per_unit_usd?: number
+          service?: string
+          unit?: string
+        }
+        Relationships: []
+      }
+      tech_usage_daily: {
+        Row: {
+          category: string
+          client_id: string | null
+          date: string
+          event_count: number
+          id: string
+          service: string
+          total_cache_read_tokens: number
+          total_cache_write_tokens: number
+          total_cost_usd: number
+          total_input_tokens: number
+          total_output_tokens: number
+          total_quantity: number
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          client_id?: string | null
+          date: string
+          event_count?: number
+          id?: string
+          service: string
+          total_cache_read_tokens?: number
+          total_cache_write_tokens?: number
+          total_cost_usd?: number
+          total_input_tokens?: number
+          total_output_tokens?: number
+          total_quantity?: number
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          client_id?: string | null
+          date?: string
+          event_count?: number
+          id?: string
+          service?: string
+          total_cache_read_tokens?: number
+          total_cache_write_tokens?: number
+          total_cost_usd?: number
+          total_input_tokens?: number
+          total_output_tokens?: number
+          total_quantity?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tech_usage_daily_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tech_usage_events: {
+        Row: {
+          cache_read_tokens: number | null
+          cache_write_tokens: number | null
+          category: string
+          client_id: string | null
+          cost_usd: number
+          created_at: string
+          id: string
+          input_tokens: number | null
+          metadata: Json | null
+          model: string | null
+          output_tokens: number | null
+          quantity: number | null
+          service: string
+          surface: string | null
+          unit: string
+        }
+        Insert: {
+          cache_read_tokens?: number | null
+          cache_write_tokens?: number | null
+          category: string
+          client_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          model?: string | null
+          output_tokens?: number | null
+          quantity?: number | null
+          service: string
+          surface?: string | null
+          unit?: string
+        }
+        Update: {
+          cache_read_tokens?: number | null
+          cache_write_tokens?: number | null
+          category?: string
+          client_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          model?: string | null
+          output_tokens?: number | null
+          quantity?: number | null
+          service?: string
+          surface?: string | null
+          unit?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tech_usage_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trafficking_ad_performance: {
         Row: {
           clicks: number | null
@@ -3148,6 +3302,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      compute_tech_cost: {
+        Args: {
+          p_cache_read_tokens?: number
+          p_cache_write_tokens?: number
+          p_input_tokens?: number
+          p_model: string
+          p_output_tokens?: number
+          p_quantity?: number
+          p_service: string
+          p_unit: string
+        }
+        Returns: number
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean

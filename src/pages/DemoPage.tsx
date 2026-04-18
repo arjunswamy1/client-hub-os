@@ -170,7 +170,7 @@ export default function DemoPage() {
                   onClick={() => setStep("signup")}
                   className="bg-[hsl(94,55%,38%)] hover:bg-[hsl(94,55%,32%)] text-white text-base sm:text-lg px-6 sm:px-8 py-5 sm:py-6 rounded-xl gap-2 shadow-md w-full sm:w-auto"
                 >
-                  Get Your Free Dashboard Demo
+                  Sign Up for Early Access
                   <ArrowRight className="h-5 w-5" />
                 </Button>
                 <Button

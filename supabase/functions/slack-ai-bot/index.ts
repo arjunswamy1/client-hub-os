@@ -1120,6 +1120,10 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
     return { text: "I couldn't generate a response right now. Please try again in a moment! 🔧", charts: [] };
   }
 
+  if (result.usage) {
+    console.log(`[slack-ai-bot] Anthropic tokens — input: ${result.usage.input_tokens}, output: ${result.usage.output_tokens}`);
+  }
+
   const text = result.content && result.content.trim().length > 0
     ? result.content
     : (result.charts.length > 0 ? "Here's the chart you asked about:" : "I couldn't generate a response right now. Please try again in a moment! 🔧");

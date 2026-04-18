@@ -28,6 +28,7 @@ import OnboardingPage from "./pages/OnboardingPage";
 import DemoPage from "./pages/DemoPage";
 import SignupPage from "./pages/SignupPage";
 import ClientPortalPage from "./pages/ClientPortalPage";
+import UnsubscribePage from "./pages/UnsubscribePage";
 
 const queryClient = new QueryClient();
 
@@ -141,6 +142,7 @@ const App = () => (
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/demo" element={<DemoPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route path="/onboarding/:token" element={<OnboardingPage />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>

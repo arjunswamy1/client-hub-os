@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callAnthropic, truncate } from "../_shared/anthropic.ts";
+import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/anthropic.ts";
+import { logAiUsage } from "../_shared/cost-tracking.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -1103,7 +1104,7 @@ interface AIReply {
   charts: Array<{ url: string; title: string; chart_type: string }>;
 }
 
-async function callAI(messages: Array<{ role: string; content: string }>): Promise<AIReply> {
+async function callAI(messages: Array<{ role: string; content: string }>, clientIdForLogging?: string | null): Promise<AIReply> {
   const totalChars = messages.reduce((sum, message) => sum + (message.content?.length || 0), 0);
   console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total — Anthropic Claude (charts enabled)`);
 
@@ -1122,6 +1123,16 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
 
   if (result.usage) {
     console.log(`[slack-ai-bot] Anthropic tokens — input: ${result.usage.input_tokens}, output: ${result.usage.output_tokens}`);
+    logAiUsage({
+      client_id: clientIdForLogging ?? null,
+      surface: 'slack-ai-bot',
+      model: ANTHROPIC_DEFAULT_MODEL,
+      input_tokens: result.usage.input_tokens,
+      output_tokens: result.usage.output_tokens,
+      cache_read_tokens: result.usage.cache_read_input_tokens,
+      cache_write_tokens: result.usage.cache_creation_input_tokens,
+      metadata: { charts: result.charts.length },
+    }).catch((e) => console.error('logAiUsage failed:', e));
   }
 
   const text = result.content && result.content.trim().length > 0
@@ -1333,7 +1344,7 @@ Guidelines:
       ...conversationHistory,
     ];
 
-    const response = await callAI(aiMessages);
+    const response = await callAI(aiMessages, client?.id ?? null);
     await postSlackMessage(token, event.channel, response.text, replyThreadTs);
     for (const chart of response.charts) {
       await uploadChartToSlack(token, event.channel, chart, replyThreadTs);

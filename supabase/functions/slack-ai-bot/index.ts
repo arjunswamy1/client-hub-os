@@ -736,9 +736,52 @@ async function getClientData(
 
   let recentContext = '';
   if (contextRes.data?.length) {
-    recentContext = '\n📝 Recent Notes:\n';
-    for (const item of contextRes.data) {
-      recentContext += `  • ${item.title}: ${item.content?.substring(0, 200)}\n`;
+    const fathom = contextRes.data.filter((c: any) => c.source === 'fathom');
+    const slack = contextRes.data.filter((c: any) => c.source === 'slack');
+    const emails = contextRes.data.filter((c: any) => c.source === 'email' || c.source === 'gmail');
+    const other = contextRes.data.filter((c: any) => !['fathom', 'slack', 'email', 'gmail'].includes(c.source));
+
+    if (fathom.length) {
+      recentContext += `\n🎙️ Fathom Meeting Recordings (last 90d):\n`;
+      for (const m of fathom.slice(0, 15)) {
+        recentContext += `  • [${(m.occurred_at || '').slice(0, 10)}] ${m.title}${(m.participants || []).length ? ' — ' + (m.participants || []).join(', ') : ''}\n    ${(m.content || '').slice(0, 600).replace(/\n/g, ' ')}\n`;
+      }
+    }
+    if (slack.length) {
+      recentContext += `\n💬 Slack Communications (last 90d):\n`;
+      for (const s of slack.slice(0, 50)) {
+        recentContext += `  • [${(s.occurred_at || '').slice(0, 10)}] ${s.title || s.content_type}: ${(s.content || '').slice(0, 400).replace(/\n/g, ' ')}\n`;
+      }
+    }
+    if (emails.length) {
+      recentContext += `\n✉️ Email Threads (last 90d):\n`;
+      for (const e of emails.slice(0, 15)) {
+        recentContext += `  • [${(e.occurred_at || '').slice(0, 10)}] ${e.title}: ${(e.content || '').slice(0, 350).replace(/\n/g, ' ')}\n`;
+      }
+    }
+    if (other.length) {
+      recentContext += `\n📝 Other Notes/Docs:\n`;
+      for (const o of other.slice(0, 15)) {
+        recentContext += `  • [${o.source} • ${(o.occurred_at || '').slice(0, 10)}] ${o.title}: ${(o.content || '').slice(0, 300).replace(/\n/g, ' ')}\n`;
+      }
+    }
+  }
+
+  // Creatives table
+  let creativesTable = '';
+  if (creativesRes.data?.length) {
+    creativesTable = `\n🎨 Top Creatives (by spend):\n`;
+    for (const c of creativesRes.data.slice(0, 30)) {
+      creativesTable += `  • ${c.ad_name || c.headline || '(no name)'} (${c.platform}, ${c.creative_type || c.format || 'n/a'}): ${formatCurrency(Number(c.spend || 0))} spend, ${c.conversions || 0} conv, CTR ${c.ctr || 'N/A'}%, CPA ${c.cpa ? formatCurrency(Number(c.cpa)) : 'N/A'}\n`;
+    }
+  }
+
+  // Keywords table
+  let keywordsTable = '';
+  if (keywordsRes.data?.length) {
+    keywordsTable = `\n🔑 Top Keywords (Google):\n`;
+    for (const k of keywordsRes.data.slice(0, 30)) {
+      keywordsTable += `  • ${k.keyword} [${k.match_type || 'n/a'}] (${k.ad_group} / ${k.campaign_name}): ${formatCurrency(Number(k.spend || 0))} spend, ${k.clicks || 0} clicks, ${k.conversions || 0} conv, QS ${k.quality_score || 'N/A'}${k.is_negative ? ' [NEG]' : ''}\n`;
     }
   }
 

@@ -133,8 +133,12 @@ Deno.serve(async (req) => {
         .order('position'),
     ]);
 
-    // Aggregate campaign metrics by platform
+    // Aggregate campaign metrics by platform AND by campaign-name (collapses ~1000 daily rows → ~120 rows)
     const platformAgg: Record<string, { spend: number; revenue: number; conversions: number; clicks: number; impressions: number }> = {};
+    const campaignAgg: Record<string, {
+      campaign_name: string; platform: string; status: string; daily_budget: number | null; bidding_strategy_type: string | null;
+      spend: number; revenue: number; conversions: number; clicks: number; impressions: number; impr_share_sum: number; impr_share_n: number;
+    }> = {};
     for (const c of campaigns || []) {
       const p = c.platform || 'unknown';
       if (!platformAgg[p]) platformAgg[p] = { spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0 };
@@ -143,7 +147,27 @@ Deno.serve(async (req) => {
       platformAgg[p].conversions += Number(c.conversions);
       platformAgg[p].clicks += Number(c.clicks);
       platformAgg[p].impressions += Number(c.impressions);
+
+      const key = `${c.campaign_name}|${p}`;
+      if (!campaignAgg[key]) {
+        campaignAgg[key] = {
+          campaign_name: c.campaign_name, platform: p, status: c.status || 'unknown',
+          daily_budget: c.daily_budget ?? null, bidding_strategy_type: c.bidding_strategy_type || null,
+          spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0, impr_share_sum: 0, impr_share_n: 0,
+        };
+      }
+      const ca = campaignAgg[key];
+      ca.spend += Number(c.spend);
+      ca.revenue += Number(c.revenue);
+      ca.conversions += Number(c.conversions);
+      ca.clicks += Number(c.clicks);
+      ca.impressions += Number(c.impressions);
+      if (c.impression_share != null) {
+        ca.impr_share_sum += Number(c.impression_share);
+        ca.impr_share_n++;
+      }
     }
+    const aggregatedCampaigns = Object.values(campaignAgg).sort((a, b) => b.spend - a.spend);
 
     // Aggregate ringba — total, per-campaign, AND per-day
     const ringbaAgg = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
@@ -154,7 +178,7 @@ Deno.serve(async (req) => {
       if (call.converted) ringbaAgg.converted++;
       ringbaAgg.totalRevenue += Number(call.revenue || 0);
       ringbaAgg.totalPayout += Number(call.payout || 0);
-      
+
       const cName = call.campaign_name || 'Unknown';
       if (!ringbaByCampaign[cName]) ringbaByCampaign[cName] = { calls: 0, converted: 0, revenue: 0, payout: 0, avgDuration: 0, totalDuration: 0 };
       ringbaByCampaign[cName].calls++;
@@ -163,7 +187,6 @@ Deno.serve(async (req) => {
       ringbaByCampaign[cName].payout += Number(call.payout || 0);
       ringbaByCampaign[cName].totalDuration += Number(call.duration_seconds || 0);
 
-      // Per-day breakdown (date only, no time)
       const day = (call.call_date || '').toString().split('T')[0];
       if (day) {
         if (!ringbaByDay[day]) ringbaByDay[day] = { calls: 0, converted: 0, revenue: 0, payout: 0 };
@@ -173,40 +196,12 @@ Deno.serve(async (req) => {
         ringbaByDay[day].payout += Number(call.payout || 0);
       }
     }
-    // Compute avg duration
     for (const key of Object.keys(ringbaByCampaign)) {
       const c = ringbaByCampaign[key];
       c.avgDuration = c.calls > 0 ? Math.round(c.totalDuration / c.calls) : 0;
     }
 
-    // Build a complete daily series covering EVERY day in the 7-day window (fills zeros)
-    const dailySeries: Array<{ date: string; calls: number; converted: number; revenue: number; payout: number; spend: number }> = [];
-    const dailySpendByDate: Record<string, number> = {};
-    for (const m of dailyMetrics || []) {
-      const d = (m.date || '').toString().split('T')[0];
-      if (!d) continue;
-      dailySpendByDate[d] = (dailySpendByDate[d] || 0) + Number(m.spend || 0);
-    }
-    for (let i = 7; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 86400000).toISOString().split('T')[0];
-      const r = ringbaByDay[d] || { calls: 0, converted: 0, revenue: 0, payout: 0 };
-      dailySeries.push({
-        date: d,
-        calls: r.calls,
-        converted: r.converted,
-        revenue: r.revenue,
-        payout: r.payout,
-        spend: dailySpendByDate[d] || 0,
-      });
-    }
-
-    // Categorize context items
-    const fathomMeetings = (contextItems || []).filter((c: any) => c.source === 'fathom');
-    const slackItems = (contextItems || []).filter((c: any) => c.source === 'slack');
-    const emailItems = (contextItems || []).filter((c: any) => c.source === 'email' || c.source === 'gmail');
-    const otherContext = (contextItems || []).filter((c: any) => !['fathom', 'slack', 'email', 'gmail'].includes(c.source));
-
-    // Aggregate full daily metrics (30-day window)
+    // Aggregate ad-platform daily totals (14-day window, single source of truth)
     const dailyByDate: Record<string, { spend: number; revenue: number; conversions: number; clicks: number; impressions: number }> = {};
     for (const m of dailyMetrics || []) {
       const d = (m.date || '').toString().split('T')[0];
@@ -219,71 +214,86 @@ Deno.serve(async (req) => {
       dailyByDate[d].impressions += Number(m.impressions || 0);
     }
 
-    // Build the data payload for the AI — full dashboard tables + rich context feed
+    // Build a complete 14-day series, zero-filled, combining ad spend/revenue + Ringba calls
+    const dailySeries: Array<{ date: string; calls: number; converted: number; callRevenue: number; payout: number; spend: number; adRevenue: number; conversions: number }> = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 86400000).toISOString().split('T')[0];
+      const r = ringbaByDay[d] || { calls: 0, converted: 0, revenue: 0, payout: 0 };
+      const a = dailyByDate[d] || { spend: 0, revenue: 0, conversions: 0, clicks: 0, impressions: 0 };
+      dailySeries.push({
+        date: d, calls: r.calls, converted: r.converted, callRevenue: r.revenue, payout: r.payout,
+        spend: a.spend, adRevenue: a.revenue, conversions: a.conversions,
+      });
+    }
+
+    // Categorize context items
+    const fathomMeetings = (contextItems || []).filter((c: any) => c.source === 'fathom');
+    const slackItems = (contextItems || []).filter((c: any) => c.source === 'slack');
+    const emailItems = (contextItems || []).filter((c: any) => c.source === 'email' || c.source === 'gmail');
+    const otherContext = (contextItems || []).filter((c: any) => !['fathom', 'slack', 'email', 'gmail'].includes(c.source));
+
+    // Build the data payload — aggregated tables + trimmed feed
     const dataContext = `
 === CLIENT: ${clientInfo?.name || 'Unknown'} ===
-Data window: ad performance ${sevenDaysAgo} to ${todayStr} | extended metrics & ringba ${thirtyDaysAgo} to ${todayStr} | context feed last 90 days
+Data window: ad performance & ringba ${fourteenDaysAgo} to ${todayStr} | creatives ${thirtyDaysAgo} to ${todayStr} | context feed last 30 days
 Revenue source: ${dashConfig?.revenue_source || 'manual'} | Enabled platforms: ${(dashConfig?.enabled_platforms || []).join(', ') || 'all'}
 
 === CLIENT VERTICALS ===
 ${(verticals || []).map((v: any) => `${v.emoji} ${v.label} (${v.vertical_id}) — google: [${(v.google_patterns || []).join(', ')}], meta: [${(v.meta_patterns || []).join(', ')}], ringba: [${(v.ringba_patterns || []).join(', ')}]`).join('\n') || 'No verticals configured'}
 
-=== AD PLATFORM PERFORMANCE TOTALS (Last 7 Days) ===
-${JSON.stringify(platformAgg, null, 2)}
+=== AD PLATFORM TOTALS (Last 14 Days, aggregated) ===
+${Object.entries(platformAgg).map(([p, m]) => `${p}: $${m.spend.toFixed(2)} spend, $${m.revenue.toFixed(2)} rev, ${m.conversions} conv, ${m.clicks} clicks, ${m.impressions} impr`).join('\n') || 'No data'}
 
-=== DAILY TIME-SERIES (Last 8 Days, includes today, zero-filled) ===
-This is the SINGLE SOURCE OF TRUTH for any short-window daily trend chart. Every day in the window is present, even if values are 0.
-${dailySeries.map(d => `${d.date}: ${d.calls} calls, ${d.converted} converted, $${d.revenue.toFixed(2)} call revenue, $${d.payout.toFixed(2)} payout, $${d.spend.toFixed(2)} ad spend`).join('\n')}
+=== DAILY TIME-SERIES (Last 14 Days, zero-filled — SINGLE SOURCE OF TRUTH for any trend chart) ===
+${dailySeries.map(d => `${d.date}: ${d.calls} calls, ${d.converted} converted, $${d.callRevenue.toFixed(2)} call rev, $${d.spend.toFixed(2)} spend, $${d.adRevenue.toFixed(2)} ad rev, ${d.conversions} ad conv`).join('\n')}
 
-=== EXTENDED DAILY METRICS (Last 30 Days, ad platform totals) ===
-For longer trend windows. Use this for month-over-month or 30-day questions.
-${Object.entries(dailyByDate).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 30).map(([d, m]) => `${d}: $${m.spend.toFixed(2)} spend, $${m.revenue.toFixed(2)} revenue, ${m.conversions} conv, ${m.clicks} clicks, ${m.impressions} impr`).join('\n') || 'No data'}
-
-=== RINGBA CALLS TOTALS (Last 30 Days) ===
+=== RINGBA TOTALS (Last 14 Days) ===
 Total calls: ${ringbaAgg.totalCalls}, Converted: ${ringbaAgg.converted}, Revenue: $${ringbaAgg.totalRevenue.toFixed(2)}, Payout: $${ringbaAgg.totalPayout.toFixed(2)}
 
-Per-Campaign Ringba Breakdown:
-${Object.entries(ringbaByCampaign).sort((a, b) => b[1].revenue - a[1].revenue).map(([name, d]) => `  ${name}: ${d.calls} calls, ${d.converted} converted, $${d.revenue.toFixed(2)} revenue, $${d.payout.toFixed(2)} payout, avg ${d.avgDuration}s`).join('\n')}
+Per-Campaign Ringba Breakdown (top 30 by revenue):
+${Object.entries(ringbaByCampaign).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 30).map(([name, d]) => `  ${name}: ${d.calls} calls, ${d.converted} converted, $${d.revenue.toFixed(2)} revenue, $${d.payout.toFixed(2)} payout, avg ${d.avgDuration}s`).join('\n') || 'None'}
 
-=== FULL CAMPAIGN TABLE (Last 7 Days, all rows) ===
-${(campaigns || []).map((c: any) => `${c.campaign_name} | ${c.platform} | ${c.status || 'unknown'} | $${Number(c.spend).toFixed(2)} spend | $${Number(c.revenue).toFixed(2)} rev | ${c.conversions} conv | ${c.clicks} clicks | ${c.impressions} impr | ROAS ${c.roas || 'N/A'} | budget $${c.daily_budget || 'N/A'} | ${c.bidding_strategy_type || ''} | impr_share ${c.impression_share || 'N/A'} | ${c.date}`).join('\n') || 'No campaigns'}
+=== CAMPAIGNS (Last 14 Days, aggregated by campaign — top 60 by spend) ===
+${aggregatedCampaigns.slice(0, 60).map((c) => `${c.campaign_name} | ${c.platform} | ${c.status} | $${c.spend.toFixed(2)} spend | $${c.revenue.toFixed(2)} rev | ${c.conversions} conv | ${c.clicks} clicks | ${c.impressions} impr | ROAS ${c.spend > 0 ? (c.revenue / c.spend).toFixed(2) : 'N/A'} | budget $${c.daily_budget ?? 'N/A'} | ${c.bidding_strategy_type || ''} | impr_share ${c.impr_share_n > 0 ? (c.impr_share_sum / c.impr_share_n).toFixed(2) : 'N/A'}`).join('\n') || 'No campaigns'}
 
-=== FULL CREATIVES TABLE (Last 30 Days, top 75 by spend) ===
-${(creatives || []).map((c: any) => `${c.ad_name || c.headline || '(no name)'} | ${c.platform} | ${c.creative_type || c.format || 'n/a'} | $${Number(c.spend || 0).toFixed(2)} spend | $${Number(c.revenue || 0).toFixed(2)} rev | ${c.conversions || 0} conv | CTR ${c.ctr || 'N/A'}% | CPA $${c.cpa || 'N/A'} | ROAS ${c.roas || 'N/A'} | freq ${c.frequency || 'N/A'} | 3s/25/50/95: ${c.video_views_3s || 0}/${c.video_views_25 || 0}/${c.video_views_50 || 0}/${c.video_views_95 || 0} | "${(c.headline || '').slice(0, 60)}" — ${c.campaign_name}`).join('\n') || 'No creatives'}
+=== CREATIVES (Last 30 Days, top 40 by spend) ===
+${(creatives || []).map((c: any) => `${c.ad_name || c.headline || '(no name)'} | ${c.platform} | ${c.creative_type || c.format || 'n/a'} | $${Number(c.spend || 0).toFixed(2)} spend | $${Number(c.revenue || 0).toFixed(2)} rev | ${c.conversions || 0} conv | CTR ${c.ctr || 'N/A'}% | CPA $${c.cpa || 'N/A'} | ROAS ${c.roas || 'N/A'} | freq ${c.frequency || 'N/A'} | 3s/50/95: ${c.video_views_3s || 0}/${c.video_views_50 || 0}/${c.video_views_95 || 0} | "${truncate(c.headline, 60)}" — ${c.campaign_name}`).join('\n') || 'No creatives'}
 
-=== AD SETS TABLE (Last 7 Days, top 100 by spend) ===
+=== AD SETS (Last 7 Days, top 50 by spend) ===
 ${(adSets || []).map((s: any) => `${s.adset_name} → ${s.campaign_name} | ${s.platform} | $${Number(s.spend).toFixed(2)} spend | $${Number(s.revenue).toFixed(2)} rev | ${s.conversions} conv | CTR ${s.ctr || 'N/A'} | CPC ${s.cpc || 'N/A'} | CPA ${s.cpa || 'N/A'} | ${s.status || ''}`).join('\n') || 'No ad sets'}
 
-=== GOOGLE KEYWORDS (Last 7 Days, top 75 by spend) ===
+=== GOOGLE KEYWORDS (Last 7 Days, top 40 by spend) ===
 ${(keywords || []).map((k: any) => `${k.keyword} [${k.match_type || 'n/a'}] (${k.ad_group} / ${k.campaign_name}) | $${Number(k.spend || 0).toFixed(2)} spend | ${k.clicks || 0} clicks | ${k.conversions || 0} conv | CPC $${k.cpc || 'N/A'} | CTR ${k.ctr || 'N/A'} | QS ${k.quality_score || 'N/A'} | impr_share ${k.impression_share || 'N/A'}${k.is_negative ? ' [NEGATIVE]' : ''}`).join('\n') || 'No keywords'}
 
-=== SEARCH TERMS (Last 7 Days, top 50 by spend) ===
+=== SEARCH TERMS (Last 7 Days, top 30 by spend) ===
 ${(searchTerms || []).map((t: any) => `"${t.search_term}" → ${t.keyword_text || ''} [${t.match_type || ''}] (${t.campaign_name}) | $${Number(t.spend || 0).toFixed(2)} spend | ${t.clicks || 0} clicks | ${t.conversions || 0} conv | CTR ${t.ctr || 'N/A'} | CPA ${t.cpa || 'N/A'}`).join('\n') || 'No search terms'}
 
-=== FATHOM MEETING RECORDINGS (Last 90 Days) ===
-${fathomMeetings.slice(0, 30).map((m: any) => `[${m.occurred_at}] ${m.title} | participants: ${(m.participants || []).join(', ') || 'n/a'}\n${m.content?.slice(0, 1200) || 'No summary'}\nRecording: ${m.metadata?.recording_url || 'N/A'}`).join('\n---\n') || 'None'}
+=== FATHOM MEETINGS (Last 30 Days, top 15) ===
+${fathomMeetings.slice(0, 15).map((m: any) => `[${m.occurred_at}] ${m.title} | participants: ${(m.participants || []).join(', ') || 'n/a'}\n${truncate(m.content, 800) || 'No summary'}`).join('\n---\n') || 'None'}
 
-=== SLACK COMMUNICATIONS (Last 90 Days, full feed) ===
-${slackItems.slice(0, 80).map((s: any) => `[${s.occurred_at}] ${s.title || s.content_type}${(s.participants || []).length ? ' — ' + (s.participants || []).join(', ') : ''}: ${s.content?.slice(0, 600) || ''}`).join('\n') || 'None'}
+=== SLACK COMMUNICATIONS (Last 30 Days, top 50) ===
+${slackItems.slice(0, 50).map((s: any) => `[${s.occurred_at}] ${s.title || s.content_type}${(s.participants || []).length ? ' — ' + (s.participants || []).join(', ') : ''}: ${truncate(s.content, 400)}`).join('\n') || 'None'}
 
-=== EMAIL / GMAIL THREADS (Last 90 Days) ===
-${emailItems.slice(0, 30).map((e: any) => `[${e.occurred_at}] ${e.title}: ${e.content?.slice(0, 500) || ''}`).join('\n') || 'None'}
+=== EMAIL THREADS (Last 30 Days, top 15) ===
+${emailItems.slice(0, 15).map((e: any) => `[${e.occurred_at}] ${e.title}: ${truncate(e.content, 350)}`).join('\n') || 'None'}
 
-=== OTHER CONTEXT (notes, docs, etc.) ===
-${otherContext.slice(0, 30).map((c: any) => `[${c.source} • ${c.occurred_at}] ${c.title}: ${c.content?.slice(0, 400) || ''}`).join('\n') || 'None'}
+=== OTHER CONTEXT (notes/docs, top 15) ===
+${otherContext.slice(0, 15).map((c: any) => `[${c.source} • ${c.occurred_at}] ${c.title}: ${truncate(c.content, 300)}`).join('\n') || 'None'}
 
-=== TASKS ===
-${(tasks || []).map((t: any) => `[${t.status} • ${t.priority}] ${t.title}${t.due_date ? ` (due ${t.due_date})` : ''}${t.description ? ' — ' + t.description.slice(0, 150) : ''}`).join('\n') || 'None'}
+=== OPEN TASKS ===
+${(tasks || []).map((t: any) => `[${t.status} • ${t.priority}] ${t.title}${t.due_date ? ` (due ${t.due_date})` : ''}`).join('\n') || 'None'}
 
 === OPEN ACTION ITEMS ===
 ${(actionItems || []).map((a: any) => `- ${a.description}${a.due_date ? ` (due ${a.due_date})` : ''}`).join('\n') || 'None'}
 
 === PENDING AI RECOMMENDATIONS ===
-${(recommendations || []).map((r: any) => `[${r.severity} • ${r.platform}] ${r.title}: ${r.description?.slice(0, 250) || ''}`).join('\n') || 'None'}
+${(recommendations || []).map((r: any) => `[${r.severity} • ${r.platform}] ${r.title}: ${truncate(r.description, 200)}`).join('\n') || 'None'}
 
 === RECENT AGENDAS ===
 ${(agendas || []).map((a: any) => `[${a.call_date} • ${a.call_type}] ${a.title} (${a.status})`).join('\n') || 'None'}
 `.trim();
+
+    console.log(`[ai-assistant] payload size: ${dataContext.length} chars (~${Math.round(dataContext.length / 4)} tokens) | client: ${clientInfo?.name} | campaigns: ${aggregatedCampaigns.length} (from ${(campaigns || []).length} rows) | ringba: ${ringbaAgg.totalCalls} | context: ${(contextItems || []).length}`);
 
     // Build conversation messages
     const messages: any[] = [

@@ -304,6 +304,21 @@ Deno.serve(async (req) => {
         last_sync_at: new Date().toISOString(),
       });
 
+      // Log integration usage — 1 call per mapped channel synced
+      if (mappings.length > 0) {
+        await logIntegrationCall({
+          client_id,
+          service: "slack_api",
+          surface: "sync-slack",
+          calls: mappings.length,
+          metadata: {
+            channels: mappings.length,
+            messages_synced: totalSynced,
+            tasks_created: tasksCreated,
+          },
+        });
+      }
+
       return jsonResp({ synced: totalSynced, tasks_created: tasksCreated, summary });
     }
 

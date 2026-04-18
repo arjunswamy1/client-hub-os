@@ -742,27 +742,27 @@ async function getClientData(
     const other = contextRes.data.filter((c: any) => !['fathom', 'slack', 'email', 'gmail'].includes(c.source));
 
     if (fathom.length) {
-      recentContext += `\n🎙️ Fathom Meeting Recordings (last 90d):\n`;
-      for (const m of fathom.slice(0, 15)) {
-        recentContext += `  • [${(m.occurred_at || '').slice(0, 10)}] ${m.title}${(m.participants || []).length ? ' — ' + (m.participants || []).join(', ') : ''}\n    ${(m.content || '').slice(0, 600).replace(/\n/g, ' ')}\n`;
+      recentContext += `\n🎙️ Fathom Meeting Recordings (last 30d):\n`;
+      for (const m of fathom.slice(0, 10)) {
+        recentContext += `  • [${(m.occurred_at || '').slice(0, 10)}] ${m.title}${(m.participants || []).length ? ' — ' + (m.participants || []).join(', ') : ''}\n    ${truncate((m.content || '').replace(/\n/g, ' '), 400)}\n`;
       }
     }
     if (slack.length) {
-      recentContext += `\n💬 Slack Communications (last 90d):\n`;
-      for (const s of slack.slice(0, 50)) {
-        recentContext += `  • [${(s.occurred_at || '').slice(0, 10)}] ${s.title || s.content_type}: ${(s.content || '').slice(0, 400).replace(/\n/g, ' ')}\n`;
+      recentContext += `\n💬 Slack Communications (last 30d):\n`;
+      for (const s of slack.slice(0, 30)) {
+        recentContext += `  • [${(s.occurred_at || '').slice(0, 10)}] ${s.title || s.content_type}: ${truncate((s.content || '').replace(/\n/g, ' '), 250)}\n`;
       }
     }
     if (emails.length) {
-      recentContext += `\n✉️ Email Threads (last 90d):\n`;
-      for (const e of emails.slice(0, 15)) {
-        recentContext += `  • [${(e.occurred_at || '').slice(0, 10)}] ${e.title}: ${(e.content || '').slice(0, 350).replace(/\n/g, ' ')}\n`;
+      recentContext += `\n✉️ Email Threads (last 30d):\n`;
+      for (const e of emails.slice(0, 10)) {
+        recentContext += `  • [${(e.occurred_at || '').slice(0, 10)}] ${e.title}: ${truncate((e.content || '').replace(/\n/g, ' '), 250)}\n`;
       }
     }
     if (other.length) {
       recentContext += `\n📝 Other Notes/Docs:\n`;
-      for (const o of other.slice(0, 15)) {
-        recentContext += `  • [${o.source} • ${(o.occurred_at || '').slice(0, 10)}] ${o.title}: ${(o.content || '').slice(0, 300).replace(/\n/g, ' ')}\n`;
+      for (const o of other.slice(0, 10)) {
+        recentContext += `  • [${o.source} • ${(o.occurred_at || '').slice(0, 10)}] ${o.title}: ${truncate((o.content || '').replace(/\n/g, ' '), 200)}\n`;
       }
     }
   }

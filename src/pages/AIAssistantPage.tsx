@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useClient } from '@/contexts/ClientContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,12 +14,19 @@ interface Source {
   source: string;
 }
 
+interface Chart {
+  url: string;
+  title: string;
+  chart_type: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
   sources?: Source[];
+  charts?: Chart[];
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -83,6 +91,7 @@ export default function AIAssistantPage() {
         content: data.answer || 'Sorry, I could not generate a response.',
         timestamp: new Date(),
         sources: data.sources || [],
+        charts: data.charts || [],
       };
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
@@ -152,7 +161,33 @@ export default function AIAssistantPage() {
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-accent'
               }`}>
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+                {msg.role === 'assistant' ? (
+                  <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-headings:my-2">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                )}
+                {msg.charts && msg.charts.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {msg.charts.map((chart, i) => (
+                      <a
+                        key={i}
+                        href={chart.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block rounded-md overflow-hidden border border-border/40 bg-background hover:border-primary/50 transition-colors"
+                      >
+                        <img
+                          src={chart.url}
+                          alt={chart.title}
+                          className="w-full h-auto"
+                          loading="lazy"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                )}
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-border/30">
                     <p className="text-[10px] font-medium opacity-70 mb-1">Sources referenced:</p>

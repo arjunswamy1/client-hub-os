@@ -1035,28 +1035,33 @@ function buildDeterministicMetricReply(
 
 // ─── AI call ───────────────────────────────────────────────────────────────
 
-async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
+interface AIReply {
+  text: string;
+  charts: Array<{ url: string; title: string; chart_type: string }>;
+}
+
+async function callAI(messages: Array<{ role: string; content: string }>): Promise<AIReply> {
   const totalChars = messages.reduce((sum, message) => sum + (message.content?.length || 0), 0);
-  console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total — Anthropic Claude`);
+  console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total — Anthropic Claude (charts enabled)`);
 
   const result = await callAnthropic(messages, {
     max_tokens: 1200,
     temperature: 0.4,
+    enableCharts: true,
   });
 
   if (!result.ok) {
     console.error('Anthropic error:', result.status, result.error);
-    if (result.status === 429) return "I'm being rate limited right now. Try again in a moment! 🕐";
-    if (result.status === 401) return 'Anthropic API key is invalid — please update ANTHROPIC_API_KEY.';
-    return "I couldn't generate a response right now. Please try again in a moment! 🔧";
+    if (result.status === 429) return { text: "I'm being rate limited right now. Try again in a moment! 🕐", charts: [] };
+    if (result.status === 401) return { text: 'Anthropic API key is invalid — please update ANTHROPIC_API_KEY.', charts: [] };
+    return { text: "I couldn't generate a response right now. Please try again in a moment! 🔧", charts: [] };
   }
 
-  if (!result.content || result.content.trim().length === 0) {
-    console.warn('Anthropic returned empty content');
-    return "I couldn't generate a response right now. Please try again in a moment! 🔧";
-  }
+  const text = result.content && result.content.trim().length > 0
+    ? result.content
+    : (result.charts.length > 0 ? "Here's the chart you asked about:" : "I couldn't generate a response right now. Please try again in a moment! 🔧");
 
-  return result.content;
+  return { text, charts: result.charts };
 }
 
 // ─── Slack messaging ───────────────────────────────────────────────────────
@@ -1088,7 +1093,63 @@ async function addReaction(token: string, channel: string, timestamp: string, em
   }
 }
 
-// ─── Main handler ──────────────────────────────────────────────────────────
+async function uploadChartToSlack(
+  token: string,
+  channel: string,
+  chart: { url: string; title: string },
+  threadTs?: string,
+) {
+  try {
+    const imgRes = await fetch(chart.url);
+    if (!imgRes.ok) {
+      console.warn('QuickChart fetch failed:', imgRes.status);
+      return;
+    }
+    const blob = await imgRes.blob();
+    const fileSize = blob.size;
+    const filename = `${chart.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
+
+    // Step 1: get upload URL
+    const getUrlRes = await fetch(
+      `https://slack.com/api/files.getUploadURLExternal?filename=${encodeURIComponent(filename)}&length=${fileSize}`,
+      { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } },
+    );
+    const getUrlData = await getUrlRes.json();
+    if (!getUrlData.ok) {
+      console.warn('files.getUploadURLExternal failed:', getUrlData.error);
+      return;
+    }
+
+    // Step 2: upload bytes
+    const uploadRes = await fetch(getUrlData.upload_url, {
+      method: 'POST',
+      body: blob,
+    });
+    if (!uploadRes.ok) {
+      console.warn('chart upload PUT failed:', uploadRes.status);
+      return;
+    }
+
+    // Step 3: complete and post into thread
+    const completeBody: Record<string, unknown> = {
+      files: [{ id: getUrlData.file_id, title: chart.title }],
+      channel_id: channel,
+    };
+    if (threadTs) completeBody.thread_ts = threadTs;
+
+    const completeRes = await fetch('https://slack.com/api/files.completeUploadExternal', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(completeBody),
+    });
+    const completeData = await completeRes.json();
+    if (!completeData.ok) {
+      console.warn('files.completeUploadExternal failed:', completeData.error);
+    }
+  } catch (e) {
+    console.warn('uploadChartToSlack error (non-fatal):', e);
+  }
+}
 
 async function processSlackMessage(event: any) {
   const isDirectConversation = isDirectConversationEvent(event);
@@ -1204,8 +1265,11 @@ Guidelines:
     ];
 
     const response = await callAI(aiMessages);
-    await postSlackMessage(token, event.channel, response, replyThreadTs);
-    console.log('Reply sent successfully for client:', client?.name || 'none detected');
+    await postSlackMessage(token, event.channel, response.text, replyThreadTs);
+    for (const chart of response.charts) {
+      await uploadChartToSlack(token, event.channel, chart, replyThreadTs);
+    }
+    console.log('Reply sent successfully for client:', client?.name || 'none detected', 'charts:', response.charts.length);
   } catch (error) {
     console.error('Error processing Slack event:', error);
     try {

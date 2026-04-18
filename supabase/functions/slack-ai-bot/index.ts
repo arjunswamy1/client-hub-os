@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -7,7 +8,6 @@ declare const EdgeRuntime: {
 const SLACK_SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET')!;
 const SLACK_CLIENT_ID = Deno.env.get('SLACK_CLIENT_ID')!;
 const SLACK_CLIENT_SECRET = Deno.env.get('SLACK_CLIENT_SECRET')!;
-const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -16,11 +16,6 @@ const supabase = createClient(
 
 const DIRECT_CHANNEL_TYPES = new Set(['im', 'app_home']);
 const PENDING_REPLY_TEXT = 'Got it — thinking…';
-const AI_MODELS = [
-  'openai/gpt-5-mini',
-  'openai/gpt-5-nano',
-  'google/gemini-2.5-flash',
-];
 
 // ─── Token rotation helpers ────────────────────────────────────────────────
 
@@ -1042,53 +1037,26 @@ function buildDeterministicMetricReply(
 
 async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
   const totalChars = messages.reduce((sum, message) => sum + (message.content?.length || 0), 0);
-  console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total`);
+  console.log(`AI call: ${messages.length} messages, ~${totalChars} chars total — Anthropic Claude`);
 
-  for (const model of AI_MODELS) {
-    try {
-      console.log(`Trying model: ${model}`);
-      const body: Record<string, unknown> = { model, messages };
+  const result = await callAnthropic(messages, {
+    max_tokens: 1200,
+    temperature: 0.4,
+  });
 
-      if (model.startsWith('openai/')) {
-        body.max_completion_tokens = 1200;
-      } else {
-        body.max_tokens = 1200;
-        body.temperature = 0.4;
-      }
-
-      const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`Model ${model} HTTP error:`, res.status, errText);
-        if (res.status === 429) return "I'm being rate limited right now. Try again in a moment! 🕐";
-        if (res.status === 402) return 'AI credits have been exhausted. Please top up workspace usage.';
-        continue;
-      }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      const finishReason = data.choices?.[0]?.finish_reason;
-      console.log(`Model ${model}: finish_reason=${finishReason}, content_length=${content?.length || 0}`);
-
-      if (content && content.trim().length > 0) {
-        return content;
-      }
-
-      console.warn(`Model ${model} returned empty content, trying next...`);
-    } catch (error) {
-      console.error(`Model ${model} exception:`, error);
-    }
+  if (!result.ok) {
+    console.error('Anthropic error:', result.status, result.error);
+    if (result.status === 429) return "I'm being rate limited right now. Try again in a moment! 🕐";
+    if (result.status === 401) return 'Anthropic API key is invalid — please update ANTHROPIC_API_KEY.';
+    return "I couldn't generate a response right now. Please try again in a moment! 🔧";
   }
 
-  return "I couldn't generate a response right now. Please try again in a moment! 🔧";
+  if (!result.content || result.content.trim().length === 0) {
+    console.warn('Anthropic returned empty content');
+    return "I couldn't generate a response right now. Please try again in a moment! 🔧";
+  }
+
+  return result.content;
 }
 
 // ─── Slack messaging ───────────────────────────────────────────────────────

@@ -80,7 +80,12 @@ export default function DemoPage() {
       if (signInError) throw signInError;
 
       toast.success("Welcome! Your demo dashboard is ready.");
-      navigate("/dashboard");
+      // Send to mobile-first demo dashboard with their tailored data
+      const params = new URLSearchParams({
+        company: form.companyName,
+        spend: form.monthlyAdSpend,
+      });
+      navigate(`/demo/dashboard?${params.toString()}`);
     } catch (err: any) {
       toast.error(err.message || "Something went wrong");
       setStep("signup");
@@ -140,14 +145,24 @@ export default function DemoPage() {
                 See exactly where your ad spend is underperforming—and how to fix it.
                 Get a live dashboard with real insights in under 60 seconds.
               </p>
-              <Button
-                size="lg"
-                onClick={() => setStep("signup")}
-                className="bg-[hsl(94,55%,35%)] hover:bg-[hsl(94,55%,30%)] text-white text-lg px-8 py-6 rounded-xl gap-2"
-              >
-                Get Your Free Dashboard Demo
-                <ArrowRight className="h-5 w-5" />
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                <Button
+                  size="lg"
+                  onClick={() => setStep("signup")}
+                  className="bg-[hsl(94,55%,35%)] hover:bg-[hsl(94,55%,30%)] text-white text-lg px-8 py-6 rounded-xl gap-2"
+                >
+                  Get Your Free Dashboard Demo
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => navigate("/demo/dashboard")}
+                  className="border-white/20 bg-transparent text-white hover:bg-white/5 text-lg px-8 py-6 rounded-xl"
+                >
+                  Preview the dashboard
+                </Button>
+              </div>
             </div>
 
             {/* Features */}

@@ -6,8 +6,13 @@ import GoogleDashboard from '@/components/dashboard/GoogleDashboard';
 import MetaDashboard from '@/components/dashboard/MetaDashboard';
 import BillyDashboard from '@/components/dashboard/BillyDashboard';
 import DateRangePicker from '@/components/dashboard/DateRangePicker';
+import { PerformanceCallouts } from '@/components/portal/PerformanceCallouts';
+import { BookCallButton } from '@/components/portal/BookCallButton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart3, Chrome, Facebook } from 'lucide-react';
+
+/** Detect the fabricated demo client (Sample Client) — used to gate anonymized callouts. */
+const SAMPLE_CLIENT_ID = '9cd00cfb-82a3-44ad-8639-342a51944343';
 
 /** Detect if a client is Billy.com by slug or name */
 function isBillyClient(client: { slug: string; name: string } | null): boolean {
@@ -30,6 +35,7 @@ function DashboardContent() {
   }
 
   const isBilly = isBillyClient(activeClient) || config?.revenue_source === 'ringba';
+  const isDemoClient = activeClient.id === SAMPLE_CLIENT_ID;
 
   return (
     <div className="space-y-6">
@@ -40,8 +46,13 @@ function DashboardContent() {
             {isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
           </p>
         </div>
-        <DateRangePicker />
+        <div className="flex items-center gap-2">
+          <BookCallButton variant="outline" size="sm" className="h-9 gap-1.5 text-xs" label="Book a call" />
+          <DateRangePicker />
+        </div>
       </div>
+
+      {isDemoClient && <PerformanceCallouts />}
 
       {isBilly ? (
         <BillyDashboard />

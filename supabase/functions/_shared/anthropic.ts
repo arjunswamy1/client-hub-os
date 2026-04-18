@@ -71,12 +71,29 @@ export interface AnthropicCallOptions {
   maxToolRounds?: number;
 }
 
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
 export interface AnthropicResult {
   ok: boolean;
   status: number;
   content: string;
   charts: GeneratedChart[];
+  usage?: TokenUsage;
   error?: string;
+}
+
+/**
+ * Truncate a string to a max length with ellipsis. Safe for sanitized text.
+ */
+export function truncate(s: string | null | undefined, max: number): string {
+  if (!s) return "";
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
 }
 
 // ─── Chart tool definition ──────────────────────────────────────────────

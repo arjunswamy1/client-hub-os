@@ -1265,8 +1265,11 @@ Guidelines:
     ];
 
     const response = await callAI(aiMessages);
-    await postSlackMessage(token, event.channel, response, replyThreadTs);
-    console.log('Reply sent successfully for client:', client?.name || 'none detected');
+    await postSlackMessage(token, event.channel, response.text, replyThreadTs);
+    for (const chart of response.charts) {
+      await uploadChartToSlack(token, event.channel, chart, replyThreadTs);
+    }
+    console.log('Reply sent successfully for client:', client?.name || 'none detected', 'charts:', response.charts.length);
   } catch (error) {
     console.error('Error processing Slack event:', error);
     try {

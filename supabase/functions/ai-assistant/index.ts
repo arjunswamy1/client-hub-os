@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,8 +10,6 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
-
-const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -232,29 +231,23 @@ You should answer questions about campaign performance, meeting summaries, actio
       content: `Here is the current data for ${clientInfo?.name}:\n\n${dataContext}\n\n---\nQuestion: ${question}`
     });
 
-    // Call AI via Lovable gateway
-    const aiRes = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages,
-        max_tokens: 2048,
-        temperature: 0.3,
-      }),
+    // Call Anthropic Claude
+    const aiRes = await callAnthropic(messages, {
+      max_tokens: 2048,
+      temperature: 0.3,
     });
 
     if (!aiRes.ok) {
-      const errText = await aiRes.text();
-      console.error('AI Gateway error:', aiRes.status, errText);
-      throw new Error(`AI Gateway error: ${aiRes.status}`);
+      console.error('Anthropic error:', aiRes.status, aiRes.error);
+      if (aiRes.status === 429) {
+        return new Response(JSON.stringify({ error: 'Rate limited by Anthropic — try again shortly.' }), {
+          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Anthropic error: ${aiRes.status} ${aiRes.error}`);
     }
 
-    const aiData = await aiRes.json();
-    const answer = aiData.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
+    const answer = aiRes.content || 'Sorry, I could not generate a response.';
 
     // Determine which sources were relevant
     const sources: { title: string; source: string }[] = [];

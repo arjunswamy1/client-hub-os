@@ -111,9 +111,10 @@ Deno.serve(async (req) => {
       platformAgg[p].impressions += Number(c.impressions);
     }
 
-    // Aggregate ringba — total and per-campaign
+    // Aggregate ringba — total, per-campaign, AND per-day
     const ringbaAgg = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
     const ringbaByCampaign: Record<string, { calls: number; converted: number; revenue: number; payout: number; avgDuration: number; totalDuration: number }> = {};
+    const ringbaByDay: Record<string, { calls: number; converted: number; revenue: number; payout: number }> = {};
     for (const call of ringbaCalls || []) {
       ringbaAgg.totalCalls++;
       if (call.converted) ringbaAgg.converted++;
@@ -127,11 +128,42 @@ Deno.serve(async (req) => {
       ringbaByCampaign[cName].revenue += Number(call.revenue || 0);
       ringbaByCampaign[cName].payout += Number(call.payout || 0);
       ringbaByCampaign[cName].totalDuration += Number(call.duration_seconds || 0);
+
+      // Per-day breakdown (date only, no time)
+      const day = (call.call_date || '').toString().split('T')[0];
+      if (day) {
+        if (!ringbaByDay[day]) ringbaByDay[day] = { calls: 0, converted: 0, revenue: 0, payout: 0 };
+        ringbaByDay[day].calls++;
+        if (call.converted) ringbaByDay[day].converted++;
+        ringbaByDay[day].revenue += Number(call.revenue || 0);
+        ringbaByDay[day].payout += Number(call.payout || 0);
+      }
     }
     // Compute avg duration
     for (const key of Object.keys(ringbaByCampaign)) {
       const c = ringbaByCampaign[key];
       c.avgDuration = c.calls > 0 ? Math.round(c.totalDuration / c.calls) : 0;
+    }
+
+    // Build a complete daily series covering EVERY day in the 7-day window (fills zeros)
+    const dailySeries: Array<{ date: string; calls: number; converted: number; revenue: number; payout: number; spend: number }> = [];
+    const dailySpendByDate: Record<string, number> = {};
+    for (const m of dailyMetrics || []) {
+      const d = (m.date || '').toString().split('T')[0];
+      if (!d) continue;
+      dailySpendByDate[d] = (dailySpendByDate[d] || 0) + Number(m.spend || 0);
+    }
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 86400000).toISOString().split('T')[0];
+      const r = ringbaByDay[d] || { calls: 0, converted: 0, revenue: 0, payout: 0 };
+      dailySeries.push({
+        date: d,
+        calls: r.calls,
+        converted: r.converted,
+        revenue: r.revenue,
+        payout: r.payout,
+        spend: dailySpendByDate[d] || 0,
+      });
     }
 
     // Categorize context items

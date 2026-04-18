@@ -7,8 +7,8 @@ function Sparkline({ data }: { data: number[] }) {
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
-  const w = 80;
-  const h = 24;
+  const w = 100;
+  const h = 28;
   const points = data
     .map((v, i) => {
       const x = (i / (data.length - 1)) * w;
@@ -17,12 +17,18 @@ function Sparkline({ data }: { data: number[] }) {
     })
     .join(' ');
   return (
-    <svg width={w} height={h} className="opacity-80">
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      className="w-full h-7 opacity-80"
+      aria-hidden="true"
+    >
       <polyline
         points={points}
         fill="none"
         stroke="currentColor"
         strokeWidth="1.5"
+        vectorEffect="non-scaling-stroke"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

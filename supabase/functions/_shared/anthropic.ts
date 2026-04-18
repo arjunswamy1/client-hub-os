@@ -121,13 +121,19 @@ function buildChartUrl(input: {
       };
     }
     const color = CHART_PALETTE[i % CHART_PALETTE.length];
+    const isLine = input.chart_type === "line";
     return {
       label: ds.label,
       data: ds.data,
-      backgroundColor: color,
+      backgroundColor: isLine ? color.replace("0.85", "0.15") : color,
       borderColor: color.replace("0.85", "1"),
-      borderWidth: 2,
-      fill: input.chart_type === "line" ? false : undefined,
+      borderWidth: isLine ? 3 : 2,
+      fill: isLine,
+      tension: isLine ? 0.35 : undefined,
+      pointRadius: isLine ? 4 : undefined,
+      pointBackgroundColor: isLine ? color.replace("0.85", "1") : undefined,
+      pointBorderColor: isLine ? "#fff" : undefined,
+      pointBorderWidth: isLine ? 2 : undefined,
     };
   });
 
@@ -135,8 +141,11 @@ function buildChartUrl(input: {
     type: input.chart_type,
     data: { labels: input.labels, datasets },
     options: {
-      title: { display: true, text: input.title, fontSize: 16 },
+      title: { display: true, text: input.title, fontSize: 16, fontStyle: "bold" },
       legend: { display: input.datasets.length > 1 || isCircular, position: "bottom" },
+      scales: isCircular ? undefined : {
+        yAxes: [{ ticks: { beginAtZero: true } }],
+      },
       plugins: {
         datalabels: {
           display: isCircular,

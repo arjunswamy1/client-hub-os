@@ -2079,6 +2079,7 @@ export type Database = {
       leads: {
         Row: {
           company_name: string
+          company_revenue: string | null
           created_at: string
           email: string
           first_name: string
@@ -2086,13 +2087,17 @@ export type Database = {
           last_name: string
           monthly_ad_spend: string | null
           notes: string | null
+          num_hub_users: string | null
+          phone: string | null
           source: string
           status: string
           updated_at: string
+          use_cases: string[] | null
           user_id: string | null
         }
         Insert: {
           company_name: string
+          company_revenue?: string | null
           created_at?: string
           email: string
           first_name: string
@@ -2100,13 +2105,17 @@ export type Database = {
           last_name: string
           monthly_ad_spend?: string | null
           notes?: string | null
+          num_hub_users?: string | null
+          phone?: string | null
           source?: string
           status?: string
           updated_at?: string
+          use_cases?: string[] | null
           user_id?: string | null
         }
         Update: {
           company_name?: string
+          company_revenue?: string | null
           created_at?: string
           email?: string
           first_name?: string
@@ -2114,9 +2123,12 @@ export type Database = {
           last_name?: string
           monthly_ad_spend?: string | null
           notes?: string | null
+          num_hub_users?: string | null
+          phone?: string | null
           source?: string
           status?: string
           updated_at?: string
+          use_cases?: string[] | null
           user_id?: string | null
         }
         Relationships: []

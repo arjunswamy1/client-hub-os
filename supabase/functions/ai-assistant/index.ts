@@ -111,9 +111,10 @@ Deno.serve(async (req) => {
       platformAgg[p].impressions += Number(c.impressions);
     }
 
-    // Aggregate ringba — total and per-campaign
+    // Aggregate ringba — total, per-campaign, AND per-day
     const ringbaAgg = { totalCalls: 0, converted: 0, totalRevenue: 0, totalPayout: 0 };
     const ringbaByCampaign: Record<string, { calls: number; converted: number; revenue: number; payout: number; avgDuration: number; totalDuration: number }> = {};
+    const ringbaByDay: Record<string, { calls: number; converted: number; revenue: number; payout: number }> = {};
     for (const call of ringbaCalls || []) {
       ringbaAgg.totalCalls++;
       if (call.converted) ringbaAgg.converted++;
@@ -127,11 +128,42 @@ Deno.serve(async (req) => {
       ringbaByCampaign[cName].revenue += Number(call.revenue || 0);
       ringbaByCampaign[cName].payout += Number(call.payout || 0);
       ringbaByCampaign[cName].totalDuration += Number(call.duration_seconds || 0);
+
+      // Per-day breakdown (date only, no time)
+      const day = (call.call_date || '').toString().split('T')[0];
+      if (day) {
+        if (!ringbaByDay[day]) ringbaByDay[day] = { calls: 0, converted: 0, revenue: 0, payout: 0 };
+        ringbaByDay[day].calls++;
+        if (call.converted) ringbaByDay[day].converted++;
+        ringbaByDay[day].revenue += Number(call.revenue || 0);
+        ringbaByDay[day].payout += Number(call.payout || 0);
+      }
     }
     // Compute avg duration
     for (const key of Object.keys(ringbaByCampaign)) {
       const c = ringbaByCampaign[key];
       c.avgDuration = c.calls > 0 ? Math.round(c.totalDuration / c.calls) : 0;
+    }
+
+    // Build a complete daily series covering EVERY day in the 7-day window (fills zeros)
+    const dailySeries: Array<{ date: string; calls: number; converted: number; revenue: number; payout: number; spend: number }> = [];
+    const dailySpendByDate: Record<string, number> = {};
+    for (const m of dailyMetrics || []) {
+      const d = (m.date || '').toString().split('T')[0];
+      if (!d) continue;
+      dailySpendByDate[d] = (dailySpendByDate[d] || 0) + Number(m.spend || 0);
+    }
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 86400000).toISOString().split('T')[0];
+      const r = ringbaByDay[d] || { calls: 0, converted: 0, revenue: 0, payout: 0 };
+      dailySeries.push({
+        date: d,
+        calls: r.calls,
+        converted: r.converted,
+        revenue: r.revenue,
+        payout: r.payout,
+        spend: dailySpendByDate[d] || 0,
+      });
     }
 
     // Categorize context items
@@ -147,10 +179,11 @@ Data period: ${sevenDaysAgo} to ${todayStr}
 === AD PLATFORM PERFORMANCE (Last 7 Days) ===
 ${JSON.stringify(platformAgg, null, 2)}
 
-=== DAILY METRICS ===
-${JSON.stringify(dailyMetrics?.slice(0, 14) || [], null, 2)}
+=== DAILY TIME-SERIES (Last 8 Days, includes today, zero-filled) ===
+This is the SINGLE SOURCE OF TRUTH for any daily trend chart. Every day in the window is present, even if values are 0.
+${dailySeries.map(d => `${d.date}: ${d.calls} calls, ${d.converted} converted, $${d.revenue.toFixed(2)} call revenue, $${d.payout.toFixed(2)} payout, $${d.spend.toFixed(2)} ad spend`).join('\n')}
 
-=== RINGBA CALLS (Last 7 Days) ===
+=== RINGBA CALLS TOTALS (Last 7 Days) ===
 Total calls: ${ringbaAgg.totalCalls}, Converted: ${ringbaAgg.converted}, Revenue: $${ringbaAgg.totalRevenue.toFixed(2)}, Payout: $${ringbaAgg.totalPayout.toFixed(2)}
 
 Per-Campaign Ringba Breakdown:
@@ -214,13 +247,15 @@ RULES:
 9. Reference meeting notes and Slack conversations when relevant to provide full context.
 10. Keep responses focused and under 500 words unless the user asks for a deep dive.
 11. CHARTS: Use the generate_chart tool when a visual genuinely improves the answer. Pick the right type:
-    - LINE chart for any trend over time (daily/weekly spend, ROAS trajectory, CPL over weeks). This should be your default for time-based questions.
-    - BAR chart only when comparing 3+ categories of similar magnitude (e.g. spend across 5 verticals).
+    - LINE chart for any trend over time. This is your default for time-based questions. Use the "DAILY TIME-SERIES" section as the source — it is zero-filled and contains EVERY day in the window. NEVER plot a partial range; always include all days, even days with 0 calls or 0 revenue.
+    - PRIORITIZE THE METRICS THAT MATTER for this client: for call-based / lead-gen verticals (pest control, flights, porta potty, legal, etc.), the priority is RINGBA CALL REVENUE and CALL VOLUME — not ad spend. Plot revenue and/or calls as the primary series. Spend is a secondary metric, only worth charting alongside revenue if you're showing efficiency over time, and only when scales are comparable.
+    - You may plot MULTIPLE series on one line chart (e.g. daily calls + daily converted calls, or daily revenue + daily payout) when they share a similar scale.
+    - BAR chart only for comparing 3+ categories of similar magnitude (e.g. revenue across 5 campaigns).
     - PIE/DOUGHNUT only for proportion-of-whole with 3-6 slices.
-    - DO NOT chart 2 values with very different scales (e.g. $521 revenue vs $9.88 spend) — one bar will be invisible. Express that as text + ratio (ROAS, margin) instead.
+    - DO NOT chart 2 values with very different scales (e.g. $521 revenue vs $9.88 spend) on the same axis — express as text + ratio (ROAS, margin) instead.
     - DO NOT chart just 2 numbers — state them inline.
     - Skip the chart entirely if a single sentence tells the story better.
-    Always use REAL numbers from the context. Never fabricate time-series data. After generating a chart, briefly summarize the takeaway; the chart appears inline.
+    Always use REAL numbers from the context. Never fabricate or truncate time-series data. Label dates clearly (e.g. "Apr 11", "Apr 12"). After generating a chart, briefly summarize the takeaway; the chart appears inline.
 
 You should answer questions about campaign performance, meeting summaries, action items, creative performance, optimization opportunities, and general client strategy.`
       }

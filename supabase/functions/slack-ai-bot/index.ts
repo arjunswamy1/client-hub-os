@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callAnthropic, truncate } from "../_shared/anthropic.ts";
+import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/anthropic.ts";
+import { logAiUsage } from "../_shared/cost-tracking.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;

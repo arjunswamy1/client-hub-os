@@ -367,6 +367,9 @@ You should answer questions about campaign performance, meeting summaries, actio
     }
 
     const answer = aiRes.content || 'Sorry, I could not generate a response.';
+    if (aiRes.usage) {
+      console.log(`[ai-assistant] Anthropic tokens — input: ${aiRes.usage.input_tokens}, output: ${aiRes.usage.output_tokens}`);
+    }
 
     // Determine which sources were relevant
     const sources: { title: string; source: string }[] = [];

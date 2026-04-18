@@ -1261,6 +1261,8 @@ async function processSlackMessage(event: any) {
       dataContext = `\n--- CLIENT DATA FOR ${client.name.toUpperCase()} (${verticalLabel}, ${platformLabel}) ---\n`;
       dataContext += clientData.recentMetrics || 'No ad metrics found for this period.\n';
       dataContext += clientData.campaignBreakdown || '';
+      dataContext += clientData.creativesTable || '';
+      dataContext += clientData.keywordsTable || '';
       dataContext += clientData.ringbaData || '';
       dataContext += clientData.tasks || '';
       dataContext += clientData.recentContext || '';

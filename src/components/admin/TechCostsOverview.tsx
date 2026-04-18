@@ -74,14 +74,14 @@ export function TechCostsOverview() {
 
   const chartData = useMemo(() => {
     // Group by date, then by client
-    const dateMap = new Map<string, Record<string, number>>();
+    const dateMap = new Map<string, Record<string, string | number>>();
     rows.forEach((r) => {
       let day = dateMap.get(r.date);
       if (!day) { day = { date: r.date }; dateMap.set(r.date, day); }
       const name = r.client_id ? (clientMap.get(r.client_id)?.name ?? 'Unknown') : 'System';
       day[name] = (Number(day[name] || 0) + Number(r.total_cost_usd));
     });
-    return Array.from(dateMap.values()).sort((a: any, b: any) => a.date.localeCompare(b.date));
+    return Array.from(dateMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }, [rows, clientMap]);
 
   const topClientNames = useMemo(() => {

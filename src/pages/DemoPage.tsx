@@ -109,22 +109,22 @@ export default function DemoPage() {
   return (
     <div className="min-h-screen bg-[hsl(222,47%,8%)] text-white">
       {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
-        <div className="flex items-center gap-2.5">
+      <nav className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 max-w-6xl mx-auto">
+        <div className="flex items-center gap-2.5 min-w-0">
           <img
             src="/logo.png"
             alt="Connect Paid Media"
-            className="h-8 w-8 rounded-lg object-contain"
+            className="h-8 w-8 rounded-lg object-contain shrink-0"
           />
-          <span className="font-semibold text-white/90">Connect Paid Media</span>
+          <span className="font-semibold text-white/90 whitespace-nowrap">Connect Paid Media</span>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="text-white/60 hover:text-white hover:bg-white/10"
+          className="text-white/60 hover:text-white hover:bg-white/10 shrink-0"
           onClick={() => navigate("/auth")}
         >
-          Already have an account? Log in
+          <span className="hidden sm:inline">Already have an account? </span>Log in
         </Button>
       </nav>
 

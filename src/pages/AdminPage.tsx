@@ -4,6 +4,7 @@ import { ClientManagement } from '@/components/admin/ClientManagement';
 import { AssignmentMatrix } from '@/components/admin/AssignmentMatrix';
 import { ClientOnboardingView } from '@/components/admin/ClientOnboardingView';
 import { ClientAccessManagement } from '@/components/admin/ClientAccessManagement';
+import { TechCostsOverview } from '@/components/admin/TechCostsOverview';
 
 export default function AdminPage() {
   return (
@@ -20,6 +21,7 @@ export default function AdminPage() {
           <TabsTrigger value="assignments">Assignments</TabsTrigger>
           <TabsTrigger value="client-access">Client Access</TabsTrigger>
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
+          <TabsTrigger value="costs">Tech Costs</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -38,6 +40,9 @@ export default function AdminPage() {
         <TabsContent value="onboarding">
           <ClientOnboardingView />
         </TabsContent>
+        <TabsContent value="costs">
+          <TechCostsOverview />
+        </TabsContent>
         <TabsContent value="activity">
           <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
             Activity log will be available when login events are migrated from the existing codebase.
@@ -47,3 +52,4 @@ export default function AdminPage() {
     </div>
   );
 }
+

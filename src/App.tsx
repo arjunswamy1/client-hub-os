@@ -21,6 +21,7 @@ import LandingPagesPage from "./pages/LandingPagesPage";
 import SettingsPage from "./pages/SettingsPage";
 import TeamPage from "./pages/TeamPage";
 import AdminPage from "./pages/AdminPage";
+import AdminClientCostsPage from "./pages/AdminClientCostsPage";
 import AMHomePage from "./pages/AMHomePage";
 import CampaignBuildPage from "./pages/CampaignBuildPage";
 import NotFound from "./pages/NotFound";
@@ -123,6 +124,7 @@ function ProtectedRoutes() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}
+          {isAdmin && <Route path="/admin/costs/:clientId" element={<AdminClientCostsPage />} />}
           <Route path="/client-portal-preview" element={<ClientPortalPage isAdminPreview adminName={user?.email || 'Admin'} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

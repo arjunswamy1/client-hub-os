@@ -16,10 +16,10 @@ import { ArrowRight, BarChart3, Search, Zap, ShieldCheck } from "lucide-react";
 
 const AD_SPEND_RANGES = [
   "Under $10,000",
-  "$10,000 – $25,000",
-  "$25,000 – $50,000",
-  "$50,000 – $100,000",
-  "$100,000 – $250,000",
+  "$10,000 to $25,000",
+  "$25,000 to $50,000",
+  "$50,000 to $100,000",
+  "$100,000 to $250,000",
   "$250,000+",
 ];
 
@@ -130,26 +130,26 @@ export default function DemoPage() {
 
       <div className="max-w-6xl mx-auto px-6">
         {step === "landing" && (
-          <div className="py-20 space-y-20">
+          <div className="py-12 sm:py-20 space-y-16 sm:space-y-20">
             {/* Hero */}
-            <div className="text-center max-w-3xl mx-auto space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm text-slate-600 shadow-sm">
-                <ShieldCheck className="h-3.5 w-3.5 text-[hsl(94,55%,38%)]" />
-                Trusted by performance-driven brands
+            <div className="text-center max-w-3xl mx-auto flex flex-col items-center space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs sm:text-sm text-slate-600 shadow-sm">
+                <ShieldCheck className="h-3.5 w-3.5 text-[hsl(94,55%,38%)] shrink-0" />
+                <span className="whitespace-nowrap">Trusted by performance-driven brands</span>
               </div>
-              <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-[1.1] text-slate-900">
+              <h1 className="text-4xl sm:text-6xl font-bold tracking-tight leading-[1.1] text-slate-900">
                 Expose Leaks in Your{" "}
                 <span className="text-[hsl(94,55%,32%)]">Marketing Machine</span>
               </h1>
-              <p className="text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-                See exactly where your ad spend is underperforming—and how to fix it.
+              <p className="text-base sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed px-2">
+                See exactly where your ad spend is underperforming, and how to fix it.
                 Get a live dashboard with real insights in under 60 seconds.
               </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+              <div className="w-full flex flex-col sm:flex-row gap-3 justify-center items-stretch sm:items-center max-w-md sm:max-w-none mx-auto pt-2">
                 <Button
                   size="lg"
                   onClick={() => setStep("signup")}
-                  className="bg-[hsl(94,55%,38%)] hover:bg-[hsl(94,55%,32%)] text-white text-lg px-8 py-6 rounded-xl gap-2 shadow-md"
+                  className="bg-[hsl(94,55%,38%)] hover:bg-[hsl(94,55%,32%)] text-white text-base sm:text-lg px-6 sm:px-8 py-5 sm:py-6 rounded-xl gap-2 shadow-md w-full sm:w-auto"
                 >
                   Get Your Free Dashboard Demo
                   <ArrowRight className="h-5 w-5" />
@@ -158,7 +158,7 @@ export default function DemoPage() {
                   size="lg"
                   variant="outline"
                   onClick={() => navigate("/demo/dashboard")}
-                  className="border-slate-300 bg-white text-slate-800 hover:bg-slate-100 text-lg px-8 py-6 rounded-xl"
+                  className="border-slate-300 bg-white text-slate-800 hover:bg-slate-100 text-base sm:text-lg px-6 sm:px-8 py-5 sm:py-6 rounded-xl w-full sm:w-auto"
                 >
                   Preview the dashboard
                 </Button>
@@ -176,12 +176,12 @@ export default function DemoPage() {
                 {
                   icon: BarChart3,
                   title: "Cross-Channel Intelligence",
-                  desc: "Unified view across Meta, Google, and call tracking—all in one dashboard.",
+                  desc: "Unified view across Meta, Google, and call tracking, all in one dashboard.",
                 },
                 {
                   icon: Zap,
                   title: "Actionable Recommendations",
-                  desc: "Not just data—specific fixes with projected impact so you know what to do next.",
+                  desc: "Not just data, but specific fixes with projected impact so you know what to do next.",
                 },
               ].map((f) => (
                 <div

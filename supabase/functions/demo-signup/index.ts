@@ -50,13 +50,22 @@ serve(async (req) => {
     });
 
     if (authError) {
-      // If user already exists, return friendly error
-      if (authError.message?.includes("already been registered")) {
+      const msg = (authError.message || "").toLowerCase();
+      // If user already exists, return friendly error (covers various Supabase phrasings)
+      if (
+        msg.includes("already been registered") ||
+        msg.includes("already registered") ||
+        msg.includes("already exists") ||
+        msg.includes("user already") ||
+        (authError as any).code === "email_exists" ||
+        (authError as any).status === 422
+      ) {
         return new Response(
           JSON.stringify({ error: "An account with this email already exists. Please log in instead." }),
           { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      console.error("auth.admin.createUser failed:", authError);
       throw authError;
     }
 

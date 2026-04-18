@@ -232,6 +232,8 @@ interface ClientData {
   tasks: string;
   recentContext: string;
   ringbaData: string;
+  creativesTable: string;
+  keywordsTable: string;
   summary: MetricSummary | null;
   latestAvailable: LatestAvailableData | null;
 }

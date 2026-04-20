@@ -415,6 +415,9 @@ export default function CampaignBuildPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {build.platform === 'bing' ? 'Bing' : build.platform === 'both' ? 'Google + Bing' : 'Google'}
+                  </Badge>
                   <Badge variant={
                     build.status === 'generated' ? 'default' :
                     build.status === 'downloaded' ? 'secondary' : 'outline'

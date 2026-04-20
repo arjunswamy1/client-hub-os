@@ -1,0 +1,1 @@
+UPDATE public.team_members SET email = 'malena@connectpaidmedia.com', updated_at = now() WHERE id = 'd4b81da5-2b07-4434-a19c-4a525bbbcddf';

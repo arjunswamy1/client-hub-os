@@ -40,6 +40,7 @@ export default function CampaignBuildPage() {
   const qc = useQueryClient();
 
   const [activeBuildId, setActiveBuildId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<Platform>('google');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);

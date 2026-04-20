@@ -369,12 +369,21 @@ export default function CampaignBuildPage() {
               <Sparkles className="h-5 w-5 text-primary" />
               Campaign Builder
             </h1>
-            <p className="text-sm text-muted-foreground">AI-powered Google Ads campaign architect</p>
+            <p className="text-sm text-muted-foreground">AI-powered Google Ads & Microsoft Advertising (Bing) campaign architect</p>
           </div>
-          <Button onClick={() => createBuild.mutate()} disabled={createBuild.isPending}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Campaign Build
-          </Button>
+          <div className="flex items-center gap-2">
+            <Tabs value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
+              <TabsList>
+                <TabsTrigger value="google">Google</TabsTrigger>
+                <TabsTrigger value="bing">Bing</TabsTrigger>
+                <TabsTrigger value="both">Both</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button onClick={() => createBuild.mutate()} disabled={createBuild.isPending}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Campaign Build
+            </Button>
+          </div>
         </div>
 
         {builds?.length === 0 && (
@@ -406,6 +415,9 @@ export default function CampaignBuildPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {build.platform === 'bing' ? 'Bing' : build.platform === 'both' ? 'Google + Bing' : 'Google'}
+                  </Badge>
                   <Badge variant={
                     build.status === 'generated' ? 'default' :
                     build.status === 'downloaded' ? 'secondary' : 'outline'
@@ -453,7 +465,12 @@ export default function CampaignBuildPage() {
                 <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             )}
-            <p className="text-xs text-muted-foreground">AI Campaign Architect</p>
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              AI Campaign Architect
+              <Badge variant="outline" className="text-[9px] uppercase h-4 px-1">
+                {platform === 'bing' ? 'Bing' : platform === 'both' ? 'Google + Bing' : 'Google'}
+              </Badge>
+            </p>
           </div>
           {campaignStructure && (
             <div className="flex items-center gap-2">
@@ -485,7 +502,7 @@ export default function CampaignBuildPage() {
               <Sparkles className="h-10 w-10 mx-auto text-primary/60 mb-3" />
               <p className="font-medium mb-1">Ready to build a campaign</p>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Tell me about the campaign you want to build — the vertical, goal, audience, landing page, and budget. I'll architect a complete Google Ads campaign structure.
+                Tell me about the campaign you want to build — the vertical, goal, audience, landing page, and budget. I'll architect a complete {platform === 'bing' ? 'Microsoft Advertising (Bing)' : platform === 'both' ? 'Google Ads + Microsoft Advertising (Bing)' : 'Google Ads'} campaign structure.
               </p>
             </div>
           )}

@@ -548,6 +548,19 @@ export default function CampaignBuildPage() {
           </div>
           {campaignStructure && (
             <div className="flex items-center gap-2">
+              {/* Cross-platform clone — show "to Bing" if currently Google, "to Google" if currently Bing */}
+              {platform !== 'both' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleCloneToPlatform(platform === 'google' ? 'bing' : 'google')}
+                  disabled={isCloning}
+                  title={`Create a ${platform === 'google' ? 'Bing' : 'Google'} version of this campaign`}
+                >
+                  {isCloning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                  Convert to {platform === 'google' ? 'Bing' : 'Google'}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"

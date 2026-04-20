@@ -502,7 +502,7 @@ export default function CampaignBuildPage() {
               <Sparkles className="h-10 w-10 mx-auto text-primary/60 mb-3" />
               <p className="font-medium mb-1">Ready to build a campaign</p>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Tell me about the campaign you want to build — the vertical, goal, audience, landing page, and budget. I'll architect a complete Google Ads campaign structure.
+                Tell me about the campaign you want to build — the vertical, goal, audience, landing page, and budget. I'll architect a complete {platform === 'bing' ? 'Microsoft Advertising (Bing)' : platform === 'both' ? 'Google Ads + Microsoft Advertising (Bing)' : 'Google Ads'} campaign structure.
               </p>
             </div>
           )}

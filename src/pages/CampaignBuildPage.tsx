@@ -369,12 +369,21 @@ export default function CampaignBuildPage() {
               <Sparkles className="h-5 w-5 text-primary" />
               Campaign Builder
             </h1>
-            <p className="text-sm text-muted-foreground">AI-powered Google Ads campaign architect</p>
+            <p className="text-sm text-muted-foreground">AI-powered Google Ads & Microsoft Advertising (Bing) campaign architect</p>
           </div>
-          <Button onClick={() => createBuild.mutate()} disabled={createBuild.isPending}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Campaign Build
-          </Button>
+          <div className="flex items-center gap-2">
+            <Tabs value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
+              <TabsList>
+                <TabsTrigger value="google">Google</TabsTrigger>
+                <TabsTrigger value="bing">Bing</TabsTrigger>
+                <TabsTrigger value="both">Both</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button onClick={() => createBuild.mutate()} disabled={createBuild.isPending}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Campaign Build
+            </Button>
+          </div>
         </div>
 
         {builds?.length === 0 && (

@@ -73,6 +73,7 @@ export default function CampaignBuildPage() {
   // Load a build
   const loadBuild = useCallback((build: CampaignBuild) => {
     setActiveBuildId(build.id);
+    setPlatform((build.platform as Platform) || 'google');
     setMessages((build.conversation_history as Message[]) || []);
     setCampaignStructure(build.campaign_structure || null);
     setGeneratedFiles((build.generated_files as any[]) || []);
@@ -83,7 +84,7 @@ export default function CampaignBuildPage() {
     mutationFn: async () => {
       const { data, error } = await supabase
         .from('campaign_builds')
-        .insert({ client_id: activeClient!.id, title: `New Build - ${new Date().toLocaleDateString()}` })
+        .insert({ client_id: activeClient!.id, title: `New Build - ${new Date().toLocaleDateString()}`, platform })
         .select('id')
         .single();
       if (error) throw error;
@@ -133,7 +134,7 @@ export default function CampaignBuildPage() {
       try {
         const { data, error } = await supabase
           .from('campaign_builds')
-          .insert({ client_id: activeClient!.id, title: input.trim().slice(0, 80) })
+          .insert({ client_id: activeClient!.id, title: input.trim().slice(0, 80), platform })
           .select('id')
           .single();
         if (error) throw error;
@@ -155,6 +156,7 @@ export default function CampaignBuildPage() {
         body: JSON.stringify({
           messages: newMessages,
           build_id: buildId,
+          platform,
           client_context: {
             client_name: activeClient?.name,
           },

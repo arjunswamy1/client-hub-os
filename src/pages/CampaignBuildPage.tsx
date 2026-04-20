@@ -61,7 +61,7 @@ export default function CampaignBuildPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('campaign_builds')
-        .select('id, title, status, created_at, campaign_structure, generated_files, conversation_history')
+        .select('id, title, status, created_at, campaign_structure, generated_files, conversation_history, platform')
         .eq('client_id', activeClient!.id)
         .order('created_at', { ascending: false });
       if (error) throw error;

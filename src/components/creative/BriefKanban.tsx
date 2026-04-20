@@ -1,13 +1,26 @@
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { Image, Video, LayoutGrid, Film } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Image, Video, LayoutGrid, Film, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { format, differenceInDays, isPast } from 'date-fns';
 import { BRIEF_STATUSES, STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
+import { EditBriefDialog } from './EditBriefDialog';
 
 const TYPE_ICONS: Record<string, any> = {
   static: Image, video: Video, carousel: LayoutGrid,
@@ -21,6 +34,25 @@ interface Props {
 }
 
 export function BriefKanban({ briefs, onBriefClick, onStatusChange }: Props) {
+  const { isAdmin, teamMember } = useAuth();
+  const canManage = isAdmin || ['account_manager', 'creative_director'].includes(teamMember?.role || '');
+  const queryClient = useQueryClient();
+  const [editingBrief, setEditingBrief] = useState<any | null>(null);
+  const [deletingBrief, setDeletingBrief] = useState<any | null>(null);
+
+  const deleteBrief = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('creative_briefs').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success('Brief deleted');
+      setDeletingBrief(null);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   const handleDragEnd = useCallback((result: DropResult) => {
     if (!result.destination) return;
     const newStatus = result.destination.droppableId;
@@ -32,59 +64,101 @@ export function BriefKanban({ briefs, onBriefClick, onStatusChange }: Props) {
   }, [briefs, onStatusChange]);
 
   return (
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <ScrollArea className="w-full">
-        <div className="flex gap-4 pb-4 min-w-max">
-          {BRIEF_STATUSES.map(status => {
-            const config = STATUS_CONFIG[status];
-            const col = briefs.filter((b: any) => b.status === status);
-            return (
-              <div key={status} className="w-72 shrink-0">
-                <div className="flex items-center gap-2 mb-3 px-1">
-                  <Badge variant="secondary" className={`text-[10px] ${config.color}`}>{config.label}</Badge>
-                  <span className="text-xs text-muted-foreground">{col.length}</span>
+    <>
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <ScrollArea className="w-full">
+          <div className="flex gap-4 pb-4 min-w-max">
+            {BRIEF_STATUSES.map(status => {
+              const config = STATUS_CONFIG[status];
+              const col = briefs.filter((b: any) => b.status === status);
+              return (
+                <div key={status} className="w-72 shrink-0">
+                  <div className="flex items-center gap-2 mb-3 px-1">
+                    <Badge variant="secondary" className={`text-[10px] ${config.color}`}>{config.label}</Badge>
+                    <span className="text-xs text-muted-foreground">{col.length}</span>
+                  </div>
+                  <Droppable droppableId={status}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className={`space-y-2.5 min-h-[60px] rounded-lg p-1 transition-colors ${snapshot.isDraggingOver ? 'bg-accent/50 ring-1 ring-primary/20' : ''}`}
+                      >
+                        {col.map((brief: any, index: number) => (
+                          <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                            {(dragProvided, dragSnapshot) => (
+                              <div
+                                ref={dragProvided.innerRef}
+                                {...dragProvided.draggableProps}
+                                {...dragProvided.dragHandleProps}
+                                className={dragSnapshot.isDragging ? 'opacity-90 rotate-1' : ''}
+                              >
+                                <BriefCard
+                                  brief={brief}
+                                  onClick={() => onBriefClick(brief.id)}
+                                  canManage={canManage}
+                                  onEdit={() => setEditingBrief(brief)}
+                                  onDelete={() => setDeletingBrief(brief)}
+                                />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                        {col.length === 0 && !snapshot.isDraggingOver && (
+                          <div className="rounded-lg border border-dashed p-4 text-center">
+                            <p className="text-xs text-muted-foreground">No briefs</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Droppable>
                 </div>
-                <Droppable droppableId={status}>
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`space-y-2.5 min-h-[60px] rounded-lg p-1 transition-colors ${snapshot.isDraggingOver ? 'bg-accent/50 ring-1 ring-primary/20' : ''}`}
-                    >
-                      {col.map((brief: any, index: number) => (
-                        <Draggable key={brief.id} draggableId={brief.id} index={index}>
-                          {(dragProvided, dragSnapshot) => (
-                            <div
-                              ref={dragProvided.innerRef}
-                              {...dragProvided.draggableProps}
-                              {...dragProvided.dragHandleProps}
-                              className={dragSnapshot.isDragging ? 'opacity-90 rotate-1' : ''}
-                            >
-                              <BriefCard brief={brief} onClick={() => onBriefClick(brief.id)} />
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                      {col.length === 0 && !snapshot.isDraggingOver && (
-                        <div className="rounded-lg border border-dashed p-4 text-center">
-                          <p className="text-xs text-muted-foreground">No briefs</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </Droppable>
-              </div>
-            );
-          })}
-        </div>
-        <ScrollBar orientation="horizontal" />
-      </ScrollArea>
-    </DragDropContext>
+              );
+            })}
+          </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
+      </DragDropContext>
+
+      {editingBrief && (
+        <EditBriefDialog
+          brief={editingBrief}
+          open={!!editingBrief}
+          onOpenChange={(o) => { if (!o) setEditingBrief(null); }}
+        />
+      )}
+
+      <AlertDialog open={!!deletingBrief} onOpenChange={(o) => { if (!o) setDeletingBrief(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this brief?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{deletingBrief?.title}" and all its comments, reviews, and time entries will be permanently removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deletingBrief && deleteBrief.mutate(deletingBrief.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
-function BriefCard({ brief, onClick }: { brief: any; onClick: () => void }) {
+function BriefCard({ brief, onClick, canManage, onEdit, onDelete }: {
+  brief: any;
+  onClick: () => void;
+  canManage: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const TypeIcon = TYPE_ICONS[brief.creative_type] || Image;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
 
@@ -95,7 +169,7 @@ function BriefCard({ brief, onClick }: { brief: any; onClick: () => void }) {
 
   return (
     <Card
-      className="cursor-pointer transition-all hover:shadow-md hover:ring-1 hover:ring-primary/20"
+      className="cursor-pointer transition-all hover:shadow-md hover:ring-1 hover:ring-primary/20 group relative"
       onClick={onClick}
     >
       <CardContent className="p-3 space-y-2.5">
@@ -111,9 +185,36 @@ function BriefCard({ brief, onClick }: { brief: any; onClick: () => void }) {
               <p className="text-sm font-medium truncate">{brief.title}</p>
             </div>
           </div>
-          <Badge variant="secondary" className={`text-[9px] shrink-0 ${priorityConf.color}`}>
-            {priorityConf.label}
-          </Badge>
+          <div className="flex items-center gap-1 shrink-0">
+            <Badge variant="secondary" className={`text-[9px] ${priorityConf.color}`}>
+              {priorityConf.label}
+            </Badge>
+            {canManage && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <MoreVertical className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+                    <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
 
         {/* Platforms */}

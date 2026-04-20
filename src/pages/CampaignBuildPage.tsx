@@ -16,7 +16,10 @@ import {
   MapPin
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ReactMarkdown from 'react-markdown';
+
+type Platform = 'google' | 'bing' | 'both';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
@@ -28,6 +31,7 @@ type CampaignBuild = {
   campaign_structure: any;
   generated_files: any[];
   conversation_history: Message[];
+  platform?: Platform;
 };
 
 export default function CampaignBuildPage() {

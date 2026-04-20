@@ -55,7 +55,8 @@ function mapCallToRow(call: any, clientId: string) {
   };
 }
 
-/** Exact campaign names we pull from Ringba — must be CPM publisher */
+/** Exact campaign names we pull from Ringba — must be CPM publisher.
+ * Add new campaigns here as Billy launches new verticals on CPM. */
 const ALLOWED_CAMPAIGNS: Record<string, string> = {
   "premium flights call flow": "flights",
   "pest control us call flow": "pest-control",
@@ -65,6 +66,20 @@ const ALLOWED_CAMPAIGNS: Record<string, string> = {
 function isAllowedCampaign(campaignName: string): boolean {
   if (!campaignName) return false;
   return campaignName.toLowerCase() in ALLOWED_CAMPAIGNS;
+}
+
+/** Build day chunks NEWEST first so today's data always lands even if we time out. */
+function buildChunksNewestFirst(startDate: Date, endDate: Date, chunkDays: number): Array<{ start: Date; end: Date }> {
+  const chunks: Array<{ start: Date; end: Date }> = [];
+  let cursor = new Date(endDate);
+  while (cursor > startDate) {
+    const chunkStart = new Date(cursor);
+    chunkStart.setDate(chunkStart.getDate() - chunkDays);
+    if (chunkStart < startDate) chunkStart.setTime(startDate.getTime());
+    chunks.push({ start: new Date(chunkStart), end: new Date(cursor) });
+    cursor = new Date(chunkStart);
+  }
+  return chunks;
 }
 
 Deno.serve(async (req) => {
@@ -84,13 +99,17 @@ Deno.serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     let clientId: string | null = null;
-    let daysBack = 30;
+    let daysBack = 7; // default to last 7 days for hourly cron — fast & always covers today
+    let allowedPublishers: string[] = ["cpm"]; // default filter: only CPM publisher
 
     if (req.method === "POST") {
       try {
         const body = await req.json();
         clientId = body.client_id || body.clientId || null;
-        daysBack = body.days_back || body.daysBack || 30;
+        daysBack = body.days_back || body.daysBack || 7;
+        if (Array.isArray(body.publishers) && body.publishers.length > 0) {
+          allowedPublishers = body.publishers.map((p: string) => p.toLowerCase());
+        }
       } catch {}
     }
 
@@ -124,40 +143,53 @@ Deno.serve(async (req) => {
     let totalFetched = 0;
     let totalFiltered = 0;
     let apiCallCount = 0;
+    let httpErrorCount = 0;
     const allCampaigns = new Set<string>();
     const allPublishers = new Set<string>();
+    const filteredPublishers = new Set<string>();
+    const filteredCampaigns = new Set<string>();
     const startTime = Date.now();
-    const MAX_MS = 50000; // 50s budget
+    const MAX_MS = 110000; // 110s budget — Edge Functions hard cap is 150s
 
-    // Process in 2-day chunks to avoid Ringba pagination limits
-    const chunkDays = 2;
-    let chunkStart = new Date(startDate);
+    // Process newest first so today's data ALWAYS lands even if we time out
+    const chunkDays = 7;
+    const chunks = buildChunksNewestFirst(startDate, endDate, chunkDays);
 
-    while (chunkStart < endDate && Date.now() - startTime < MAX_MS) {
-      const chunkEnd = new Date(chunkStart);
-      chunkEnd.setDate(chunkEnd.getDate() + chunkDays);
-      if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
+    for (const chunk of chunks) {
+      if (Date.now() - startTime > MAX_MS) {
+        console.warn(`Time budget exceeded — skipping remaining ${chunks.length - chunks.indexOf(chunk)} chunks`);
+        break;
+      }
 
       let offset = 0;
       const pageSize = 1000;
 
-      // Paginate within each chunk using size/offset
+      // Paginate within chunk
       while (Date.now() - startTime < MAX_MS) {
         apiCallCount++;
-        const res = await fetch(ringbaUrl, {
-          method: "POST",
-          headers: {
-            Authorization: `Token ${RINGBA_API_TOKEN}`,
-            "Content-Type": "application/json;charset=UTF-8",
-            Accept: "application/json, text/plain, */*",
-          },
-          body: JSON.stringify({
-            reportStart: chunkStart.toISOString(),
-            reportEnd: chunkEnd.toISOString(),
-            size: pageSize,
-            offset,
-          }),
-        });
+        let res: Response;
+        try {
+          res = await fetch(ringbaUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Token ${RINGBA_API_TOKEN}`,
+              "Content-Type": "application/json;charset=UTF-8",
+              Accept: "application/json, text/plain, */*",
+            },
+            body: JSON.stringify({
+              reportStart: chunk.start.toISOString(),
+              reportEnd: chunk.end.toISOString(),
+              size: pageSize,
+              offset,
+            }),
+          });
+        } catch (fetchErr) {
+          httpErrorCount++;
+          console.error(`Network err: ${fetchErr instanceof Error ? fetchErr.message : fetchErr}`);
+          await sleep(2000);
+          if (httpErrorCount >= 3) break;
+          continue;
+        }
 
         if (res.status === 429) {
           console.log(`Rate limited at offset ${offset}, waiting 12s`);
@@ -167,8 +199,14 @@ Deno.serve(async (req) => {
         }
 
         if (!res.ok) {
+          httpErrorCount++;
           const t = await res.text();
-          throw new Error(`Ringba [${res.status}]: ${t.substring(0, 200)}`);
+          console.error(`Ringba [${res.status}]: ${t.substring(0, 300)}`);
+          if (res.status >= 500 && httpErrorCount < 3) {
+            await sleep(3000);
+            continue;
+          }
+          break; // give up on this chunk, move on
         }
 
         const data = await res.json();
@@ -183,12 +221,18 @@ Deno.serve(async (req) => {
           allPublishers.add(r.publisherName || "unknown");
         }
 
-        // Filter: only CPM publisher AND allowed campaigns
+        // Filter: publisher in allowed list AND campaign in allowed list
         const filtered = records.filter((call: any) => {
-          const pub = (call.publisherName || "").toLowerCase();
-          if (pub !== "cpm") return false;
-          return isAllowedCampaign(call.campaignName || "");
+          const pub = (call.publisherName || "").toLowerCase().trim();
+          if (!allowedPublishers.includes(pub)) return false;
+          if (!isAllowedCampaign(call.campaignName || "")) return false;
+          return true;
         });
+
+        for (const r of filtered) {
+          filteredPublishers.add(r.publisherName || "unknown");
+          filteredCampaigns.add(r.campaignName || "unknown");
+        }
 
         totalFiltered += filtered.length;
 
@@ -214,23 +258,32 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Check if we've fetched all records in this chunk
-        if (records.length === 0 || offset + records.length >= totalCount) {
-          break;
-        }
-
+        // Check pagination
+        if (records.length === 0 || offset + records.length >= totalCount) break;
         offset += pageSize;
-        await sleep(300);
+        await sleep(250);
       }
 
-      // Move to next chunk
-      chunkStart = new Date(chunkEnd);
-      await sleep(200);
+      await sleep(150);
     }
 
-    console.log(`Done: fetched=${totalFetched}, filtered(CPM+vertical)=${totalFiltered}, inserted=${totalInserted}`);
-    console.log(`Campaigns: ${JSON.stringify([...allCampaigns])}`);
-    console.log(`Publishers: ${JSON.stringify([...allPublishers])}`);
+    const elapsedMs = Date.now() - startTime;
+    console.log(
+      `Ringba sync done: fetched=${totalFetched}, filtered=${totalFiltered}, inserted=${totalInserted}, ` +
+      `chunks=${chunks.length}, apiCalls=${apiCallCount}, errors=${httpErrorCount}, elapsed=${elapsedMs}ms`
+    );
+    console.log(`Filtered publishers: ${JSON.stringify([...filteredPublishers])}`);
+    console.log(`Filtered campaigns: ${JSON.stringify([...filteredCampaigns])}`);
+
+    // Health alert: if we fetched a lot but got zero matches, log loudly so it's visible in monitoring
+    if (totalFetched > 100 && totalFiltered === 0) {
+      console.error(
+        `⚠️  RINGBA SYNC HEALTH ALERT: fetched ${totalFetched} calls but 0 matched filter ` +
+        `(publishers=${JSON.stringify(allowedPublishers)}, allowedCampaigns=${JSON.stringify(Object.keys(ALLOWED_CAMPAIGNS))}). ` +
+        `Available publishers in response: ${JSON.stringify([...allPublishers].slice(0, 30))}. ` +
+        `Available campaigns: ${JSON.stringify([...allCampaigns].slice(0, 30))}.`
+      );
+    }
 
     // Log integration usage — split evenly across synced clients
     if (apiCallCount > 0 && clientIds.length > 0) {
@@ -241,7 +294,7 @@ Deno.serve(async (req) => {
           service: "ringba_api",
           surface: "sync-ringba-calls",
           calls: perClient,
-          metadata: { days_back: daysBack, calls_fetched: totalFetched },
+          metadata: { days_back: daysBack, calls_fetched: totalFetched, calls_synced: totalInserted },
         });
       }
     }
@@ -251,10 +304,18 @@ Deno.serve(async (req) => {
       calls_fetched: totalFetched,
       calls_filtered: totalFiltered,
       calls_synced: totalInserted,
-      campaigns_found: [...allCampaigns],
-      publishers_found: [...allPublishers],
+      campaigns_in_response: [...allCampaigns],
+      publishers_in_response: [...allPublishers],
+      filtered_campaigns: [...filteredCampaigns],
+      filtered_publishers: [...filteredPublishers],
+      api_calls: apiCallCount,
+      http_errors: httpErrorCount,
       days_back: daysBack,
       chunk_size_days: chunkDays,
+      elapsed_ms: elapsedMs,
+      health_warning: totalFetched > 100 && totalFiltered === 0
+        ? "Fetched many calls but matched zero — check filter or Ringba publisher names"
+        : null,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     console.error("sync-ringba-calls error:", error);

@@ -711,17 +711,35 @@ export default function CampaignBuildPage() {
           {/* Bulk Locations Upload */}
           {campaignStructure && (
             <div className="mt-6 space-y-3">
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-primary" />
-                <p className="text-sm font-medium">Bulk Location Targeting</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium">Bulk Location Targeting</p>
+                </div>
+                <input
+                  ref={zipFileInputRef}
+                  type="file"
+                  accept=".csv,.txt,text/csv,text/plain"
+                  className="hidden"
+                  onChange={handleZipFileUpload}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => zipFileInputRef.current?.click()}
+                  className="h-7 text-xs"
+                >
+                  <Upload className="h-3 w-3 mr-1.5" />
+                  Upload CSV
+                </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Paste zip codes below to generate a bulk locations CSV with Google Ads Editor headers and Location IDs.
+                Upload a CSV of zip codes or paste them below. Generates location-targeting CSVs for {platform === 'bing' ? 'Bing Ads Editor' : platform === 'both' ? 'both Google Ads & Bing Ads Editors' : 'Google Ads Editor'}.
               </p>
               <Textarea
                 value={zipcodesInput}
                 onChange={(e) => setZipcodesInput(e.target.value)}
-                placeholder="Paste zip codes here (comma, space, or newline separated)&#10;e.g. 90210, 10001, 30301, 60601"
+                placeholder="Paste zip codes here (comma, space, or newline separated) — or click 'Upload CSV' above&#10;e.g. 90210, 10001, 30301, 60601"
                 className="min-h-[80px] text-xs font-mono"
                 rows={4}
               />

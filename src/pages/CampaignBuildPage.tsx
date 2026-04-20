@@ -13,7 +13,7 @@ import {
   Send, Download, ChevronRight, ChevronDown, FolderOpen, FileText,
   Target, Hash, Type, Zap, Plus, Loader2, Bot, User, ArrowLeft,
   Sparkles, AlertTriangle, RefreshCw, FileSpreadsheet, Pencil, Check,
-  MapPin
+  MapPin, Upload, Copy
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -52,8 +52,82 @@ export default function CampaignBuildPage() {
   const [zipcodesInput, setZipcodesInput] = useState('');
   const [isGeneratingLocations, setIsGeneratingLocations] = useState(false);
   const [locationFiles, setLocationFiles] = useState<any[]>([]);
+  const [isCloning, setIsCloning] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const zipFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Parse uploaded CSV/TXT file for zip codes
+  const handleZipFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      // Extract all 5-digit numbers from the file (handles CSV with headers, plain text, etc.)
+      const zips = Array.from(text.matchAll(/\b\d{5}\b/g)).map(m => m[0]);
+      const unique = Array.from(new Set(zips));
+      if (unique.length === 0) {
+        toast({ title: 'No zip codes found', description: 'CSV must contain 5-digit US zip codes.', variant: 'destructive' });
+        return;
+      }
+      // Append to existing or replace
+      const merged = zipcodesInput.trim()
+        ? Array.from(new Set([...zipcodesInput.split(/[\s,;\n]+/).map(z => z.trim()).filter(Boolean), ...unique]))
+        : unique;
+      setZipcodesInput(merged.join(', '));
+      toast({ title: 'CSV uploaded', description: `${unique.length} unique zip codes loaded from ${file.name}.` });
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
+    } finally {
+      if (zipFileInputRef.current) zipFileInputRef.current.value = '';
+    }
+  };
+
+  // Clone this build to the opposite platform (Google ↔ Bing)
+  const handleCloneToPlatform = async (targetPlatform: 'google' | 'bing') => {
+    if (!activeBuild || !activeClient) return;
+    setIsCloning(true);
+    try {
+      const newTitle = `${activeBuild.title || 'Untitled'} (${targetPlatform === 'bing' ? 'Bing' : 'Google'})`;
+      const { data, error } = await supabase
+        .from('campaign_builds')
+        .insert({
+          client_id: activeClient.id,
+          title: newTitle,
+          platform: targetPlatform,
+          campaign_structure: activeBuild.campaign_structure,
+          conversation_history: [
+            ...(activeBuild.conversation_history || []),
+            {
+              role: 'assistant',
+              content: `🔄 **Cloned from ${platform === 'bing' ? 'Bing' : 'Google'} build.** This is now a **${targetPlatform === 'bing' ? 'Microsoft Advertising (Bing)' : 'Google Ads'}** campaign. The structure was copied as-is — character limits are identical across platforms. Click **"Generate & Download"** to produce ${targetPlatform === 'bing' ? 'Bing Ads Editor bulk CSVs' : 'Google Ads Editor CSVs'}, or ask me to optimize the copy/keywords for ${targetPlatform === 'bing' ? 'Bing audiences (older, higher-income, desktop-heavy, lower CPCs)' : 'Google'}.`,
+            },
+          ],
+          status: 'in_progress',
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      toast({ title: 'Cloned to ' + (targetPlatform === 'bing' ? 'Bing' : 'Google'), description: 'Opening new build...' });
+      qc.invalidateQueries({ queryKey: ['campaign_builds', activeClient.id] });
+      // Load the new build
+      setActiveBuildId(data.id);
+      setPlatform(targetPlatform);
+      setCampaignStructure(activeBuild.campaign_structure);
+      setMessages([
+        ...(activeBuild.conversation_history || []),
+        {
+          role: 'assistant' as const,
+          content: `🔄 **Cloned from ${platform === 'bing' ? 'Bing' : 'Google'} build.** This is now a **${targetPlatform === 'bing' ? 'Microsoft Advertising (Bing)' : 'Google Ads'}** campaign. The structure was copied as-is — character limits are identical across platforms. Click **"Generate & Download"** to produce ${targetPlatform === 'bing' ? 'Bing Ads Editor bulk CSVs' : 'Google Ads Editor CSVs'}, or ask me to optimize the copy/keywords for ${targetPlatform === 'bing' ? 'Bing audiences (older, higher-income, desktop-heavy, lower CPCs)' : 'Google'}.`,
+        },
+      ]);
+      setGeneratedFiles([]);
+    } catch (e: any) {
+      toast({ title: 'Clone failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setIsCloning(false);
+    }
+  };
 
   // Fetch existing builds
   const { data: builds } = useQuery({

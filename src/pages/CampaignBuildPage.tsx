@@ -465,7 +465,12 @@ export default function CampaignBuildPage() {
                 <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             )}
-            <p className="text-xs text-muted-foreground">AI Campaign Architect</p>
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              AI Campaign Architect
+              <Badge variant="outline" className="text-[9px] uppercase h-4 px-1">
+                {platform === 'bing' ? 'Bing' : platform === 'both' ? 'Google + Bing' : 'Google'}
+              </Badge>
+            </p>
           </div>
           {campaignStructure && (
             <div className="flex items-center gap-2">

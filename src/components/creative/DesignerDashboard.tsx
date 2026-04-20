@@ -26,8 +26,48 @@ export function DesignerDashboard({ onBriefClick }: Props) {
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { data: cap } = useDesignerCap(teamMember?.id || null);
   const { data: allEntries = [] } = useTimeEntries(null, teamMember?.id);
-  const [activeTimer, setActiveTimer] = useState<{ briefId: string; startedAt: Date } | null>(null);
+
+  // Persist timer in localStorage so it survives page reloads / tab close
+  const TIMER_KEY = teamMember?.id ? `creative_timer_${teamMember.id}` : null;
+  const [activeTimer, setActiveTimer] = useState<{ briefId: string; startedAt: Date } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      // Read using a stable key derived synchronously; we re-hydrate when teamMember loads
+      const raw = localStorage.getItem('creative_timer_pending');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return { briefId: parsed.briefId, startedAt: new Date(parsed.startedAt) };
+    } catch { return null; }
+  });
   const [elapsed, setElapsed] = useState(0);
+
+  // Re-hydrate timer once we know who the user is (per-user key)
+  useEffect(() => {
+    if (!TIMER_KEY) return;
+    try {
+      const raw = localStorage.getItem(TIMER_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setActiveTimer({ briefId: parsed.briefId, startedAt: new Date(parsed.startedAt) });
+        // Clean up the temporary fallback key
+        localStorage.removeItem('creative_timer_pending');
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [TIMER_KEY]);
+
+  // Persist whenever activeTimer changes
+  useEffect(() => {
+    if (!TIMER_KEY) return;
+    if (activeTimer) {
+      const payload = JSON.stringify({ briefId: activeTimer.briefId, startedAt: activeTimer.startedAt.toISOString() });
+      localStorage.setItem(TIMER_KEY, payload);
+      localStorage.setItem('creative_timer_pending', payload);
+    } else {
+      localStorage.removeItem(TIMER_KEY);
+      localStorage.removeItem('creative_timer_pending');
+    }
+  }, [activeTimer, TIMER_KEY]);
 
   const now = new Date();
   const monthStart = startOfMonth(now);

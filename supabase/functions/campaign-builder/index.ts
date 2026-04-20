@@ -6,7 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `You are an expert Google Ads campaign architect working inside the CPM Client Hub. You build production-ready campaign structures for media buyers.
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// ───────────────────────────────────────────────────────────
+// Platform-aware system prompts
+// ───────────────────────────────────────────────────────────
+const GOOGLE_PROMPT = `You are an expert Google Ads campaign architect working inside the CPM Client Hub. You build production-ready campaign structures for media buyers.
 
 YOUR CAPABILITIES:
 - Build complete Google Ads campaign structures (Search, PMax, Display, YouTube, Remarketing)
@@ -25,28 +33,92 @@ CONVERSATION FLOW:
 GOOGLE ADS CHARACTER LIMITS (STRICTLY ENFORCED — COUNT EVERY CHARACTER):
 - RSA Headlines: MAX 30 characters each. No exceptions.
 - RSA Descriptions: MAX 90 characters each. No exceptions.
-- Display Path 1: MAX 15 characters
-- Display Path 2: MAX 15 characters
-- Sitelink text: MAX 25 characters
-- Sitelink Description Line 1: MAX 35 characters
-- Sitelink Description Line 2: MAX 35 characters
+- Display Path 1 / Path 2: MAX 15 characters
+- Sitelink text: MAX 25 characters; Description lines: MAX 35 characters
 - Callout text: MAX 25 characters
 - Structured Snippet values: MAX 25 characters per value
-- Campaign name: MAX 128 characters
-- Ad Group name: MAX 255 characters
+- Campaign name: MAX 128 characters; Ad Group name: MAX 255 characters
 
 RULES:
 - Every keyword must be tagged with intent: "high", "medium", or "low"
-- VALIDATE ALL CHARACTER LIMITS ABOVE before outputting. Count characters carefully. If a headline is 31+ chars, rewrite it shorter.
-- Generate at least 15 headlines per RSA (the max Google allows)
-- Generate 4 descriptions per RSA
-- Include match types: exact, phrase, broad (use exact for high-intent, phrase for medium, broad sparingly)
+- VALIDATE ALL CHARACTER LIMITS ABOVE before outputting. Count characters carefully.
+- Generate 15 headlines per RSA (the max Google allows) and 4 descriptions
+- Include match types: Exact (high-intent), Phrase (medium), Broad (sparingly)
 - Always generate campaign-level negative keywords (jobs, DIY, how-to, educational, free)
 - Include optimization notes with every build
 
-When the user approves the structure or asks you to generate/finalize, call the "generate_campaign_structure" tool with the complete structure.
+When the user approves the structure or asks you to generate/finalize, call the "generate_campaign_structure" tool.`;
 
-When having a normal conversation (asking questions, discussing strategy), just respond with text.`;
+const BING_PROMPT = `You are an expert Microsoft Advertising (Bing Ads) campaign architect working inside the CPM Client Hub. You build production-ready campaign structures for media buyers who upload via Bing Ads Editor (Microsoft Advertising Editor).
+
+YOUR CAPABILITIES:
+- Build Microsoft Advertising Search campaigns with RSAs ready for Bing Ads Editor bulk import
+- Generate keyword lists with intent classification (High/Medium/Low)
+- Write RSA ad copy that matches Microsoft Ads' Responsive Search Ad format
+- Create negative keyword lists and ad extensions (sitelinks, callouts, structured snippets)
+- Analyze landing pages and tailor copy for Bing's audience (older, higher-income, desktop-heavy vs. Google)
+- Provide Bing-specific optimization guidance (Bing's lower CPCs, LinkedIn targeting overlays, Audience Network)
+
+CONVERSATION FLOW:
+1. Greet with client context. Ask about: vertical, goal, audience, landing page, budget, schedule
+2. If a landing page URL is provided, analyze it (you'll receive parsed content)
+3. Ask 3-5 targeted follow-up questions (including any Bing-specific asks like LinkedIn targeting, MSN Audience Network inclusion)
+4. Generate the full campaign structure as a JSON tool call
+
+MICROSOFT ADVERTISING CHARACTER LIMITS (STRICTLY ENFORCED — COUNT EVERY CHARACTER):
+- RSA Headlines: MAX 30 characters each (15 headlines total)
+- RSA Descriptions: MAX 90 characters each (4 descriptions total)
+- Path 1 / Path 2: MAX 15 characters each
+- Sitelink text: MAX 25 characters; Description 1 / Description 2: MAX 35 characters each
+- Callout text: MAX 25 characters
+- Structured Snippet values: MAX 25 characters per value
+- Campaign name: MAX 128 characters; Ad Group name: MAX 255 characters
+- Business Name (optional on RSAs in Bing): MAX 25 characters
+
+BING-SPECIFIC RULES:
+- Match types: Exact, Phrase, Broad — Bing supports same 3 as Google (Broad Match Modifier was retired)
+- Include "Bing Ads Audience Network" strategy notes — this is opt-in and often gets low-intent traffic, recommend whether to include/exclude
+- Prefer Enhanced CPC or Maximize Conversions bid strategies for most verticals
+- Note: Bing imports from Google Ads are common but often require cleanup — build Bing-native where possible
+- Every keyword must be tagged with intent: "high", "medium", or "low"
+- Always generate campaign-level negatives (jobs, DIY, how-to, educational, free)
+- Include Bing-specific optimization notes (device bid adjustments — desktop performs better on Bing, audience insights, LinkedIn overlays for B2B)
+
+When the user approves the structure or asks you to generate/finalize, call the "generate_campaign_structure" tool.`;
+
+const BOTH_PROMPT = `You are an expert paid-search campaign architect building campaigns for BOTH Google Ads AND Microsoft Advertising (Bing) simultaneously inside the CPM Client Hub. The same structure will be exported to both Google Ads Editor CSVs and Bing Ads Editor bulk CSV.
+
+CRITICAL: Character limits are identical across Google and Microsoft Ads for RSAs (30/90), paths (15), sitelinks (25/35), callouts (25), snippets (25). Your structure works on both platforms unchanged.
+
+YOUR CAPABILITIES:
+- Build Search campaigns that import cleanly into both Google Ads Editor and Bing Ads Editor
+- Generate keyword lists with intent classification (High/Medium/Low)
+- Write RSA ad copy (15 headlines ≤30 chars, 4 descriptions ≤90 chars)
+- Create negative keyword lists and extensions (sitelinks, callouts, structured snippets)
+- Analyze landing pages and tailor copy
+- Provide optimization guidance for BOTH platforms (Google's competitiveness, Bing's lower CPCs + older demographic)
+
+CHARACTER LIMITS (SAME FOR BOTH PLATFORMS — STRICTLY ENFORCED):
+- Headlines: MAX 30 characters (15 per ad)
+- Descriptions: MAX 90 characters (4 per ad)
+- Path 1 / Path 2: MAX 15 characters
+- Sitelink text: MAX 25 characters; Description lines: MAX 35 characters
+- Callout: MAX 25 characters; Snippet value: MAX 25 characters
+
+CROSS-PLATFORM RULES:
+- Build Search campaigns only (PMax/Display are Google-only; build those as Google-only if requested)
+- Match types: Exact, Phrase, Broad (both platforms support)
+- Include both Google-specific AND Bing-specific optimization notes in optimization_notes
+- Include campaign-level negatives (jobs, DIY, how-to, educational, free)
+- Every keyword tagged with intent: "high", "medium", "low"
+
+When the user approves, call "generate_campaign_structure" once — both platform CSVs will be generated from the same structure.`;
+
+function getSystemPrompt(platform: string): string {
+  if (platform === 'bing') return BING_PROMPT;
+  if (platform === 'both') return BOTH_PROMPT;
+  return GOOGLE_PROMPT;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -55,20 +127,22 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { messages, build_id, client_context, action, campaign_structure, client_name, zipcodes, campaign_names } = body;
+    const {
+      messages, build_id, client_context, action, campaign_structure,
+      client_name, zipcodes, campaign_names,
+      platform = 'google', // 'google' | 'bing' | 'both'
+    } = body;
 
-    // If action is "generate_csvs", generate CSV files from the structure
     if (action === "generate_csvs") {
-      return await generateCSVs(supabase, campaign_structure, build_id, client_name);
+      return await generateCSVs(supabase, campaign_structure, build_id, client_name, platform);
     }
 
-    // If action is "generate_locations", generate bulk locations CSV from zip codes
     if (action === "generate_locations") {
-      return await generateLocationsCsv(supabase, LOVABLE_API_KEY, zipcodes, campaign_names, build_id, client_name);
+      return await generateLocationsCsv(supabase, LOVABLE_API_KEY, zipcodes, campaign_names, build_id, client_name, platform);
     }
 
     // Build enhanced system prompt with client context
-    let systemPrompt = SYSTEM_PROMPT;
+    let systemPrompt = getSystemPrompt(platform);
     if (client_context) {
       systemPrompt += `\n\nCLIENT CONTEXT:\n- Client Name: ${client_context.client_name || 'Unknown'}`;
       if (client_context.verticals?.length) {
@@ -81,13 +155,20 @@ Deno.serve(async (req) => {
         systemPrompt += `\n\nLANDING PAGE ANALYSIS:\n${client_context.landing_page_content}`;
       }
     }
+    systemPrompt += `\n\nTARGET PLATFORM: ${platform.toUpperCase()}${platform === 'both' ? ' (Google + Bing)' : ''}`;
+
+    const campaignTypeEnum = platform === 'bing'
+      ? ["Search", "Shopping", "Audience", "Dynamic Search"]
+      : platform === 'both'
+        ? ["Search"]
+        : ["Search", "Performance Max", "Display", "Video", "Discovery"];
 
     const tools = [
       {
         type: "function",
         function: {
           name: "generate_campaign_structure",
-          description: "Generate a complete Google Ads campaign structure ready for CSV export. Call this when the user approves the campaign plan or asks to generate/finalize it.",
+          description: `Generate a complete ${platform === 'bing' ? 'Microsoft Advertising (Bing)' : platform === 'both' ? 'cross-platform (Google + Bing)' : 'Google Ads'} campaign structure ready for CSV export.`,
           parameters: {
             type: "object",
             properties: {
@@ -97,7 +178,7 @@ Deno.serve(async (req) => {
                   type: "object",
                   properties: {
                     name: { type: "string" },
-                    campaign_type: { type: "string", enum: ["Search", "Performance Max", "Display", "Video", "Discovery"] },
+                    campaign_type: { type: "string", enum: campaignTypeEnum },
                     daily_budget: { type: "number" },
                     bid_strategy: { type: "string" },
                     location: { type: "string" },
@@ -146,7 +227,8 @@ Deno.serve(async (req) => {
                                 descriptions: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 4 },
                                 final_url: { type: "string" },
                                 path1: { type: "string" },
-                                path2: { type: "string" }
+                                path2: { type: "string" },
+                                business_name: { type: "string", description: "Optional — Microsoft Advertising RSA business name, max 25 chars" }
                               },
                               required: ["headlines", "descriptions", "final_url"]
                             }
@@ -208,7 +290,6 @@ Deno.serve(async (req) => {
       }
     ];
 
-    // Stream the response
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -256,11 +337,15 @@ Deno.serve(async (req) => {
   }
 });
 
+// ───────────────────────────────────────────────────────────
+// CSV generation
+// ───────────────────────────────────────────────────────────
 async function generateCSVs(
   supabase: any,
   structure: any,
   buildId: string,
   clientName?: string,
+  platform: string = 'google',
 ) {
   if (!structure?.campaigns?.length) {
     return new Response(JSON.stringify({ error: "No campaign structure provided" }), {
@@ -268,143 +353,48 @@ async function generateCSVs(
     });
   }
 
-  // Enforce Google Ads character limits before generating CSVs
   const { structure: validatedStructure, warnings } = enforceCharLimits(structure);
-  if (warnings.length) {
-    console.warn("Character limit warnings:", warnings);
-  }
+  if (warnings.length) console.warn("Character limit warnings:", warnings);
   const campaigns = validatedStructure.campaigns;
+
   const files: { filename: string; content: string }[] = [];
 
-  // 1. Campaigns.csv
-  let campaignsCsv = "Campaign,Campaign Type,Campaign Daily Budget,Campaign Status,Networks,Location,Language,Bid Strategy Type\n";
-  for (const c of campaigns) {
-    campaignsCsv += `"${esc(c.name)}","${c.campaign_type}",${c.daily_budget || ''},"${c.status || 'Enabled'}","${c.networks || 'Search'}","${esc(c.location || 'United States')}","${c.language || 'English'}","${esc(c.bid_strategy || 'Maximize Conversions')}"\n`;
+  // ── Google Ads Editor CSVs ──
+  if (platform === 'google' || platform === 'both') {
+    files.push(...buildGoogleCsvs(campaigns));
   }
-  files.push({ filename: "Campaigns.csv", content: campaignsCsv });
 
-  // 2. Ad Groups.csv
-  let adGroupsCsv = "Campaign,Ad Group,Ad Group Status,Max CPC\n";
-  for (const c of campaigns) {
-    for (const ag of c.ad_groups || []) {
-      adGroupsCsv += `"${esc(c.name)}","${esc(ag.name)}","Enabled",${ag.max_cpc || ''}\n`;
-    }
+  // ── Microsoft Advertising (Bing Ads Editor) bulk CSV ──
+  if (platform === 'bing' || platform === 'both') {
+    files.push(buildBingBulkCsv(campaigns));
+    files.push(...buildBingIndividualCsvs(campaigns));
   }
-  files.push({ filename: "Ad Groups.csv", content: adGroupsCsv });
 
-  // 3. Keywords.csv
-  let keywordsCsv = "Campaign,Ad Group,Keyword,Criterion Type,Status,Final URL\n";
-  for (const c of campaigns) {
-    for (const ag of c.ad_groups || []) {
-      for (const kw of ag.keywords || []) {
-        const formatted = formatKeyword(kw.keyword, kw.match_type);
-        keywordsCsv += `"${esc(c.name)}","${esc(ag.name)}","${esc(formatted)}","${kw.match_type || 'Broad'}","Enabled","${esc(ag.ads?.[0]?.final_url || '')}"\n`;
-      }
-    }
-  }
-  files.push({ filename: "Keywords.csv", content: keywordsCsv });
-
-  // 4. Negative Keywords.csv
-  let negCsv = "Campaign,Ad Group,Keyword,Criterion Type\n";
-  for (const c of campaigns) {
-    for (const nk of c.campaign_negatives || []) {
-      negCsv += `"${esc(c.name)}","","${esc(formatKeyword(nk.keyword, nk.match_type))}","${nk.match_type || 'Phrase'}"\n`;
-    }
-    for (const ag of c.ad_groups || []) {
-      for (const nk of ag.negative_keywords || []) {
-        negCsv += `"${esc(c.name)}","${esc(ag.name)}","${esc(formatKeyword(nk.keyword, nk.match_type))}","${nk.match_type || 'Phrase'}"\n`;
-      }
-    }
-  }
-  files.push({ filename: "Negative Keywords.csv", content: negCsv });
-
-  // 5. RSAs.csv
-  const headlineCols = Array.from({ length: 15 }, (_, i) => `Headline ${i + 1}`).join(",");
-  const descCols = Array.from({ length: 4 }, (_, i) => `Description ${i + 1}`).join(",");
-  let rsaCsv = `Campaign,Ad Group,${headlineCols},${descCols},Final URL,Path 1,Path 2,Status,Ad Name\n`;
-  for (const c of campaigns) {
-    for (const ag of c.ad_groups || []) {
-      for (const ad of ag.ads || []) {
-        const hls = Array.from({ length: 15 }, (_, i) => `"${esc(ad.headlines?.[i] || '')}"`).join(",");
-        const dsc = Array.from({ length: 4 }, (_, i) => `"${esc(ad.descriptions?.[i] || '')}"`).join(",");
-        rsaCsv += `"${esc(c.name)}","${esc(ag.name)}",${hls},${dsc},"${esc(ad.final_url || '')}","${esc(ad.path1 || '')}","${esc(ad.path2 || '')}","Enabled","${esc(ad.ad_name || '')}"\n`;
-      }
-    }
-  }
-  files.push({ filename: "Responsive Search Ads.csv", content: rsaCsv });
-
-  // 6. Sitelinks.csv — headers match Google Ads Editor exactly
-  let sitelinksCsv = "Campaign,Sitelink text,Description line 1,Description line 2,Final URL\n";
-  for (const c of campaigns) {
-    const sitelinks = c.extensions?.sitelinks || [];
-    sitelinks.forEach((sl: any, idx: number) => {
-      // Append #1, #2, etc. slug to final URL so each sitelink has a unique URL for bulk upload
-      const baseUrl = (sl.final_url || '').replace(/#\d+$/, '');
-      const sluggedUrl = `${baseUrl}#${idx + 1}`;
-      sitelinksCsv += `"${esc(c.name)}","${esc(sl.text)}","${esc(sl.description1 || '')}","${esc(sl.description2 || '')}","${esc(sluggedUrl)}"\n`;
-    });
-  }
-  files.push({ filename: "Sitelinks.csv", content: sitelinksCsv });
-
-  // 7. Callouts.csv
-  let calloutsCsv = "Campaign,Callout Text\n";
-  for (const c of campaigns) {
-    for (const co of c.extensions?.callouts || []) {
-      calloutsCsv += `"${esc(c.name)}","${esc(co)}"\n`;
-    }
-  }
-  files.push({ filename: "Callout Extensions.csv", content: calloutsCsv });
-
-  // 8. Structured Snippets.csv
-  let snippetsCsv = "Campaign,Structured Snippet Header,Structured Snippet Values\n";
-  for (const c of campaigns) {
-    for (const ss of c.extensions?.structured_snippets || []) {
-      snippetsCsv += `"${esc(c.name)}","${esc(ss.header)}","${esc(ss.values)}"\n`;
-    }
-  }
-  files.push({ filename: "Structured Snippets.csv", content: snippetsCsv });
-
-  // Generate master Excel workbook with all CSVs as sheets
+  // Master Excel workbook
   const wb = XLSX.utils.book_new();
   for (const file of files) {
-    const rows = file.content.split('\n').filter(r => r.trim()).map(row => {
-      const cells: string[] = [];
-      let current = '';
-      let inQuotes = false;
-      for (let i = 0; i < row.length; i++) {
-        const ch = row[i];
-        if (ch === '"') {
-          if (inQuotes && row[i + 1] === '"') { current += '"'; i++; }
-          else { inQuotes = !inQuotes; }
-        } else if (ch === ',' && !inQuotes) {
-          cells.push(current); current = '';
-        } else { current += ch; }
-      }
-      cells.push(current);
-      return cells;
-    });
+    const rows = parseCsv(file.content);
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const sheetName = file.filename.replace('.csv', '').slice(0, 31);
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
   const xlsxBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
-  // Build file naming prefix: Client_CampaignName_Date (e.g. Billy.com_HVAC_41326)
+  // File naming
   const sanitize = (s: string) => (s || '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
   const now = new Date();
   const dateStr = `${now.getMonth() + 1}${now.getDate()}${String(now.getFullYear()).slice(-2)}`;
-  const firstCampaignName = campaigns[0]?.campaign_name || 'Campaign';
-  // Extract a short campaign label (first meaningful segment)
+  const firstCampaignName = campaigns[0]?.name || 'Campaign';
   const campaignLabel = sanitize(firstCampaignName.split(' - ')[0] || firstCampaignName);
   const clientSlug = sanitize(clientName || 'Client');
-  const prefix = `${clientSlug}_${campaignLabel}_${dateStr}`;
+  const platformLabel = platform === 'bing' ? 'Bing' : platform === 'both' ? 'GoogleBing' : 'Google';
+  const prefix = `${clientSlug}_${platformLabel}_${campaignLabel}_${dateStr}`;
 
-  // Upload to storage
-  const uploadedFiles = [];
+  const uploadedFiles: any[] = [];
   const timestamp = now.toISOString().replace(/[:.]/g, '-');
   const folder = `${buildId || 'manual'}/${timestamp}`;
 
-  // Upload Excel file first
+  // Upload master Excel
   const xlsxFilename = `${prefix}_Master.xlsx`;
   const xlsxPath = `${folder}/${xlsxFilename}`;
   const { error: xlsxErr } = await supabase.storage
@@ -415,7 +405,7 @@ async function generateCSVs(
     });
   if (!xlsxErr) {
     const { data: xlsxUrl } = supabase.storage.from('campaign-build-files').getPublicUrl(xlsxPath);
-    uploadedFiles.push({ filename: xlsxFilename, storage_url: xlsxUrl.publicUrl, file_type: 'xlsx' });
+    uploadedFiles.push({ filename: xlsxFilename, storage_url: xlsxUrl.publicUrl, file_type: 'xlsx', platform });
   } else {
     console.error('Excel upload error:', xlsxErr);
   }
@@ -428,21 +418,18 @@ async function generateCSVs(
     const { error } = await supabase.storage
       .from('campaign-build-files')
       .upload(path, new Blob([file.content], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
-
-    if (error) {
-      console.error(`Upload error for ${csvFilename}:`, error);
-      continue;
-    }
-
+    if (error) { console.error(`Upload error for ${csvFilename}:`, error); continue; }
     const { data: urlData } = supabase.storage.from('campaign-build-files').getPublicUrl(path);
+    // Tag Bing bulk file specifically
+    const platformTag = file.filename.startsWith('Bing_') ? 'bing' : file.filename.startsWith('Google_') ? 'google' : platform;
     uploadedFiles.push({
       filename: csvFilename,
       storage_url: urlData.publicUrl,
       file_type: 'csv',
+      platform: platformTag,
     });
   }
 
-  // Update the build record
   if (buildId) {
     await supabase.from('campaign_builds')
       .update({
@@ -455,11 +442,279 @@ async function generateCSVs(
       .eq('id', buildId);
   }
 
-  return new Response(JSON.stringify({ success: true, files: uploadedFiles }), {
+  return new Response(JSON.stringify({ success: true, files: uploadedFiles, warnings }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
+// ───────────────────────────────────────────────────────────
+// Google Ads Editor CSV builders
+// ───────────────────────────────────────────────────────────
+function buildGoogleCsvs(campaigns: any[]): { filename: string; content: string }[] {
+  const files: { filename: string; content: string }[] = [];
+
+  // 1. Campaigns.csv
+  let campaignsCsv = "Campaign,Campaign Type,Campaign Daily Budget,Campaign Status,Networks,Location,Language,Bid Strategy Type\n";
+  for (const c of campaigns) {
+    campaignsCsv += `"${esc(c.name)}","${c.campaign_type || 'Search'}",${c.daily_budget || ''},"${c.status || 'Enabled'}","${c.networks || 'Search'}","${esc(c.location || 'United States')}","${c.language || 'English'}","${esc(c.bid_strategy || 'Maximize Conversions')}"\n`;
+  }
+  files.push({ filename: "Google_Campaigns.csv", content: campaignsCsv });
+
+  // 2. Ad Groups.csv
+  let adGroupsCsv = "Campaign,Ad Group,Ad Group Status,Max CPC\n";
+  for (const c of campaigns) {
+    for (const ag of c.ad_groups || []) {
+      adGroupsCsv += `"${esc(c.name)}","${esc(ag.name)}","Enabled",${ag.max_cpc || ''}\n`;
+    }
+  }
+  files.push({ filename: "Google_Ad_Groups.csv", content: adGroupsCsv });
+
+  // 3. Keywords.csv
+  let keywordsCsv = "Campaign,Ad Group,Keyword,Criterion Type,Status,Final URL\n";
+  for (const c of campaigns) {
+    for (const ag of c.ad_groups || []) {
+      for (const kw of ag.keywords || []) {
+        const formatted = formatKeyword(kw.keyword, kw.match_type);
+        keywordsCsv += `"${esc(c.name)}","${esc(ag.name)}","${esc(formatted)}","${kw.match_type || 'Broad'}","Enabled","${esc(ag.ads?.[0]?.final_url || '')}"\n`;
+      }
+    }
+  }
+  files.push({ filename: "Google_Keywords.csv", content: keywordsCsv });
+
+  // 4. Negative Keywords
+  let negCsv = "Campaign,Ad Group,Keyword,Criterion Type\n";
+  for (const c of campaigns) {
+    for (const nk of c.campaign_negatives || []) {
+      negCsv += `"${esc(c.name)}","","${esc(formatKeyword(nk.keyword, nk.match_type))}","${nk.match_type || 'Phrase'}"\n`;
+    }
+    for (const ag of c.ad_groups || []) {
+      for (const nk of ag.negative_keywords || []) {
+        negCsv += `"${esc(c.name)}","${esc(ag.name)}","${esc(formatKeyword(nk.keyword, nk.match_type))}","${nk.match_type || 'Phrase'}"\n`;
+      }
+    }
+  }
+  files.push({ filename: "Google_Negative_Keywords.csv", content: negCsv });
+
+  // 5. RSAs
+  const headlineCols = Array.from({ length: 15 }, (_, i) => `Headline ${i + 1}`).join(",");
+  const descCols = Array.from({ length: 4 }, (_, i) => `Description ${i + 1}`).join(",");
+  let rsaCsv = `Campaign,Ad Group,${headlineCols},${descCols},Final URL,Path 1,Path 2,Status,Ad Name\n`;
+  for (const c of campaigns) {
+    for (const ag of c.ad_groups || []) {
+      for (const ad of ag.ads || []) {
+        const hls = Array.from({ length: 15 }, (_, i) => `"${esc(ad.headlines?.[i] || '')}"`).join(",");
+        const dsc = Array.from({ length: 4 }, (_, i) => `"${esc(ad.descriptions?.[i] || '')}"`).join(",");
+        rsaCsv += `"${esc(c.name)}","${esc(ag.name)}",${hls},${dsc},"${esc(ad.final_url || '')}","${esc(ad.path1 || '')}","${esc(ad.path2 || '')}","Enabled","${esc(ad.ad_name || '')}"\n`;
+      }
+    }
+  }
+  files.push({ filename: "Google_Responsive_Search_Ads.csv", content: rsaCsv });
+
+  // 6. Sitelinks
+  let sitelinksCsv = "Campaign,Sitelink text,Description line 1,Description line 2,Final URL\n";
+  for (const c of campaigns) {
+    const sitelinks = c.extensions?.sitelinks || [];
+    sitelinks.forEach((sl: any, idx: number) => {
+      const baseUrl = (sl.final_url || '').replace(/#\d+$/, '');
+      const sluggedUrl = `${baseUrl}#${idx + 1}`;
+      sitelinksCsv += `"${esc(c.name)}","${esc(sl.text)}","${esc(sl.description1 || '')}","${esc(sl.description2 || '')}","${esc(sluggedUrl)}"\n`;
+    });
+  }
+  files.push({ filename: "Google_Sitelinks.csv", content: sitelinksCsv });
+
+  // 7. Callouts
+  let calloutsCsv = "Campaign,Callout Text\n";
+  for (const c of campaigns) {
+    for (const co of c.extensions?.callouts || []) {
+      calloutsCsv += `"${esc(c.name)}","${esc(co)}"\n`;
+    }
+  }
+  files.push({ filename: "Google_Callout_Extensions.csv", content: calloutsCsv });
+
+  // 8. Structured Snippets
+  let snippetsCsv = "Campaign,Structured Snippet Header,Structured Snippet Values\n";
+  for (const c of campaigns) {
+    for (const ss of c.extensions?.structured_snippets || []) {
+      snippetsCsv += `"${esc(c.name)}","${esc(ss.header)}","${esc(ss.values)}"\n`;
+    }
+  }
+  files.push({ filename: "Google_Structured_Snippets.csv", content: snippetsCsv });
+
+  return files;
+}
+
+// ───────────────────────────────────────────────────────────
+// Microsoft Advertising (Bing Ads Editor) bulk CSV
+// Format: single CSV with a "Type" column — native Bing Ads Editor bulk import
+// Ref: Microsoft Advertising bulk upload schema
+// ───────────────────────────────────────────────────────────
+function buildBingBulkCsv(campaigns: any[]): { filename: string; content: string } {
+  // Columns used across multiple record types — superset
+  const headers = [
+    "Type", "Status", "Parent Id", "Campaign", "Ad Group",
+    "Budget", "Budget Type", "Bid Strategy Type",
+    "Language", "Location", "Network",
+    "Keyword", "Match Type",
+    "Ad Title 1", "Ad Title 2", "Ad Title 3", "Ad Title 4", "Ad Title 5",
+    "Ad Title 6", "Ad Title 7", "Ad Title 8", "Ad Title 9", "Ad Title 10",
+    "Ad Title 11", "Ad Title 12", "Ad Title 13", "Ad Title 14", "Ad Title 15",
+    "Text", "Text 2", "Text 3", "Text 4",
+    "Path 1", "Path 2", "Final Url", "Business Name",
+    "Sitelink Extension Link Text", "Sitelink Extension Description 1", "Sitelink Extension Description 2", "Sitelink Extension Final Url",
+    "Callout Text",
+    "Structured Snippet Header", "Structured Snippet Values",
+    "Ad Name",
+  ];
+  const lines: string[] = [headers.join(",")];
+
+  const row = (fields: Record<string, any>) => {
+    return headers.map(h => `"${esc(fields[h] != null ? String(fields[h]) : '')}"`).join(",");
+  };
+
+  for (const c of campaigns) {
+    // Campaign record
+    lines.push(row({
+      Type: "Campaign",
+      Status: c.status || "Paused",
+      Campaign: c.name,
+      Budget: c.daily_budget || '',
+      "Budget Type": "DailyBudgetStandard",
+      "Bid Strategy Type": mapBidStrategyBing(c.bid_strategy),
+      Language: c.language || "English",
+      Location: c.location || "United States",
+      Network: "OwnedAndOperatedAndSyndicatedSearch",
+    }));
+
+    for (const ag of c.ad_groups || []) {
+      // Ad Group record
+      lines.push(row({
+        Type: "Ad Group",
+        Status: "Paused",
+        Campaign: c.name,
+        "Ad Group": ag.name,
+        Language: c.language || "English",
+      }));
+
+      // Keywords
+      for (const kw of ag.keywords || []) {
+        lines.push(row({
+          Type: "Keyword",
+          Status: "Active",
+          Campaign: c.name,
+          "Ad Group": ag.name,
+          Keyword: kw.keyword,
+          "Match Type": kw.match_type || "Broad",
+        }));
+      }
+
+      // Ad group negatives
+      for (const nk of ag.negative_keywords || []) {
+        lines.push(row({
+          Type: "Ad Group Negative Keyword",
+          Status: "Active",
+          Campaign: c.name,
+          "Ad Group": ag.name,
+          Keyword: nk.keyword,
+          "Match Type": nk.match_type || "Phrase",
+        }));
+      }
+
+      // Responsive Search Ads
+      for (const ad of ag.ads || []) {
+        const titles: Record<string, string> = {};
+        for (let i = 0; i < 15; i++) {
+          titles[`Ad Title ${i + 1}`] = ad.headlines?.[i] || '';
+        }
+        lines.push(row({
+          Type: "Responsive Search Ad",
+          Status: "Paused",
+          Campaign: c.name,
+          "Ad Group": ag.name,
+          ...titles,
+          Text: ad.descriptions?.[0] || '',
+          "Text 2": ad.descriptions?.[1] || '',
+          "Text 3": ad.descriptions?.[2] || '',
+          "Text 4": ad.descriptions?.[3] || '',
+          "Path 1": ad.path1 || '',
+          "Path 2": ad.path2 || '',
+          "Final Url": ad.final_url || '',
+          "Business Name": ad.business_name || '',
+          "Ad Name": ad.ad_name || '',
+        }));
+      }
+    }
+
+    // Campaign-level negatives
+    for (const nk of c.campaign_negatives || []) {
+      lines.push(row({
+        Type: "Campaign Negative Keyword",
+        Status: "Active",
+        Campaign: c.name,
+        Keyword: nk.keyword,
+        "Match Type": nk.match_type || "Phrase",
+      }));
+    }
+
+    // Sitelinks
+    for (const sl of c.extensions?.sitelinks || []) {
+      lines.push(row({
+        Type: "Sitelink Ad Extension",
+        Status: "Active",
+        Campaign: c.name,
+        "Sitelink Extension Link Text": sl.text,
+        "Sitelink Extension Description 1": sl.description1 || '',
+        "Sitelink Extension Description 2": sl.description2 || '',
+        "Sitelink Extension Final Url": sl.final_url || '',
+      }));
+    }
+
+    // Callouts
+    for (const co of c.extensions?.callouts || []) {
+      lines.push(row({
+        Type: "Callout Ad Extension",
+        Status: "Active",
+        Campaign: c.name,
+        "Callout Text": co,
+      }));
+    }
+
+    // Structured snippets
+    for (const ss of c.extensions?.structured_snippets || []) {
+      lines.push(row({
+        Type: "Structured Snippet Extension",
+        Status: "Active",
+        Campaign: c.name,
+        "Structured Snippet Header": ss.header,
+        "Structured Snippet Values": ss.values,
+      }));
+    }
+  }
+
+  return { filename: "Bing_Ads_Editor_Bulk.csv", content: lines.join("\n") + "\n" };
+}
+
+// Also export individual Bing-labeled CSVs for audit/reference (same shape as Google CSVs but tagged Bing_)
+function buildBingIndividualCsvs(campaigns: any[]): { filename: string; content: string }[] {
+  const google = buildGoogleCsvs(campaigns);
+  return google.map(f => ({
+    filename: f.filename.replace(/^Google_/, 'Bing_Audit_'),
+    content: f.content,
+  }));
+}
+
+function mapBidStrategyBing(strategy?: string): string {
+  if (!strategy) return "EnhancedCpc";
+  const s = strategy.toLowerCase();
+  if (s.includes("max") && s.includes("conv")) return "MaxConversions";
+  if (s.includes("target") && s.includes("cpa")) return "TargetCpa";
+  if (s.includes("target") && s.includes("roas")) return "TargetRoas";
+  if (s.includes("manual")) return "ManualCpc";
+  return "EnhancedCpc";
+}
+
+// ───────────────────────────────────────────────────────────
+// Locations CSV (platform-aware)
+// ───────────────────────────────────────────────────────────
 async function generateLocationsCsv(
   supabase: any,
   apiKey: string,
@@ -467,6 +722,7 @@ async function generateLocationsCsv(
   campaignNames: string[],
   buildId: string,
   clientName?: string,
+  platform: string = 'google',
 ) {
   if (!zipcodes?.length || !campaignNames?.length) {
     return new Response(JSON.stringify({ error: "Zip codes and campaign names are required" }), {
@@ -474,122 +730,76 @@ async function generateLocationsCsv(
     });
   }
 
-  // Use AI to map zip codes to Google Ads criteria IDs
-  const prompt = `You are a Google Ads location targeting expert. I need you to generate a bulk location upload CSV for Google Ads Editor.
+  const prompt = `You are a paid-search location targeting expert. Given these US zip codes: ${zipcodes.join(', ')}
 
-Given these US zip codes: ${zipcodes.join(', ')}
+For each zip code, provide the ${platform === 'bing' ? 'Microsoft Advertising' : 'Google Ads'} Location ID (criteria ID). US zip codes use IDs in the 9000000+ range on Google (identical IDs work for Bing imports).
 
-For each zip code, provide the Google Ads Criteria ID (also called Location ID). US zip codes have criteria IDs typically in the range of 9000000+.
+Return ONLY a valid JSON array: [{"zip":"90210","criteria_id":"9032869","canonical_name":"90210,California,United States"}]
 
-Return ONLY a valid JSON array with objects like:
-[{"zip":"90210","criteria_id":"9032869","canonical_name":"90210,California,United States"}]
-
-If you don't know the exact criteria ID for a zip code, use the format "zip:XXXXX" as the criteria_id so the user knows to look it up. But try your best to provide accurate criteria IDs.
-
-IMPORTANT: Return ONLY the JSON array, no markdown, no explanation.`;
+If uncertain, use "zip:XXXXX" as criteria_id. Return ONLY the JSON array.`;
 
   try {
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: "You are a Google Ads API expert. Return only valid JSON." },
+          { role: "system", content: "You are a paid-search API expert. Return only valid JSON." },
           { role: "user", content: prompt },
         ],
         temperature: 0.1,
       }),
     });
-
-    if (!aiResp.ok) {
-      const errText = await aiResp.text();
-      console.error("AI error for locations:", errText);
-      throw new Error("Failed to generate location mappings");
-    }
+    if (!aiResp.ok) throw new Error("Failed to generate location mappings");
 
     const aiData = await aiResp.json();
-    let locationsJson: any[];
     const rawContent = aiData.choices?.[0]?.message?.content || '[]';
-    // Strip markdown code fences if present
     const cleaned = rawContent.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-    try {
-      locationsJson = JSON.parse(cleaned);
-    } catch {
-      console.error("Failed to parse AI locations response:", cleaned);
-      // Fallback: create entries without criteria IDs
-      locationsJson = zipcodes.map(z => ({ zip: z, criteria_id: '', canonical_name: `${z},United States` }));
-    }
+    let locationsJson: any[];
+    try { locationsJson = JSON.parse(cleaned); }
+    catch { locationsJson = zipcodes.map(z => ({ zip: z, criteria_id: '', canonical_name: `${z},United States` })); }
 
-    // Generate CSV with Google Ads Editor headers
-    // Google Ads Editor bulk location headers: Campaign, Location, Location ID, Bid adj.
-    let locationsCsv = "Campaign,Location,Location ID,Bid adj.\n";
-    for (const cName of campaignNames) {
-      for (const loc of locationsJson) {
-        locationsCsv += `"${esc(cName)}","${esc(loc.canonical_name || loc.zip)}","${esc(String(loc.criteria_id || ''))}",""\n`;
-      }
-    }
-
-    // Build filename
+    const uploadedFiles: any[] = [];
     const sanitize = (s: string) => (s || '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
     const now = new Date();
     const dateStr = `${now.getMonth() + 1}${now.getDate()}${String(now.getFullYear()).slice(-2)}`;
     const clientSlug = sanitize(clientName || 'Client');
-    const prefix = `${clientSlug}_Locations_${dateStr}`;
-    const csvFilename = `${prefix}.csv`;
-
-    // Also create an Excel version
-    const wb = XLSX.utils.book_new();
-    const rows = locationsCsv.split('\n').filter(r => r.trim()).map(row => {
-      const cells: string[] = [];
-      let current = '';
-      let inQuotes = false;
-      for (let i = 0; i < row.length; i++) {
-        const ch = row[i];
-        if (ch === '"') {
-          if (inQuotes && row[i + 1] === '"') { current += '"'; i++; }
-          else { inQuotes = !inQuotes; }
-        } else if (ch === ',' && !inQuotes) {
-          cells.push(current); current = '';
-        } else { current += ch; }
-      }
-      cells.push(current);
-      return cells;
-    });
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Locations');
-    const xlsxBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-
-    // Upload files
     const timestamp = now.toISOString().replace(/[:.]/g, '-');
     const folder = `${buildId || 'manual'}/${timestamp}`;
-    const uploadedFiles = [];
 
-    // Upload CSV
-    const csvPath = `${folder}/${csvFilename}`;
-    const { error: csvErr } = await supabase.storage
-      .from('campaign-build-files')
-      .upload(csvPath, new Blob([locationsCsv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
-    if (!csvErr) {
-      const { data: csvUrl } = supabase.storage.from('campaign-build-files').getPublicUrl(csvPath);
-      uploadedFiles.push({ filename: csvFilename, storage_url: csvUrl.publicUrl, file_type: 'csv' });
+    // Google-format locations CSV
+    if (platform === 'google' || platform === 'both') {
+      let csv = "Campaign,Location,Location ID,Bid adj.\n";
+      for (const cName of campaignNames) {
+        for (const loc of locationsJson) {
+          csv += `"${esc(cName)}","${esc(loc.canonical_name || loc.zip)}","${esc(String(loc.criteria_id || ''))}",""\n`;
+        }
+      }
+      const fname = `${clientSlug}_Google_Locations_${dateStr}.csv`;
+      const path = `${folder}/${fname}`;
+      const { error } = await supabase.storage.from('campaign-build-files').upload(path, new Blob([csv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
+      if (!error) {
+        const { data } = supabase.storage.from('campaign-build-files').getPublicUrl(path);
+        uploadedFiles.push({ filename: fname, storage_url: data.publicUrl, file_type: 'csv', platform: 'google' });
+      }
     }
 
-    // Upload Excel
-    const xlsxFilename = `${prefix}.xlsx`;
-    const xlsxPath = `${folder}/${xlsxFilename}`;
-    const { error: xlsxErr } = await supabase.storage
-      .from('campaign-build-files')
-      .upload(xlsxPath, new Blob([xlsxBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), {
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        upsert: true,
-      });
-    if (!xlsxErr) {
-      const { data: xlsxUrl } = supabase.storage.from('campaign-build-files').getPublicUrl(xlsxPath);
-      uploadedFiles.push({ filename: xlsxFilename, storage_url: xlsxUrl.publicUrl, file_type: 'xlsx' });
+    // Bing-format locations CSV (Microsoft Advertising bulk schema)
+    if (platform === 'bing' || platform === 'both') {
+      let csv = "Type,Status,Campaign,Sub Type,Target,Bid Adjustment\n";
+      for (const cName of campaignNames) {
+        for (const loc of locationsJson) {
+          csv += `"Campaign Location Criterion","Active","${esc(cName)}","PostalCode","${esc(String(loc.criteria_id || loc.zip))}",""\n`;
+        }
+      }
+      const fname = `${clientSlug}_Bing_Locations_${dateStr}.csv`;
+      const path = `${folder}/${fname}`;
+      const { error } = await supabase.storage.from('campaign-build-files').upload(path, new Blob([csv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
+      if (!error) {
+        const { data } = supabase.storage.from('campaign-build-files').getPublicUrl(path);
+        uploadedFiles.push({ filename: fname, storage_url: data.publicUrl, file_type: 'csv', platform: 'bing' });
+      }
     }
 
     return new Response(JSON.stringify({
@@ -597,9 +807,7 @@ IMPORTANT: Return ONLY the JSON array, no markdown, no explanation.`;
       files: uploadedFiles,
       locations_count: locationsJson.length,
       campaigns_count: campaignNames.length,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("generateLocationsCsv error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
@@ -608,11 +816,33 @@ IMPORTANT: Return ONLY the JSON array, no markdown, no explanation.`;
   }
 }
 
+// ───────────────────────────────────────────────────────────
+// Helpers
+// ───────────────────────────────────────────────────────────
 function esc(s: string): string {
   return (s || '').replace(/"/g, '""');
 }
 
-// Google Ads character limit enforcement
+function parseCsv(content: string): string[][] {
+  return content.split('\n').filter(r => r.trim()).map(row => {
+    const cells: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i];
+      if (ch === '"') {
+        if (inQuotes && row[i + 1] === '"') { current += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (ch === ',' && !inQuotes) {
+        cells.push(current); current = '';
+      } else { current += ch; }
+    }
+    cells.push(current);
+    return cells;
+  });
+}
+
+// Character limits — identical for Google Ads & Microsoft Advertising RSAs
 const CHAR_LIMITS = {
   headline: 30,
   description: 90,
@@ -623,6 +853,7 @@ const CHAR_LIMITS = {
   snippetValue: 25,
   campaignName: 128,
   adGroupName: 255,
+  businessName: 25, // Bing RSA business name
 };
 
 function truncate(s: string, max: number): string {
@@ -634,30 +865,23 @@ function enforceCharLimits(structure: any): { structure: any; warnings: string[]
   const warnings: string[] = [];
   for (const c of structure.campaigns || []) {
     if (c.name?.length > CHAR_LIMITS.campaignName) {
-      warnings.push(`Campaign "${c.name}" truncated to ${CHAR_LIMITS.campaignName} chars`);
+      warnings.push(`Campaign "${c.name}" truncated`);
       c.name = truncate(c.name, CHAR_LIMITS.campaignName);
     }
     for (const ag of c.ad_groups || []) {
-      if (ag.name?.length > CHAR_LIMITS.adGroupName) {
-        ag.name = truncate(ag.name, CHAR_LIMITS.adGroupName);
-      }
+      if (ag.name?.length > CHAR_LIMITS.adGroupName) ag.name = truncate(ag.name, CHAR_LIMITS.adGroupName);
       for (const ad of ag.ads || []) {
         ad.headlines = (ad.headlines || []).map((h: string) => {
-          if (h.length > CHAR_LIMITS.headline) {
-            warnings.push(`Headline "${h}" (${h.length} chars) truncated to ${CHAR_LIMITS.headline}`);
-            return truncate(h, CHAR_LIMITS.headline);
-          }
+          if (h.length > CHAR_LIMITS.headline) { warnings.push(`Headline "${h}" (${h.length}c) truncated`); return truncate(h, CHAR_LIMITS.headline); }
           return h;
         });
         ad.descriptions = (ad.descriptions || []).map((d: string) => {
-          if (d.length > CHAR_LIMITS.description) {
-            warnings.push(`Description "${d.slice(0,40)}..." (${d.length} chars) truncated to ${CHAR_LIMITS.description}`);
-            return truncate(d, CHAR_LIMITS.description);
-          }
+          if (d.length > CHAR_LIMITS.description) { warnings.push(`Description (${d.length}c) truncated`); return truncate(d, CHAR_LIMITS.description); }
           return d;
         });
         ad.path1 = truncate(ad.path1 || '', CHAR_LIMITS.path);
         ad.path2 = truncate(ad.path2 || '', CHAR_LIMITS.path);
+        if (ad.business_name) ad.business_name = truncate(ad.business_name, CHAR_LIMITS.businessName);
       }
     }
     for (const sl of c.extensions?.sitelinks || []) {
@@ -665,10 +889,8 @@ function enforceCharLimits(structure: any): { structure: any; warnings: string[]
       sl.description1 = truncate(sl.description1 || '', CHAR_LIMITS.sitelinkDesc);
       sl.description2 = truncate(sl.description2 || '', CHAR_LIMITS.sitelinkDesc);
     }
-    c.extensions?.callouts?.forEach((co: string, i: number) => {
-      if (co.length > CHAR_LIMITS.callout) {
-        c.extensions.callouts[i] = truncate(co, CHAR_LIMITS.callout);
-      }
+    (c.extensions?.callouts || []).forEach((co: string, i: number) => {
+      if (co.length > CHAR_LIMITS.callout) c.extensions.callouts[i] = truncate(co, CHAR_LIMITS.callout);
     });
     for (const ss of c.extensions?.structured_snippets || []) {
       ss.values = (ss.values || '').split(',').map((v: string) => truncate(v.trim(), CHAR_LIMITS.snippetValue)).join(', ');

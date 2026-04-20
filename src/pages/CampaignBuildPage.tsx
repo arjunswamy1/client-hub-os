@@ -16,7 +16,10 @@ import {
   MapPin
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ReactMarkdown from 'react-markdown';
+
+type Platform = 'google' | 'bing' | 'both';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
@@ -28,6 +31,7 @@ type CampaignBuild = {
   campaign_structure: any;
   generated_files: any[];
   conversation_history: Message[];
+  platform?: Platform;
 };
 
 export default function CampaignBuildPage() {
@@ -36,6 +40,7 @@ export default function CampaignBuildPage() {
   const qc = useQueryClient();
 
   const [activeBuildId, setActiveBuildId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<Platform>('google');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -56,7 +61,7 @@ export default function CampaignBuildPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('campaign_builds')
-        .select('id, title, status, created_at, campaign_structure, generated_files, conversation_history')
+        .select('id, title, status, created_at, campaign_structure, generated_files, conversation_history, platform')
         .eq('client_id', activeClient!.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -68,6 +73,7 @@ export default function CampaignBuildPage() {
   // Load a build
   const loadBuild = useCallback((build: CampaignBuild) => {
     setActiveBuildId(build.id);
+    setPlatform((build.platform as Platform) || 'google');
     setMessages((build.conversation_history as Message[]) || []);
     setCampaignStructure(build.campaign_structure || null);
     setGeneratedFiles((build.generated_files as any[]) || []);
@@ -78,7 +84,7 @@ export default function CampaignBuildPage() {
     mutationFn: async () => {
       const { data, error } = await supabase
         .from('campaign_builds')
-        .insert({ client_id: activeClient!.id, title: `New Build - ${new Date().toLocaleDateString()}` })
+        .insert({ client_id: activeClient!.id, title: `New Build - ${new Date().toLocaleDateString()}`, platform })
         .select('id')
         .single();
       if (error) throw error;
@@ -128,7 +134,7 @@ export default function CampaignBuildPage() {
       try {
         const { data, error } = await supabase
           .from('campaign_builds')
-          .insert({ client_id: activeClient!.id, title: input.trim().slice(0, 80) })
+          .insert({ client_id: activeClient!.id, title: input.trim().slice(0, 80), platform })
           .select('id')
           .single();
         if (error) throw error;
@@ -150,6 +156,7 @@ export default function CampaignBuildPage() {
         body: JSON.stringify({
           messages: newMessages,
           build_id: buildId,
+          platform,
           client_context: {
             client_name: activeClient?.name,
           },

@@ -798,6 +798,7 @@ export type Database = {
           landing_page_url: string | null
           location: string | null
           optimization_notes: string | null
+          platform: string
           schedule: string | null
           status: string
           title: string | null
@@ -821,6 +822,7 @@ export type Database = {
           landing_page_url?: string | null
           location?: string | null
           optimization_notes?: string | null
+          platform?: string
           schedule?: string | null
           status?: string
           title?: string | null
@@ -844,6 +846,7 @@ export type Database = {
           landing_page_url?: string | null
           location?: string | null
           optimization_notes?: string | null
+          platform?: string
           schedule?: string | null
           status?: string
           title?: string | null

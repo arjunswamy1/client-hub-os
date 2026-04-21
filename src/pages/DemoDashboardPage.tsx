@@ -187,7 +187,7 @@ export default function DemoDashboardPage() {
 
         {/* ─── Top Tab Nav ─── */}
         <nav className="border-t border-slate-200 bg-white">
-          <div className="max-w-2xl mx-auto grid grid-cols-5">
+          <div className="max-w-2xl mx-auto grid grid-cols-6">
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -271,6 +271,12 @@ export default function DemoDashboardPage() {
               </div>
             </Card>
           </>
+        )}
+
+        {activeTab === 'revenue' && (
+          <DemoRevenueEngine
+            data={{ ...data.revenueEngine, companyName: data.companyName, industryLabel: data.industryLabel }}
+          />
         )}
 
         {activeTab === 'performance' && (

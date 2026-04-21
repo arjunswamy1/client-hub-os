@@ -354,22 +354,37 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                       className="h-8 w-8 shrink-0"
                       title="Download"
                       onClick={async () => {
-                        try {
-                          const res = await fetch(d.file_url);
-                          if (!res.ok) throw new Error('Download failed');
-                          const blob = await res.blob();
+                        const filename = d.file_name || `${d.concept_label || 'deliverable'}-${d.size_label || ''}`.trim();
+                        const triggerDownload = (blob: Blob) => {
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement('a');
                           a.href = url;
-                          a.download = d.file_name || `${d.concept_label || 'deliverable'}-${d.size_label || ''}`.trim();
+                          a.download = filename;
                           document.body.appendChild(a);
                           a.click();
                           a.remove();
                           URL.revokeObjectURL(url);
+                        };
+                        try {
+                          // Prefer Supabase SDK download for storage-hosted assets (avoids CORS)
+                          const match = d.file_url.match(/\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)$/);
+                          if (match) {
+                            const [, bucket, path] = match;
+                            const { data, error } = await supabase.storage
+                              .from(bucket)
+                              .download(decodeURIComponent(path));
+                            if (error || !data) throw error || new Error('Download failed');
+                            triggerDownload(data);
+                            return;
+                          }
+                          // Non-storage URL — fetch directly
+                          const res = await fetch(d.file_url);
+                          if (!res.ok) throw new Error('Download failed');
+                          triggerDownload(await res.blob());
                         } catch (err: any) {
-                          // Fallback: open in new tab
+                          // Fallback: open in new tab so user can right-click → save
                           window.open(d.file_url, '_blank');
-                          toast.error('Direct download blocked — opened in new tab instead');
+                          toast.error('Direct download blocked — opened in new tab (right-click → Save As)');
                         }
                       }}
                     >

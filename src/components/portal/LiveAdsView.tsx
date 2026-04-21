@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClient } from '@/contexts/ClientContext';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Chrome, Facebook, Image as ImageIcon, Video, Layers, ImageOff } from 'lucide-react';
+import { Chrome, Facebook, Image as ImageIcon, Video, Layers, ImageOff, ExternalLink } from 'lucide-react';
 import { useClientVerticals } from '@/hooks/useClientVerticals';
 import { BILLY_VERTICALS, matchesVertical, matchesVerticalAccount, VerticalConfig } from '@/config/billyVerticals';
 
@@ -58,11 +58,12 @@ export function LiveAdsView() {
     queryKey: ['portal-live-ads', activeClient?.id, dateFrom, platformFilter],
     enabled: !!activeClient?.id,
     queryFn: async () => {
+      // Live = Meta "active" OR Google "enabled" (Google Ads uses ENABLED, not ACTIVE)
       let query = supabase
         .from('ad_creatives')
         .select('*')
         .eq('client_id', activeClient!.id)
-        .eq('status', 'active')
+        .in('status', ['active', 'enabled', 'ACTIVE', 'ENABLED'])
         .gte('date_from', dateFrom);
 
       if (platformFilter !== 'all') query = query.eq('platform', platformFilter);
@@ -143,6 +144,9 @@ export function LiveAdsView() {
             const PlatformIcon = ad.platform === 'google' ? Chrome : Facebook;
             const FormatIcon = formatIcons[(ad.format || 'static').toLowerCase()] || ImageIcon;
             const thumb = ad.creative_thumbnail_url;
+            const isGoogle = ad.platform === 'google';
+            const headlines: string[] = Array.isArray(ad.headlines) ? ad.headlines : [];
+            const descriptions: string[] = Array.isArray(ad.descriptions) ? ad.descriptions : [];
             return (
               <div
                 key={ad.id}
@@ -157,6 +161,23 @@ export function LiveAdsView() {
                       className="h-full w-full object-cover"
                       loading="lazy"
                     />
+                  ) : isGoogle ? (
+                    // Google SERP-style text ad preview
+                    <div className="flex h-full w-full flex-col gap-1.5 bg-background p-3 text-left">
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span className="rounded-sm bg-foreground/10 px-1 py-px font-bold">Ad</span>
+                        <span className="truncate">{ad.display_url || ad.final_url || 'billy.com'}</span>
+                        <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                      </div>
+                      <div className="line-clamp-3 text-[13px] font-medium leading-snug text-blue-600 dark:text-blue-400">
+                        {headlines.slice(0, 3).join(' | ') || ad.headline || ad.ad_name || 'Google Ad'}
+                      </div>
+                      {(descriptions.length > 0 || ad.description) && (
+                        <p className="line-clamp-4 text-[11px] leading-snug text-muted-foreground">
+                          {descriptions.slice(0, 2).join(' ') || ad.description}
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-muted-foreground">
                       <ImageOff className="h-10 w-10" />
@@ -180,7 +201,7 @@ export function LiveAdsView() {
 
                   <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <FormatIcon className="h-3 w-3" />
-                    <span className="capitalize">{ad.format || 'Static'}</span>
+                    <span className="capitalize">{ad.format || (isGoogle ? 'Search' : 'Static')}</span>
                   </div>
 
                   <div className="mt-auto grid grid-cols-3 gap-1.5 border-t pt-2 text-center">

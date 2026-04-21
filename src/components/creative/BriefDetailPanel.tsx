@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock } from 'lucide-react';
+import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
@@ -347,6 +347,35 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                     {d.status === 'pending' ? 'Pending' : d.status === 'uploaded' ? 'Uploaded' :
                      d.status === 'approved' ? 'Approved' : 'Needs Revision'}
                   </Badge>
+                  {d.file_url && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      title="Download"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(d.file_url);
+                          if (!res.ok) throw new Error('Download failed');
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = d.file_name || `${d.concept_label || 'deliverable'}-${d.size_label || ''}`.trim();
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                          URL.revokeObjectURL(url);
+                        } catch (err: any) {
+                          // Fallback: open in new tab
+                          window.open(d.file_url, '_blank');
+                          toast.error('Direct download blocked — opened in new tab instead');
+                        }
+                      }}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               ))
             )}

@@ -601,6 +601,68 @@ export function generateDemoData(opts: {
     incrementalRevenue: Math.round(weeklyRevenue * 0.21),
   };
 
+  // ── Revenue Engine (lead-gen 4-step funnel) ──
+  // Tuned for impressive lead-gen narrative: profitable call ROAS, scalable RPV>CPC.
+  const reSpend = Math.round(weeklySpend);
+  const reCpc = Number(jitter(industry === 'leadgen' ? 1.85 : 2.4, 0.1).toFixed(3));
+  const reClicks = Math.round(reSpend / reCpc);
+  const reCtr = Number(jitter(4.2, 0.1).toFixed(2));
+  const reImpressions = Math.round((reClicks / reCtr) * 100);
+  const reCpm = Number(((reSpend / reImpressions) * 1000).toFixed(2));
+
+  const reVisitors = reClicks;
+  const reLpCvrPct = Number(jitter(18, 0.08).toFixed(1)); // 18% CTA→call conversion (lead-gen)
+  const reTotalCalls = Math.round((reVisitors * reLpCvrPct) / 100);
+  const reConnectRate = Number(jitter(94, 0.02).toFixed(0));
+  const reConnectedCalls = Math.round((reTotalCalls * reConnectRate) / 100);
+  const reConversionRate = Number(jitter(38, 0.08).toFixed(0)); // % of connected that monetize
+  const reConvertedCalls = Math.round((reConnectedCalls * reConversionRate) / 100);
+  const reAvgDurationSec = Math.round(jitter(225, 0.1)); // ~3m45s
+  // Revenue per converted call ≈ $48 → strong call ROAS
+  const rePayout = jitter(48, 0.1);
+  const reCallRevenue = Math.round(reConvertedCalls * rePayout);
+  const reRpv = Number((reCallRevenue / reVisitors).toFixed(2));
+  const reRevPerConnected = Number((reCallRevenue / Math.max(1, reConnectedCalls)).toFixed(2));
+  const reCostPerCall = Number((reSpend / Math.max(1, reTotalCalls)).toFixed(2));
+  const reCallRoas = Number((reCallRevenue / reSpend).toFixed(2));
+  const reNetProfit = reCallRevenue - reSpend;
+
+  const today = new Date();
+  const reDaysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const reDaysInRange = 7;
+
+  const revenueEngine: DemoRevenueEngine = {
+    spend: reSpend,
+    spendChange: Math.round(jitter(28, 0.4)),
+    clicks: reClicks,
+    cpc: reCpc,
+    cpcChange: Math.round(jitter(-12, 0.5)),
+    ctr: reCtr,
+    ctrChange: Math.round(jitter(18, 0.4)),
+    cpm: reCpm,
+    impressions: reImpressions,
+    visitors: reVisitors,
+    ctaClicks: reTotalCalls,
+    lpCvr: reLpCvrPct,
+    rpv: reRpv,
+    totalCalls: reTotalCalls,
+    totalCallsChange: Math.round(jitter(34, 0.4)),
+    connectedCalls: reConnectedCalls,
+    connectRate: reConnectRate,
+    convertedCalls: reConvertedCalls,
+    convertedCallsChange: Math.round(jitter(46, 0.4)),
+    conversionRate: reConversionRate,
+    avgDurationSec: reAvgDurationSec,
+    callRevenue: reCallRevenue,
+    callRevenueChange: Math.round(jitter(52, 0.4)),
+    revPerConnected: reRevPerConnected,
+    costPerCall: reCostPerCall,
+    callRoas: reCallRoas,
+    netProfit: reNetProfit,
+    daysInRange: reDaysInRange,
+    daysInMonth: reDaysInMonth,
+  };
+
   return {
     companyName,
     industry,
@@ -613,6 +675,7 @@ export function generateDemoData(opts: {
     creatives,
     callouts,
     recommendations,
+    revenueEngine,
     crossChannelStory,
   };
 }

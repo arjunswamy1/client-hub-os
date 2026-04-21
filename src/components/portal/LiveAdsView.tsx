@@ -58,11 +58,12 @@ export function LiveAdsView() {
     queryKey: ['portal-live-ads', activeClient?.id, dateFrom, platformFilter],
     enabled: !!activeClient?.id,
     queryFn: async () => {
+      // Live = Meta "active" OR Google "enabled" (Google Ads uses ENABLED, not ACTIVE)
       let query = supabase
         .from('ad_creatives')
         .select('*')
         .eq('client_id', activeClient!.id)
-        .eq('status', 'active')
+        .in('status', ['active', 'enabled', 'ACTIVE', 'ENABLED'])
         .gte('date_from', dateFrom);
 
       if (platformFilter !== 'all') query = query.eq('platform', platformFilter);

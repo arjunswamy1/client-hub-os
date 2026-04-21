@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClient } from '@/contexts/ClientContext';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Chrome, Facebook, Image as ImageIcon, Video, Layers, ImageOff } from 'lucide-react';
+import { Chrome, Facebook, Image as ImageIcon, Video, Layers, ImageOff, ExternalLink } from 'lucide-react';
 import { useClientVerticals } from '@/hooks/useClientVerticals';
 import { BILLY_VERTICALS, matchesVertical, matchesVerticalAccount, VerticalConfig } from '@/config/billyVerticals';
 

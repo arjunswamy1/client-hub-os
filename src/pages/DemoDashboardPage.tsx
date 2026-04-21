@@ -16,16 +16,18 @@ import { DemoChannelTable } from '@/components/demo/DemoChannelTable';
 import { DemoCreativeShowcase } from '@/components/demo/DemoCreativeShowcase';
 import { DemoCrossChannel } from '@/components/demo/DemoCrossChannel';
 import { DemoRecommendations } from '@/components/demo/DemoRecommendations';
+import { DemoRevenueEngine } from '@/components/demo/DemoRevenueEngine';
 import {
-  Sparkles, Layers, Zap, Network, ChartBar, Calendar, ArrowRight, Phone,
+  Sparkles, Layers, Zap, Network, ChartBar, Calendar, ArrowRight, Phone, TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 
-type TabId = 'highlights' | 'performance' | 'creatives' | 'cross' | 'recs';
+type TabId = 'highlights' | 'revenue' | 'performance' | 'creatives' | 'cross' | 'recs';
 
 const TABS: Array<{ id: TabId; label: string; icon: typeof Sparkles }> = [
   { id: 'highlights', label: 'Highlights', icon: Sparkles },
+  { id: 'revenue', label: 'Revenue', icon: TrendingUp },
   { id: 'performance', label: 'Channels', icon: ChartBar },
   { id: 'creatives', label: 'Creatives', icon: Layers },
   { id: 'cross', label: 'Cross', icon: Network },

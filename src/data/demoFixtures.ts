@@ -89,6 +89,47 @@ export interface DemoRecommendation {
   category: 'budget' | 'creative' | 'audience' | 'bid' | 'landing';
 }
 
+export interface DemoRevenueEngine {
+  // Step 1 — Traffic
+  spend: number;
+  spendChange: number;
+  clicks: number;
+  cpc: number;
+  cpcChange: number;
+  ctr: number;
+  ctrChange: number;
+  cpm: number;
+  impressions: number;
+
+  // Step 2 — Landing Page
+  visitors: number;
+  ctaClicks: number;
+  lpCvr: number;
+  rpv: number;
+
+  // Step 3 — Call Processing
+  totalCalls: number;
+  totalCallsChange: number;
+  connectedCalls: number;
+  connectRate: number;
+  convertedCalls: number;
+  convertedCallsChange: number;
+  conversionRate: number;
+  avgDurationSec: number;
+
+  // Step 4 — Monetization
+  callRevenue: number;
+  callRevenueChange: number;
+  revPerConnected: number;
+  costPerCall: number;
+  callRoas: number;
+  netProfit: number;
+
+  // Forecast helpers
+  daysInRange: number;
+  daysInMonth: number;
+}
+
 export interface DemoData {
   companyName: string;
   industry: DemoIndustry;
@@ -101,6 +142,7 @@ export interface DemoData {
   creatives: DemoCreative[];
   callouts: DemoCallout[];
   recommendations: DemoRecommendation[];
+  revenueEngine: DemoRevenueEngine;
   crossChannelStory: {
     title: string;
     summary: string;

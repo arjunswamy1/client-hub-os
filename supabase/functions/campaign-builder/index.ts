@@ -717,7 +717,7 @@ function mapBidStrategyBing(strategy?: string): string {
 // ───────────────────────────────────────────────────────────
 async function generateLocationsCsv(
   supabase: any,
-  apiKey: string,
+  _apiKey: string,
   zipcodes: string[],
   campaignNames: string[],
   buildId: string,
@@ -730,36 +730,22 @@ async function generateLocationsCsv(
     });
   }
 
-  const prompt = `You are a paid-search location targeting expert. Given these US zip codes: ${zipcodes.join(', ')}
+  // Normalize + dedupe + validate (5-digit US zip). NO AI CALL — works at any scale.
+  const cleanZips = Array.from(new Set(
+    (zipcodes || [])
+      .map(z => String(z || '').trim())
+      .filter(z => /^\d{5}$/.test(z))
+  ));
 
-For each zip code, provide the ${platform === 'bing' ? 'Microsoft Advertising' : 'Google Ads'} Location ID (criteria ID). US zip codes use IDs in the 9000000+ range on Google (identical IDs work for Bing imports).
+  if (cleanZips.length === 0) {
+    return new Response(JSON.stringify({ error: "No valid 5-digit US zip codes provided" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
-Return ONLY a valid JSON array: [{"zip":"90210","criteria_id":"9032869","canonical_name":"90210,California,United States"}]
-
-If uncertain, use "zip:XXXXX" as criteria_id. Return ONLY the JSON array.`;
+  console.log(`[generate_locations] zips=${cleanZips.length} campaigns=${campaignNames.length} platform=${platform}`);
 
   try {
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: "You are a paid-search API expert. Return only valid JSON." },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.1,
-      }),
-    });
-    if (!aiResp.ok) throw new Error("Failed to generate location mappings");
-
-    const aiData = await aiResp.json();
-    const rawContent = aiData.choices?.[0]?.message?.content || '[]';
-    const cleaned = rawContent.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-    let locationsJson: any[];
-    try { locationsJson = JSON.parse(cleaned); }
-    catch { locationsJson = zipcodes.map(z => ({ zip: z, criteria_id: '', canonical_name: `${z},United States` })); }
-
     const uploadedFiles: any[] = [];
     const sanitize = (s: string) => (s || '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
     const now = new Date();
@@ -768,44 +754,63 @@ If uncertain, use "zip:XXXXX" as criteria_id. Return ONLY the JSON array.`;
     const timestamp = now.toISOString().replace(/[:.]/g, '-');
     const folder = `${buildId || 'manual'}/${timestamp}`;
 
-    // Google-format locations CSV
-    if (platform === 'google' || platform === 'both') {
-      let csv = "Campaign,Location,Location ID,Bid adj.\n";
+    // Build CSV via array.join → far faster than string concatenation for 100K+ rows
+    const buildCsv = (header: string, rowFn: (campaign: string, zip: string) => string): string => {
+      const rows: string[] = [header];
       for (const cName of campaignNames) {
-        for (const loc of locationsJson) {
-          csv += `"${esc(cName)}","${esc(loc.canonical_name || loc.zip)}","${esc(String(loc.criteria_id || ''))}",""\n`;
+        for (const zip of cleanZips) {
+          rows.push(rowFn(cName, zip));
         }
       }
+      return rows.join('\n') + '\n';
+    };
+
+    // Google Ads Editor accepts raw 5-digit US zips in the "Location" column.
+    if (platform === 'google' || platform === 'both') {
+      const csv = buildCsv(
+        "Campaign,Location,Location ID,Bid adj.",
+        (cName, zip) => `"${esc(cName)}","${zip}","",""`,
+      );
       const fname = `${clientSlug}_Google_Locations_${dateStr}.csv`;
       const path = `${folder}/${fname}`;
-      const { error } = await supabase.storage.from('campaign-build-files').upload(path, new Blob([csv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
-      if (!error) {
+      const { error } = await supabase.storage
+        .from('campaign-build-files')
+        .upload(path, new Blob([csv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
+      if (error) {
+        console.error('[generate_locations] Google upload error:', error);
+      } else {
         const { data } = supabase.storage.from('campaign-build-files').getPublicUrl(path);
         uploadedFiles.push({ filename: fname, storage_url: data.publicUrl, file_type: 'csv', platform: 'google' });
       }
     }
 
-    // Bing-format locations CSV (Microsoft Advertising bulk schema)
+    // Microsoft Advertising bulk schema accepts raw zips as PostalCode targets.
     if (platform === 'bing' || platform === 'both') {
-      let csv = "Type,Status,Campaign,Sub Type,Target,Bid Adjustment\n";
-      for (const cName of campaignNames) {
-        for (const loc of locationsJson) {
-          csv += `"Campaign Location Criterion","Active","${esc(cName)}","PostalCode","${esc(String(loc.criteria_id || loc.zip))}",""\n`;
-        }
-      }
+      const csv = buildCsv(
+        "Type,Status,Campaign,Sub Type,Target,Bid Adjustment",
+        (cName, zip) => `"Campaign Location Criterion","Active","${esc(cName)}","PostalCode","${zip}",""`,
+      );
       const fname = `${clientSlug}_Bing_Locations_${dateStr}.csv`;
       const path = `${folder}/${fname}`;
-      const { error } = await supabase.storage.from('campaign-build-files').upload(path, new Blob([csv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
-      if (!error) {
+      const { error } = await supabase.storage
+        .from('campaign-build-files')
+        .upload(path, new Blob([csv], { type: 'text/csv' }), { contentType: 'text/csv', upsert: true });
+      if (error) {
+        console.error('[generate_locations] Bing upload error:', error);
+      } else {
         const { data } = supabase.storage.from('campaign-build-files').getPublicUrl(path);
         uploadedFiles.push({ filename: fname, storage_url: data.publicUrl, file_type: 'csv', platform: 'bing' });
       }
     }
 
+    if (uploadedFiles.length === 0) {
+      throw new Error('Storage upload failed — no files generated');
+    }
+
     return new Response(JSON.stringify({
       success: true,
       files: uploadedFiles,
-      locations_count: locationsJson.length,
+      locations_count: cleanZips.length,
       campaigns_count: campaignNames.length,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {

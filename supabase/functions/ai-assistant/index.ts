@@ -12,6 +12,38 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
+// Fallback: route to Lovable AI Gateway (Gemini) when Anthropic is rate-limited.
+// Gemini has much larger context windows and higher per-minute throughput.
+async function callLovableGateway(messages: any[]): Promise<{ ok: boolean; status: number; content: string; charts: any[]; usage?: any; error?: string }> {
+  const key = Deno.env.get('LOVABLE_API_KEY');
+  if (!key) return { ok: false, status: 500, content: '', charts: [], error: 'LOVABLE_API_KEY missing' };
+  try {
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-pro',
+        messages,
+        temperature: 0.3,
+        max_tokens: 4096,
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      return { ok: false, status: res.status, content: '', charts: [], error: t.slice(0, 300) };
+    }
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const usage = data.usage ? {
+      input_tokens: data.usage.prompt_tokens || 0,
+      output_tokens: data.usage.completion_tokens || 0,
+    } : undefined;
+    return { ok: true, status: 200, content, charts: [], usage };
+  } catch (e) {
+    return { ok: false, status: 500, content: '', charts: [], error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 

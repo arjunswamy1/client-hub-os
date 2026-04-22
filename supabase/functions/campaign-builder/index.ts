@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import US_ZIP_GEOTARGETS from "../_shared/us-zip-geotargets.json" with { type: "json" };
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -765,12 +766,22 @@ async function generateLocationsCsv(
       return rows.join('\n') + '\n';
     };
 
-    // Google Ads Editor accepts raw 5-digit US zips in the "Location" column.
+    // Google Ads Editor: include Location ID (Criteria ID) so zips upload as targeted
+    // postal codes without manual lookup. Unknown zips fall back to blank ID +
+    // raw zip in the Location column (Editor will resolve most automatically).
     if (platform === 'google' || platform === 'both') {
+      const zipMap = US_ZIP_GEOTARGETS as Record<string, number>;
+      let matched = 0;
       const csv = buildCsv(
-        "Campaign,Location,Location ID,Bid adj.",
-        (cName, zip) => `"${esc(cName)}","${zip}","",""`,
+        "Campaign,Location,Location ID,Reach,Location type,Bid adj.",
+        (cName, zip) => {
+          const id = zipMap[zip];
+          if (id) matched++;
+          const locationName = id ? `${zip}, United States` : zip;
+          return `"${esc(cName)}","${esc(locationName)}","${id ?? ''}","","Postal code",""`;
+        },
       );
+      console.log(`[generate_locations] google matched=${matched}/${cleanZips.length} criteria IDs`);
       const fname = `${clientSlug}_Google_Locations_${dateStr}.csv`;
       const path = `${folder}/${fname}`;
       const { error } = await supabase.storage
@@ -784,11 +795,20 @@ async function generateLocationsCsv(
       }
     }
 
-    // Microsoft Advertising bulk schema accepts raw zips as PostalCode targets.
+    // Microsoft Advertising (Bing Ads) Bulk file format — full schema so Henry can
+    // import directly via Microsoft Advertising Editor → Import → Bulk file.
+    // Reference: https://learn.microsoft.com/advertising/bulk-service/campaign-location-criterion
     if (platform === 'bing' || platform === 'both') {
+      const BING_HEADER = [
+        'Type', 'Status', 'Id', 'Parent Id', 'Campaign', 'Client Id', 'Modified Time',
+        'Sub Type', 'Target', 'Physical Intent', 'Bid Adjustment', 'Name',
+      ].join(',');
       const csv = buildCsv(
-        "Type,Status,Campaign,Sub Type,Target,Bid Adjustment",
-        (cName, zip) => `"Campaign Location Criterion","Active","${esc(cName)}","PostalCode","${zip}",""`,
+        BING_HEADER,
+        (cName, zip) =>
+          // Type, Status, Id, ParentId, Campaign, ClientId, ModifiedTime,
+          // SubType, Target (zip), PhysicalIntent, BidAdjustment, Name
+          `"Campaign Location Criterion","Active","","","${esc(cName)}","","","PostalCode","${zip}","PeopleInOrSearchingForOrViewingPages","0",""`,
       );
       const fname = `${clientSlug}_Bing_Locations_${dateStr}.csv`;
       const path = `${folder}/${fname}`;

@@ -351,19 +351,33 @@ You should answer questions about campaign performance, meeting summaries, actio
     });
 
     // Call Anthropic Claude (with chart tool enabled)
-    const aiRes = await callAnthropic(messages, {
+    let aiRes = await callAnthropic(messages, {
       max_tokens: 4096,
       temperature: 0.3,
       enableCharts: true,
     });
 
-    if (!aiRes.ok) {
-      console.error('Anthropic error:', aiRes.status, aiRes.error);
-      if (aiRes.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limited by Anthropic — try again shortly.' }), {
+    // Fallback to Lovable AI Gateway (Gemini) on Anthropic rate-limit / overload.
+    // Gemini has much higher context + rate limits and can handle the same payload.
+    if (!aiRes.ok && (aiRes.status === 429 || aiRes.status === 529 || aiRes.status === 503)) {
+      console.warn(`[ai-assistant] Anthropic ${aiRes.status} — falling back to Lovable AI Gateway (Gemini)`);
+      const fallback = await callLovableGateway(messages);
+      if (fallback.ok) {
+        aiRes = fallback;
+      } else {
+        console.error('Fallback also failed:', fallback.status, fallback.error);
+        return new Response(JSON.stringify({
+          error: aiRes.status === 429
+            ? 'AI is temporarily rate-limited. Please try again in 30-60 seconds.'
+            : 'AI is temporarily unavailable. Please try again shortly.',
+        }), {
           status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+    }
+
+    if (!aiRes.ok) {
+      console.error('Anthropic error:', aiRes.status, aiRes.error);
       throw new Error(`Anthropic error: ${aiRes.status} ${aiRes.error}`);
     }
 

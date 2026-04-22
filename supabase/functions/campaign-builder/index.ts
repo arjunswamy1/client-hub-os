@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import US_ZIP_GEOTARGETS from "../_shared/us-zip-geotargets.json" with { type: "json" };
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

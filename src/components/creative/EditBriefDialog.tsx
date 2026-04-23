@@ -95,6 +95,22 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
 
         <div className="space-y-4">
           <div>
+            <Label>Client</Label>
+            <Select
+              value={form.client_id || 'none'}
+              onValueChange={(v) => setForm(f => ({ ...f, client_id: v === 'none' ? '' : v }))}
+            >
+              <SelectTrigger><SelectValue placeholder="Internal" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">🏢 Internal / Marketing</SelectItem>
+                {clients.map((c: any) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
             <Label>Title</Label>
             <Input value={form.title} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} />
           </div>

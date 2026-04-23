@@ -30,6 +30,7 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
     scheduled_date: brief.scheduled_date ? brief.scheduled_date.slice(0, 10) : '',
     estimated_hours: brief.estimated_hours ?? '',
     assigned_to_id: brief.assigned_to_id || '',
+    client_id: brief.client_id || '',
     notes: brief.notes || '',
   });
 
@@ -43,6 +44,7 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
       scheduled_date: brief.scheduled_date ? brief.scheduled_date.slice(0, 10) : '',
       estimated_hours: brief.estimated_hours ?? '',
       assigned_to_id: brief.assigned_to_id || '',
+      client_id: brief.client_id || '',
       notes: brief.notes || '',
     });
   }, [brief]);
@@ -51,6 +53,14 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
     queryKey: ['team_members_active'],
     queryFn: async () => {
       const { data } = await supabase.from('team_members').select('id, name, role').eq('is_active', true).order('name');
+      return data || [];
+    },
+  });
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients_active_for_brief_edit'],
+    queryFn: async () => {
+      const { data } = await supabase.from('clients').select('id, name').eq('status', 'active').order('name');
       return data || [];
     },
   });
@@ -65,6 +75,7 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
         scheduled_date: form.scheduled_date || null,
         estimated_hours: form.estimated_hours === '' ? null : Number(form.estimated_hours),
         assigned_to_id: form.assigned_to_id || null,
+        client_id: form.client_id || null,
         notes: form.notes || null,
       } as any).eq('id', brief.id);
       if (error) throw error;

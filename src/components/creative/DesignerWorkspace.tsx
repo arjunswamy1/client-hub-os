@@ -231,7 +231,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
-                      className={`rounded-lg border p-3 min-h-[200px] transition-colors ${
+                      className={`rounded-lg border p-3 min-h-[260px] flex flex-col transition-colors ${
                         isToday ? 'ring-2 ring-primary/30 bg-primary/5' : ''
                       } ${snapshot.isDraggingOver ? 'bg-accent/50 border-primary/40' : ''}`}
                     >
@@ -242,11 +242,16 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                           </p>
                           <p className="text-sm font-medium">{format(day, 'MMM d')}</p>
                         </div>
-                        {totalHrs > 0 && (
-                          <Badge variant="secondary" className="text-[10px]">{totalHrs}h</Badge>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {totalHrs > 0 && (
+                            <Badge variant="secondary" className="text-[10px]">{totalHrs}h</Badge>
+                          )}
+                          {dayBriefs.length > 0 && (
+                            <Badge variant="outline" className="text-[10px]">{dayBriefs.length}</Badge>
+                          )}
+                        </div>
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 flex-1">
                         {dayBriefs.map((brief: any, index: number) => (
                           <Draggable key={brief.id} draggableId={brief.id} index={index}>
                             {(dragProvided, dragSnapshot) => (
@@ -260,15 +265,27 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                   brief={brief}
                                   onClick={() => onBriefClick(brief.id)}
                                   onEstimateChange={(hrs) => updateEstimate.mutate({ briefId: brief.id, hours: hrs })}
+                                  onUnschedule={() => updateSchedule.mutate({ briefId: brief.id, date: null })}
                                 />
                               </div>
                             )}
                           </Draggable>
                         ))}
                         {provided.placeholder}
-                        {dayBriefs.length === 0 && !snapshot.isDraggingOver && (
-                          <p className="text-[10px] text-muted-foreground text-center py-4">No tasks</p>
-                        )}
+                        {/* Persistent drop hint that fills remaining space so multiple drops always land */}
+                        <div
+                          className={`flex-1 min-h-[60px] rounded-md border border-dashed transition-colors flex items-center justify-center ${
+                            snapshot.isDraggingOver
+                              ? 'border-primary/60 bg-primary/5'
+                              : dayBriefs.length === 0
+                              ? 'border-muted-foreground/20'
+                              : 'border-transparent hover:border-muted-foreground/20'
+                          }`}
+                        >
+                          <p className="text-[10px] text-muted-foreground">
+                            {dayBriefs.length === 0 ? 'Drop tasks here' : '+ Drop more'}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -479,17 +496,18 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   );
 }
 
-function PlannerBriefCard({ brief, onClick, onEstimateChange }: {
+function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
   brief: any;
   onClick: () => void;
   onEstimateChange: (hrs: number | null) => void;
+  onUnschedule?: () => void;
 }) {
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
 
   return (
     <div
-      className="rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs"
+      className="group rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs relative"
       onClick={onClick}
     >
       <div className="flex items-start gap-1.5 mb-1">
@@ -500,10 +518,25 @@ function PlannerBriefCard({ brief, onClick, onEstimateChange }: {
           )}
           <p className="font-medium truncate">{brief.title}</p>
         </div>
+        {onUnschedule && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onUnschedule(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive text-[10px] leading-none px-1"
+            title="Move back to unscheduled"
+          >
+            ✕
+          </button>
+        )}
       </div>
       <div className="flex items-center justify-between">
         <Badge variant="secondary" className={`text-[8px] px-1 py-0 ${statusConf.color}`}>{statusConf.label}</Badge>
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <div
+          className="flex items-center gap-1"
+          onClick={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+        >
           <Clock className="h-2.5 w-2.5 text-muted-foreground" />
           <Input
             type="number"

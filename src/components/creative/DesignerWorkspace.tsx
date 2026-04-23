@@ -106,10 +106,13 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
     mutationFn: async ({ briefId, date }: { briefId: string; date: string | null }) => {
       const { error } = await supabase.from('creative_briefs').update({ scheduled_date: date } as any).eq('id', briefId);
       if (error) throw error;
+      return { briefId, date };
     },
-    onSuccess: () => {
+    onSuccess: ({ date }) => {
       queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success(date ? `Scheduled for ${format(new Date(date + 'T00:00:00'), 'MMM d')}` : 'Moved to unscheduled');
     },
+    onError: (err: any) => toast.error(`Couldn't reschedule: ${err.message}`),
   });
 
   const updateEstimate = useMutation({

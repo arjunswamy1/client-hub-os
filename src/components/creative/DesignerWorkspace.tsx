@@ -496,17 +496,18 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   );
 }
 
-function PlannerBriefCard({ brief, onClick, onEstimateChange }: {
+function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
   brief: any;
   onClick: () => void;
   onEstimateChange: (hrs: number | null) => void;
+  onUnschedule?: () => void;
 }) {
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
 
   return (
     <div
-      className="rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs"
+      className="group rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs relative"
       onClick={onClick}
     >
       <div className="flex items-start gap-1.5 mb-1">
@@ -517,10 +518,25 @@ function PlannerBriefCard({ brief, onClick, onEstimateChange }: {
           )}
           <p className="font-medium truncate">{brief.title}</p>
         </div>
+        {onUnschedule && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onUnschedule(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive text-[10px] leading-none px-1"
+            title="Move back to unscheduled"
+          >
+            ✕
+          </button>
+        )}
       </div>
       <div className="flex items-center justify-between">
         <Badge variant="secondary" className={`text-[8px] px-1 py-0 ${statusConf.color}`}>{statusConf.label}</Badge>
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <div
+          className="flex items-center gap-1"
+          onClick={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+        >
           <Clock className="h-2.5 w-2.5 text-muted-foreground" />
           <Input
             type="number"

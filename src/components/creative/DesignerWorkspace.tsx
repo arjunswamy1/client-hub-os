@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Play, Square, AlertTriangle, Calendar, Clock, User } from 'lucide-react';
+import { Play, Square, AlertTriangle, Calendar, Clock, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, addDays, isSameDay } from 'date-fns';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
@@ -30,6 +30,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   const [activeTimer, setActiveTimer] = useState<{ briefId: string; startedAt: Date } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [weekOffset, setWeekOffset] = useState(0);
 
   // For admin planner view, fetch all designers
   const { data: designers = [] } = useQuery({
@@ -167,10 +168,16 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
 
   // Planner view: group by day
   if (view === 'planner') {
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const d = addDays(startOfWeek(now, { weekStartsOn: 1 }), i);
-      return d;
-    });
+    const baseWeekStart = addDays(startOfWeek(now, { weekStartsOn: 1 }), weekOffset * 7);
+    const days = Array.from({ length: 7 }, (_, i) => addDays(baseWeekStart, i));
+    const weekEndDay = addDays(baseWeekStart, 6);
+    const weekLabel = weekOffset === 0
+      ? 'This Week'
+      : weekOffset === 1
+      ? 'Next Week'
+      : weekOffset === -1
+      ? 'Last Week'
+      : `${format(baseWeekStart, 'MMM d')} – ${format(weekEndDay, 'MMM d')}`;
 
     const activeBriefs = briefs.filter((b: any) => activeStatuses.includes(b.status));
     const unscheduled = activeBriefs.filter((b: any) => !b.scheduled_date);
@@ -178,12 +185,33 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
     return (
       <DragDropContext onDragEnd={handlePlannerDragEnd}>
         <div className="space-y-4">
-          {isAdminView && designers.length > 0 && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <User className="h-4 w-4" />
-              <span>Viewing all designers' schedules</span>
+          <div className="flex items-center justify-between gap-2">
+            {isAdminView && designers.length > 0 ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <User className="h-4 w-4" />
+                <span>Viewing all designers' schedules</span>
+              </div>
+            ) : <div />}
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setWeekOffset(o => o - 1)} aria-label="Previous week">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="px-3 text-sm font-medium min-w-[160px] text-center">
+                {weekLabel}
+                <div className="text-[10px] text-muted-foreground font-normal">
+                  {format(baseWeekStart, 'MMM d')} – {format(weekEndDay, 'MMM d, yyyy')}
+                </div>
+              </div>
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setWeekOffset(o => o + 1)} aria-label="Next week">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              {weekOffset !== 0 && (
+                <Button variant="ghost" size="sm" className="h-8 ml-1" onClick={() => setWeekOffset(0)}>
+                  Today
+                </Button>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
             {days.map(day => {

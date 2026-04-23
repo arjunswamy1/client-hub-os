@@ -110,7 +110,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
     },
     onSuccess: ({ date }) => {
       queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
-      toast.success(date ? `Scheduled for ${format(new Date(date + 'T00:00:00'), 'MMM d')}` : 'Moved to unscheduled');
+      toast.success(date ? `Scheduled for ${formatScheduleLabel(date)}` : 'Moved to unscheduled');
     },
     onError: (err: any) => toast.error(`Couldn't reschedule: ${err.message}`),
   });
@@ -131,6 +131,13 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
     const m = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const getScheduleKey = (date: string | null | undefined) => date?.slice(0, 10) || null;
+
+  const formatScheduleLabel = (date: string) => {
+    const [year, month, day] = date.split('-').map(Number);
+    return format(new Date(year, month - 1, day), 'MMM d');
   };
 
   // Filter and sort briefs
@@ -183,7 +190,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
       : `${format(baseWeekStart, 'MMM d')} – ${format(weekEndDay, 'MMM d')}`;
 
     const activeBriefs = briefs.filter((b: any) => activeStatuses.includes(b.status));
-    const unscheduled = activeBriefs.filter((b: any) => !b.scheduled_date);
+    const unscheduled = activeBriefs.filter((b: any) => !getScheduleKey(b.scheduled_date));
 
     return (
       <DragDropContext onDragEnd={handlePlannerDragEnd}>
@@ -219,9 +226,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
           <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
             {days.map(day => {
               const dateStr = format(day, 'yyyy-MM-dd');
-              const dayBriefs = activeBriefs.filter((b: any) =>
-                b.scheduled_date && isSameDay(new Date(b.scheduled_date), day)
-              );
+              const dayBriefs = activeBriefs.filter((b: any) => getScheduleKey(b.scheduled_date) === dateStr);
               const totalHrs = dayBriefs.reduce((s: number, b: any) => s + ((b as any).estimated_hours || 0), 0);
               const isToday = isSameDay(day, now);
 

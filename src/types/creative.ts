@@ -11,10 +11,9 @@ export const SIZE_GROUPS: { category: string; platforms: string[]; sizes: SizePr
     category: 'Social / Feed',
     platforms: ['meta', 'tiktok'],
     sizes: [
-      { label: 'Feed Square', width: 1080, height: 1080 },
-      { label: 'Feed Portrait', width: 1080, height: 1350 },
-      { label: 'Story/Reel', width: 1080, height: 1920 },
-      { label: 'Landscape', width: 1200, height: 628 },
+      { label: 'Square 1:1', width: 1080, height: 1080 },
+      { label: 'Story/Reel 9:16', width: 1080, height: 1920 },
+      { label: 'Landscape 16:9', width: 1920, height: 1080 },
     ],
   },
   {

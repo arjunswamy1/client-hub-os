@@ -275,18 +275,23 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
           </div>
 
           {/* Unscheduled briefs */}
-          <Droppable droppableId="unscheduled" direction="horizontal">
-            {(provided, snapshot) => (
-              <div
-                ref={provided.innerRef}
-                {...provided.droppableProps}
-                className={`mt-4 transition-colors rounded-lg ${snapshot.isDraggingOver ? 'bg-accent/30' : ''}`}
-              >
-                <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  Unscheduled ({unscheduled.length})
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="mt-4">
+            <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              Unscheduled ({unscheduled.length})
+              <span className="text-[10px] font-normal text-muted-foreground ml-2">
+                Drag any card up to a day to schedule it
+              </span>
+            </h3>
+            <Droppable droppableId="unscheduled">
+              {(provided, snapshot) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-2 rounded-lg border-2 border-dashed transition-colors ${
+                    snapshot.isDraggingOver ? 'bg-accent/40 border-primary/50' : 'border-transparent'
+                  }`}
+                >
                   {unscheduled.map((brief: any, index: number) => (
                     <Draggable key={brief.id} draggableId={brief.id} index={index}>
                       {(dragProvided, dragSnapshot) => (
@@ -294,11 +299,14 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                           ref={dragProvided.innerRef}
                           {...dragProvided.draggableProps}
                           {...dragProvided.dragHandleProps}
-                          className={dragSnapshot.isDragging ? 'opacity-80 rotate-1' : ''}
+                          className={dragSnapshot.isDragging ? 'opacity-80 rotate-1 shadow-lg' : ''}
                         >
-                          <Card className="cursor-grab hover:shadow-md transition-all active:cursor-grabbing" onClick={() => onBriefClick(brief.id)}>
+                          <Card className="cursor-grab hover:shadow-md hover:border-primary/30 transition-all active:cursor-grabbing select-none">
                             <CardContent className="p-3">
-                              <div className="flex items-center gap-2 mb-1">
+                              <div
+                                className="flex items-center gap-2 mb-1 cursor-pointer"
+                                onClick={() => onBriefClick(brief.id)}
+                              >
                                 {brief.client_name && (
                                   <Badge variant="outline" className="text-[9px] shrink-0">{brief.client_name}</Badge>
                                 )}
@@ -308,7 +316,11 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                 <Badge variant="secondary" className={`text-[9px] ${STATUS_CONFIG[brief.status]?.color}`}>
                                   {STATUS_CONFIG[brief.status]?.label}
                                 </Badge>
-                                <div className="flex items-center gap-1 ml-auto" onClick={e => e.stopPropagation()}>
+                                <div
+                                  className="flex items-center gap-1 ml-auto"
+                                  onClick={e => e.stopPropagation()}
+                                  onMouseDown={e => e.stopPropagation()}
+                                >
                                   <Clock className="h-3 w-3 text-muted-foreground" />
                                   <Input
                                     type="number"
@@ -328,13 +340,13 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                     </Draggable>
                   ))}
                   {provided.placeholder}
+                  {unscheduled.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4 col-span-full">All briefs are scheduled!</p>
+                  )}
                 </div>
-                {unscheduled.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">All briefs are scheduled!</p>
-                )}
-              </div>
-            )}
-          </Droppable>
+              )}
+            </Droppable>
+          </div>
         </div>
       </DragDropContext>
     );

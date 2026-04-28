@@ -2551,6 +2551,45 @@ export type Database = {
           },
         ]
       }
+      shoot_brief_comments: {
+        Row: {
+          author_id: string
+          brief_id: string
+          content: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          author_id: string
+          brief_id: string
+          content: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          author_id?: string
+          brief_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shoot_brief_comments_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shoot_brief_comments_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "shoot_briefs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shoot_brief_status_history: {
         Row: {
           brief_id: string

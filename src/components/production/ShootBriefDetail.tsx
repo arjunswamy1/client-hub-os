@@ -15,25 +15,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Trash2, Star, Upload, Loader2, Wand2, Search } from 'lucide-react';
+import { Plus, Trash2, Star, Upload, Loader2, Wand2, Search, Send, MessageSquare } from 'lucide-react';
 import { STATUS_LABEL, STATUS_COLOR, type ShootStatus, type ShootScript, type ShootCast } from '@/types/production';
 import { StatusTimeline, StatusHistory } from './StatusTimeline';
-
-// Role-aware allowed transitions. Designers can only mark Delivered (their own work).
-// Admins + producers (account managers) can move through every stage.
-function allowedNextStatuses(role: string | undefined, current: ShootStatus): ShootStatus[] {
-  if (role === 'designer') {
-    // designer only sees briefs handed off to them; they can mark delivered
-    return current === 'in_post_production' ? ['delivered'] : [];
-  }
-  // admin / account_manager / producer
-  const all: ShootStatus[] = [
-    'draft', 'submitted', 'scripts_approved', 'actors_cast', 'location_confirmed',
-    'scheduled', 'in_production', 'footage_uploaded', 'in_post_production',
-    'delivered', 'archived', 'canceled',
-  ];
-  return all.filter((s) => s !== current);
-}
+import { validShootTransitions } from '@/types/projectStage';
+import { useShootBriefComments, useAddShootBriefComment } from '@/hooks/useShootBriefComments';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { format as formatDate } from 'date-fns';
 
 interface Props {
   briefId: string | null;
@@ -46,7 +34,7 @@ export function ShootBriefDetail({ briefId, onClose }: Props) {
   const { teamMember } = useAuth();
   const role = teamMember?.role;
 
-  const allowed = brief ? allowedNextStatuses(role, brief.status) : [];
+  const allowed = brief ? validShootTransitions(role, brief.status) : [];
 
   const setStatus = async (s: ShootStatus) => {
     if (!brief) return;
@@ -88,12 +76,13 @@ export function ShootBriefDetail({ briefId, onClose }: Props) {
             </div>
 
             <Tabs defaultValue="overview" className="mt-4">
-              <TabsList className="grid grid-cols-6 w-full">
+              <TabsList className="grid grid-cols-7 w-full">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="scripts">Scripts</TabsTrigger>
                 <TabsTrigger value="cast">Cast</TabsTrigger>
                 <TabsTrigger value="footage">Footage</TabsTrigger>
                 <TabsTrigger value="checklist">Day-of</TabsTrigger>
+                <TabsTrigger value="comments"><MessageSquare className="h-3 w-3 mr-1" />Comments</TabsTrigger>
                 <TabsTrigger value="history">History</TabsTrigger>
               </TabsList>
               <TabsContent value="overview"><Overview brief={brief} /></TabsContent>
@@ -101,6 +90,7 @@ export function ShootBriefDetail({ briefId, onClose }: Props) {
               <TabsContent value="cast"><Cast brief={brief} /></TabsContent>
               <TabsContent value="footage"><Footage brief={brief} /></TabsContent>
               <TabsContent value="checklist"><Checklist /></TabsContent>
+              <TabsContent value="comments"><Comments briefId={brief.id} /></TabsContent>
               <TabsContent value="history"><StatusHistory briefId={brief.id} /></TabsContent>
             </Tabs>
           </>
@@ -600,5 +590,60 @@ function Checklist() {
         </label>
       ))}
     </Card>
+  );
+}
+
+function Comments({ briefId }: { briefId: string }) {
+  const { data: comments = [], isLoading } = useShootBriefComments(briefId);
+  const addComment = useAddShootBriefComment();
+  const [text, setText] = useState('');
+
+  const submit = () => {
+    const content = text.trim();
+    if (!content) return;
+    addComment.mutate({ briefId, content }, { onSuccess: () => setText('') });
+  };
+
+  return (
+    <div className="flex flex-col h-[60vh]">
+      <div className="flex-1 space-y-3 overflow-y-auto mb-3 pr-1">
+        {isLoading ? (
+          <div className="text-xs text-muted-foreground">Loading comments…</div>
+        ) : comments.length === 0 ? (
+          <div className="text-sm text-muted-foreground italic">No comments yet. Start the conversation.</div>
+        ) : (
+          comments.map((c: any) => (
+            <div key={c.id} className="flex gap-2">
+              <Avatar className="h-7 w-7 shrink-0">
+                <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                  {c.author?.name?.[0] || '?'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium">{c.author?.name || 'Unknown'}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {formatDate(new Date(c.created_at), 'MMM d, h:mm a')}
+                  </span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap break-words">{c.content}</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="flex gap-2 border-t pt-3">
+        <Input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Add a comment…"
+          className="text-sm"
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+        />
+        <Button size="icon" onClick={submit} disabled={!text.trim() || addComment.isPending}>
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   );
 }

@@ -34,7 +34,7 @@ export function ShootBriefDetail({ briefId, onClose }: Props) {
   const { teamMember } = useAuth();
   const role = teamMember?.role;
 
-  const allowed = brief ? allowedNextStatuses(role, brief.status) : [];
+  const allowed = brief ? validShootTransitions(role, brief.status) : [];
 
   const setStatus = async (s: ShootStatus) => {
     if (!brief) return;
@@ -76,12 +76,13 @@ export function ShootBriefDetail({ briefId, onClose }: Props) {
             </div>
 
             <Tabs defaultValue="overview" className="mt-4">
-              <TabsList className="grid grid-cols-6 w-full">
+              <TabsList className="grid grid-cols-7 w-full">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="scripts">Scripts</TabsTrigger>
                 <TabsTrigger value="cast">Cast</TabsTrigger>
                 <TabsTrigger value="footage">Footage</TabsTrigger>
                 <TabsTrigger value="checklist">Day-of</TabsTrigger>
+                <TabsTrigger value="comments"><MessageSquare className="h-3 w-3 mr-1" />Comments</TabsTrigger>
                 <TabsTrigger value="history">History</TabsTrigger>
               </TabsList>
               <TabsContent value="overview"><Overview brief={brief} /></TabsContent>
@@ -89,6 +90,7 @@ export function ShootBriefDetail({ briefId, onClose }: Props) {
               <TabsContent value="cast"><Cast brief={brief} /></TabsContent>
               <TabsContent value="footage"><Footage brief={brief} /></TabsContent>
               <TabsContent value="checklist"><Checklist /></TabsContent>
+              <TabsContent value="comments"><Comments briefId={brief.id} /></TabsContent>
               <TabsContent value="history"><StatusHistory briefId={brief.id} /></TabsContent>
             </Tabs>
           </>

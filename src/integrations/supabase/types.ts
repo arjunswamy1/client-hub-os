@@ -2551,6 +2551,439 @@ export type Database = {
           },
         ]
       }
+      shoot_briefs: {
+        Row: {
+          actual_total: number | null
+          age_range: string | null
+          assigned_producer_id: string | null
+          audio_setup: string | null
+          branding: string
+          broll_shot_list: Json | null
+          camera_setup: string | null
+          client_ids: string[] | null
+          content_deadline: string | null
+          created_at: string
+          created_by_id: string | null
+          drive_footage_folder_url: string | null
+          estimated_actor_cost: number | null
+          estimated_crew_cost: number | null
+          estimated_equipment_cost: number | null
+          estimated_location_cost: number | null
+          estimated_shoot_hours: number | null
+          estimated_total: number | null
+          estimated_travel_cost: number | null
+          gender_preference: string | null
+          id: string
+          lighting_notes: string | null
+          linked_creative_brief_id: string | null
+          location_confirmed: boolean | null
+          location_cost: number | null
+          location_id: string | null
+          location_notes: string | null
+          location_type: string | null
+          new_actor_ok: boolean | null
+          num_actors: number | null
+          num_scripts: number | null
+          orientations: string[] | null
+          platforms: string[] | null
+          priority: string
+          shoot_date: string | null
+          shoot_deadline: string | null
+          shoot_end_time: string | null
+          shoot_start_time: string | null
+          shoot_types: string[] | null
+          specialties_needed: string[] | null
+          status: string
+          support_crew_notes: string | null
+          takes_per_script: number | null
+          target_script_length: string | null
+          title: string
+          updated_at: string
+          verticals: string[] | null
+        }
+        Insert: {
+          actual_total?: number | null
+          age_range?: string | null
+          assigned_producer_id?: string | null
+          audio_setup?: string | null
+          branding?: string
+          broll_shot_list?: Json | null
+          camera_setup?: string | null
+          client_ids?: string[] | null
+          content_deadline?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          drive_footage_folder_url?: string | null
+          estimated_actor_cost?: number | null
+          estimated_crew_cost?: number | null
+          estimated_equipment_cost?: number | null
+          estimated_location_cost?: number | null
+          estimated_shoot_hours?: number | null
+          estimated_total?: number | null
+          estimated_travel_cost?: number | null
+          gender_preference?: string | null
+          id?: string
+          lighting_notes?: string | null
+          linked_creative_brief_id?: string | null
+          location_confirmed?: boolean | null
+          location_cost?: number | null
+          location_id?: string | null
+          location_notes?: string | null
+          location_type?: string | null
+          new_actor_ok?: boolean | null
+          num_actors?: number | null
+          num_scripts?: number | null
+          orientations?: string[] | null
+          platforms?: string[] | null
+          priority?: string
+          shoot_date?: string | null
+          shoot_deadline?: string | null
+          shoot_end_time?: string | null
+          shoot_start_time?: string | null
+          shoot_types?: string[] | null
+          specialties_needed?: string[] | null
+          status?: string
+          support_crew_notes?: string | null
+          takes_per_script?: number | null
+          target_script_length?: string | null
+          title: string
+          updated_at?: string
+          verticals?: string[] | null
+        }
+        Update: {
+          actual_total?: number | null
+          age_range?: string | null
+          assigned_producer_id?: string | null
+          audio_setup?: string | null
+          branding?: string
+          broll_shot_list?: Json | null
+          camera_setup?: string | null
+          client_ids?: string[] | null
+          content_deadline?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          drive_footage_folder_url?: string | null
+          estimated_actor_cost?: number | null
+          estimated_crew_cost?: number | null
+          estimated_equipment_cost?: number | null
+          estimated_location_cost?: number | null
+          estimated_shoot_hours?: number | null
+          estimated_total?: number | null
+          estimated_travel_cost?: number | null
+          gender_preference?: string | null
+          id?: string
+          lighting_notes?: string | null
+          linked_creative_brief_id?: string | null
+          location_confirmed?: boolean | null
+          location_cost?: number | null
+          location_id?: string | null
+          location_notes?: string | null
+          location_type?: string | null
+          new_actor_ok?: boolean | null
+          num_actors?: number | null
+          num_scripts?: number | null
+          orientations?: string[] | null
+          platforms?: string[] | null
+          priority?: string
+          shoot_date?: string | null
+          shoot_deadline?: string | null
+          shoot_end_time?: string | null
+          shoot_start_time?: string | null
+          shoot_types?: string[] | null
+          specialties_needed?: string[] | null
+          status?: string
+          support_crew_notes?: string | null
+          takes_per_script?: number | null
+          target_script_length?: string | null
+          title?: string
+          updated_at?: string
+          verticals?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shoot_briefs_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "shoot_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shoot_cast: {
+        Row: {
+          actor_id: string
+          actual_hours: number | null
+          brief_id: string
+          confirmed_at: string | null
+          created_at: string
+          estimated_hours: number | null
+          hourly_rate: number | null
+          id: string
+          is_first_shoot: boolean | null
+          payment_status: string
+          producer_notes_for_shoot: string | null
+          producer_rating_for_shoot: number | null
+          role_description: string | null
+          status: string
+          total_payment: number | null
+        }
+        Insert: {
+          actor_id: string
+          actual_hours?: number | null
+          brief_id: string
+          confirmed_at?: string | null
+          created_at?: string
+          estimated_hours?: number | null
+          hourly_rate?: number | null
+          id?: string
+          is_first_shoot?: boolean | null
+          payment_status?: string
+          producer_notes_for_shoot?: string | null
+          producer_rating_for_shoot?: number | null
+          role_description?: string | null
+          status?: string
+          total_payment?: number | null
+        }
+        Update: {
+          actor_id?: string
+          actual_hours?: number | null
+          brief_id?: string
+          confirmed_at?: string | null
+          created_at?: string
+          estimated_hours?: number | null
+          hourly_rate?: number | null
+          id?: string
+          is_first_shoot?: boolean | null
+          payment_status?: string
+          producer_notes_for_shoot?: string | null
+          producer_rating_for_shoot?: number | null
+          role_description?: string | null
+          status?: string
+          total_payment?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shoot_cast_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "talent_actors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shoot_cast_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "shoot_briefs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shoot_footage: {
+        Row: {
+          brief_id: string
+          clip_type: string | null
+          drive_file_id: string | null
+          drive_url: string | null
+          duration_seconds: number | null
+          file_name: string | null
+          file_size_bytes: number | null
+          file_type: string | null
+          file_url: string
+          id: string
+          is_best_take: boolean | null
+          is_usable: boolean | null
+          producer_notes: string | null
+          script_id: string | null
+          take_number: number | null
+          thumbnail_url: string | null
+          uploaded_at: string
+          uploaded_by_id: string | null
+        }
+        Insert: {
+          brief_id: string
+          clip_type?: string | null
+          drive_file_id?: string | null
+          drive_url?: string | null
+          duration_seconds?: number | null
+          file_name?: string | null
+          file_size_bytes?: number | null
+          file_type?: string | null
+          file_url: string
+          id?: string
+          is_best_take?: boolean | null
+          is_usable?: boolean | null
+          producer_notes?: string | null
+          script_id?: string | null
+          take_number?: number | null
+          thumbnail_url?: string | null
+          uploaded_at?: string
+          uploaded_by_id?: string | null
+        }
+        Update: {
+          brief_id?: string
+          clip_type?: string | null
+          drive_file_id?: string | null
+          drive_url?: string | null
+          duration_seconds?: number | null
+          file_name?: string | null
+          file_size_bytes?: number | null
+          file_type?: string | null
+          file_url?: string
+          id?: string
+          is_best_take?: boolean | null
+          is_usable?: boolean | null
+          producer_notes?: string | null
+          script_id?: string | null
+          take_number?: number | null
+          thumbnail_url?: string | null
+          uploaded_at?: string
+          uploaded_by_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shoot_footage_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "shoot_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shoot_footage_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "shoot_scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shoot_locations: {
+        Row: {
+          address: string | null
+          availability_notes: string | null
+          city: string
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          cost_amount: number | null
+          cost_type: string | null
+          created_at: string
+          created_by_id: string | null
+          good_for_verticals: string[] | null
+          id: string
+          last_used_date: string | null
+          latitude: number | null
+          location_type: string | null
+          longitude: number | null
+          name: string
+          photos: Json | null
+          producer_notes: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          availability_notes?: string | null
+          city: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          cost_amount?: number | null
+          cost_type?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          good_for_verticals?: string[] | null
+          id?: string
+          last_used_date?: string | null
+          latitude?: number | null
+          location_type?: string | null
+          longitude?: number | null
+          name: string
+          photos?: Json | null
+          producer_notes?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          availability_notes?: string | null
+          city?: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          cost_amount?: number | null
+          cost_type?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          good_for_verticals?: string[] | null
+          id?: string
+          last_used_date?: string | null
+          latitude?: number | null
+          location_type?: string | null
+          longitude?: number | null
+          name?: string
+          photos?: Json | null
+          producer_notes?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shoot_scripts: {
+        Row: {
+          brief_id: string
+          client_ids: string[] | null
+          created_at: string
+          cta_line: string | null
+          duration_estimate_seconds: number | null
+          full_script: string
+          hook_line: string | null
+          id: string
+          key_phrases: string[] | null
+          position: number | null
+          title: string
+          tone_direction: string | null
+          verticals: string[] | null
+        }
+        Insert: {
+          brief_id: string
+          client_ids?: string[] | null
+          created_at?: string
+          cta_line?: string | null
+          duration_estimate_seconds?: number | null
+          full_script?: string
+          hook_line?: string | null
+          id?: string
+          key_phrases?: string[] | null
+          position?: number | null
+          title: string
+          tone_direction?: string | null
+          verticals?: string[] | null
+        }
+        Update: {
+          brief_id?: string
+          client_ids?: string[] | null
+          created_at?: string
+          cta_line?: string | null
+          duration_estimate_seconds?: number | null
+          full_script?: string
+          hook_line?: string | null
+          id?: string
+          key_phrases?: string[] | null
+          position?: number | null
+          title?: string
+          tone_direction?: string | null
+          verticals?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shoot_scripts_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "shoot_briefs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       slack_channel_mappings: {
         Row: {
           channel_id: string
@@ -2643,6 +3076,96 @@ export type Database = {
           id?: string
           metadata?: Json | null
           reason?: string
+        }
+        Relationships: []
+      }
+      talent_actors: {
+        Row: {
+          additional_photos: Json | null
+          age_range_appearance: string | null
+          bio: string | null
+          city: string
+          created_at: string
+          demo_reel_url: string | null
+          email: string
+          experience_level: string | null
+          full_name: string
+          gender: string | null
+          has_transportation: boolean | null
+          headshot_url: string | null
+          hourly_rate: number | null
+          id: string
+          instagram_handle: string | null
+          languages: string[] | null
+          last_shoot_date: string | null
+          phone: string | null
+          producer_notes: string | null
+          producer_rating: number | null
+          source: string | null
+          specialties: string[] | null
+          status: string
+          total_shoots: number
+          travel_radius_miles: number | null
+          updated_at: string
+          weekly_availability: Json | null
+        }
+        Insert: {
+          additional_photos?: Json | null
+          age_range_appearance?: string | null
+          bio?: string | null
+          city: string
+          created_at?: string
+          demo_reel_url?: string | null
+          email: string
+          experience_level?: string | null
+          full_name: string
+          gender?: string | null
+          has_transportation?: boolean | null
+          headshot_url?: string | null
+          hourly_rate?: number | null
+          id?: string
+          instagram_handle?: string | null
+          languages?: string[] | null
+          last_shoot_date?: string | null
+          phone?: string | null
+          producer_notes?: string | null
+          producer_rating?: number | null
+          source?: string | null
+          specialties?: string[] | null
+          status?: string
+          total_shoots?: number
+          travel_radius_miles?: number | null
+          updated_at?: string
+          weekly_availability?: Json | null
+        }
+        Update: {
+          additional_photos?: Json | null
+          age_range_appearance?: string | null
+          bio?: string | null
+          city?: string
+          created_at?: string
+          demo_reel_url?: string | null
+          email?: string
+          experience_level?: string | null
+          full_name?: string
+          gender?: string | null
+          has_transportation?: boolean | null
+          headshot_url?: string | null
+          hourly_rate?: number | null
+          id?: string
+          instagram_handle?: string | null
+          languages?: string[] | null
+          last_shoot_date?: string | null
+          phone?: string | null
+          producer_notes?: string | null
+          producer_rating?: number | null
+          source?: string | null
+          specialties?: string[] | null
+          status?: string
+          total_shoots?: number
+          travel_radius_miles?: number | null
+          updated_at?: string
+          weekly_availability?: Json | null
         }
         Relationships: []
       }

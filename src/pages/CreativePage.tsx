@@ -13,7 +13,7 @@ import { BriefKanban } from '@/components/creative/BriefKanban';
 import { BriefDetailPanel } from '@/components/creative/BriefDetailPanel';
 import { DesignerWorkspace } from '@/components/creative/DesignerWorkspace';
 import { DesignerDashboard } from '@/components/creative/DesignerDashboard';
-import { PostProdQueue } from '@/components/creative/PostProdQueue';
+import { MyWorkQueue } from '@/components/creative/MyWorkQueue';
 import { TraffickingQueue } from '@/components/creative/TraffickingQueue';
 import { HoursDashboard } from '@/components/creative/HoursDashboard';
 import { DateRangeProvider } from '@/contexts/DateRangeContext';
@@ -96,8 +96,7 @@ export default function CreativePage() {
           <div className="flex items-center justify-between">
             <TabsList>
               <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-              <TabsTrigger value="queue">My Queue</TabsTrigger>
-              <TabsTrigger value="postprod">Post-Prod Queue</TabsTrigger>
+              <TabsTrigger value="mywork">My Work</TabsTrigger>
               <TabsTrigger value="planner">Planner</TabsTrigger>
               <TabsTrigger value="hours">Hours</TabsTrigger>
             </TabsList>
@@ -107,12 +106,8 @@ export default function CreativePage() {
             <DesignerDashboard onBriefClick={setSelectedId} />
           </TabsContent>
 
-          <TabsContent value="queue" className="mt-4">
-            <DesignerWorkspace onBriefClick={setSelectedId} view="queue" />
-          </TabsContent>
-
-          <TabsContent value="postprod" className="mt-4">
-            <PostProdQueue onBriefClick={setSelectedId} />
+          <TabsContent value="mywork" className="mt-4">
+            <MyWorkQueue onBriefClick={setSelectedId} />
           </TabsContent>
 
           <TabsContent value="planner" className="mt-4">

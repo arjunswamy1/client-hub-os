@@ -317,6 +317,18 @@ ${allFootageLinks}
 **Platforms:** ${(brief.platforms || []).join(', ')}
 **Orientations:** ${(brief.orientations || []).join(', ')}`;
 
+      // Auto-assign to an active designer (Malena by default — only active editor).
+      // This is required so the designer can SEE the brief AND the linked shoot_footage
+      // (RLS on shoot_footage / shoot_briefs for designers checks cb.assigned_to_id = me).
+      const { data: designer } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('role', 'designer')
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
       const { data: cb, error } = await supabase.from('creative_briefs').insert({
         title: `[Edit] ${brief.title}`,
         creative_type: 'video',
@@ -325,7 +337,10 @@ ${allFootageLinks}
         notes,
         priority: brief.priority,
         status: 'submitted',
+        submitted_at: new Date().toISOString(),
         due_date: brief.content_deadline,
+        assigned_to_id: designer?.id || null,
+        created_by_id: teamMember?.id || null,
       }).select('id').single();
       if (error) throw error;
       await updateBrief.mutateAsync({ id: brief.id, updates: { linked_creative_brief_id: cb.id, status: 'in_post_production' } });

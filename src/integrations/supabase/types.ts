@@ -2551,6 +2551,41 @@ export type Database = {
           },
         ]
       }
+      shoot_brief_status_history: {
+        Row: {
+          brief_id: string
+          changed_at: string
+          changed_by_id: string | null
+          from_status: string | null
+          id: string
+          to_status: string
+        }
+        Insert: {
+          brief_id: string
+          changed_at?: string
+          changed_by_id?: string | null
+          from_status?: string | null
+          id?: string
+          to_status: string
+        }
+        Update: {
+          brief_id?: string
+          changed_at?: string
+          changed_by_id?: string | null
+          from_status?: string | null
+          id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shoot_brief_status_history_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "shoot_briefs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shoot_briefs: {
         Row: {
           actual_total: number | null
@@ -2560,10 +2595,12 @@ export type Database = {
           branding: string
           broll_shot_list: Json | null
           camera_setup: string | null
+          canceled_at: string | null
           client_ids: string[] | null
           content_deadline: string | null
           created_at: string
           created_by_id: string | null
+          delivered_at: string | null
           drive_footage_folder_url: string | null
           estimated_actor_cost: number | null
           estimated_crew_cost: number | null
@@ -2572,6 +2609,7 @@ export type Database = {
           estimated_shoot_hours: number | null
           estimated_total: number | null
           estimated_travel_cost: number | null
+          footage_uploaded_at: string | null
           gender_preference: string | null
           id: string
           lighting_notes: string | null
@@ -2586,7 +2624,10 @@ export type Database = {
           num_scripts: number | null
           orientations: string[] | null
           platforms: string[] | null
+          post_prod_handoff_at: string | null
           priority: string
+          production_started_at: string | null
+          scheduled_at: string | null
           shoot_date: string | null
           shoot_deadline: string | null
           shoot_end_time: string | null
@@ -2609,10 +2650,12 @@ export type Database = {
           branding?: string
           broll_shot_list?: Json | null
           camera_setup?: string | null
+          canceled_at?: string | null
           client_ids?: string[] | null
           content_deadline?: string | null
           created_at?: string
           created_by_id?: string | null
+          delivered_at?: string | null
           drive_footage_folder_url?: string | null
           estimated_actor_cost?: number | null
           estimated_crew_cost?: number | null
@@ -2621,6 +2664,7 @@ export type Database = {
           estimated_shoot_hours?: number | null
           estimated_total?: number | null
           estimated_travel_cost?: number | null
+          footage_uploaded_at?: string | null
           gender_preference?: string | null
           id?: string
           lighting_notes?: string | null
@@ -2635,7 +2679,10 @@ export type Database = {
           num_scripts?: number | null
           orientations?: string[] | null
           platforms?: string[] | null
+          post_prod_handoff_at?: string | null
           priority?: string
+          production_started_at?: string | null
+          scheduled_at?: string | null
           shoot_date?: string | null
           shoot_deadline?: string | null
           shoot_end_time?: string | null
@@ -2658,10 +2705,12 @@ export type Database = {
           branding?: string
           broll_shot_list?: Json | null
           camera_setup?: string | null
+          canceled_at?: string | null
           client_ids?: string[] | null
           content_deadline?: string | null
           created_at?: string
           created_by_id?: string | null
+          delivered_at?: string | null
           drive_footage_folder_url?: string | null
           estimated_actor_cost?: number | null
           estimated_crew_cost?: number | null
@@ -2670,6 +2719,7 @@ export type Database = {
           estimated_shoot_hours?: number | null
           estimated_total?: number | null
           estimated_travel_cost?: number | null
+          footage_uploaded_at?: string | null
           gender_preference?: string | null
           id?: string
           lighting_notes?: string | null
@@ -2684,7 +2734,10 @@ export type Database = {
           num_scripts?: number | null
           orientations?: string[] | null
           platforms?: string[] | null
+          post_prod_handoff_at?: string | null
           priority?: string
+          production_started_at?: string | null
+          scheduled_at?: string | null
           shoot_date?: string | null
           shoot_deadline?: string | null
           shoot_end_time?: string | null

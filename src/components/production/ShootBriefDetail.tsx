@@ -17,6 +17,23 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Plus, Trash2, Star, Upload, Loader2, Wand2, Search } from 'lucide-react';
 import { STATUS_LABEL, STATUS_COLOR, type ShootStatus, type ShootScript, type ShootCast } from '@/types/production';
+import { StatusTimeline, StatusHistory } from './StatusTimeline';
+
+// Role-aware allowed transitions. Designers can only mark Delivered (their own work).
+// Admins + producers (account managers) can move through every stage.
+function allowedNextStatuses(role: string | undefined, current: ShootStatus): ShootStatus[] {
+  if (role === 'designer') {
+    // designer only sees briefs handed off to them; they can mark delivered
+    return current === 'in_post_production' ? ['delivered'] : [];
+  }
+  // admin / account_manager / producer
+  const all: ShootStatus[] = [
+    'draft', 'submitted', 'scripts_approved', 'actors_cast', 'location_confirmed',
+    'scheduled', 'in_production', 'footage_uploaded', 'in_post_production',
+    'delivered', 'archived', 'canceled',
+  ];
+  return all.filter((s) => s !== current);
+}
 
 interface Props {
   briefId: string | null;
@@ -26,12 +43,17 @@ interface Props {
 export function ShootBriefDetail({ briefId, onClose }: Props) {
   const { data: brief } = useShootBrief(briefId || undefined);
   const updateBrief = useUpdateBrief();
+  const { teamMember } = useAuth();
+  const role = teamMember?.role;
+
+  const allowed = brief ? allowedNextStatuses(role, brief.status) : [];
 
   const setStatus = async (s: ShootStatus) => {
     if (!brief) return;
     if (s === 'scheduled' && (!brief.location_confirmed || !brief.shoot_date)) {
       toast.error('Cannot schedule until location confirmed and shoot date set'); return;
     }
+    if (s === 'footage_uploaded' && !confirm('Confirm: all footage uploaded for this shoot?')) return;
     await updateBrief.mutateAsync({ id: brief.id, updates: { status: s } });
     toast.success(`Status: ${STATUS_LABEL[s]}`);
   };
@@ -47,26 +69,39 @@ export function ShootBriefDetail({ briefId, onClose }: Props) {
                 <Badge variant="outline" className={STATUS_COLOR[brief.status]}>{STATUS_LABEL[brief.status]}</Badge>
               </div>
             </SheetHeader>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Select value={brief.status} onValueChange={(v: ShootStatus) => setStatus(v)}>
-                <SelectTrigger className="w-56 h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(STATUS_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-              </Select>
+
+            <div className="mt-3"><StatusTimeline brief={brief} /></div>
+
+            <div className="mt-2 flex flex-wrap gap-2 items-center">
+              {allowed.length > 0 ? (
+                <Select value="" onValueChange={(v: ShootStatus) => setStatus(v)}>
+                  <SelectTrigger className="w-56 h-8 text-xs">
+                    <SelectValue placeholder="Move to next stage…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allowed.map((s) => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="text-xs text-muted-foreground italic">No status changes available for your role.</span>
+              )}
             </div>
 
             <Tabs defaultValue="overview" className="mt-4">
-              <TabsList className="grid grid-cols-5 w-full">
+              <TabsList className="grid grid-cols-6 w-full">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="scripts">Scripts</TabsTrigger>
                 <TabsTrigger value="cast">Cast</TabsTrigger>
                 <TabsTrigger value="footage">Footage</TabsTrigger>
                 <TabsTrigger value="checklist">Day-of</TabsTrigger>
+                <TabsTrigger value="history">History</TabsTrigger>
               </TabsList>
               <TabsContent value="overview"><Overview brief={brief} /></TabsContent>
               <TabsContent value="scripts"><Scripts briefId={brief.id} /></TabsContent>
               <TabsContent value="cast"><Cast brief={brief} /></TabsContent>
               <TabsContent value="footage"><Footage brief={brief} /></TabsContent>
               <TabsContent value="checklist"><Checklist /></TabsContent>
+              <TabsContent value="history"><StatusHistory briefId={brief.id} /></TabsContent>
             </Tabs>
           </>
         ) : null}

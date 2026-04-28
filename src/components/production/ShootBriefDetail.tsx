@@ -283,34 +283,98 @@ function Cast({ brief }: { brief: any }) {
   );
 }
 
+interface UploadItem {
+  id: string;
+  name: string;
+  size: number;
+  progress: number; // 0-100
+  status: 'queued' | 'uploading' | 'done' | 'error' | 'duplicate';
+  error?: string;
+}
+
+function formatBytes(b: number) {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
+  return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 function Footage({ brief }: { brief: any }) {
   const { data: footage = [] } = useShootFootage(brief.id);
   const { data: scripts = [] } = useShootScripts(brief.id);
   const updateBrief = useUpdateBrief();
   const qc = useQueryClient();
   const { teamMember } = useAuth();
-  const [uploading, setUploading] = useState(false);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const isUploading = uploads.some((u) => u.status === 'uploading' || u.status === 'queued');
+
+  // Detect duplicates among already-uploaded footage by (file_name, file_size_bytes)
+  const dupKey = (name: string, size: number) => `${name}::${size}`;
+  const existingKeys = new Set(footage.map((f: any) => dupKey(f.file_name || '', f.file_size_bytes || 0)));
 
   const handleUpload = async (files: FileList) => {
-    setUploading(true);
-    try {
-      for (const file of Array.from(files)) {
-        const path = `${brief.id}/${Date.now()}-${file.name}`;
+    const seenInBatch = new Set<string>();
+    const initial: UploadItem[] = Array.from(files).map((file) => {
+      const key = dupKey(file.name, file.size);
+      let status: UploadItem['status'] = 'queued';
+      let error: string | undefined;
+      if (existingKeys.has(key)) { status = 'duplicate'; error = 'Already uploaded to this brief'; }
+      else if (seenInBatch.has(key)) { status = 'duplicate'; error = 'Duplicate within this batch'; }
+      seenInBatch.add(key);
+      return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`,
+        name: file.name, size: file.size, progress: 0, status, error,
+      };
+    });
+    setUploads((prev) => [...prev, ...initial]);
+
+    for (let i = 0; i < initial.length; i++) {
+      const item = initial[i];
+      const file = files[i];
+      if (item.status === 'duplicate') continue;
+
+      setUploads((prev) => prev.map((u) => u.id === item.id ? { ...u, status: 'uploading', progress: 5 } : u));
+
+      // Determine next take number for this script slot (scripted_take, no script assigned yet → 1)
+      const path = `${brief.id}/${Date.now()}-${file.name}`;
+      try {
+        // Smooth progress polling (Supabase JS upload doesn't expose XHR progress yet)
+        const tick = setInterval(() => {
+          setUploads((prev) => prev.map((u) =>
+            u.id === item.id && u.status === 'uploading' && u.progress < 90
+              ? { ...u, progress: Math.min(90, u.progress + Math.random() * 10) }
+              : u
+          ));
+        }, 250);
+
         const { error: upErr } = await supabase.storage.from('shoot-footage').upload(path, file);
+        clearInterval(tick);
         if (upErr) throw upErr;
+
         const { data } = supabase.storage.from('shoot-footage').getPublicUrl(path);
+        const nextTake = (footage.filter((f: any) => f.clip_type === 'scripted_take' && !f.script_id).length) +
+          (initial.slice(0, i).filter((u) => u.status === 'done' || u.status === 'uploading').length) + 1;
+
         const { error } = await supabase.from('shoot_footage').insert({
           brief_id: brief.id, file_url: data.publicUrl, file_name: file.name,
           file_type: file.type, file_size_bytes: file.size, clip_type: 'scripted_take',
-          uploaded_by_id: teamMember?.id || null,
+          take_number: nextTake, uploaded_by_id: teamMember?.id || null,
         });
         if (error) throw error;
+
+        setUploads((prev) => prev.map((u) => u.id === item.id ? { ...u, status: 'done', progress: 100 } : u));
+      } catch (e: any) {
+        setUploads((prev) => prev.map((u) => u.id === item.id ? { ...u, status: 'error', error: e.message } : u));
       }
-      qc.invalidateQueries({ queryKey: ['shoot_footage', brief.id] });
-      toast.success(`Uploaded ${files.length} file(s)`);
-    } catch (e: any) { toast.error(e.message); }
-    finally { setUploading(false); }
+    }
+
+    qc.invalidateQueries({ queryKey: ['shoot_footage', brief.id] });
+    const okCount = initial.filter((_, idx) => initial[idx].status !== 'duplicate').length;
+    if (okCount > 0) toast.success(`Processed ${okCount} file(s)`);
   };
+
+  const dismissUpload = (id: string) => setUploads((prev) => prev.filter((u) => u.id !== id));
+  const clearFinished = () => setUploads((prev) => prev.filter((u) => u.status === 'queued' || u.status === 'uploading'));
 
   const updateClip = async (id: string, updates: any) => {
     await supabase.from('shoot_footage').update(updates).eq('id', id);
@@ -352,9 +416,6 @@ ${allFootageLinks}
 **Platforms:** ${(brief.platforms || []).join(', ')}
 **Orientations:** ${(brief.orientations || []).join(', ')}`;
 
-      // Auto-assign to an active designer (Malena by default — only active editor).
-      // This is required so the designer can SEE the brief AND the linked shoot_footage
-      // (RLS on shoot_footage / shoot_briefs for designers checks cb.assigned_to_id = me).
       const { data: designer } = await supabase
         .from('team_members')
         .select('id')
@@ -383,15 +444,64 @@ ${allFootageLinks}
     } catch (e: any) { toast.error(e.message); }
   };
 
+  // Group clips by script (or "Unassigned / B-roll") and compute per-script take counts
+  const grouped: Record<string, any[]> = { __unassigned: [] };
+  scripts.forEach((s: any) => { grouped[s.id] = []; });
+  footage.forEach((f: any) => {
+    const k = f.script_id || '__unassigned';
+    if (!grouped[k]) grouped[k] = [];
+    grouped[k].push(f);
+  });
+  Object.values(grouped).forEach((arr) => arr.sort((a: any, b: any) => (a.take_number || 0) - (b.take_number || 0)));
+
   return (
     <div className="space-y-3">
       <Card className="p-4 border-dashed border-2">
         <label className="block text-center cursor-pointer">
-          {uploading ? <Loader2 className="h-6 w-6 animate-spin mx-auto" /> : <Upload className="h-6 w-6 mx-auto text-muted-foreground" />}
-          <div className="text-sm mt-2">{uploading ? 'Uploading...' : 'Click to upload video clips (multiple)'}</div>
-          <input type="file" multiple accept="video/*" className="hidden" onChange={(e) => e.target.files && handleUpload(e.target.files)} />
+          {isUploading ? <Loader2 className="h-6 w-6 animate-spin mx-auto" /> : <Upload className="h-6 w-6 mx-auto text-muted-foreground" />}
+          <div className="text-sm mt-2">{isUploading ? 'Uploading…' : 'Click to upload video clips (multiple)'}</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">Duplicates (same name + size) are skipped automatically.</div>
+          <input type="file" multiple accept="video/*" className="hidden"
+            onChange={(e) => e.target.files && e.target.files.length > 0 && handleUpload(e.target.files)} />
         </label>
       </Card>
+
+      {uploads.length > 0 && (
+        <Card className="p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-medium">Upload progress ({uploads.filter((u) => u.status === 'done').length}/{uploads.length} complete)</div>
+            <Button size="sm" variant="ghost" className="h-6 text-[11px]" onClick={clearFinished} disabled={isUploading}>Clear finished</Button>
+          </div>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {uploads.map((u) => (
+              <div key={u.id} className="text-[11px] space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    {u.status === 'done' && <span className="text-emerald-600">✓</span>}
+                    {u.status === 'error' && <span className="text-rose-600">✕</span>}
+                    {u.status === 'duplicate' && <span className="text-amber-600">⚠</span>}
+                    {u.status === 'uploading' && <Loader2 className="h-3 w-3 animate-spin text-blue-600 flex-shrink-0" />}
+                    {u.status === 'queued' && <span className="text-slate-400">…</span>}
+                    <span className="truncate">{u.name}</span>
+                    <span className="text-muted-foreground flex-shrink-0">({formatBytes(u.size)})</span>
+                  </div>
+                  <button onClick={() => dismissUpload(u.id)} className="text-muted-foreground hover:text-foreground">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+                {u.status === 'uploading' && (
+                  <div className="h-1 bg-slate-100 rounded overflow-hidden">
+                    <div className="h-full bg-blue-500 transition-all" style={{ width: `${u.progress}%` }} />
+                  </div>
+                )}
+                {u.error && (
+                  <div className={`pl-4 ${u.status === 'duplicate' ? 'text-amber-700' : 'text-rose-600'}`}>{u.error}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {footage.length > 0 && (
         <div className="flex justify-end gap-2">
@@ -405,40 +515,62 @@ ${allFootageLinks}
       {footage.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">No footage uploaded yet.</Card>
       ) : (
-        footage.map((f: any) => (
-          <Card key={f.id} className="p-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <a href={f.file_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary truncate">{f.file_name}</a>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1 text-xs cursor-pointer">
-                  <Checkbox checked={f.is_best_take} onCheckedChange={(v) => updateClip(f.id, { is_best_take: !!v })} />
-                  <Star className={`h-3 w-3 ${f.is_best_take ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />Best
-                </label>
-                <Button size="sm" variant="ghost" onClick={() => removeClip(f.id)}><Trash2 className="h-3 w-3" /></Button>
+        Object.entries(grouped)
+          .filter(([, clips]) => clips.length > 0)
+          .map(([key, clips]) => {
+            const script = scripts.find((s: any) => s.id === key);
+            const groupLabel = script ? script.title : 'Unassigned / B-roll';
+            const bestCount = clips.filter((c: any) => c.is_best_take).length;
+            return (
+              <div key={key} className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">
+                  <span>{groupLabel}</span>
+                  <Badge variant="outline" className="text-[10px]">{clips.length} take{clips.length === 1 ? '' : 's'}</Badge>
+                  {bestCount > 0 && <Badge className="text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-100">★ {bestCount} best</Badge>}
+                </div>
+                {clips.map((f: any) => (
+                  <Card key={f.id} className="p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {f.take_number != null && (
+                          <Badge variant="secondary" className="text-[10px] flex-shrink-0">Take {f.take_number}</Badge>
+                        )}
+                        <a href={f.file_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary truncate">{f.file_name}</a>
+                        <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatBytes(f.file_size_bytes || 0)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <label className="flex items-center gap-1 text-xs cursor-pointer">
+                          <Checkbox checked={f.is_best_take} onCheckedChange={(v) => updateClip(f.id, { is_best_take: !!v })} />
+                          <Star className={`h-3 w-3 ${f.is_best_take ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />Best
+                        </label>
+                        <Button size="sm" variant="ghost" onClick={() => removeClip(f.id)}><Trash2 className="h-3 w-3" /></Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Select value={f.script_id || 'none'} onValueChange={(v) => updateClip(f.id, { script_id: v === 'none' ? null : v })}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Script" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No script (B-roll)</SelectItem>
+                          {scripts.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Select value={f.clip_type || 'scripted_take'} onValueChange={(v) => updateClip(f.id, { clip_type: v })}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="scripted_take">Scripted take</SelectItem>
+                          <SelectItem value="broll">B-roll</SelectItem>
+                          <SelectItem value="blooper">Blooper</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input className="h-8 text-xs" type="number" placeholder="Take #" value={f.take_number || ''} onChange={(e) => updateClip(f.id, { take_number: parseInt(e.target.value) || null })} />
+                    </div>
+                    <Input className="h-8 text-xs" placeholder="Notes..." value={f.producer_notes || ''} onChange={(e) => updateClip(f.id, { producer_notes: e.target.value })} />
+                  </Card>
+                ))}
               </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <Select value={f.script_id || 'none'} onValueChange={(v) => updateClip(f.id, { script_id: v === 'none' ? null : v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Script" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No script (B-roll)</SelectItem>
-                  {scripts.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={f.clip_type || 'scripted_take'} onValueChange={(v) => updateClip(f.id, { clip_type: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="scripted_take">Scripted take</SelectItem>
-                  <SelectItem value="broll">B-roll</SelectItem>
-                  <SelectItem value="blooper">Blooper</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input className="h-8 text-xs" type="number" placeholder="Take #" value={f.take_number || ''} onChange={(e) => updateClip(f.id, { take_number: parseInt(e.target.value) || null })} />
-            </div>
-            <Input className="h-8 text-xs" placeholder="Notes..." value={f.producer_notes || ''} onChange={(e) => updateClip(f.id, { producer_notes: e.target.value })} />
-          </Card>
-        ))
+            );
+          })
       )}
     </div>
   );

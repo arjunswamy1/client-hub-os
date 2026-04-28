@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
-  Database, Bot, Settings, Users, Shield, Rocket
+  Database, Bot, Settings, Users, Shield, Rocket, Film
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -18,6 +18,7 @@ const clientNavItems = [
   { title: 'Tasks', url: '/tasks', icon: CheckSquare },
   { title: 'Agendas', url: '/agendas', icon: Phone },
   { title: 'Creative Production', url: '/creative', icon: Palette },
+  { title: 'Production', url: '/production', icon: Film },
   { title: 'Landing Pages', url: '/landing-pages', icon: Globe },
   { title: 'Context Feed', url: '/context', icon: Database },
   { title: 'AI Assistant', url: '/ai', icon: Bot },

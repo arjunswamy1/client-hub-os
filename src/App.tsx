@@ -31,6 +31,8 @@ import DemoDashboardPage from "./pages/DemoDashboardPage";
 import SignupPage from "./pages/SignupPage";
 import ClientPortalPage from "./pages/ClientPortalPage";
 import UnsubscribePage from "./pages/UnsubscribePage";
+import ProductionPage from "./pages/ProductionPage";
+import TalentApplyPage from "./pages/TalentApplyPage";
 
 const queryClient = new QueryClient();
 
@@ -122,6 +124,7 @@ function ProtectedRoutes() {
           <Route path="/context" element={<ContextPage />} />
           <Route path="/ai" element={<AIAssistantPage />} />
           <Route path="/campaign-build" element={<CampaignBuildPage />} />
+          <Route path="/production" element={<ProductionPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}
@@ -147,6 +150,7 @@ const App = () => (
             <Route path="/demo/dashboard" element={<DemoDashboardPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
+            <Route path="/talent-apply" element={<TalentApplyPage />} />
             <Route path="/onboarding/:token" element={<OnboardingPage />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>

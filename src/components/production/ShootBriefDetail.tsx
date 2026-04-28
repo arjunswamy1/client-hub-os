@@ -592,3 +592,58 @@ function Checklist() {
     </Card>
   );
 }
+
+function Comments({ briefId }: { briefId: string }) {
+  const { data: comments = [], isLoading } = useShootBriefComments(briefId);
+  const addComment = useAddShootBriefComment();
+  const [text, setText] = useState('');
+
+  const submit = () => {
+    const content = text.trim();
+    if (!content) return;
+    addComment.mutate({ briefId, content }, { onSuccess: () => setText('') });
+  };
+
+  return (
+    <div className="flex flex-col h-[60vh]">
+      <div className="flex-1 space-y-3 overflow-y-auto mb-3 pr-1">
+        {isLoading ? (
+          <div className="text-xs text-muted-foreground">Loading comments…</div>
+        ) : comments.length === 0 ? (
+          <div className="text-sm text-muted-foreground italic">No comments yet. Start the conversation.</div>
+        ) : (
+          comments.map((c: any) => (
+            <div key={c.id} className="flex gap-2">
+              <Avatar className="h-7 w-7 shrink-0">
+                <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                  {c.author?.name?.[0] || '?'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium">{c.author?.name || 'Unknown'}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {formatDate(new Date(c.created_at), 'MMM d, h:mm a')}
+                  </span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap break-words">{c.content}</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="flex gap-2 border-t pt-3">
+        <Input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Add a comment…"
+          className="text-sm"
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+        />
+        <Button size="icon" onClick={submit} disabled={!text.trim() || addComment.isPending}>
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}

@@ -4,58 +4,56 @@ import { Card } from '@/components/ui/card';
 import { Check, Circle, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_LABEL, type ShootStatus } from '@/types/production';
+import { STAGE_ORDER, STAGE_LABEL, STAGE_CLASSES, shootStageOf, type ProjectStage } from '@/types/projectStage';
 
-// The 6-stage workflow you defined (the DB has finer-grained statuses but they roll up here).
-const WORKFLOW: { key: string; label: string; matches: ShootStatus[]; tsField: string | null }[] = [
-  { key: 'draft',    label: 'Draft',         matches: ['draft', 'submitted', 'scripts_approved', 'actors_cast', 'location_confirmed'], tsField: null },
-  { key: 'sched',    label: 'Scheduled',     matches: ['scheduled'],          tsField: 'scheduled_at' },
-  { key: 'prod',     label: 'In Progress',   matches: ['in_production'],      tsField: 'production_started_at' },
-  { key: 'footage',  label: 'Footage Up',    matches: ['footage_uploaded'],   tsField: 'footage_uploaded_at' },
-  { key: 'handoff',  label: 'Post-Prod',     matches: ['in_post_production'], tsField: 'post_prod_handoff_at' },
-  { key: 'done',     label: 'Complete',      matches: ['delivered'],          tsField: 'delivered_at' },
-];
-
-// Order index for "is this stage reached?"
-const ORDER: ShootStatus[] = [
-  'draft', 'submitted', 'scripts_approved', 'actors_cast', 'location_confirmed',
-  'scheduled', 'in_production', 'footage_uploaded', 'in_post_production', 'delivered',
-];
+// Map each unified stage to (a) the shoot timestamp field that records its first entry
+// and (b) the shoot statuses that count as that stage being "current".
+const STAGE_META: Record<ProjectStage, { tsField: string | null }> = {
+  planning:      { tsField: null },
+  scheduled:     { tsField: 'scheduled_at' },
+  in_production: { tsField: 'production_started_at' },
+  in_post:       { tsField: 'post_prod_handoff_at' },
+  delivered:     { tsField: 'delivered_at' },
+  canceled:      { tsField: 'canceled_at' },
+};
 
 export function StatusTimeline({ brief }: { brief: any }) {
-  const currentIdx = ORDER.indexOf(brief.status as ShootStatus);
+  const currentStage = shootStageOf(brief.status as ShootStatus);
+  const currentIdx = STAGE_ORDER.indexOf(currentStage);
 
   return (
     <Card className="p-3">
       <div className="flex items-center justify-between gap-1 overflow-x-auto">
-        {WORKFLOW.map((stage, i) => {
-          const stageMaxOrder = Math.max(...stage.matches.map((s) => ORDER.indexOf(s)));
-          const isReached = currentIdx >= stageMaxOrder && currentIdx >= 0;
-          const isCurrent = stage.matches.includes(brief.status as ShootStatus);
-          const ts = stage.tsField ? brief[stage.tsField] : null;
+        {STAGE_ORDER.map((stage, i) => {
+          const stageIdx = i;
+          const isReached = currentIdx > stageIdx;
+          const isCurrent = currentIdx === stageIdx;
+          const ts = STAGE_META[stage].tsField ? brief[STAGE_META[stage].tsField as string] : null;
+          const cls = STAGE_CLASSES[stage];
 
           return (
-            <div key={stage.key} className="flex items-center flex-1 min-w-0">
+            <div key={stage} className="flex items-center flex-1 min-w-0">
               <div className="flex flex-col items-center text-center min-w-0">
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${
+                  className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors ${
                     isReached
                       ? 'bg-emerald-500 border-emerald-500 text-white'
                       : isCurrent
-                      ? 'bg-blue-500 border-blue-500 text-white animate-pulse'
-                      : 'bg-white border-slate-300 text-slate-400'
+                      ? `${cls.dot} border-transparent text-white animate-pulse`
+                      : 'bg-background border-border text-muted-foreground'
                   }`}
                 >
                   {isReached ? <Check className="h-3 w-3" /> : isCurrent ? <Clock className="h-3 w-3" /> : <Circle className="h-2 w-2" />}
                 </div>
                 <div className={`text-[10px] mt-1 font-medium ${isReached || isCurrent ? 'text-foreground' : 'text-muted-foreground'}`}>
-                  {stage.label}
+                  {STAGE_LABEL[stage]}
                 </div>
                 <div className="text-[9px] text-muted-foreground h-3 truncate w-16">
                   {ts ? format(new Date(ts), 'MMM d') : ''}
                 </div>
               </div>
-              {i < WORKFLOW.length - 1 && (
-                <div className={`flex-1 h-0.5 mx-1 ${currentIdx > stageMaxOrder ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+              {i < STAGE_ORDER.length - 1 && (
+                <div className={`flex-1 h-0.5 mx-1 ${currentIdx > stageIdx ? 'bg-emerald-500' : 'bg-border'}`} />
               )}
             </div>
           );
@@ -94,14 +92,14 @@ export function StatusHistory({ briefId }: { briefId: string }) {
     <div className="space-y-1.5">
       {history.map((h: any) => (
         <div key={h.id} className="text-xs flex items-center gap-2 py-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+          <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
           <span className="text-muted-foreground">{format(new Date(h.changed_at), 'MMM d, h:mm a')}</span>
           <span>·</span>
           <span className="font-medium">{h.changed_by_name || '(system)'}</span>
           <span className="text-muted-foreground">moved from</span>
-          <span className="font-mono text-[10px] bg-slate-100 px-1 rounded">{STATUS_LABEL[h.from_status as ShootStatus] || h.from_status || '—'}</span>
+          <span className="font-mono text-[10px] bg-muted px-1 rounded">{STATUS_LABEL[h.from_status as ShootStatus] || h.from_status || '—'}</span>
           <span className="text-muted-foreground">→</span>
-          <span className="font-mono text-[10px] bg-emerald-50 text-emerald-700 px-1 rounded">{STATUS_LABEL[h.to_status as ShootStatus] || h.to_status}</span>
+          <span className="font-mono text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-1 rounded">{STATUS_LABEL[h.to_status as ShootStatus] || h.to_status}</span>
         </div>
       ))}
     </div>

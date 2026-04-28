@@ -15,25 +15,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Trash2, Star, Upload, Loader2, Wand2, Search } from 'lucide-react';
+import { Plus, Trash2, Star, Upload, Loader2, Wand2, Search, Send, MessageSquare } from 'lucide-react';
 import { STATUS_LABEL, STATUS_COLOR, type ShootStatus, type ShootScript, type ShootCast } from '@/types/production';
 import { StatusTimeline, StatusHistory } from './StatusTimeline';
-
-// Role-aware allowed transitions. Designers can only mark Delivered (their own work).
-// Admins + producers (account managers) can move through every stage.
-function allowedNextStatuses(role: string | undefined, current: ShootStatus): ShootStatus[] {
-  if (role === 'designer') {
-    // designer only sees briefs handed off to them; they can mark delivered
-    return current === 'in_post_production' ? ['delivered'] : [];
-  }
-  // admin / account_manager / producer
-  const all: ShootStatus[] = [
-    'draft', 'submitted', 'scripts_approved', 'actors_cast', 'location_confirmed',
-    'scheduled', 'in_production', 'footage_uploaded', 'in_post_production',
-    'delivered', 'archived', 'canceled',
-  ];
-  return all.filter((s) => s !== current);
-}
+import { validShootTransitions } from '@/types/projectStage';
+import { useShootBriefComments, useAddShootBriefComment } from '@/hooks/useShootBriefComments';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { format as formatDate } from 'date-fns';
 
 interface Props {
   briefId: string | null;

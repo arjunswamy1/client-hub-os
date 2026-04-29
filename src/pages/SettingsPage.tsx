@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LinkIcon, Loader2, CheckCircle2, KeyRound } from 'lucide-react';
 import { GoogleAdsIcon, MetaIcon, SlackIcon, TeamsIcon, GmailIcon, FathomIcon, GoogleDriveIcon } from '@/components/icons/BrandIcons';
+import { GoogleAdsAccountPicker } from '@/components/settings/GoogleAdsAccountPicker';
 import { toast } from 'sonner';
 
 type Integration = {
@@ -253,6 +254,10 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {isAdmin && activeClient && connectedPlatforms.has('google') && (
+        <GoogleAdsAccountPicker clientId={activeClient.id} />
+      )}
     </div>
   );
 }

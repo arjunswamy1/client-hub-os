@@ -47,9 +47,14 @@ export function ActorDatabase() {
   }, [actors, search, city, status, experience, specialty, gender, ageRange]);
 
   const copyApplyLink = () => {
-    const url = `${window.location.origin}/talent-apply`;
+    // Always use the published origin so the link works in incognito / for outside applicants.
+    // Sandbox/preview URLs (id-preview--*.lovable.app) require a Lovable auth token and won't load publicly.
+    const host = window.location.host;
+    const isPreview = host.includes('lovableproject.com') || host.includes('id-preview') || host.includes('lovable.app');
+    const origin = isPreview ? 'https://connectpaidmedia.lovable.app' : window.location.origin;
+    const url = `${origin}/talent-apply`;
     navigator.clipboard.writeText(url);
-    toast.success('Application link copied');
+    toast.success('Application link copied', { description: url });
   };
 
   return (

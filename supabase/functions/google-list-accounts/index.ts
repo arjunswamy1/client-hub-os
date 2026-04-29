@@ -46,10 +46,37 @@ Deno.serve(async (req) => {
       { headers: { Authorization: `Bearer ${accessToken}`, "developer-token": developerToken } },
     );
     const topData = await topRes.json();
+    console.log("[google-list-accounts] listAccessibleCustomers status:", topRes.status, "body:", JSON.stringify(topData).slice(0, 500));
+
     if (topData.error) {
-      return json({ error: `Google API: ${topData.error.message || JSON.stringify(topData.error)}` }, 502);
+      const msg = topData.error.message || JSON.stringify(topData.error);
+      const status = topData.error.status || "";
+      // RESOURCE_EXHAUSTED on listAccessibleCustomers almost always = developer token not approved
+      // for the OAuth user's accounts (Test Access restriction), or token/account mismatch.
+      let hint = "";
+      if (status === "RESOURCE_EXHAUSTED" || /exhausted|quota/i.test(msg)) {
+        hint =
+          " — This usually means your Google Ads developer token is in Test Access mode and the connected Google account's customer IDs are not on the test-account allowlist. " +
+          "Either (a) apply for Basic/Standard access for your developer token in the Google Ads API Center, or " +
+          "(b) add the specific Google Ads customer IDs to the developer token's test accounts list, or " +
+          "(c) reconnect using a Google account that has access to a customer on an approved developer token.";
+      } else if (status === "PERMISSION_DENIED" || /permission|developer token/i.test(msg)) {
+        hint = " — Verify GOOGLE_DEVELOPER_TOKEN matches the manager account that owns API access, and that the OAuth user has access to that manager.";
+      }
+      await supabase
+        .from("platform_connections")
+        .update({ sync_error: `listAccessibleCustomers: ${msg}${hint}` })
+        .eq("id", conn.id);
+      return json({ error: `Google API: ${msg}${hint}`, status }, 502);
     }
     const topCustomers: string[] = (topData.resourceNames || []).map((r: string) => r.replace("customers/", ""));
+
+    if (topCustomers.length === 0) {
+      const errMsg =
+        "listAccessibleCustomers returned 0 accounts. The Google account you connected has no Google Ads customers visible to this developer token. Reconnect with a Google user who has access to your Ads accounts, or check the developer token's allowlist.";
+      await supabase.from("platform_connections").update({ sync_error: errMsg }).eq("id", conn.id);
+      return json({ error: errMsg, accounts: [] }, 200);
+    }
 
     // 2) For each, walk children if MCC. Collect non-manager (operating) accounts.
     const accountMap = new Map<string, { id: string; name: string; manager: boolean; parentMcc?: string }>();

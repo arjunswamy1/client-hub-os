@@ -254,6 +254,10 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {isAdmin && activeClient && connectedPlatforms.has('google') && (
+        <GoogleAdsAccountPicker clientId={activeClient.id} />
+      )}
     </div>
   );
 }

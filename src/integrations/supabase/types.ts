@@ -2366,12 +2366,16 @@ export type Database = {
           account_name: string | null
           client_id: string
           created_at: string
+          customer_id: string | null
           id: string
+          last_sync_records: number | null
+          last_synced_at: string | null
           metadata: Json | null
           platform: string
           refresh_token: string | null
           selected_ad_account: Json | null
           status: string
+          sync_error: string | null
           token_expires_at: string | null
           updated_at: string
           user_id: string | null
@@ -2382,12 +2386,16 @@ export type Database = {
           account_name?: string | null
           client_id: string
           created_at?: string
+          customer_id?: string | null
           id?: string
+          last_sync_records?: number | null
+          last_synced_at?: string | null
           metadata?: Json | null
           platform: string
           refresh_token?: string | null
           selected_ad_account?: Json | null
           status?: string
+          sync_error?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id?: string | null
@@ -2398,12 +2406,16 @@ export type Database = {
           account_name?: string | null
           client_id?: string
           created_at?: string
+          customer_id?: string | null
           id?: string
+          last_sync_records?: number | null
+          last_synced_at?: string | null
           metadata?: Json | null
           platform?: string
           refresh_token?: string | null
           selected_ad_account?: Json | null
           status?: string
+          sync_error?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id?: string | null

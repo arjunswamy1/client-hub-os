@@ -705,7 +705,8 @@ async function queryGoogleAds(customerId: string, accessToken: string, developer
     "developer-token": developerToken,
     "Content-Type": "application/json",
   };
-  if (loginCustomerId && loginCustomerId !== customerId) {
+  // Always set login-customer-id when provided. Required for MCC + child queries.
+  if (loginCustomerId) {
     headers["login-customer-id"] = loginCustomerId;
   }
   const res = await fetch(

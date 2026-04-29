@@ -218,6 +218,7 @@ async function syncGoogleForUser(supabase: any, userId: string, accessToken: str
       const customerId = customerResource.replace("customers/", "");
       const resolved = await getAccessibleCustomerIds(customerId, accessToken, developerToken);
       let customerIds = resolved.childIds;
+      console.log(`[sync] client=${clientId} resolved customer ${customerId} → mcc=${resolved.mccId} children=[${customerIds.join(",")}]`);
       const loginCustomerId = resolved.mccId || customerId;
 
       for (const cid of customerIds) {
@@ -673,26 +674,30 @@ interface ResolvedAccounts {
 }
 
 async function getAccessibleCustomerIds(customerId: string, accessToken: string, developerToken: string): Promise<ResolvedAccounts> {
+  // Try to walk this account as an MCC. login-customer-id MUST be set to the manager id.
   try {
     const childRows = await queryGoogleAds(customerId, accessToken, developerToken, `
-      SELECT customer_client.id, customer_client.manager, customer_client.descriptive_name
-      FROM customer_client WHERE customer_client.status = 'ENABLED'
+      SELECT customer_client.id, customer_client.manager, customer_client.descriptive_name, customer_client.level, customer_client.status
+      FROM customer_client
+      WHERE customer_client.status = 'ENABLED' AND customer_client.hidden = false
     `, customerId);
 
+    console.log(`[getAccessibleCustomerIds] ${customerId} returned ${childRows.length} customer_client rows`);
+
     const nonManagerChildren = childRows
-      .filter((r: any) => !r.customerClient?.manager)
+      .filter((r: any) => !r.customerClient?.manager && String(r.customerClient?.id) !== customerId)
       .map((r: any) => String(r.customerClient?.id));
     if (nonManagerChildren.length > 0) {
+      console.log(`[getAccessibleCustomerIds] ${customerId} is MCC with ${nonManagerChildren.length} child accounts: ${nonManagerChildren.join(",")}`);
       return { mccId: customerId, childIds: nonManagerChildren };
     }
-    const allIds = childRows.map((r: any) => String(r.customerClient?.id));
-    if (allIds.includes(customerId)) {
-      return { mccId: null, childIds: [customerId] };
-    }
-  } catch {
-    // not an MCC
+    // Standalone account
+    return { mccId: null, childIds: [customerId] };
+  } catch (err: any) {
+    console.error(`[getAccessibleCustomerIds] ${customerId} error: ${err?.message || err}`);
+    // Fall through — assume standalone account
+    return { mccId: null, childIds: [customerId] };
   }
-  return { mccId: null, childIds: [customerId] };
 }
 
 async function queryGoogleAds(customerId: string, accessToken: string, developerToken: string, query: string, loginCustomerId?: string): Promise<any[]> {
@@ -701,7 +706,8 @@ async function queryGoogleAds(customerId: string, accessToken: string, developer
     "developer-token": developerToken,
     "Content-Type": "application/json",
   };
-  if (loginCustomerId && loginCustomerId !== customerId) {
+  // Always set login-customer-id when provided. Required for MCC + child queries.
+  if (loginCustomerId) {
     headers["login-customer-id"] = loginCustomerId;
   }
   const res = await fetch(

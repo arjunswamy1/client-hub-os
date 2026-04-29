@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
   if (userId) {
     let query = supabaseAdmin
       .from("platform_connections")
-      .select("user_id, access_token, refresh_token, metadata, token_expires_at, client_id")
+      .select("user_id, access_token, refresh_token, metadata, token_expires_at, client_id, customer_id")
       .eq("user_id", userId)
       .eq("platform", "google");
     if (bodyClientId) {
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
   } else {
     const { data: connections } = await supabaseAdmin
       .from("platform_connections")
-      .select("user_id, access_token, refresh_token, metadata, token_expires_at, client_id")
+      .select("user_id, access_token, refresh_token, metadata, token_expires_at, client_id, customer_id")
       .eq("platform", "google");
     if (!connections || connections.length === 0) {
       return new Response(JSON.stringify({ message: "No google connections found" }), {
@@ -76,8 +76,22 @@ Deno.serve(async (req) => {
       }
     }
     const daysBack = bodyDaysBack || 30;
-    const result = await syncGoogleForUser(supabaseAdmin, conn.user_id, accessToken, conn.metadata, conn.client_id, daysBack);
+    const result = await syncGoogleForUser(supabaseAdmin, conn.user_id, accessToken, conn.metadata, conn.client_id, daysBack, conn.customer_id);
     results.push(result);
+
+    // Update sync health metadata on the connection
+    if (conn.client_id) {
+      await supabaseAdmin
+        .from("platform_connections")
+        .update({
+          last_synced_at: new Date().toISOString(),
+          last_sync_records: result?.records_synced ?? 0,
+          sync_error: result?.error || null,
+        })
+        .eq("user_id", conn.user_id)
+        .eq("platform", "google")
+        .eq("client_id", conn.client_id);
+    }
 
     // Log integration usage per client sync
     if (conn.client_id && !result?.error) {
@@ -89,6 +103,7 @@ Deno.serve(async (req) => {
         metadata: {
           days_back: daysBack,
           records_synced: result?.records_synced ?? 0,
+          customer_id: conn.customer_id || null,
         },
       });
     }
@@ -139,7 +154,7 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
   }
 }
 
-async function syncGoogleForUser(supabase: any, userId: string, accessToken: string, metadata: any, clientId: string | null = null, daysBack: number = 30) {
+async function syncGoogleForUser(supabase: any, userId: string, accessToken: string, metadata: any, clientId: string | null = null, daysBack: number = 30, assignedCustomerId: string | null = null) {
   const startTime = Date.now();
   const TIME_BUDGET_MS = 50_000;
 
@@ -150,6 +165,16 @@ async function syncGoogleForUser(supabase: any, userId: string, accessToken: str
   try {
     const developerToken = Deno.env.get("GOOGLE_DEVELOPER_TOKEN")!;
     let customers = metadata?.customers || [];
+
+    // CRITICAL: If a specific customer_id is mapped to this client, ONLY pull data for that account.
+    // This prevents two clients on the same Google login from receiving duplicate metrics.
+    if (assignedCustomerId) {
+      const normalized = assignedCustomerId.replace("customers/", "");
+      customers = [`customers/${normalized}`];
+      console.log(`[sync-google-ads] client=${clientId} restricted to customer ${normalized}`);
+    } else {
+      console.log(`[sync-google-ads] client=${clientId} has no customer_id mapping; syncing all ${customers.length} accessible customers (may produce duplicates across clients)`);
+    }
 
     if (customers.length === 0) {
       try {

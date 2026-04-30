@@ -11,6 +11,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { BudgetGantt } from './BudgetGantt';
 import { PushToMetaButton } from './PushToMetaButton';
+import { MetaTargetingTab } from './MetaTargetingTab';
+import { CampaignAdsTab } from './CampaignAdsTab';
 
 interface Props {
   campaign: any;
@@ -26,6 +28,7 @@ export function CampaignDetail({ campaign, onBack, clientId }: Props) {
   const { toast } = useToast();
 
   const isGoogle = campaign.platform === 'google';
+  const isMeta = campaign.platform === 'meta';
 
   // Add budget phase
   const addPhase = async () => {
@@ -87,13 +90,27 @@ export function CampaignDetail({ campaign, onBack, clientId }: Props) {
         </div>
       </div>
 
-      <Tabs defaultValue="budget">
+      <Tabs defaultValue={isMeta ? 'ads' : 'budget'}>
         <TabsList>
           <TabsTrigger value="budget">Budget Phases</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          {isMeta && <TabsTrigger value="ads">Ads & Creative</TabsTrigger>}
+          {isMeta && <TabsTrigger value="targeting">Meta Targeting</TabsTrigger>}
           {isGoogle && <TabsTrigger value="keywords">Keywords</TabsTrigger>}
           {isGoogle && <TabsTrigger value="extensions">Extensions</TabsTrigger>}
         </TabsList>
+
+        {isMeta && (
+          <TabsContent value="ads">
+            <CampaignAdsTab campaign={campaign} clientId={clientId} />
+          </TabsContent>
+        )}
+
+        {isMeta && (
+          <TabsContent value="targeting">
+            <MetaTargetingTab campaign={campaign} />
+          </TabsContent>
+        )}
 
         <TabsContent value="budget">
           <Card>

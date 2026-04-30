@@ -398,10 +398,17 @@ export function MetaTargetingTab({ campaign }: Props) {
           <div>
             <Label className="text-xs">Include audience (paste Meta audience ID)</Label>
             <div className="flex gap-2 mt-1">
-              <Input value={audienceInput.id} onChange={(e) => setAudienceInput((p) => ({ ...p, id: e.target.value }))} placeholder="120000000000000" className="h-8 max-w-[200px]" />
+              <Input
+                value={audienceInput.id}
+                onChange={(e) => { setAudienceInput((p) => ({ ...p, id: e.target.value })); setError('audience', undefined); }}
+                placeholder="120000000000000"
+                className={`h-8 max-w-[200px] ${errors.audience ? 'border-destructive' : ''}`}
+                aria-invalid={!!errors.audience}
+              />
               <Input value={audienceInput.name} onChange={(e) => setAudienceInput((p) => ({ ...p, name: e.target.value }))} placeholder="Label (optional)" className="h-8 flex-1" />
               <Button size="sm" variant="outline" onClick={() => addAudience(false)}><Plus className="h-3 w-3 mr-1" /> Include</Button>
             </div>
+            <FieldError msg={errors.audience} />
             <div className="flex flex-wrap gap-1 mt-2">
               {(t.custom_audiences || []).map((a) => (
                 <Badge key={a.id} className="text-xs gap-1">
@@ -414,10 +421,17 @@ export function MetaTargetingTab({ campaign }: Props) {
           <div>
             <Label className="text-xs">Exclude audience</Label>
             <div className="flex gap-2 mt-1">
-              <Input value={excludedAudienceInput.id} onChange={(e) => setExcludedAudienceInput((p) => ({ ...p, id: e.target.value }))} placeholder="120000000000000" className="h-8 max-w-[200px]" />
+              <Input
+                value={excludedAudienceInput.id}
+                onChange={(e) => { setExcludedAudienceInput((p) => ({ ...p, id: e.target.value })); setError('excludedAudience', undefined); }}
+                placeholder="120000000000000"
+                className={`h-8 max-w-[200px] ${errors.excludedAudience ? 'border-destructive' : ''}`}
+                aria-invalid={!!errors.excludedAudience}
+              />
               <Input value={excludedAudienceInput.name} onChange={(e) => setExcludedAudienceInput((p) => ({ ...p, name: e.target.value }))} placeholder="Label (optional)" className="h-8 flex-1" />
               <Button size="sm" variant="outline" onClick={() => addAudience(true)}><Plus className="h-3 w-3 mr-1" /> Exclude</Button>
             </div>
+            <FieldError msg={errors.excludedAudience} />
             <div className="flex flex-wrap gap-1 mt-2">
               {(t.excluded_custom_audiences || []).map((a) => (
                 <Badge key={a.id} variant="destructive" className="text-xs gap-1">
@@ -430,10 +444,23 @@ export function MetaTargetingTab({ campaign }: Props) {
           <div>
             <Label className="text-xs">Detailed Interests (Meta interest ID + name)</Label>
             <div className="flex gap-2 mt-1">
-              <Input value={interestInput.id} onChange={(e) => setInterestInput((p) => ({ ...p, id: e.target.value }))} placeholder="6003107902433" className="h-8 max-w-[180px]" />
-              <Input value={interestInput.name} onChange={(e) => setInterestInput((p) => ({ ...p, name: e.target.value }))} placeholder="Interest name" className="h-8 flex-1" />
+              <Input
+                value={interestInput.id}
+                onChange={(e) => { setInterestInput((p) => ({ ...p, id: e.target.value })); setError('interest', undefined); }}
+                placeholder="6003107902433"
+                className={`h-8 max-w-[180px] ${errors.interest ? 'border-destructive' : ''}`}
+                aria-invalid={!!errors.interest}
+              />
+              <Input
+                value={interestInput.name}
+                onChange={(e) => { setInterestInput((p) => ({ ...p, name: e.target.value })); setError('interest', undefined); }}
+                placeholder="Interest name"
+                className={`h-8 flex-1 ${errors.interest ? 'border-destructive' : ''}`}
+                aria-invalid={!!errors.interest}
+              />
               <Button size="sm" variant="outline" onClick={addInterest}><Plus className="h-3 w-3 mr-1" /> Add</Button>
             </div>
+            <FieldError msg={errors.interest} />
             <div className="flex flex-wrap gap-1 mt-2">
               {(t.interests || []).map((i) => (
                 <Badge key={i.id} variant="outline" className="text-xs gap-1">

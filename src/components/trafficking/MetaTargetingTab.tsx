@@ -292,9 +292,18 @@ export function MetaTargetingTab({ campaign }: Props) {
           <div>
             <Label className="text-xs">Countries (ISO-2)</Label>
             <div className="flex gap-2 mt-1">
-              <Input value={countryInput} onChange={(e) => setCountryInput(e.target.value)} placeholder="US" className="h-8 max-w-[120px]" maxLength={2} />
+              <Input
+                value={countryInput}
+                onChange={(e) => { setCountryInput(e.target.value); setError('country', undefined); }}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCountry())}
+                placeholder="US"
+                className={`h-8 max-w-[120px] ${errors.country ? 'border-destructive' : ''}`}
+                maxLength={2}
+                aria-invalid={!!errors.country}
+              />
               <Button size="sm" variant="outline" onClick={addCountry}><Plus className="h-3 w-3 mr-1" /> Add</Button>
             </div>
+            <FieldError msg={errors.country} />
             <div className="flex flex-wrap gap-1 mt-2">
               {(t.geo_locations?.countries || []).map((c) => (
                 <Badge key={c} variant="secondary" className="text-xs gap-1">
@@ -308,9 +317,17 @@ export function MetaTargetingTab({ campaign }: Props) {
           <div>
             <Label className="text-xs">Cities (Meta city key, e.g. <code>2418779</code> for NYC)</Label>
             <div className="flex gap-2 mt-1">
-              <Input value={cityInput} onChange={(e) => setCityInput(e.target.value)} placeholder="Meta city key" className="h-8 max-w-[200px]" />
+              <Input
+                value={cityInput}
+                onChange={(e) => { setCityInput(e.target.value); setError('city', undefined); }}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCity())}
+                placeholder="Meta city key"
+                className={`h-8 max-w-[200px] ${errors.city ? 'border-destructive' : ''}`}
+                aria-invalid={!!errors.city}
+              />
               <Button size="sm" variant="outline" onClick={addCity}><Plus className="h-3 w-3 mr-1" /> Add</Button>
             </div>
+            <FieldError msg={errors.city} />
             <div className="flex flex-wrap gap-1 mt-2">
               {(t.geo_locations?.cities || []).map((c) => (
                 <Badge key={c.key} variant="secondary" className="text-xs gap-1">

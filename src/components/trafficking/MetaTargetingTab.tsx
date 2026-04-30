@@ -491,6 +491,7 @@ export function MetaTargetingTab({ campaign }: Props) {
                 </label>
               ))}
             </div>
+            <FieldError msg={errors.placements} />
           </div>
           {(t.publisher_platforms || []).includes('facebook') && (
             <div>

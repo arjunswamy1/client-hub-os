@@ -1,0 +1,393 @@
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
+import { Save, X, Plus, Globe, Users, Target as TargetIcon, MonitorSmartphone, Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
+
+interface Props {
+  campaign: any;
+}
+
+type Targeting = {
+  geo_locations?: { countries?: string[]; regions?: { key: string }[]; cities?: { key: string; radius?: number; distance_unit?: string }[] };
+  age_min?: number;
+  age_max?: number;
+  genders?: number[]; // 1 = male, 2 = female
+  custom_audiences?: { id: string; name?: string }[];
+  excluded_custom_audiences?: { id: string; name?: string }[];
+  interests?: { id: string; name: string }[];
+  publisher_platforms?: string[];
+  facebook_positions?: string[];
+  instagram_positions?: string[];
+  audience_network_positions?: string[];
+  device_platforms?: string[];
+  flexible_spec?: any[];
+};
+
+const PUBLISHER_PLATFORMS = [
+  { id: 'facebook', label: 'Facebook' },
+  { id: 'instagram', label: 'Instagram' },
+  { id: 'audience_network', label: 'Audience Network' },
+  { id: 'messenger', label: 'Messenger' },
+];
+
+const FB_POSITIONS = ['feed', 'right_hand_column', 'video_feeds', 'story', 'instream_video', 'facebook_reels', 'marketplace', 'search'];
+const IG_POSITIONS = ['stream', 'story', 'explore', 'reels', 'shop', 'profile_feed'];
+const DEVICE_PLATFORMS = [
+  { id: 'mobile', label: 'Mobile' },
+  { id: 'desktop', label: 'Desktop' },
+];
+
+const OPTIMIZATION_GOALS = [
+  'OFFSITE_CONVERSIONS', 'LINK_CLICKS', 'IMPRESSIONS', 'REACH', 'POST_ENGAGEMENT',
+  'LANDING_PAGE_VIEWS', 'LEAD_GENERATION', 'VIDEO_VIEWS', 'THRUPLAY', 'VALUE',
+];
+
+export function MetaTargetingTab({ campaign }: Props) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const [t, setT] = useState<Targeting>(campaign.targeting_spec || {});
+  const [optimizationGoal, setOptimizationGoal] = useState<string>(campaign.optimization_goal || '');
+  const [billingEvent, setBillingEvent] = useState<string>(campaign.billing_event || 'IMPRESSIONS');
+
+  // Country / city input state
+  const [countryInput, setCountryInput] = useState('');
+  const [cityInput, setCityInput] = useState('');
+  const [interestInput, setInterestInput] = useState({ id: '', name: '' });
+  const [audienceInput, setAudienceInput] = useState({ id: '', name: '' });
+  const [excludedAudienceInput, setExcludedAudienceInput] = useState({ id: '', name: '' });
+
+  useEffect(() => {
+    setT(campaign.targeting_spec || {});
+    setOptimizationGoal(campaign.optimization_goal || '');
+    setBillingEvent(campaign.billing_event || 'IMPRESSIONS');
+  }, [campaign.id]);
+
+  const update = (patch: Partial<Targeting>) => setT((prev) => ({ ...prev, ...patch }));
+
+  const togglePlatform = (id: string) => {
+    const cur = t.publisher_platforms || [];
+    update({ publisher_platforms: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+  };
+  const togglePosition = (key: 'facebook_positions' | 'instagram_positions', pos: string) => {
+    const cur = (t[key] as string[]) || [];
+    update({ [key]: cur.includes(pos) ? cur.filter((x) => x !== pos) : [...cur, pos] } as Targeting);
+  };
+  const toggleDevice = (id: string) => {
+    const cur = t.device_platforms || [];
+    update({ device_platforms: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+  };
+  const toggleGender = (g: number) => {
+    const cur = t.genders || [];
+    update({ genders: cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g] });
+  };
+
+  const addCountry = () => {
+    const code = countryInput.trim().toUpperCase();
+    if (code.length !== 2) {
+      toast({ title: 'Invalid country', description: 'Use 2-letter ISO code (US, GB, CA, etc.)', variant: 'destructive' });
+      return;
+    }
+    const cur = t.geo_locations?.countries || [];
+    if (cur.includes(code)) return;
+    update({ geo_locations: { ...t.geo_locations, countries: [...cur, code] } });
+    setCountryInput('');
+  };
+  const removeCountry = (code: string) => {
+    update({ geo_locations: { ...t.geo_locations, countries: (t.geo_locations?.countries || []).filter((c) => c !== code) } });
+  };
+
+  const addCity = () => {
+    const key = cityInput.trim();
+    if (!key) return;
+    const cur = t.geo_locations?.cities || [];
+    update({ geo_locations: { ...t.geo_locations, cities: [...cur, { key, radius: 25, distance_unit: 'mile' }] } });
+    setCityInput('');
+  };
+  const removeCity = (key: string) => {
+    update({ geo_locations: { ...t.geo_locations, cities: (t.geo_locations?.cities || []).filter((c) => c.key !== key) } });
+  };
+
+  const addInterest = () => {
+    if (!interestInput.id || !interestInput.name) return;
+    update({ interests: [...(t.interests || []), { ...interestInput }] });
+    setInterestInput({ id: '', name: '' });
+  };
+  const removeInterest = (id: string) => update({ interests: (t.interests || []).filter((i) => i.id !== id) });
+
+  const addAudience = (excluded = false) => {
+    const inp = excluded ? excludedAudienceInput : audienceInput;
+    if (!inp.id) return;
+    if (excluded) {
+      update({ excluded_custom_audiences: [...(t.excluded_custom_audiences || []), { id: inp.id, name: inp.name || inp.id }] });
+      setExcludedAudienceInput({ id: '', name: '' });
+    } else {
+      update({ custom_audiences: [...(t.custom_audiences || []), { id: inp.id, name: inp.name || inp.id }] });
+      setAudienceInput({ id: '', name: '' });
+    }
+  };
+  const removeAudience = (id: string, excluded = false) => {
+    if (excluded) update({ excluded_custom_audiences: (t.excluded_custom_audiences || []).filter((a) => a.id !== id) });
+    else update({ custom_audiences: (t.custom_audiences || []).filter((a) => a.id !== id) });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('trafficking_campaigns')
+      .update({
+        targeting_spec: t as any,
+        optimization_goal: optimizationGoal || null,
+        billing_event: billingEvent || 'IMPRESSIONS',
+      })
+      .eq('id', campaign.id);
+    setSaving(false);
+    if (error) {
+      toast({ title: 'Save failed', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Targeting saved', description: 'Will be used on next push to Meta.' });
+      qc.invalidateQueries({ queryKey: ['trafficking_campaigns'] });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <div>
+          <CardTitle className="text-sm">Meta Targeting & Delivery</CardTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">Configure audience and placements. Saved values are sent to Meta on push.</p>
+        </div>
+        <Button size="sm" onClick={handleSave} disabled={saving}>
+          {saving ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Save className="h-3 w-3 mr-1.5" />}
+          Save Targeting
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Geo */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-medium">Geographic Targeting</h3>
+          </div>
+          <div>
+            <Label className="text-xs">Countries (ISO-2)</Label>
+            <div className="flex gap-2 mt-1">
+              <Input value={countryInput} onChange={(e) => setCountryInput(e.target.value)} placeholder="US" className="h-8 max-w-[120px]" maxLength={2} />
+              <Button size="sm" variant="outline" onClick={addCountry}><Plus className="h-3 w-3 mr-1" /> Add</Button>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {(t.geo_locations?.countries || []).map((c) => (
+                <Badge key={c} variant="secondary" className="text-xs gap-1">
+                  {c}
+                  <button onClick={() => removeCountry(c)} className="hover:text-destructive"><X className="h-3 w-3" /></button>
+                </Badge>
+              ))}
+              {!(t.geo_locations?.countries?.length) && <p className="text-xs text-muted-foreground">No countries — defaults to US on push.</p>}
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Cities (Meta city key, e.g. <code>2418779</code> for NYC)</Label>
+            <div className="flex gap-2 mt-1">
+              <Input value={cityInput} onChange={(e) => setCityInput(e.target.value)} placeholder="Meta city key" className="h-8 max-w-[200px]" />
+              <Button size="sm" variant="outline" onClick={addCity}><Plus className="h-3 w-3 mr-1" /> Add</Button>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {(t.geo_locations?.cities || []).map((c) => (
+                <Badge key={c.key} variant="secondary" className="text-xs gap-1">
+                  City {c.key} • {c.radius}{c.distance_unit?.[0]}
+                  <button onClick={() => removeCity(c.key)} className="hover:text-destructive"><X className="h-3 w-3" /></button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Demographics */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-medium">Demographics</h3>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs">Age Min</Label>
+              <Input type="number" min={13} max={65} value={t.age_min ?? ''} onChange={(e) => update({ age_min: e.target.value ? Number(e.target.value) : undefined })} className="h-8" />
+            </div>
+            <div>
+              <Label className="text-xs">Age Max</Label>
+              <Input type="number" min={13} max={65} value={t.age_max ?? ''} onChange={(e) => update({ age_max: e.target.value ? Number(e.target.value) : undefined })} className="h-8" />
+            </div>
+            <div>
+              <Label className="text-xs">Genders</Label>
+              <div className="flex gap-2 mt-2">
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <Checkbox checked={(t.genders || []).includes(1)} onCheckedChange={() => toggleGender(1)} /> Male
+                </label>
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <Checkbox checked={(t.genders || []).includes(2)} onCheckedChange={() => toggleGender(2)} /> Female
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Custom Audiences */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <TargetIcon className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-medium">Custom Audiences & Lookalikes</h3>
+          </div>
+          <div>
+            <Label className="text-xs">Include audience (paste Meta audience ID)</Label>
+            <div className="flex gap-2 mt-1">
+              <Input value={audienceInput.id} onChange={(e) => setAudienceInput((p) => ({ ...p, id: e.target.value }))} placeholder="120000000000000" className="h-8 max-w-[200px]" />
+              <Input value={audienceInput.name} onChange={(e) => setAudienceInput((p) => ({ ...p, name: e.target.value }))} placeholder="Label (optional)" className="h-8 flex-1" />
+              <Button size="sm" variant="outline" onClick={() => addAudience(false)}><Plus className="h-3 w-3 mr-1" /> Include</Button>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {(t.custom_audiences || []).map((a) => (
+                <Badge key={a.id} className="text-xs gap-1">
+                  {a.name || a.id}
+                  <button onClick={() => removeAudience(a.id, false)} className="hover:text-destructive"><X className="h-3 w-3" /></button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Exclude audience</Label>
+            <div className="flex gap-2 mt-1">
+              <Input value={excludedAudienceInput.id} onChange={(e) => setExcludedAudienceInput((p) => ({ ...p, id: e.target.value }))} placeholder="120000000000000" className="h-8 max-w-[200px]" />
+              <Input value={excludedAudienceInput.name} onChange={(e) => setExcludedAudienceInput((p) => ({ ...p, name: e.target.value }))} placeholder="Label (optional)" className="h-8 flex-1" />
+              <Button size="sm" variant="outline" onClick={() => addAudience(true)}><Plus className="h-3 w-3 mr-1" /> Exclude</Button>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {(t.excluded_custom_audiences || []).map((a) => (
+                <Badge key={a.id} variant="destructive" className="text-xs gap-1">
+                  {a.name || a.id}
+                  <button onClick={() => removeAudience(a.id, true)} className="hover:text-destructive"><X className="h-3 w-3" /></button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Detailed Interests (Meta interest ID + name)</Label>
+            <div className="flex gap-2 mt-1">
+              <Input value={interestInput.id} onChange={(e) => setInterestInput((p) => ({ ...p, id: e.target.value }))} placeholder="6003107902433" className="h-8 max-w-[180px]" />
+              <Input value={interestInput.name} onChange={(e) => setInterestInput((p) => ({ ...p, name: e.target.value }))} placeholder="Interest name" className="h-8 flex-1" />
+              <Button size="sm" variant="outline" onClick={addInterest}><Plus className="h-3 w-3 mr-1" /> Add</Button>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {(t.interests || []).map((i) => (
+                <Badge key={i.id} variant="outline" className="text-xs gap-1">
+                  {i.name}
+                  <button onClick={() => removeInterest(i.id)} className="hover:text-destructive"><X className="h-3 w-3" /></button>
+                </Badge>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">Tip: find interest IDs via Meta's Targeting Search API or Ads Manager URL.</p>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Placements */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <MonitorSmartphone className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-medium">Placements</h3>
+          </div>
+          <div>
+            <Label className="text-xs">Publisher Platforms</Label>
+            <div className="flex flex-wrap gap-3 mt-2">
+              {PUBLISHER_PLATFORMS.map((p) => (
+                <label key={p.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <Checkbox checked={(t.publisher_platforms || []).includes(p.id)} onCheckedChange={() => togglePlatform(p.id)} />
+                  {p.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          {(t.publisher_platforms || []).includes('facebook') && (
+            <div>
+              <Label className="text-xs">Facebook Positions</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {FB_POSITIONS.map((pos) => (
+                  <label key={pos} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <Checkbox checked={(t.facebook_positions || []).includes(pos)} onCheckedChange={() => togglePosition('facebook_positions', pos)} />
+                    {pos}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {(t.publisher_platforms || []).includes('instagram') && (
+            <div>
+              <Label className="text-xs">Instagram Positions</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {IG_POSITIONS.map((pos) => (
+                  <label key={pos} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <Checkbox checked={(t.instagram_positions || []).includes(pos)} onCheckedChange={() => togglePosition('instagram_positions', pos)} />
+                    {pos}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <Label className="text-xs">Devices</Label>
+            <div className="flex gap-3 mt-2">
+              {DEVICE_PLATFORMS.map((d) => (
+                <label key={d.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <Checkbox checked={(t.device_platforms || []).includes(d.id)} onCheckedChange={() => toggleDevice(d.id)} />
+                  {d.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Delivery */}
+        <section className="space-y-3">
+          <h3 className="text-sm font-medium">Delivery & Optimization</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Optimization Goal</Label>
+              <Select value={optimizationGoal} onValueChange={setOptimizationGoal}>
+                <SelectTrigger className="h-8"><SelectValue placeholder="Auto from objective" /></SelectTrigger>
+                <SelectContent>
+                  {OPTIMIZATION_GOALS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Billing Event</Label>
+              <Select value={billingEvent} onValueChange={setBillingEvent}>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="IMPRESSIONS">Impressions</SelectItem>
+                  <SelectItem value="LINK_CLICKS">Link Clicks</SelectItem>
+                  <SelectItem value="THRUPLAY">ThruPlay (video)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </section>
+      </CardContent>
+    </Card>
+  );
+}

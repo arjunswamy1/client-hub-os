@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { BudgetGantt } from './BudgetGantt';
+import { PushToMetaButton } from './PushToMetaButton';
 
 interface Props {
   campaign: any;
@@ -77,7 +78,13 @@ export function CampaignDetail({ campaign, onBack, clientId }: Props) {
               : ' No dates'}
           </p>
         </div>
-        <Badge className="ml-auto">{campaign.status}</Badge>
+        <div className="ml-auto flex items-center gap-2">
+          {campaign.meta_pushed_at && (
+            <Badge variant="outline" className="text-[10px]">Pushed to Meta (Paused)</Badge>
+          )}
+          <PushToMetaButton campaign={campaign} />
+          <Badge>{campaign.status}</Badge>
+        </div>
       </div>
 
       <Tabs defaultValue="budget">

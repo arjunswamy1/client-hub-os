@@ -2223,6 +2223,83 @@ export type Database = {
         }
         Relationships: []
       }
+      meta_push_log: {
+        Row: {
+          action: string
+          client_id: string
+          created_at: string
+          entity_type: string
+          error_message: string | null
+          id: string
+          meta_entity_id: string | null
+          pushed_by_id: string | null
+          request_payload: Json | null
+          response_payload: Json | null
+          status: string
+          trafficking_ad_id: string | null
+          trafficking_campaign_id: string | null
+        }
+        Insert: {
+          action: string
+          client_id: string
+          created_at?: string
+          entity_type: string
+          error_message?: string | null
+          id?: string
+          meta_entity_id?: string | null
+          pushed_by_id?: string | null
+          request_payload?: Json | null
+          response_payload?: Json | null
+          status: string
+          trafficking_ad_id?: string | null
+          trafficking_campaign_id?: string | null
+        }
+        Update: {
+          action?: string
+          client_id?: string
+          created_at?: string
+          entity_type?: string
+          error_message?: string | null
+          id?: string
+          meta_entity_id?: string | null
+          pushed_by_id?: string | null
+          request_payload?: Json | null
+          response_payload?: Json | null
+          status?: string
+          trafficking_ad_id?: string | null
+          trafficking_campaign_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_push_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_push_log_pushed_by_id_fkey"
+            columns: ["pushed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_push_log_trafficking_ad_id_fkey"
+            columns: ["trafficking_ad_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_ads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_push_log_trafficking_campaign_id_fkey"
+            columns: ["trafficking_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "trafficking_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           brief_id: string | null
@@ -3721,6 +3798,13 @@ export type Database = {
           launch_checklist: Json | null
           launch_target: string | null
           launched_at: string | null
+          meta_creative_id: string | null
+          meta_image_hash: string | null
+          meta_last_synced_at: string | null
+          meta_push_error: string | null
+          meta_pushed_at: string | null
+          meta_pushed_by_id: string | null
+          meta_video_id: string | null
           notes: string | null
           platform: string | null
           platform_ad_id: string | null
@@ -3761,6 +3845,13 @@ export type Database = {
           launch_checklist?: Json | null
           launch_target?: string | null
           launched_at?: string | null
+          meta_creative_id?: string | null
+          meta_image_hash?: string | null
+          meta_last_synced_at?: string | null
+          meta_push_error?: string | null
+          meta_pushed_at?: string | null
+          meta_pushed_by_id?: string | null
+          meta_video_id?: string | null
           notes?: string | null
           platform?: string | null
           platform_ad_id?: string | null
@@ -3801,6 +3892,13 @@ export type Database = {
           launch_checklist?: Json | null
           launch_target?: string | null
           launched_at?: string | null
+          meta_creative_id?: string | null
+          meta_image_hash?: string | null
+          meta_last_synced_at?: string | null
+          meta_push_error?: string | null
+          meta_pushed_at?: string | null
+          meta_pushed_by_id?: string | null
+          meta_video_id?: string | null
           notes?: string | null
           platform?: string | null
           platform_ad_id?: string | null
@@ -3853,6 +3951,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "trafficking_ads_meta_pushed_by_id_fkey"
+            columns: ["meta_pushed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "trafficking_ads_trafficked_by_id_fkey"
             columns: ["trafficked_by_id"]
             isOneToOne: false
@@ -3864,49 +3969,85 @@ export type Database = {
       trafficking_campaigns: {
         Row: {
           bidding_strategy: string | null
+          billing_event: string | null
           client_id: string
           created_at: string
           created_by_id: string | null
           end_date: string | null
           id: string
           location: string | null
+          meta_ad_account_id: string | null
+          meta_adset_id: string | null
+          meta_campaign_id: string | null
+          meta_instagram_actor_id: string | null
+          meta_page_id: string | null
+          meta_pixel_id: string | null
+          meta_push_error: string | null
+          meta_pushed_at: string | null
+          meta_pushed_by_id: string | null
           name: string
           objective: string | null
+          optimization_goal: string | null
           platform: string
           start_date: string | null
           status: string
+          targeting_spec: Json | null
           total_budget: number | null
           updated_at: string
         }
         Insert: {
           bidding_strategy?: string | null
+          billing_event?: string | null
           client_id: string
           created_at?: string
           created_by_id?: string | null
           end_date?: string | null
           id?: string
           location?: string | null
+          meta_ad_account_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_instagram_actor_id?: string | null
+          meta_page_id?: string | null
+          meta_pixel_id?: string | null
+          meta_push_error?: string | null
+          meta_pushed_at?: string | null
+          meta_pushed_by_id?: string | null
           name: string
           objective?: string | null
+          optimization_goal?: string | null
           platform: string
           start_date?: string | null
           status?: string
+          targeting_spec?: Json | null
           total_budget?: number | null
           updated_at?: string
         }
         Update: {
           bidding_strategy?: string | null
+          billing_event?: string | null
           client_id?: string
           created_at?: string
           created_by_id?: string | null
           end_date?: string | null
           id?: string
           location?: string | null
+          meta_ad_account_id?: string | null
+          meta_adset_id?: string | null
+          meta_campaign_id?: string | null
+          meta_instagram_actor_id?: string | null
+          meta_page_id?: string | null
+          meta_pixel_id?: string | null
+          meta_push_error?: string | null
+          meta_pushed_at?: string | null
+          meta_pushed_by_id?: string | null
           name?: string
           objective?: string | null
+          optimization_goal?: string | null
           platform?: string
           start_date?: string | null
           status?: string
+          targeting_spec?: Json | null
           total_budget?: number | null
           updated_at?: string
         }
@@ -3921,6 +4062,13 @@ export type Database = {
           {
             foreignKeyName: "trafficking_campaigns_created_by_id_fkey"
             columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trafficking_campaigns_meta_pushed_by_id_fkey"
+            columns: ["meta_pushed_by_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]

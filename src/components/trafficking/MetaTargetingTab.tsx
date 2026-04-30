@@ -84,18 +84,23 @@ export function MetaTargetingTab({ campaign }: Props) {
   const [interestInput, setInterestInput] = useState({ id: '', name: '' });
   const [audienceInput, setAudienceInput] = useState({ id: '', name: '' });
   const [excludedAudienceInput, setExcludedAudienceInput] = useState({ id: '', name: '' });
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     setT(campaign.targeting_spec || {});
     setOptimizationGoal(campaign.optimization_goal || '');
     setBillingEvent(campaign.billing_event || 'IMPRESSIONS');
+    setErrors({});
   }, [campaign.id]);
 
   const update = (patch: Partial<Targeting>) => setT((prev) => ({ ...prev, ...patch }));
+  const setError = (key: keyof FieldErrors, msg?: string) =>
+    setErrors((prev) => ({ ...prev, [key]: msg }));
 
   const togglePlatform = (id: string) => {
     const cur = t.publisher_platforms || [];
     update({ publisher_platforms: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+    setError('placements', undefined);
   };
   const togglePosition = (key: 'facebook_positions' | 'instagram_positions', pos: string) => {
     const cur = (t[key] as string[]) || [];
@@ -112,14 +117,22 @@ export function MetaTargetingTab({ campaign }: Props) {
 
   const addCountry = () => {
     const code = countryInput.trim().toUpperCase();
-    if (code.length !== 2) {
-      toast({ title: 'Invalid country', description: 'Use 2-letter ISO code (US, GB, CA, etc.)', variant: 'destructive' });
+    if (code.length !== 2 || !/^[A-Z]{2}$/.test(code)) {
+      setError('country', 'Use 2 letters (e.g. US, GB, CA).');
+      return;
+    }
+    if (!ISO2_COUNTRIES.has(code)) {
+      setError('country', `${code} is not a valid ISO-3166 alpha-2 country code.`);
       return;
     }
     const cur = t.geo_locations?.countries || [];
-    if (cur.includes(code)) return;
+    if (cur.includes(code)) {
+      setError('country', `${code} is already added.`);
+      return;
+    }
     update({ geo_locations: { ...t.geo_locations, countries: [...cur, code] } });
     setCountryInput('');
+    setError('country', undefined);
   };
   const removeCountry = (code: string) => {
     update({ geo_locations: { ...t.geo_locations, countries: (t.geo_locations?.countries || []).filter((c) => c !== code) } });
@@ -127,39 +140,111 @@ export function MetaTargetingTab({ campaign }: Props) {
 
   const addCity = () => {
     const key = cityInput.trim();
-    if (!key) return;
+    if (!CITY_KEY_RE.test(key)) {
+      setError('city', 'City key must be a numeric Meta city ID (e.g. 2418779).');
+      return;
+    }
     const cur = t.geo_locations?.cities || [];
+    if (cur.some((c) => c.key === key)) {
+      setError('city', 'City already added.');
+      return;
+    }
     update({ geo_locations: { ...t.geo_locations, cities: [...cur, { key, radius: 25, distance_unit: 'mile' }] } });
     setCityInput('');
+    setError('city', undefined);
   };
   const removeCity = (key: string) => {
     update({ geo_locations: { ...t.geo_locations, cities: (t.geo_locations?.cities || []).filter((c) => c.key !== key) } });
   };
 
   const addInterest = () => {
-    if (!interestInput.id || !interestInput.name) return;
-    update({ interests: [...(t.interests || []), { ...interestInput }] });
+    const id = interestInput.id.trim();
+    const name = interestInput.name.trim();
+    if (!META_ID_RE.test(id)) {
+      setError('interest', 'Interest ID must be 6–20 digits (Meta numeric ID).');
+      return;
+    }
+    if (!name) {
+      setError('interest', 'Interest name is required for audit logging.');
+      return;
+    }
+    if ((t.interests || []).some((i) => i.id === id)) {
+      setError('interest', 'Interest already added.');
+      return;
+    }
+    update({ interests: [...(t.interests || []), { id, name }] });
     setInterestInput({ id: '', name: '' });
+    setError('interest', undefined);
   };
   const removeInterest = (id: string) => update({ interests: (t.interests || []).filter((i) => i.id !== id) });
 
   const addAudience = (excluded = false) => {
     const inp = excluded ? excludedAudienceInput : audienceInput;
-    if (!inp.id) return;
+    const id = inp.id.trim();
+    const errKey = excluded ? 'excludedAudience' : 'audience';
+    if (!META_ID_RE.test(id)) {
+      setError(errKey, 'Audience ID must be 6–20 digits (Meta numeric ID).');
+      return;
+    }
+    const list = excluded ? t.excluded_custom_audiences : t.custom_audiences;
+    if ((list || []).some((a) => a.id === id)) {
+      setError(errKey, 'Audience already added.');
+      return;
+    }
     if (excluded) {
-      update({ excluded_custom_audiences: [...(t.excluded_custom_audiences || []), { id: inp.id, name: inp.name || inp.id }] });
+      update({ excluded_custom_audiences: [...(t.excluded_custom_audiences || []), { id, name: inp.name.trim() || id }] });
       setExcludedAudienceInput({ id: '', name: '' });
     } else {
-      update({ custom_audiences: [...(t.custom_audiences || []), { id: inp.id, name: inp.name || inp.id }] });
+      update({ custom_audiences: [...(t.custom_audiences || []), { id, name: inp.name.trim() || id }] });
       setAudienceInput({ id: '', name: '' });
     }
+    setError(errKey, undefined);
   };
   const removeAudience = (id: string, excluded = false) => {
     if (excluded) update({ excluded_custom_audiences: (t.excluded_custom_audiences || []).filter((a) => a.id !== id) });
     else update({ custom_audiences: (t.custom_audiences || []).filter((a) => a.id !== id) });
   };
 
+  // Full pre-save validation via zod
+  const targetingSchema = z
+    .object({
+      age_min: z.number().int().min(13).max(65).optional(),
+      age_max: z.number().int().min(13).max(65).optional(),
+      publisher_platforms: z.array(z.string()).optional(),
+    })
+    .refine((v) => !(v.age_min && v.age_max) || v.age_min <= v.age_max, {
+      message: 'Age min must be ≤ age max.',
+      path: ['age_max'],
+    });
+
+  const validateAll = (): boolean => {
+    const next: FieldErrors = {};
+    const parsed = targetingSchema.safeParse({
+      age_min: t.age_min,
+      age_max: t.age_max,
+      publisher_platforms: t.publisher_platforms,
+    });
+    if (!parsed.success) {
+      next.age = parsed.error.issues[0]?.message || 'Invalid age range.';
+    }
+    if (t.age_min !== undefined && (t.age_min < 13 || t.age_min > 65)) {
+      next.age = 'Age min must be between 13 and 65.';
+    }
+    if (t.age_max !== undefined && (t.age_max < 13 || t.age_max > 65)) {
+      next.age = 'Age max must be between 13 and 65.';
+    }
+    if (t.publisher_platforms && t.publisher_platforms.length === 0) {
+      next.placements = 'Select at least one publisher platform, or leave unset for automatic placements.';
+    }
+    setErrors((prev) => ({ ...prev, ...next, country: undefined, city: undefined, audience: undefined, excludedAudience: undefined, interest: undefined }));
+    return Object.values(next).every((v) => !v);
+  };
+
   const handleSave = async () => {
+    if (!validateAll()) {
+      toast({ title: 'Fix validation errors', description: 'Some fields need attention before saving.', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from('trafficking_campaigns')
@@ -177,6 +262,13 @@ export function MetaTargetingTab({ campaign }: Props) {
       qc.invalidateQueries({ queryKey: ['trafficking_campaigns'] });
     }
   };
+
+  const FieldError = ({ msg }: { msg?: string }) =>
+    msg ? (
+      <p className="text-[11px] text-destructive flex items-center gap-1 mt-1">
+        <AlertCircle className="h-3 w-3" /> {msg}
+      </p>
+    ) : null;
 
   return (
     <Card>

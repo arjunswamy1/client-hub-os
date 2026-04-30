@@ -350,11 +350,27 @@ export function MetaTargetingTab({ campaign }: Props) {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">Age Min</Label>
-              <Input type="number" min={13} max={65} value={t.age_min ?? ''} onChange={(e) => update({ age_min: e.target.value ? Number(e.target.value) : undefined })} className="h-8" />
+              <Input
+                type="number"
+                min={13}
+                max={65}
+                value={t.age_min ?? ''}
+                onChange={(e) => { update({ age_min: e.target.value ? Number(e.target.value) : undefined }); setError('age', undefined); }}
+                className={`h-8 ${errors.age ? 'border-destructive' : ''}`}
+                aria-invalid={!!errors.age}
+              />
             </div>
             <div>
               <Label className="text-xs">Age Max</Label>
-              <Input type="number" min={13} max={65} value={t.age_max ?? ''} onChange={(e) => update({ age_max: e.target.value ? Number(e.target.value) : undefined })} className="h-8" />
+              <Input
+                type="number"
+                min={13}
+                max={65}
+                value={t.age_max ?? ''}
+                onChange={(e) => { update({ age_max: e.target.value ? Number(e.target.value) : undefined }); setError('age', undefined); }}
+                className={`h-8 ${errors.age ? 'border-destructive' : ''}`}
+                aria-invalid={!!errors.age}
+              />
             </div>
             <div>
               <Label className="text-xs">Genders</Label>
@@ -368,6 +384,7 @@ export function MetaTargetingTab({ campaign }: Props) {
               </div>
             </div>
           </div>
+          <FieldError msg={errors.age} />
         </section>
 
         <Separator />

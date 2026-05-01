@@ -167,11 +167,21 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
                 <SelectValue placeholder={accounts.length ? 'Choose an account…' : 'No accessible accounts'} />
               </SelectTrigger>
               <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name} <span className="text-muted-foreground font-mono">({a.id})</span>
-                  </SelectItem>
-                ))}
+                {accounts.map((a) => {
+                  const isGeneric = !a.name || a.name === `Customer ${a.id}`;
+                  return (
+                    <SelectItem key={a.id} value={a.id}>
+                      <div className="flex flex-col">
+                        <span className={isGeneric ? 'text-muted-foreground italic' : ''}>
+                          {isGeneric ? 'Unnamed account' : a.name}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          ID {a.id}{a.parentMcc ? ` • under MCC ${a.parentMcc}` : ''}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             <Button onClick={handleSave} disabled={saving || !selected || selected === conn.customer_id} size="sm">

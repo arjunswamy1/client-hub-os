@@ -177,6 +177,45 @@ async function listChildren(mccId: string, accessToken: string, developerToken: 
   }
 }
 
+async function getCustomerInfo(
+  cid: string,
+  accessToken: string,
+  developerToken: string,
+): Promise<{ name: string; manager: boolean } | null> {
+  try {
+    const res = await fetch(
+      `https://googleads.googleapis.com/v23/customers/${cid}/googleAds:searchStream`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "developer-token": developerToken,
+          "login-customer-id": cid,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: `SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1`,
+        }),
+      },
+    );
+    const data = await res.json();
+    if (!Array.isArray(data)) return null;
+    for (const batch of data) {
+      const row = batch.results?.[0]?.customer;
+      if (row) {
+        return {
+          name: row.descriptiveName || `Customer ${cid}`,
+          manager: !!row.manager,
+        };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[getCustomerInfo] ${cid} threw:`, err);
+    return null;
+  }
+}
+
 async function refreshToken(supabase: any, connId: string, refreshToken: string): Promise<string | null> {
   if (!refreshToken) return null;
   const res = await fetch("https://oauth2.googleapis.com/token", {

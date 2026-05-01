@@ -66,6 +66,7 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
 
   const hasMapping = !!conn.customer_id;
   const showWarning = accounts.length > 1 && !hasMapping;
+  const allGeneric = accounts.length > 0 && accounts.every((a) => !a.name || a.name === `Customer ${a.id}`);
   const refreshedAgo = conn.metadata?.accounts_refreshed_at
     ? formatDistanceToNow(new Date(conn.metadata.accounts_refreshed_at), { addSuffix: true })
     : null;

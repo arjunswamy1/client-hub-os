@@ -30,7 +30,7 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
   const [refreshingAccounts, setRefreshingAccounts] = useState(false);
   const [selected, setSelected] = useState<string>('');
 
-  const load = async () => {
+  const load = async (): Promise<Connection | null> => {
     setLoading(true);
     const { data } = await supabase
       .from('platform_connections')
@@ -39,12 +39,62 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
       .eq('platform', 'google')
       .eq('status', 'active')
       .maybeSingle();
-    setConn(data as Connection | null);
-    setSelected((data as Connection | null)?.customer_id || '');
+    const c = (data as Connection | null) ?? null;
+    setConn(c);
+    setSelected(c?.customer_id || '');
     setLoading(false);
+    return c;
   };
 
-  useEffect(() => { load(); }, [clientId]);
+  const refreshAccounts = async (silent: boolean) => {
+    setRefreshingAccounts(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-list-accounts', {
+        body: { client_id: clientId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (!silent) {
+        const found = data?.accounts?.length ?? 0;
+        if (found === 0) {
+          toast.warning('No operating ad accounts were returned by Google. The connected user may need broader access, or you may need to reconnect Google.');
+        } else {
+          toast.success(`Found ${found} ad account${found === 1 ? '' : 's'}`);
+        }
+      }
+      await load();
+    } catch (err: any) {
+      if (!silent) toast.error(`Failed to refresh accounts: ${err.message}`);
+      else console.warn('[GoogleAdsAccountPicker] auto-refresh failed:', err?.message);
+    } finally {
+      setRefreshingAccounts(false);
+    }
+  };
+
+  // Initial load + opportunistic auto-refresh of account names
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const c = await load();
+      if (cancelled || !c) return;
+
+      const accts = c.metadata?.accounts || [];
+      const fallbackIds = c.metadata?.customers || [];
+      const hasNoAccounts = accts.length === 0 && fallbackIds.length === 0;
+      const allGenericNames =
+        accts.length > 0 && accts.every((a) => !a.name || a.name === `Customer ${a.id}`);
+      const refreshedAt = c.metadata?.accounts_refreshed_at
+        ? new Date(c.metadata.accounts_refreshed_at).getTime()
+        : 0;
+      const stale = Date.now() - refreshedAt > 24 * 60 * 60 * 1000; // > 24h
+
+      if (hasNoAccounts || allGenericNames || stale) {
+        refreshAccounts(true); // silent
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
 
   if (loading) {
     return (
@@ -71,27 +121,7 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
     ? formatDistanceToNow(new Date(conn.metadata.accounts_refreshed_at), { addSuffix: true })
     : null;
 
-  const handleRefreshAccounts = async () => {
-    setRefreshingAccounts(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('google-list-accounts', {
-        body: { client_id: clientId },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      const found = data?.accounts?.length ?? 0;
-      if (found === 0) {
-        toast.warning('No operating ad accounts were returned by Google. The connected user may need broader access, or you may need to reconnect Google.');
-      } else {
-        toast.success(`Found ${found} ad account${found === 1 ? '' : 's'}`);
-      }
-      load();
-    } catch (err: any) {
-      toast.error(`Failed to refresh accounts: ${err.message}`);
-    } finally {
-      setRefreshingAccounts(false);
-    }
-  };
+  const handleRefreshAccounts = () => refreshAccounts(false);
 
   const handleSave = async () => {
     if (!selected) {

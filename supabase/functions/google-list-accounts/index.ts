@@ -84,11 +84,22 @@ Deno.serve(async (req) => {
     for (const cid of topCustomers) {
       const children = await listChildren(cid, accessToken, developerToken);
       if (children.length === 0) {
-        // Standalone account — include itself
-        accountMap.set(cid, { id: cid, name: `Customer ${cid}`, manager: false });
+        // Standalone account — fetch its real descriptive name
+        const self = await getCustomerInfo(cid, accessToken, developerToken);
+        accountMap.set(cid, {
+          id: cid,
+          name: self?.name || `Customer ${cid}`,
+          manager: !!self?.manager,
+        });
       } else {
         for (const ch of children) {
           if (!accountMap.has(ch.id)) accountMap.set(ch.id, { ...ch, parentMcc: cid });
+        }
+        // Also include the MCC itself (as manager) so users can identify it,
+        // even though it's filtered out of the operating-accounts list.
+        const self = await getCustomerInfo(cid, accessToken, developerToken);
+        if (self && !accountMap.has(cid)) {
+          accountMap.set(cid, { id: cid, name: self.name, manager: true });
         }
       }
     }

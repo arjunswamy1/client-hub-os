@@ -160,6 +160,16 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
           </div>
         )}
 
+        {allGeneric && !showWarning && (
+          <div className="flex items-start gap-2 rounded-md border border-blue-300 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">Account names not loaded yet</p>
+              <p>These IDs don't have human-readable names. Click <strong>Refresh accounts</strong> above to fetch the descriptive names from Google Ads.</p>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <label className="text-xs font-medium text-muted-foreground">Pull data from this Google Ads account</label>
           <div className="flex gap-2">

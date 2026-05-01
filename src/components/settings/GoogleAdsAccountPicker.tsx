@@ -66,6 +66,7 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
 
   const hasMapping = !!conn.customer_id;
   const showWarning = accounts.length > 1 && !hasMapping;
+  const allGeneric = accounts.length > 0 && accounts.every((a) => !a.name || a.name === `Customer ${a.id}`);
   const refreshedAgo = conn.metadata?.accounts_refreshed_at
     ? formatDistanceToNow(new Date(conn.metadata.accounts_refreshed_at), { addSuffix: true })
     : null;
@@ -159,6 +160,16 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
           </div>
         )}
 
+        {allGeneric && !showWarning && (
+          <div className="flex items-start gap-2 rounded-md border border-blue-300 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">Account names not loaded yet</p>
+              <p>These IDs don't have human-readable names. Click <strong>Refresh accounts</strong> above to fetch the descriptive names from Google Ads.</p>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <label className="text-xs font-medium text-muted-foreground">Pull data from this Google Ads account</label>
           <div className="flex gap-2">
@@ -167,11 +178,21 @@ export function GoogleAdsAccountPicker({ clientId }: Props) {
                 <SelectValue placeholder={accounts.length ? 'Choose an account…' : 'No accessible accounts'} />
               </SelectTrigger>
               <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name} <span className="text-muted-foreground font-mono">({a.id})</span>
-                  </SelectItem>
-                ))}
+                {accounts.map((a) => {
+                  const isGeneric = !a.name || a.name === `Customer ${a.id}`;
+                  return (
+                    <SelectItem key={a.id} value={a.id}>
+                      <div className="flex flex-col">
+                        <span className={isGeneric ? 'text-muted-foreground italic' : ''}>
+                          {isGeneric ? 'Unnamed account' : a.name}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          ID {a.id}{a.parentMcc ? ` • under MCC ${a.parentMcc}` : ''}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             <Button onClick={handleSave} disabled={saving || !selected || selected === conn.customer_id} size="sm">

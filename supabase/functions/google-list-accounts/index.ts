@@ -84,11 +84,22 @@ Deno.serve(async (req) => {
     for (const cid of topCustomers) {
       const children = await listChildren(cid, accessToken, developerToken);
       if (children.length === 0) {
-        // Standalone account — include itself
-        accountMap.set(cid, { id: cid, name: `Customer ${cid}`, manager: false });
+        // Standalone account — fetch its real descriptive name
+        const self = await getCustomerInfo(cid, accessToken, developerToken);
+        accountMap.set(cid, {
+          id: cid,
+          name: self?.name || `Customer ${cid}`,
+          manager: !!self?.manager,
+        });
       } else {
         for (const ch of children) {
           if (!accountMap.has(ch.id)) accountMap.set(ch.id, { ...ch, parentMcc: cid });
+        }
+        // Also include the MCC itself (as manager) so users can identify it,
+        // even though it's filtered out of the operating-accounts list.
+        const self = await getCustomerInfo(cid, accessToken, developerToken);
+        if (self && !accountMap.has(cid)) {
+          accountMap.set(cid, { id: cid, name: self.name, manager: true });
         }
       }
     }
@@ -163,6 +174,45 @@ async function listChildren(mccId: string, accessToken: string, developerToken: 
   } catch (err) {
     console.warn(`[listChildren] ${mccId} threw:`, err);
     return [];
+  }
+}
+
+async function getCustomerInfo(
+  cid: string,
+  accessToken: string,
+  developerToken: string,
+): Promise<{ name: string; manager: boolean } | null> {
+  try {
+    const res = await fetch(
+      `https://googleads.googleapis.com/v23/customers/${cid}/googleAds:searchStream`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "developer-token": developerToken,
+          "login-customer-id": cid,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: `SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1`,
+        }),
+      },
+    );
+    const data = await res.json();
+    if (!Array.isArray(data)) return null;
+    for (const batch of data) {
+      const row = batch.results?.[0]?.customer;
+      if (row) {
+        return {
+          name: row.descriptiveName || `Customer ${cid}`,
+          manager: !!row.manager,
+        };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[getCustomerInfo] ${cid} threw:`, err);
+    return null;
   }
 }
 

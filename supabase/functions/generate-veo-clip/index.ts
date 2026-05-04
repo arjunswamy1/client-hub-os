@@ -110,7 +110,6 @@ Deno.serve(async (req) => {
         aspectRatio: aspect,
         resolution: "1080p",
         personGeneration: "allow_all",
-        numberOfVideos: 1,
       },
     };
     const startRes = await fetch(startUrl, {

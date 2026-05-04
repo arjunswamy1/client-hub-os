@@ -13,6 +13,18 @@ function json(b: unknown, status = 200) {
   return new Response(JSON.stringify(b), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
+function parsePermissionError(detail: string): string | null {
+  try {
+    const parsed = JSON.parse(detail);
+    const status = parsed?.detail?.status;
+    const message = parsed?.detail?.message;
+    if (status === "missing_permissions" && typeof message === "string") return message;
+  } catch {
+    // Non-JSON upstream errors are handled by the generic response below.
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -53,12 +65,19 @@ Deno.serve(async (req) => {
       headers: { "xi-api-key": ELEVEN_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt,
-        music_length_ms: lengthSec * 1000,
+        duration_seconds: lengthSec,
       }),
     });
     if (!musicRes.ok) {
       const t = await musicRes.text();
       console.error("ElevenLabs Music error:", musicRes.status, t);
+      const permissionMessage = parsePermissionError(t);
+      if (permissionMessage) {
+        return json({
+          error: "ElevenLabs API key is missing music-generation permission",
+          detail: permissionMessage,
+        }, 403);
+      }
       return json({ error: "Music generation failed", detail: t.slice(0, 300) }, 500);
     }
     const audioBytes = new Uint8Array(await musicRes.arrayBuffer());

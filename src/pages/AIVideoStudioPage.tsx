@@ -246,7 +246,11 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
       return data ?? [];
     },
     enabled: !!project,
-    refetchInterval: generatingClip !== null || generatingAll ? 4000 : false,
+    refetchInterval: (q) => {
+      const rows: any[] = (q.state.data as any[]) ?? [];
+      const anyGenerating = rows.some(r => r.status === 'generating');
+      return (anyGenerating || generatingClip !== null || generatingAll) ? 5000 : false;
+    },
   });
 
   const { data: audio } = useQuery({

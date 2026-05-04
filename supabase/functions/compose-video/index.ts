@@ -1,0 +1,214 @@
+// Compose final video via Shotstack: stitches Veo clips + VO + music + overlays + end card.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const SHOTSTACK_API_KEY = Deno.env.get('SHOTSTACK_API_KEY')!;
+const SHOTSTACK_ENV = (Deno.env.get('SHOTSTACK_ENV') ?? 'v1').trim(); // 'v1' or 'stage'
+const SHOTSTACK_HOST = `https://api.shotstack.io/${SHOTSTACK_ENV}`;
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+function aspectToSize(aspect: string): { width: number; height: number; ratio: '16:9' | '9:16' | '1:1' | '4:5' } {
+  switch (aspect) {
+    case '16:9': return { width: 1920, height: 1080, ratio: '16:9' };
+    case '1:1':  return { width: 1080, height: 1080, ratio: '1:1' };
+    case '4:5':  return { width: 1080, height: 1350, ratio: '4:5' };
+    case '9:16':
+    default:     return { width: 1080, height: 1920, ratio: '9:16' };
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  try {
+    const { project_id } = await req.json();
+    if (!project_id) throw new Error('project_id required');
+
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+    const { data: project, error: pErr } = await supabase
+      .from('ai_video_projects').select('*').eq('id', project_id).single();
+    if (pErr || !project) throw new Error(pErr?.message ?? 'Project not found');
+
+    const version = project.current_version ?? 1;
+
+    const { data: clips } = await supabase
+      .from('ai_video_clips').select('*')
+      .eq('project_id', project_id).eq('version', version).order('clip_number');
+
+    const { data: audio } = await supabase
+      .from('ai_video_audio').select('*')
+      .eq('project_id', project_id).eq('version', version);
+
+    const voiceover = audio?.find((a: any) => a.audio_type === 'voiceover');
+    const music = audio?.find((a: any) => a.audio_type === 'music');
+
+    const shotList: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
+    if (!shotList.length) throw new Error('No shot list to compose');
+
+    const { width, height, ratio } = aspectToSize(project.aspect_ratio ?? '9:16');
+    const brand = (project.brand_kit ?? {}) as Record<string, any>;
+    const phone = brand.phone ?? brand.phone_number ?? '';
+    const disclaimer = brand.disclaimer ?? '';
+    const endCardHeadline = brand.end_card_headline ?? project.cta ?? '';
+    const endCardSub = brand.end_card_sub ?? phone;
+    const primaryColor = brand.primary_color ?? '#0F172A';
+    const accentColor = brand.accent_color ?? '#3B82F6';
+
+    // Build clip track
+    let cursor = 0;
+    const videoClips: any[] = [];
+    const overlayClips: any[] = [];
+
+    for (const shot of shotList) {
+      const dbClip = clips?.find((c: any) => c.clip_number === shot.clip_number);
+      const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
+      const url = dbClip?.override_video_url || opt?.url;
+      const duration = Number(shot.duration_seconds) || 8;
+
+      if (!url) throw new Error(`Clip ${shot.clip_number} has no video URL — generate it first`);
+
+      videoClips.push({
+        asset: { type: 'video', src: url, volume: 0 },
+        start: cursor,
+        length: duration,
+        fit: 'cover',
+        transition: cursor === 0 ? undefined : { in: 'fade' },
+      });
+
+      if (shot.text_overlay) {
+        const txt = typeof shot.text_overlay === 'string' ? shot.text_overlay : (shot.text_overlay.text ?? '');
+        if (txt) {
+          overlayClips.push({
+            asset: { type: 'text', text: txt, font: { family: 'Montserrat ExtraBold', size: 64, color: '#ffffff' },
+              background: { color: primaryColor, opacity: 0.55, padding: 24, borderRadius: 12 },
+              alignment: { horizontal: 'center', vertical: 'middle' } },
+            start: cursor + 0.2,
+            length: Math.max(1.5, duration - 0.4),
+            position: 'center',
+            transition: { in: 'fade', out: 'fade' },
+          });
+        }
+      }
+      cursor += duration;
+    }
+
+    const totalDuration = cursor;
+
+    // End card (last 3s overlay band)
+    const endCardLen = 3;
+    const endCardStart = Math.max(0, totalDuration - endCardLen);
+    overlayClips.push({
+      asset: { type: 'shape', shape: 'rectangle', width, height,
+        rectangle: { width, height }, fill: { color: primaryColor, opacity: 0.85 } },
+      start: endCardStart, length: endCardLen, position: 'center',
+      transition: { in: 'fade' },
+    });
+    if (endCardHeadline) overlayClips.push({
+      asset: { type: 'text', text: endCardHeadline,
+        font: { family: 'Montserrat ExtraBold', size: 80, color: '#ffffff' },
+        alignment: { horizontal: 'center', vertical: 'middle' } },
+      start: endCardStart + 0.2, length: endCardLen - 0.2,
+      position: 'center', offset: { y: 0.05 },
+    });
+    if (endCardSub) overlayClips.push({
+      asset: { type: 'text', text: endCardSub,
+        font: { family: 'Montserrat', size: 56, color: accentColor },
+        alignment: { horizontal: 'center', vertical: 'middle' } },
+      start: endCardStart + 0.4, length: endCardLen - 0.4,
+      position: 'center', offset: { y: -0.08 },
+    });
+
+    // Persistent phone footer (skip during end card)
+    if (phone && endCardStart > 0) {
+      overlayClips.push({
+        asset: { type: 'text', text: `Call ${phone}`,
+          font: { family: 'Montserrat Bold', size: 38, color: '#ffffff' },
+          background: { color: primaryColor, opacity: 0.7, padding: 14, borderRadius: 8 },
+          alignment: { horizontal: 'center', vertical: 'middle' } },
+        start: 0, length: endCardStart,
+        position: 'bottom', offset: { y: 0.04 },
+      });
+    }
+    // Disclaimer (whole video, very small bottom)
+    if (disclaimer) {
+      overlayClips.push({
+        asset: { type: 'text', text: disclaimer,
+          font: { family: 'Montserrat', size: 18, color: '#ffffff' },
+          alignment: { horizontal: 'center', vertical: 'middle' } },
+        start: 0, length: totalDuration,
+        position: 'bottom', offset: { y: 0.005 },
+      });
+    }
+
+    const tracks: any[] = [
+      { clips: overlayClips }, // overlays on top
+      { clips: videoClips },   // base video
+    ];
+
+    if (voiceover?.audio_url) {
+      tracks.push({ clips: [{ asset: { type: 'audio', src: voiceover.audio_url, volume: 1 }, start: 0, length: totalDuration }] });
+    }
+    if (music?.audio_url) {
+      tracks.push({ clips: [{
+        asset: { type: 'audio', src: music.audio_url, volume: voiceover?.audio_url ? 0.18 : 0.6 },
+        start: 0, length: totalDuration,
+        transition: { in: 'fade', out: 'fade' },
+      }]});
+    }
+
+    const edit = {
+      timeline: { background: '#000000', tracks },
+      output: { format: 'mp4', resolution: 'hd', aspectRatio: ratio, fps: 30 },
+    };
+
+    // Insert render row
+    const { data: renderRow, error: rErr } = await supabase
+      .from('ai_video_renders')
+      .insert({
+        project_id, version,
+        shotstack_env: SHOTSTACK_ENV,
+        status: 'submitting',
+        edit_json: edit,
+        duration_seconds: totalDuration,
+      })
+      .select('id').single();
+    if (rErr) throw new Error(rErr.message);
+
+    // Submit to Shotstack
+    const ssResp = await fetch(`${SHOTSTACK_HOST}/render`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': SHOTSTACK_API_KEY },
+      body: JSON.stringify(edit),
+    });
+    const ssJson = await ssResp.json();
+
+    if (!ssResp.ok || !ssJson?.success) {
+      const msg = ssJson?.message ?? JSON.stringify(ssJson);
+      await supabase.from('ai_video_renders').update({ status: 'failed', error_message: msg }).eq('id', renderRow.id);
+      throw new Error(`Shotstack: ${msg}`);
+    }
+
+    await supabase.from('ai_video_renders').update({
+      shotstack_id: ssJson.response.id,
+      status: 'queued',
+    }).eq('id', renderRow.id);
+
+    return new Response(JSON.stringify({
+      render_id: renderRow.id,
+      shotstack_id: ssJson.response.id,
+      duration_seconds: totalDuration,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  } catch (e) {
+    return new Response(JSON.stringify({ error: (e as Error).message }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});

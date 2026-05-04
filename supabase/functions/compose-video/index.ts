@@ -61,6 +61,18 @@ Deno.serve(async (req) => {
     const primaryColor = brand.primary_color ?? '#0F172A';
     const accentColor = brand.accent_color ?? '#3B82F6';
 
+    // Pre-flight: list ALL missing clips so the user fixes them in one pass
+    const missing: number[] = [];
+    for (const shot of shotList) {
+      const dbClip = clips?.find((c: any) => c.clip_number === shot.clip_number);
+      const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
+      const url = dbClip?.override_video_url || opt?.url;
+      if (!url) missing.push(shot.clip_number);
+    }
+    if (missing.length) {
+      throw new Error(`Cannot compose — ${missing.length} of ${shotList.length} clips not generated yet. Missing: ${missing.join(', ')}. Generate each clip with Veo first.`);
+    }
+
     // Build clip track
     let cursor = 0;
     const videoClips: any[] = [];
@@ -69,10 +81,8 @@ Deno.serve(async (req) => {
     for (const shot of shotList) {
       const dbClip = clips?.find((c: any) => c.clip_number === shot.clip_number);
       const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
-      const url = dbClip?.override_video_url || opt?.url;
+      const url = dbClip!.override_video_url || opt!.url;
       const duration = Number(shot.duration_seconds) || 8;
-
-      if (!url) throw new Error(`Clip ${shot.clip_number} has no video URL — generate it first`);
 
       videoClips.push({
         asset: { type: 'video', src: url, volume: 0 },

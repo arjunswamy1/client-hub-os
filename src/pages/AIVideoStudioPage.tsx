@@ -284,7 +284,7 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
         body: { project_id: projectId, clip_number: clipNumber },
       });
       if (error) throw error;
-      toast.success(`Clip ${clipNumber} generated`);
+      toast.success(`Clip ${clipNumber} started — generating in background (~1-3 min)`);
     } catch (e: any) {
       toast.error(e.message || `Clip ${clipNumber} failed`);
     } finally {
@@ -298,18 +298,16 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     setGeneratingAll(true);
     try {
       const list: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
-      // Sequential to avoid hammering Veo + edge function timeouts
-      for (const s of list) {
-        setGeneratingClip(s.clip_number);
-        const { error } = await supabase.functions.invoke('generate-veo-clip', {
+      // Fire all in parallel — each function returns 202 immediately and runs Veo in background
+      await Promise.all(list.map((s) =>
+        supabase.functions.invoke('generate-veo-clip', {
           body: { project_id: projectId, clip_number: s.clip_number },
-        });
-        if (error) {
-          toast.error(`Clip ${s.clip_number}: ${error.message}`);
-        }
-        qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
-      }
-      toast.success('All clips generated');
+        }).then(({ error }) => {
+          if (error) toast.error(`Clip ${s.clip_number}: ${error.message}`);
+        })
+      ));
+      toast.success('All clips started — generating in background (~1-3 min each)');
+      qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
     } catch (e: any) {
       toast.error(e.message || 'Generation failed');
     } finally {

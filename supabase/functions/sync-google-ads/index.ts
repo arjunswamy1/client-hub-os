@@ -71,7 +71,19 @@ Deno.serve(async (req) => {
     if (conn.token_expires_at && new Date(conn.token_expires_at) < new Date()) {
       accessToken = await refreshGoogleToken(supabaseAdmin, conn.user_id, conn.refresh_token, conn.client_id);
       if (!accessToken) {
-        results.push({ user_id: conn.user_id, error: "Token refresh failed" });
+        const error = "Google authorization expired. Reconnect Google Ads in Settings.";
+        results.push({ user_id: conn.user_id, client_id: conn.client_id, error });
+        if (conn.client_id) {
+          await supabaseAdmin
+            .from("platform_connections")
+            .update({
+              sync_error: error,
+              last_sync_records: 0,
+            })
+            .eq("user_id", conn.user_id)
+            .eq("platform", "google")
+            .eq("client_id", conn.client_id);
+        }
         continue;
       }
     }

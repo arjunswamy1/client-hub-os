@@ -1,15 +1,36 @@
 import { useVerticalKPIs } from "@/hooks/useBillyData";
 import { useRingbaByPlatform } from "@/hooks/useRingbaByPlatform";
 import { useVertical } from "@/contexts/VerticalContext";
+import { useClient } from "@/contexts/ClientContext";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import KPICard from "@/components/dashboard/KPICard";
 import DrillDownCampaignTable from "@/components/dashboard/DrillDownCampaignTable";
 import QualityScoreAudit from "@/components/dashboard/QualityScoreAudit";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 export default function BillyGoogleDashboard() {
+  const { activeClient } = useClient();
   const { data: kpis, isLoading: kpiLoading } = useVerticalKPIs("google");
   const { data: ringba, isLoading: ringbaLoading } = useRingbaByPlatform("google");
   const { activeVertical } = useVertical();
+  const { data: googleConnection } = useQuery({
+    queryKey: ["google-connection-health", activeClient?.id],
+    enabled: !!activeClient?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_connections")
+        .select("last_synced_at, last_sync_records, sync_error, token_expires_at")
+        .eq("client_id", activeClient!.id)
+        .eq("platform", "google")
+        .eq("status", "active")
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
 
   const isLoading = kpiLoading || ringbaLoading;
 
@@ -46,6 +67,16 @@ export default function BillyGoogleDashboard() {
           {activeVertical.id === "all" ? "All Verticals" : activeVertical.label} — Google Ads
         </h2>
       </div>
+
+      {googleConnection?.sync_error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Google Ads sync needs attention</AlertTitle>
+          <AlertDescription>
+            {googleConnection.sync_error} The dashboard is showing the latest stored Google data, which may be stale.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KPICard title="Google Spend" value={`$${spend.toLocaleString()}`} change={kpis?.changes.spend} invertColor />

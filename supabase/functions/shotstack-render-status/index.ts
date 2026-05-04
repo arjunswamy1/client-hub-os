@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const SHOTSTACK_API_KEY = Deno.env.get('SHOTSTACK_API_KEY')!;
 const SHOTSTACK_ENV = (Deno.env.get('SHOTSTACK_ENV') ?? 'v1').trim();
-const SHOTSTACK_HOST = `https://api.shotstack.io/${SHOTSTACK_ENV}`;
+const SHOTSTACK_HOST = `https://api.shotstack.io/edit/${SHOTSTACK_ENV}`;
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;

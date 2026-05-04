@@ -1,7 +1,7 @@
 // Generate a single Veo 3.1 clip via the Gemini API.
-// Long-running: kicks off the operation, polls until done (or up to ~8 min),
-// downloads the MP4, uploads to the `creative-assets` bucket, and stores
-// the public URL on the matching ai_video_clips row.
+// Kicks off generation, returns 202 immediately, and runs the long-running
+// poll/download/upload in the background via EdgeRuntime.waitUntil.
+// Frontend polls the ai_video_clips row to observe status transitions.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -11,8 +11,8 @@ const corsHeaders = {
 };
 
 const VEO_MODEL = "veo-3.1-generate-preview";
-const POLL_INTERVAL_MS = 8000;
-const MAX_POLL_MS = 8 * 60 * 1000;
+const POLL_INTERVAL_MS = 10000;
+const MAX_POLL_MS = 10 * 60 * 1000;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -23,8 +23,116 @@ function json(body: unknown, status = 200) {
 
 function aspectToVeo(aspect?: string): string {
   if (!aspect) return "9:16";
-  if (aspect === "1:1") return "9:16"; // Veo 3.1 supports 16:9 / 9:16
+  if (aspect === "1:1") return "9:16";
   return aspect;
+}
+
+// @ts-ignore - EdgeRuntime is provided by Supabase edge runtime
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
+
+async function runVeoJob(params: {
+  admin: ReturnType<typeof createClient>;
+  GEMINI_API_KEY: string;
+  clipId: string;
+  project_id: string;
+  version: number;
+  clip_number: number;
+  prompt: string;
+  aspect: string;
+}) {
+  const { admin, GEMINI_API_KEY, clipId, project_id, version, clip_number, prompt, aspect } = params;
+  try {
+    const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VEO_MODEL}:predictLongRunning?key=${GEMINI_API_KEY}`;
+    const startRes = await fetch(startUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: { aspectRatio: aspect, resolution: "1080p", personGeneration: "allow_all" },
+      }),
+    });
+    if (!startRes.ok) {
+      const t = await startRes.text();
+      console.error("Veo start error:", startRes.status, t);
+      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      return;
+    }
+    const startData = await startRes.json();
+    const opName: string | undefined = startData.name;
+    if (!opName) {
+      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      return;
+    }
+
+    const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opName}?key=${GEMINI_API_KEY}`;
+    const startedAt = Date.now();
+    let opData: any = null;
+    while (Date.now() - startedAt < MAX_POLL_MS) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      const pr = await fetch(pollUrl);
+      if (!pr.ok) continue;
+      const pd = await pr.json();
+      if (pd.done) { opData = pd; break; }
+    }
+    if (!opData) {
+      console.error("Veo poll timeout", opName);
+      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      return;
+    }
+    if (opData.error) {
+      console.error("Veo op error:", opData.error);
+      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      return;
+    }
+
+    const generated =
+      opData.response?.generateVideoResponse?.generatedSamples ??
+      opData.response?.generatedVideos ??
+      opData.response?.videos ?? [];
+    const first = generated[0];
+    const videoUri: string | undefined = first?.video?.uri || first?.videoUri || first?.video?.videoUri;
+    const inlineB64: string | undefined = first?.video?.inlineData?.data || first?.bytesBase64Encoded;
+
+    let videoBytes: Uint8Array | null = null;
+    if (videoUri) {
+      const sep = videoUri.includes("?") ? "&" : "?";
+      const dl = await fetch(`${videoUri}${sep}key=${GEMINI_API_KEY}`);
+      if (!dl.ok) {
+        console.error("Veo download failed:", await dl.text());
+        await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+        return;
+      }
+      videoBytes = new Uint8Array(await dl.arrayBuffer());
+    } else if (inlineB64) {
+      const bin = atob(inlineB64);
+      videoBytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) videoBytes[i] = bin.charCodeAt(i);
+    } else {
+      console.error("No video in response", opData.response);
+      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      return;
+    }
+
+    const path = `ai-video/${project_id}/clips/v${version}/clip-${clip_number}-${Date.now()}.mp4`;
+    const { error: upErr } = await admin.storage
+      .from("creative-assets")
+      .upload(path, videoBytes, { contentType: "video/mp4", upsert: true });
+    if (upErr) {
+      console.error("Storage upload failed:", upErr.message);
+      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      return;
+    }
+    const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
+
+    await admin.from("ai_video_clips").update({
+      generated_options: [{ url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString() }],
+      selected_option_index: 0,
+      status: "generated",
+    }).eq("id", clipId);
+  } catch (e) {
+    console.error("runVeoJob error:", e);
+    await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -55,7 +163,6 @@ Deno.serve(async (req) => {
       return json({ error: "project_id and clip_number required" }, 400);
     }
 
-    // Load project + shot for this clip
     const { data: project, error: pErr } = await supabase
       .from("ai_video_projects").select("*").eq("id", project_id).single();
     if (pErr || !project) return json({ error: "Project not found" }, 404);
@@ -67,7 +174,6 @@ Deno.serve(async (req) => {
     const aspect = aspectToVeo(project.aspect_ratio);
     const version = project.current_version ?? 1;
 
-    // Upsert pending clip row
     const baseRow = {
       project_id,
       version,
@@ -81,7 +187,6 @@ Deno.serve(async (req) => {
       status: "generating",
     };
 
-    // Try update first; if no row, insert
     const { data: existing } = await admin
       .from("ai_video_clips")
       .select("id")
@@ -90,121 +195,24 @@ Deno.serve(async (req) => {
 
     let clipId: string;
     if (existing) {
-      clipId = existing.id;
+      clipId = (existing as any).id;
       await admin.from("ai_video_clips").update(baseRow).eq("id", clipId);
     } else {
       const { data: ins, error: insErr } = await admin
         .from("ai_video_clips").insert(baseRow).select("id").single();
       if (insErr) return json({ error: insErr.message }, 500);
-      clipId = ins.id;
+      clipId = (ins as any).id;
     }
 
-    // Mark project generating
     await admin.from("ai_video_projects").update({ status: "generating" }).eq("id", project_id);
 
-    // 1. Kick off Veo long-running operation
-    const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VEO_MODEL}:predictLongRunning?key=${GEMINI_API_KEY}`;
-    const startBody = {
-      instances: [{ prompt: shot.veo_prompt }],
-      parameters: {
-        aspectRatio: aspect,
-        resolution: "1080p",
-        personGeneration: "allow_all",
-      },
-    };
-    const startRes = await fetch(startUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(startBody),
-    });
-    if (!startRes.ok) {
-      const t = await startRes.text();
-      console.error("Veo start error:", startRes.status, t);
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
-      return json({ error: "Veo start failed", detail: t.slice(0, 500) }, 500);
-    }
-    const startData = await startRes.json();
-    const opName: string | undefined = startData.name;
-    if (!opName) {
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
-      return json({ error: "No operation name from Veo", detail: startData }, 500);
-    }
+    // Run the long-running Veo job in the background
+    EdgeRuntime.waitUntil(runVeoJob({
+      admin, GEMINI_API_KEY, clipId, project_id, version, clip_number,
+      prompt: shot.veo_prompt, aspect,
+    }));
 
-    // 2. Poll
-    const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opName}?key=${GEMINI_API_KEY}`;
-    const startedAt = Date.now();
-    let opData: any = null;
-    while (Date.now() - startedAt < MAX_POLL_MS) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      const pr = await fetch(pollUrl);
-      if (!pr.ok) continue;
-      const pd = await pr.json();
-      if (pd.done) { opData = pd; break; }
-    }
-    if (!opData) {
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
-      return json({ error: "Veo polling timed out" }, 504);
-    }
-    if (opData.error) {
-      console.error("Veo op error:", opData.error);
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
-      return json({ error: "Veo generation failed", detail: opData.error }, 500);
-    }
-
-    // 3. Extract video URI (Veo returns a uri requiring API key) or inline bytes
-    const generated =
-      opData.response?.generateVideoResponse?.generatedSamples ??
-      opData.response?.generatedVideos ??
-      opData.response?.videos ??
-      [];
-    const first = generated[0];
-    const videoUri: string | undefined =
-      first?.video?.uri || first?.videoUri || first?.video?.videoUri;
-    const inlineB64: string | undefined =
-      first?.video?.inlineData?.data || first?.bytesBase64Encoded;
-
-    let videoBytes: Uint8Array | null = null;
-    if (videoUri) {
-      const sep = videoUri.includes("?") ? "&" : "?";
-      const dl = await fetch(`${videoUri}${sep}key=${GEMINI_API_KEY}`);
-      if (!dl.ok) {
-        const t = await dl.text();
-        await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
-        return json({ error: "Veo download failed", detail: t.slice(0, 300) }, 500);
-      }
-      videoBytes = new Uint8Array(await dl.arrayBuffer());
-    } else if (inlineB64) {
-      const bin = atob(inlineB64);
-      videoBytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) videoBytes[i] = bin.charCodeAt(i);
-    } else {
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
-      return json({ error: "No video in Veo response", detail: opData.response }, 500);
-    }
-
-    // 4. Upload to storage
-    const path = `ai-video/${project_id}/clips/v${version}/clip-${clip_number}-${Date.now()}.mp4`;
-    const { error: upErr } = await admin.storage
-      .from("creative-assets")
-      .upload(path, videoBytes, { contentType: "video/mp4", upsert: true });
-    if (upErr) {
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
-      return json({ error: "Storage upload failed", detail: upErr.message }, 500);
-    }
-    const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
-    const publicUrl = pub.publicUrl;
-
-    // 5. Save to clip row as the first generated option, mark generated/selected
-    await admin
-      .from("ai_video_clips")
-      .update({
-        generated_options: [{ url: publicUrl, source: "veo", generated_at: new Date().toISOString() }],
-        selected_option_index: 0,
-        status: "generated",
-      })
-      .eq("id", clipId);
-
-    return json({ ok: true, clip_id: clipId, video_url: publicUrl });
+    return json({ ok: true, clip_id: clipId, status: "generating" }, 202);
   } catch (e) {
     console.error("generate-veo-clip error:", e);
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);

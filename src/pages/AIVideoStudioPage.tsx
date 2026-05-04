@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useClient } from '@/contexts/ClientContext';
@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music } from 'lucide-react';
+import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download } from 'lucide-react';
 
 const TONES = ['Urgent', 'Calm', 'Premium', 'Playful', 'Dramatic', 'Informational', 'Emotional', 'High-Energy'];
 const STYLES = ['Cinematic', 'UGC-Style', 'Corporate', 'Lifestyle', 'Product-Focused', 'Abstract'];
@@ -494,14 +494,103 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
             </Card>
           )}
 
-          <Card className="border-dashed">
-            <CardContent className="py-4 text-center text-xs text-muted-foreground">
-              Next phase: stitch clips + audio + overlays into a final ad with Shotstack.
-            </CardContent>
-          </Card>
+          <FinalRenderCard projectId={projectId} version={project.current_version ?? 1} />
         </>
       )}
     </div>
+  );
+}
+
+function FinalRenderCard({ projectId, version }: { projectId: string; version: number }) {
+  const qc = useQueryClient();
+  const [submitting, setSubmitting] = useState(false);
+
+  const { data: render } = useQuery({
+    queryKey: ['ai-video-render', projectId, version],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ai_video_renders').select('*')
+        .eq('project_id', projectId).eq('version', version)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const inFlight = render && !['done', 'failed'].includes(render.status);
+
+  // Poll Shotstack status while in flight
+  useEffect(() => {
+    if (!render?.id || !inFlight) return;
+    const tick = async () => {
+      try {
+        await supabase.functions.invoke('shotstack-render-status', { body: { render_id: render.id } });
+      } catch {/* ignore */}
+      qc.invalidateQueries({ queryKey: ['ai-video-render', projectId, version] });
+    };
+    const t = setInterval(tick, 5000);
+    tick();
+    return () => clearInterval(t);
+  }, [render?.id, inFlight, projectId, version, qc]);
+
+  const compose = async () => {
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.functions.invoke('compose-video', { body: { project_id: projectId } });
+      if (error) throw error;
+      toast.success('Render submitted');
+      qc.invalidateQueries({ queryKey: ['ai-video-render', projectId, version] });
+    } catch (e: any) {
+      toast.error(e.message || 'Compose failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2"><Wand2 className="h-4 w-4" />Final Video</CardTitle>
+        <CardDescription className="text-xs">
+          Stitches all clips, voiceover, music, overlays and end card via Shotstack.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={compose} disabled={submitting || !!inFlight}>
+            {submitting || inFlight
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <Wand2 className="mr-2 h-4 w-4" />}
+            {render?.output_url ? 'Recompose Final Video' : 'Compose Final Video'}
+          </Button>
+          {render && (
+            <Badge variant={render.status === 'done' ? 'default' : render.status === 'failed' ? 'destructive' : 'outline'}>
+              {render.status}
+            </Badge>
+          )}
+          {render?.duration_seconds && (
+            <span className="text-xs text-muted-foreground">{Number(render.duration_seconds).toFixed(1)}s</span>
+          )}
+        </div>
+
+        {render?.error_message && (
+          <p className="text-xs text-destructive">{render.error_message}</p>
+        )}
+
+        {render?.output_url && (
+          <>
+            <video src={render.output_url} controls className="w-full rounded-md border bg-black" poster={render.poster_url ?? undefined} />
+            <div className="flex justify-end">
+              <Button asChild size="sm" variant="outline">
+                <a href={render.output_url} target="_blank" rel="noreferrer" download>
+                  <Download className="mr-2 h-4 w-4" />Download MP4
+                </a>
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

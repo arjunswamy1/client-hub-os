@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music } from 'lucide-react';
 
 const TONES = ['Urgent', 'Calm', 'Premium', 'Playful', 'Dramatic', 'Informational', 'Emotional', 'High-Energy'];
 const STYLES = ['Cinematic', 'UGC-Style', 'Corporate', 'Lifestyle', 'Product-Focused', 'Abstract'];
@@ -220,6 +220,11 @@ function BriefForm({ clientId, onCreated }: { clientId: string; onCreated: (id: 
 function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => void }) {
   const qc = useQueryClient();
   const [running, setRunning] = useState(false);
+  const [generatingClip, setGeneratingClip] = useState<number | null>(null);
+  const [generatingAll, setGeneratingAll] = useState(false);
+  const [genVO, setGenVO] = useState(false);
+  const [genMusic, setGenMusic] = useState(false);
+
   const { data: project, isLoading } = useQuery({
     queryKey: ['ai-video-project', projectId],
     queryFn: async () => {
@@ -227,6 +232,35 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
       if (error) throw error;
       return data;
     },
+  });
+
+  const { data: clips } = useQuery({
+    queryKey: ['ai-video-clips', projectId, project?.current_version],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ai_video_clips').select('*')
+        .eq('project_id', projectId)
+        .eq('version', project?.current_version ?? 1)
+        .order('clip_number');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!project,
+    refetchInterval: generatingClip !== null || generatingAll ? 4000 : false,
+  });
+
+  const { data: audio } = useQuery({
+    queryKey: ['ai-video-audio', projectId, project?.current_version],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ai_video_audio').select('*')
+        .eq('project_id', projectId)
+        .eq('version', project?.current_version ?? 1)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!project,
   });
 
   const runDirector = async () => {
@@ -243,9 +277,85 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     }
   };
 
+  const generateClip = async (clipNumber: number) => {
+    setGeneratingClip(clipNumber);
+    try {
+      const { error } = await supabase.functions.invoke('generate-veo-clip', {
+        body: { project_id: projectId, clip_number: clipNumber },
+      });
+      if (error) throw error;
+      toast.success(`Clip ${clipNumber} generated`);
+    } catch (e: any) {
+      toast.error(e.message || `Clip ${clipNumber} failed`);
+    } finally {
+      setGeneratingClip(null);
+      qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+    }
+  };
+
+  const generateAllClips = async () => {
+    if (!project?.shot_list) return;
+    setGeneratingAll(true);
+    try {
+      const list: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
+      // Sequential to avoid hammering Veo + edge function timeouts
+      for (const s of list) {
+        setGeneratingClip(s.clip_number);
+        const { error } = await supabase.functions.invoke('generate-veo-clip', {
+          body: { project_id: projectId, clip_number: s.clip_number },
+        });
+        if (error) {
+          toast.error(`Clip ${s.clip_number}: ${error.message}`);
+        }
+        qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+      }
+      toast.success('All clips generated');
+    } catch (e: any) {
+      toast.error(e.message || 'Generation failed');
+    } finally {
+      setGeneratingClip(null);
+      setGeneratingAll(false);
+    }
+  };
+
+  const generateVoiceover = async () => {
+    setGenVO(true);
+    try {
+      const { error } = await supabase.functions.invoke('generate-voiceover', {
+        body: { project_id: projectId },
+      });
+      if (error) throw error;
+      toast.success('Voiceover generated');
+      qc.invalidateQueries({ queryKey: ['ai-video-audio', projectId] });
+    } catch (e: any) {
+      toast.error(e.message || 'Voiceover failed');
+    } finally {
+      setGenVO(false);
+    }
+  };
+
+  const generateMusic = async () => {
+    setGenMusic(true);
+    try {
+      const { error } = await supabase.functions.invoke('generate-music', {
+        body: { project_id: projectId },
+      });
+      if (error) throw error;
+      toast.success('Music generated');
+      qc.invalidateQueries({ queryKey: ['ai-video-audio', projectId] });
+    } catch (e: any) {
+      toast.error(e.message || 'Music failed');
+    } finally {
+      setGenMusic(false);
+    }
+  };
+
   if (isLoading || !project) return <div className="flex justify-center p-12"><Loader2 className="h-6 w-6 animate-spin" /></div>;
 
   const shots: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
+  const clipByNum = new Map<number, any>((clips ?? []).map((c) => [c.clip_number, c]));
+  const voiceover = (audio ?? []).find((a) => a.audio_type === 'voiceover');
+  const music = (audio ?? []).find((a) => a.audio_type === 'music');
 
   return (
     <div className="space-y-4">
@@ -274,51 +384,119 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
         </Card>
       ) : (
         <>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Production</CardTitle>
+              <CardDescription className="text-xs">Generate Veo 3.1 video clips and ElevenLabs audio for this version.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={generateAllClips} disabled={generatingAll}>
+                {generatingAll
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : <Video className="mr-2 h-4 w-4" />}
+                {generatingAll ? `Generating clip ${generatingClip ?? '…'}` : 'Generate All Clips'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={generateVoiceover} disabled={genVO || !project.vo_script}>
+                {genVO ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mic className="mr-2 h-4 w-4" />}
+                {voiceover ? 'Regenerate Voiceover' : 'Generate Voiceover'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={generateMusic} disabled={genMusic || !project.music_prompt}>
+                {genMusic ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Music className="mr-2 h-4 w-4" />}
+                {music ? 'Regenerate Music' : 'Generate Music'}
+              </Button>
+              <p className="ml-2 self-center text-xs text-muted-foreground">
+                Veo clips take ~1–3 minutes each. Keep this tab open.
+              </p>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {shots.map((s, i) => (
-              <Card key={i}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm">Clip {s.clip_number} · {s.duration_seconds}s</CardTitle>
-                    {s.label && <Badge variant="secondary">{s.label}</Badge>}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <div>
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Veo prompt</div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{s.veo_prompt}</p>
-                  </div>
-                  {s.text_overlay && (
-                    <div>
-                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Text overlay</div>
-                      <p className="mt-1 font-medium">{s.text_overlay}</p>
+            {shots.map((s, i) => {
+              const c = clipByNum.get(s.clip_number);
+              const opt = c?.generated_options?.[c?.selected_option_index ?? 0];
+              const isGen = generatingClip === s.clip_number;
+              return (
+                <Card key={i}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">Clip {s.clip_number} · {s.duration_seconds}s</CardTitle>
+                      <div className="flex items-center gap-2">
+                        {s.label && <Badge variant="secondary">{s.label}</Badge>}
+                        {c?.status && (
+                          <Badge variant={c.status === 'generated' || c.status === 'approved' ? 'default' : c.status === 'failed' ? 'destructive' : 'outline'}>
+                            {c.status}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  <div>
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Voiceover</div>
-                    <p className="mt-1 italic">"{s.vo_segment}"</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    {opt?.url ? (
+                      <video
+                        src={opt.url}
+                        controls
+                        className="w-full rounded-md border bg-black"
+                        style={{ aspectRatio: project.aspect_ratio?.replace(':', ' / ') ?? '9 / 16' }}
+                      />
+                    ) : (
+                      <div
+                        className="flex items-center justify-center rounded-md border bg-muted text-xs text-muted-foreground"
+                        style={{ aspectRatio: project.aspect_ratio?.replace(':', ' / ') ?? '9 / 16' }}
+                      >
+                        {isGen ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating…</> : 'No clip yet'}
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Veo prompt</div>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{s.veo_prompt}</p>
+                    </div>
+                    {s.text_overlay && (
+                      <div>
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Text overlay</div>
+                        <p className="mt-1 font-medium">{s.text_overlay}</p>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Voiceover</div>
+                      <p className="mt-1 italic">"{s.vo_segment}"</p>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button size="sm" variant="outline" onClick={() => generateClip(s.clip_number)} disabled={isGen || generatingAll}>
+                        {isGen ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Video className="mr-2 h-4 w-4" />}
+                        {opt?.url ? 'Regenerate' : 'Generate Clip'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
-          {project.music_prompt && (
+          {(voiceover || music || project.music_prompt || project.vo_script) && (
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Music Direction</CardTitle></CardHeader>
-              <CardContent><p className="text-sm">{project.music_prompt}</p></CardContent>
-            </Card>
-          )}
-          {project.vo_script && (
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Full VO Script</CardTitle></CardHeader>
-              <CardContent><p className="whitespace-pre-wrap text-sm">{project.vo_script}</p></CardContent>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Audio</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                {project.vo_script && (
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Voiceover script</div>
+                    <p className="mt-1 whitespace-pre-wrap text-sm">{project.vo_script}</p>
+                    {voiceover?.audio_url && <audio src={voiceover.audio_url} controls className="mt-2 w-full" />}
+                  </div>
+                )}
+                {project.music_prompt && (
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Music direction</div>
+                    <p className="mt-1 text-sm">{project.music_prompt}</p>
+                    {music?.audio_url && <audio src={music.audio_url} controls className="mt-2 w-full" />}
+                  </div>
+                )}
+              </CardContent>
             </Card>
           )}
 
           <Card className="border-dashed">
             <CardContent className="py-4 text-center text-xs text-muted-foreground">
-              Next phase: clip generation (Veo 3.1), voiceover (ElevenLabs), music, and final composition (Shotstack).
+              Next phase: stitch clips + audio + overlays into a final ad with Shotstack.
             </CardContent>
           </Card>
         </>

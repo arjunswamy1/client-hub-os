@@ -866,6 +866,68 @@ export type Database = {
           },
         ]
       }
+      ai_video_renders: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          duration_seconds: number | null
+          edit_json: Json | null
+          error_message: string | null
+          id: string
+          output_url: string | null
+          poster_url: string | null
+          project_id: string
+          requested_by_id: string | null
+          shotstack_env: string
+          shotstack_id: string | null
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          edit_json?: Json | null
+          error_message?: string | null
+          id?: string
+          output_url?: string | null
+          poster_url?: string | null
+          project_id: string
+          requested_by_id?: string | null
+          shotstack_env?: string
+          shotstack_id?: string | null
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          edit_json?: Json | null
+          error_message?: string | null
+          id?: string
+          output_url?: string | null
+          poster_url?: string | null
+          project_id?: string
+          requested_by_id?: string | null
+          shotstack_env?: string
+          shotstack_id?: string | null
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_video_renders_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "ai_video_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_video_versions: {
         Row: {
           clip_selections: Json | null

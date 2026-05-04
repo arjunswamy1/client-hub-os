@@ -548,6 +548,374 @@ export type Database = {
           },
         ]
       }
+      ai_video_audio: {
+        Row: {
+          audio_type: string
+          audio_url: string | null
+          created_at: string
+          duration_ms: number | null
+          elevenlabs_model: string | null
+          elevenlabs_voice_id: string | null
+          feedback: string | null
+          id: string
+          project_id: string
+          prompt: string | null
+          script_text: string | null
+          settings: Json | null
+          version: number
+        }
+        Insert: {
+          audio_type: string
+          audio_url?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          elevenlabs_model?: string | null
+          elevenlabs_voice_id?: string | null
+          feedback?: string | null
+          id?: string
+          project_id: string
+          prompt?: string | null
+          script_text?: string | null
+          settings?: Json | null
+          version?: number
+        }
+        Update: {
+          audio_type?: string
+          audio_url?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          elevenlabs_model?: string | null
+          elevenlabs_voice_id?: string | null
+          feedback?: string | null
+          id?: string
+          project_id?: string
+          prompt?: string | null
+          script_text?: string | null
+          settings?: Json | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_video_audio_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "ai_video_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_video_brand_kits: {
+        Row: {
+          client_id: string
+          colors: Json | null
+          created_at: string
+          default_voice_id: string | null
+          default_voice_name: string | null
+          fonts: Json | null
+          id: string
+          intro_template: Json | null
+          logo_animation_url: string | null
+          logo_url: string | null
+          outro_template: Json | null
+          style_keywords: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          colors?: Json | null
+          created_at?: string
+          default_voice_id?: string | null
+          default_voice_name?: string | null
+          fonts?: Json | null
+          id?: string
+          intro_template?: Json | null
+          logo_animation_url?: string | null
+          logo_url?: string | null
+          outro_template?: Json | null
+          style_keywords?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          colors?: Json | null
+          created_at?: string
+          default_voice_id?: string | null
+          default_voice_name?: string | null
+          fonts?: Json | null
+          id?: string
+          intro_template?: Json | null
+          logo_animation_url?: string | null
+          logo_url?: string | null
+          outro_template?: Json | null
+          style_keywords?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_video_brand_kits_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_video_clips: {
+        Row: {
+          clip_number: number
+          created_at: string
+          feedback: string | null
+          feedback_applied: boolean
+          generated_options: Json | null
+          id: string
+          is_override: boolean
+          override_source: string | null
+          override_video_url: string | null
+          project_id: string
+          reference_image_urls: string[] | null
+          selected_option_index: number | null
+          status: string
+          text_overlay: Json | null
+          veo_aspect_ratio: string | null
+          veo_model: string | null
+          veo_negative_prompt: string | null
+          veo_prompt: string
+          veo_resolution: string | null
+          version: number
+          vo_end_ms: number | null
+          vo_start_ms: number | null
+          vo_text: string | null
+        }
+        Insert: {
+          clip_number: number
+          created_at?: string
+          feedback?: string | null
+          feedback_applied?: boolean
+          generated_options?: Json | null
+          id?: string
+          is_override?: boolean
+          override_source?: string | null
+          override_video_url?: string | null
+          project_id: string
+          reference_image_urls?: string[] | null
+          selected_option_index?: number | null
+          status?: string
+          text_overlay?: Json | null
+          veo_aspect_ratio?: string | null
+          veo_model?: string | null
+          veo_negative_prompt?: string | null
+          veo_prompt: string
+          veo_resolution?: string | null
+          version?: number
+          vo_end_ms?: number | null
+          vo_start_ms?: number | null
+          vo_text?: string | null
+        }
+        Update: {
+          clip_number?: number
+          created_at?: string
+          feedback?: string | null
+          feedback_applied?: boolean
+          generated_options?: Json | null
+          id?: string
+          is_override?: boolean
+          override_source?: string | null
+          override_video_url?: string | null
+          project_id?: string
+          reference_image_urls?: string[] | null
+          selected_option_index?: number | null
+          status?: string
+          text_overlay?: Json | null
+          veo_aspect_ratio?: string | null
+          veo_model?: string | null
+          veo_negative_prompt?: string | null
+          veo_prompt?: string
+          veo_resolution?: string | null
+          version?: number
+          vo_end_ms?: number | null
+          vo_start_ms?: number | null
+          vo_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_video_clips_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "ai_video_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_video_projects: {
+        Row: {
+          additional_direction: string | null
+          aspect_ratio: string | null
+          brand_kit: Json | null
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          cta: string | null
+          current_version: number
+          freeform_brief: string | null
+          id: string
+          key_message: string | null
+          landing_page_analysis: Json | null
+          landing_page_url: string | null
+          music_prompt: string | null
+          music_settings: Json | null
+          objective: string | null
+          overlay_plan: Json | null
+          reference_image_urls: string[] | null
+          reference_video_urls: string[] | null
+          shot_list: Json | null
+          status: string
+          target_audience: string | null
+          target_length_seconds: number | null
+          target_platforms: string[] | null
+          title: string
+          tone_mood: string[] | null
+          updated_at: string
+          vertical: string | null
+          visual_style: string[] | null
+          vo_script: string | null
+          vo_settings: Json | null
+          vo_voice_id: string | null
+        }
+        Insert: {
+          additional_direction?: string | null
+          aspect_ratio?: string | null
+          brand_kit?: Json | null
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          cta?: string | null
+          current_version?: number
+          freeform_brief?: string | null
+          id?: string
+          key_message?: string | null
+          landing_page_analysis?: Json | null
+          landing_page_url?: string | null
+          music_prompt?: string | null
+          music_settings?: Json | null
+          objective?: string | null
+          overlay_plan?: Json | null
+          reference_image_urls?: string[] | null
+          reference_video_urls?: string[] | null
+          shot_list?: Json | null
+          status?: string
+          target_audience?: string | null
+          target_length_seconds?: number | null
+          target_platforms?: string[] | null
+          title: string
+          tone_mood?: string[] | null
+          updated_at?: string
+          vertical?: string | null
+          visual_style?: string[] | null
+          vo_script?: string | null
+          vo_settings?: Json | null
+          vo_voice_id?: string | null
+        }
+        Update: {
+          additional_direction?: string | null
+          aspect_ratio?: string | null
+          brand_kit?: Json | null
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          cta?: string | null
+          current_version?: number
+          freeform_brief?: string | null
+          id?: string
+          key_message?: string | null
+          landing_page_analysis?: Json | null
+          landing_page_url?: string | null
+          music_prompt?: string | null
+          music_settings?: Json | null
+          objective?: string | null
+          overlay_plan?: Json | null
+          reference_image_urls?: string[] | null
+          reference_video_urls?: string[] | null
+          shot_list?: Json | null
+          status?: string
+          target_audience?: string | null
+          target_length_seconds?: number | null
+          target_platforms?: string[] | null
+          title?: string
+          tone_mood?: string[] | null
+          updated_at?: string
+          vertical?: string | null
+          visual_style?: string[] | null
+          vo_script?: string | null
+          vo_settings?: Json | null
+          vo_voice_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_video_projects_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_video_projects_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_video_versions: {
+        Row: {
+          clip_selections: Json | null
+          composition_settings: Json | null
+          created_at: string
+          exports: Json | null
+          feedback: string | null
+          id: string
+          music_audio_url: string | null
+          preview_video_url: string | null
+          project_id: string
+          version_number: number
+          vo_audio_url: string | null
+        }
+        Insert: {
+          clip_selections?: Json | null
+          composition_settings?: Json | null
+          created_at?: string
+          exports?: Json | null
+          feedback?: string | null
+          id?: string
+          music_audio_url?: string | null
+          preview_video_url?: string | null
+          project_id: string
+          version_number: number
+          vo_audio_url?: string | null
+        }
+        Update: {
+          clip_selections?: Json | null
+          composition_settings?: Json | null
+          created_at?: string
+          exports?: Json | null
+          feedback?: string | null
+          id?: string
+          music_audio_url?: string | null
+          preview_video_url?: string | null
+          project_id?: string
+          version_number?: number
+          vo_audio_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_video_versions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "ai_video_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_action_items: {
         Row: {
           assignee_id: string | null

@@ -181,15 +181,15 @@ Deno.serve(async (req) => {
       position: 'center', offset: { y: -0.08 },
     });
 
-    // Persistent phone footer (skip during end card)
+    // Persistent phone footer (skip during end card) — sits ABOVE the caption band
     if (phone && endCardStart > 0) {
       overlayClips.push({
         asset: { type: 'text', text: `Call ${phone}`,
-          font: { family: 'Montserrat Bold', size: 38, color: '#ffffff' },
-          background: { color: primaryColor, opacity: 0.7, padding: 14, borderRadius: 8 },
+          font: { family: 'Montserrat Bold', size: 36, color: '#ffffff' },
+          background: { color: primaryColor, opacity: 0.75, padding: 12, borderRadius: 8 },
           alignment: { horizontal: 'center', vertical: 'center' } },
         start: 0, length: endCardStart,
-        position: 'bottom', offset: { y: 0.04 },
+        position: 'bottom', offset: { y: 0.22 },
       });
     }
     // Disclaimer (whole video, very small bottom)
@@ -203,9 +203,15 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Hide captions during the end card (so headline isn't covered)
+    const trimmedCaptions = captionClips
+      .filter((c) => c.start < endCardStart)
+      .map((c) => ({ ...c, length: Math.min(c.length, Math.max(0.1, endCardStart - c.start)) }));
+
     const tracks: any[] = [
-      { clips: overlayClips }, // overlays on top
-      { clips: videoClips },   // base video
+      { clips: trimmedCaptions }, // captions on very top so they're never hidden
+      { clips: overlayClips },    // titles / end card / phone
+      { clips: videoClips },      // base video
     ];
 
     if (voiceover?.audio_url) {

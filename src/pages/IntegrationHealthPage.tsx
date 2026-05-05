@@ -8,9 +8,15 @@ import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 interface ProbeResult {
   raw_env?: string;
   normalized_env?: string;
+  mode?: 'stage' | 'v1';
+  is_sandbox?: boolean;
   host?: string;
+  render_url?: string;
+  key_source?: string;
   api_key_present?: boolean;
   api_key_length?: number;
+  prod_key_present?: boolean;
+  stage_key_present?: boolean;
   probe_url?: string;
   probe_status?: number;
   probe_ok?: boolean;

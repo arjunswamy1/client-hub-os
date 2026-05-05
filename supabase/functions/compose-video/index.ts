@@ -77,6 +77,9 @@ Deno.serve(async (req) => {
     if (missing.length) {
       throw new Error(`Cannot compose — ${missing.length} of ${shotList.length} clips not generated yet. Missing: ${missing.join(', ')}. Generate each clip with Veo first.`);
     }
+    if (!voiceover?.audio_url) {
+      throw new Error(`No voiceover found. Click "Generate Voiceover" before composing — otherwise the final video will be silent.`);
+    }
 
     // Build clip track
     let cursor = 0;

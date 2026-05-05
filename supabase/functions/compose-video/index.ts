@@ -146,14 +146,16 @@ Deno.serve(async (req) => {
           captionClips.push({
             asset: {
               type: 'text', text: ch.text,
-              font: { family: 'Montserrat Bold', size: 44, color: '#ffffff' },
-              background: { color: '#000000', opacity: 0.65, padding: 16, borderRadius: 8 },
+              font: { family: 'Montserrat Bold', size: 36, color: '#ffffff', lineHeight: 1.1 },
+              stroke: { color: '#000000', width: 3 },
+              width: Math.round(width * 0.7),
+              height: 120,
               alignment: { horizontal: 'center', vertical: 'center' },
             },
             start: cursor + ch.start,
-            length: Math.max(0.8, ch.length - 0.05),
+            length: Math.max(0.6, ch.length - 0.03),
             position: 'bottom',
-            offset: { y: 0.12 },
+            offset: { y: 0.08 },
           });
         }
       }

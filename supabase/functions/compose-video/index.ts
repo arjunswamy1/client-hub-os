@@ -197,17 +197,28 @@ Deno.serve(async (req) => {
     if (rErr) throw new Error(rErr.message);
 
     // Submit to Shotstack
+    console.log('[compose-video] POST', `${SHOTSTACK_HOST}/render`, 'env=', SHOTSTACK_ENV);
+    console.log('[compose-video] edit payload:', JSON.stringify(edit));
     const ssResp = await fetch(`${SHOTSTACK_HOST}/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': SHOTSTACK_API_KEY },
       body: JSON.stringify(edit),
     });
-    const ssJson = await ssResp.json();
+    const ssText = await ssResp.text();
+    let ssJson: any = {};
+    try { ssJson = JSON.parse(ssText); } catch { ssJson = { raw: ssText }; }
+    console.log('[compose-video] Shotstack response status=', ssResp.status, 'body=', ssText);
 
     if (!ssResp.ok || !ssJson?.success) {
-      const msg = ssJson?.message ?? JSON.stringify(ssJson);
+      // Shotstack validation errors usually live in response.error / response (array) / message
+      const detail =
+        ssJson?.response?.error ??
+        (Array.isArray(ssJson?.response) ? ssJson.response : null) ??
+        ssJson?.message ??
+        ssText;
+      const msg = typeof detail === 'string' ? detail : JSON.stringify(detail);
       await supabase.from('ai_video_renders').update({ status: 'failed', error_message: msg }).eq('id', renderRow.id);
-      throw new Error(`Shotstack: ${msg}`);
+      throw new Error(`Shotstack ${ssResp.status}: ${msg}`);
     }
 
     await supabase.from('ai_video_renders').update({

@@ -106,12 +106,28 @@ export default function IntegrationHealthPage() {
                   <dd className="font-mono break-all">{result.probe_url || '—'}</dd>
                 </div>
                 <div>
+                  <dt className="text-muted-foreground">Mode</dt>
+                  <dd className="font-mono">{result.mode ?? '—'} {isSandbox ? '(sandbox)' : '(production)'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Active key source</dt>
+                  <dd className="font-mono">{result.key_source ?? '—'}</dd>
+                </div>
+                <div>
                   <dt className="text-muted-foreground">API key present</dt>
                   <dd>{result.api_key_present ? `Yes (${result.api_key_length} chars)` : 'No'}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Probe OK</dt>
                   <dd>{result.probe_ok ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Production key (SHOTSTACK_API_KEY)</dt>
+                  <dd>{result.prod_key_present ? 'Configured' : 'Missing'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Stage key (SHOTSTACK_API_KEY_STAGE)</dt>
+                  <dd>{result.stage_key_present ? 'Configured' : 'Missing'}</dd>
                 </div>
               </dl>
 

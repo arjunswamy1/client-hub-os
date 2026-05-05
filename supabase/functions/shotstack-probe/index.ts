@@ -7,21 +7,33 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const SHOTSTACK_API_KEY = Deno.env.get('SHOTSTACK_API_KEY') ?? '';
   const RAW_ENV = (Deno.env.get('SHOTSTACK_ENV') ?? 'v1').trim();
   const STAGE_MATCH = RAW_ENV.match(/(stage|v1)/i);
   const SHOTSTACK_ENV = STAGE_MATCH ? STAGE_MATCH[1].toLowerCase() : 'v1';
   const SHOTSTACK_HOST = `https://api.shotstack.io/edit/${SHOTSTACK_ENV}`;
+  const mode: 'stage' | 'v1' = SHOTSTACK_ENV === 'stage' ? 'stage' : 'v1';
+
+  const PROD_KEY = Deno.env.get('SHOTSTACK_API_KEY') ?? '';
+  const STAGE_KEY = Deno.env.get('SHOTSTACK_API_KEY_STAGE') ?? '';
+  const SHOTSTACK_API_KEY = mode === 'stage' ? (STAGE_KEY || PROD_KEY) : PROD_KEY;
+  const key_source = mode === 'stage'
+    ? (STAGE_KEY ? 'SHOTSTACK_API_KEY_STAGE' : 'SHOTSTACK_API_KEY (fallback)')
+    : 'SHOTSTACK_API_KEY';
 
   const results: Record<string, any> = {
     raw_env: RAW_ENV,
     normalized_env: SHOTSTACK_ENV,
+    mode,
+    is_sandbox: mode === 'stage',
     host: SHOTSTACK_HOST,
+    render_url: `${SHOTSTACK_HOST}/render`,
+    key_source,
     api_key_present: Boolean(SHOTSTACK_API_KEY),
     api_key_length: SHOTSTACK_API_KEY.length,
+    prod_key_present: Boolean(PROD_KEY),
+    stage_key_present: Boolean(STAGE_KEY),
   };
 
-  // Hit a harmless GET — list recent renders (returns 200 with empty list if creds OK).
   try {
     const url = `${SHOTSTACK_HOST}/render?limit=1`;
     const resp = await fetch(url, { headers: { 'x-api-key': SHOTSTACK_API_KEY } });

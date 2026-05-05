@@ -44,7 +44,8 @@ export default function IntegrationHealthPage() {
     }
   };
 
-  const renderUrl = result?.host ? `${result.host}/render` : '—';
+  const renderUrl = result?.render_url ?? (result?.host ? `${result.host}/render` : '—');
+  const isSandbox = result?.mode === 'stage';
   const passed = result?.probe_ok && result?.api_key_present;
 
   return (

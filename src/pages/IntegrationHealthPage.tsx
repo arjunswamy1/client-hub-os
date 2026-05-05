@@ -72,11 +72,16 @@ export default function IntegrationHealthPage() {
 
           {result && (
             <>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {passed ? (
                   <Badge className="gap-1"><CheckCircle2 className="h-3 w-3" /> PASS</Badge>
                 ) : (
                   <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> FAIL</Badge>
+                )}
+                {result.mode && (
+                  <Badge variant={isSandbox ? 'secondary' : 'default'}>
+                    {isSandbox ? 'SANDBOX (stage — free, watermarked)' : 'PRODUCTION (v1 — billed)'}
+                  </Badge>
                 )}
                 <span className="text-sm text-muted-foreground">
                   Status {result.probe_status ?? 'n/a'}

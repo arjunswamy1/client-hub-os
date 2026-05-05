@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
           overlayClips.push({
             asset: { type: 'text', text: txt, font: { family: 'Montserrat ExtraBold', size: 64, color: '#ffffff' },
               background: { color: primaryColor, opacity: 0.55, padding: 24, borderRadius: 12 },
-              alignment: { horizontal: 'center', vertical: 'middle' } },
+              alignment: { horizontal: 'center', vertical: 'center' } },
             start: cursor + 0.2,
             length: Math.max(1.5, duration - 0.4),
             position: 'center',
@@ -128,14 +128,14 @@ Deno.serve(async (req) => {
     if (endCardHeadline) overlayClips.push({
       asset: { type: 'text', text: endCardHeadline,
         font: { family: 'Montserrat ExtraBold', size: 80, color: '#ffffff' },
-        alignment: { horizontal: 'center', vertical: 'middle' } },
+        alignment: { horizontal: 'center', vertical: 'center' } },
       start: endCardStart + 0.2, length: endCardLen - 0.2,
       position: 'center', offset: { y: 0.05 },
     });
     if (endCardSub) overlayClips.push({
       asset: { type: 'text', text: endCardSub,
         font: { family: 'Montserrat', size: 56, color: accentColor },
-        alignment: { horizontal: 'center', vertical: 'middle' } },
+        alignment: { horizontal: 'center', vertical: 'center' } },
       start: endCardStart + 0.4, length: endCardLen - 0.4,
       position: 'center', offset: { y: -0.08 },
     });

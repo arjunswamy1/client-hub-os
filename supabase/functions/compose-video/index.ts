@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
         asset: { type: 'text', text: `Call ${phone}`,
           font: { family: 'Montserrat Bold', size: 38, color: '#ffffff' },
           background: { color: primaryColor, opacity: 0.7, padding: 14, borderRadius: 8 },
-          alignment: { horizontal: 'center', vertical: 'middle' } },
+          alignment: { horizontal: 'center', vertical: 'center' } },
         start: 0, length: endCardStart,
         position: 'bottom', offset: { y: 0.04 },
       });
@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
       overlayClips.push({
         asset: { type: 'text', text: disclaimer,
           font: { family: 'Montserrat', size: 18, color: '#ffffff' },
-          alignment: { horizontal: 'center', vertical: 'middle' } },
+          alignment: { horizontal: 'center', vertical: 'center' } },
         start: 0, length: totalDuration,
         position: 'bottom', offset: { y: 0.005 },
       });

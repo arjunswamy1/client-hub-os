@@ -128,6 +128,7 @@ function ProtectedRoutes() {
           <Route path="/campaign-build" element={<CampaignBuildPage />} />
           <Route path="/production" element={<ProductionPage />} />
           <Route path="/ai-video" element={<AIVideoStudioPage />} />
+          <Route path="/integration-health" element={<IntegrationHealthPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

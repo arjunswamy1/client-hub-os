@@ -9,7 +9,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"; // George — confident male
+const DEFAULT_VOICE_ID = "cgSgspJ2msm6clMCkdW9"; // Jessica — friendly American female
 const MODEL_ID = "eleven_multilingual_v2";
 
 function parsePermissionError(detail: string): string | null {

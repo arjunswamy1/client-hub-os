@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,6 +44,11 @@ export default function IntegrationHealthPage() {
     }
   };
 
+  useEffect(() => {
+    runProbe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const renderUrl = result?.render_url ?? (result?.host ? `${result.host}/render` : '—');
   const isSandbox = result?.mode === 'stage';
   const passed = result?.probe_ok && result?.api_key_present;
@@ -60,7 +65,7 @@ export default function IntegrationHealthPage() {
           <CardTitle className="text-lg">Shotstack</CardTitle>
           <Button onClick={runProbe} disabled={loading} size="sm">
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Run probe
+            {loading ? 'Checking…' : 'Refresh status'}
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">

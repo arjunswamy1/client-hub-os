@@ -8,9 +8,15 @@ import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 interface ProbeResult {
   raw_env?: string;
   normalized_env?: string;
+  mode?: 'stage' | 'v1';
+  is_sandbox?: boolean;
   host?: string;
+  render_url?: string;
+  key_source?: string;
   api_key_present?: boolean;
   api_key_length?: number;
+  prod_key_present?: boolean;
+  stage_key_present?: boolean;
   probe_url?: string;
   probe_status?: number;
   probe_ok?: boolean;
@@ -38,7 +44,8 @@ export default function IntegrationHealthPage() {
     }
   };
 
-  const renderUrl = result?.host ? `${result.host}/render` : '—';
+  const renderUrl = result?.render_url ?? (result?.host ? `${result.host}/render` : '—');
+  const isSandbox = result?.mode === 'stage';
   const passed = result?.probe_ok && result?.api_key_present;
 
   return (
@@ -65,11 +72,16 @@ export default function IntegrationHealthPage() {
 
           {result && (
             <>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {passed ? (
                   <Badge className="gap-1"><CheckCircle2 className="h-3 w-3" /> PASS</Badge>
                 ) : (
                   <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> FAIL</Badge>
+                )}
+                {result.mode && (
+                  <Badge variant={isSandbox ? 'secondary' : 'default'}>
+                    {isSandbox ? 'SANDBOX (stage — free, watermarked)' : 'PRODUCTION (v1 — billed)'}
+                  </Badge>
                 )}
                 <span className="text-sm text-muted-foreground">
                   Status {result.probe_status ?? 'n/a'}
@@ -94,12 +106,28 @@ export default function IntegrationHealthPage() {
                   <dd className="font-mono break-all">{result.probe_url || '—'}</dd>
                 </div>
                 <div>
+                  <dt className="text-muted-foreground">Mode</dt>
+                  <dd className="font-mono">{result.mode ?? '—'} {isSandbox ? '(sandbox)' : '(production)'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Active key source</dt>
+                  <dd className="font-mono">{result.key_source ?? '—'}</dd>
+                </div>
+                <div>
                   <dt className="text-muted-foreground">API key present</dt>
                   <dd>{result.api_key_present ? `Yes (${result.api_key_length} chars)` : 'No'}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Probe OK</dt>
                   <dd>{result.probe_ok ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Production key (SHOTSTACK_API_KEY)</dt>
+                  <dd>{result.prod_key_present ? 'Configured' : 'Missing'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Stage key (SHOTSTACK_API_KEY_STAGE)</dt>
+                  <dd>{result.stage_key_present ? 'Configured' : 'Missing'}</dd>
                 </div>
               </dl>
 

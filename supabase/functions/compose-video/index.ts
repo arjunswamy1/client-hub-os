@@ -6,12 +6,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SHOTSTACK_API_KEY = Deno.env.get('SHOTSTACK_API_KEY')!;
 // Accept either a stage name ('v1' / 'stage') OR a full URL in SHOTSTACK_ENV — normalize to stage.
 const RAW_ENV = (Deno.env.get('SHOTSTACK_ENV') ?? 'v1').trim();
 const STAGE_MATCH = RAW_ENV.match(/(stage|v1)/i);
 const SHOTSTACK_ENV = (STAGE_MATCH ? STAGE_MATCH[1].toLowerCase() : 'v1');
 const SHOTSTACK_HOST = `https://api.shotstack.io/edit/${SHOTSTACK_ENV}`;
+const SHOTSTACK_API_KEY = (SHOTSTACK_ENV === 'stage'
+  ? (Deno.env.get('SHOTSTACK_API_KEY_STAGE') ?? Deno.env.get('SHOTSTACK_API_KEY'))
+  : Deno.env.get('SHOTSTACK_API_KEY')) ?? '';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;

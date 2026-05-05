@@ -77,11 +77,28 @@ Deno.serve(async (req) => {
     if (missing.length) {
       throw new Error(`Cannot compose — ${missing.length} of ${shotList.length} clips not generated yet. Missing: ${missing.join(', ')}. Generate each clip with Veo first.`);
     }
+    if (!voiceover?.audio_url) {
+      throw new Error(`No voiceover found. Click "Generate Voiceover" before composing — otherwise the final video will be silent.`);
+    }
 
-    // Build clip track
+    // Build clip track + caption track from vo_segment
     let cursor = 0;
     const videoClips: any[] = [];
     const overlayClips: any[] = [];
+    const captionClips: any[] = [];
+
+    // Helper: split a VO sentence into ~6-word caption chunks for readability
+    const chunkCaption = (text: string, totalDuration: number) => {
+      const words = text.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return [] as { text: string; start: number; length: number }[];
+      const wordsPerChunk = 7;
+      const chunks: string[] = [];
+      for (let i = 0; i < words.length; i += wordsPerChunk) {
+        chunks.push(words.slice(i, i + wordsPerChunk).join(' '));
+      }
+      const per = totalDuration / chunks.length;
+      return chunks.map((t, i) => ({ text: t, start: i * per, length: per }));
+    };
 
     for (const shot of shotList) {
       const dbClip = clips?.find((c: any) => c.clip_number === shot.clip_number);
@@ -97,17 +114,41 @@ Deno.serve(async (req) => {
         transition: cursor === 0 ? undefined : { in: 'fade' },
       });
 
+      // Top-positioned label overlay (short title — does not collide with captions)
       if (shot.text_overlay) {
         const txt = typeof shot.text_overlay === 'string' ? shot.text_overlay : (shot.text_overlay.text ?? '');
         if (txt) {
           overlayClips.push({
-            asset: { type: 'text', text: txt, font: { family: 'Montserrat ExtraBold', size: 64, color: '#ffffff' },
-              background: { color: primaryColor, opacity: 0.55, padding: 24, borderRadius: 12 },
-              alignment: { horizontal: 'center', vertical: 'center' } },
+            asset: {
+              type: 'text', text: txt,
+              font: { family: 'Montserrat ExtraBold', size: 56, color: '#ffffff' },
+              background: { color: primaryColor, opacity: 0.6, padding: 20, borderRadius: 10 },
+              alignment: { horizontal: 'center', vertical: 'center' },
+            },
             start: cursor + 0.2,
             length: Math.max(1.5, duration - 0.4),
-            position: 'center',
+            position: 'top',
+            offset: { y: -0.06 },
             transition: { in: 'fade', out: 'fade' },
+          });
+        }
+      }
+
+      // Burned-in captions from vo_segment, positioned just above the bottom
+      if (shot.vo_segment) {
+        const chunks = chunkCaption(String(shot.vo_segment), duration);
+        for (const ch of chunks) {
+          captionClips.push({
+            asset: {
+              type: 'text', text: ch.text,
+              font: { family: 'Montserrat Bold', size: 44, color: '#ffffff' },
+              background: { color: '#000000', opacity: 0.65, padding: 16, borderRadius: 8 },
+              alignment: { horizontal: 'center', vertical: 'center' },
+            },
+            start: cursor + ch.start,
+            length: Math.max(0.8, ch.length - 0.05),
+            position: 'bottom',
+            offset: { y: 0.12 },
           });
         }
       }
@@ -140,15 +181,15 @@ Deno.serve(async (req) => {
       position: 'center', offset: { y: -0.08 },
     });
 
-    // Persistent phone footer (skip during end card)
+    // Persistent phone footer (skip during end card) — sits ABOVE the caption band
     if (phone && endCardStart > 0) {
       overlayClips.push({
         asset: { type: 'text', text: `Call ${phone}`,
-          font: { family: 'Montserrat Bold', size: 38, color: '#ffffff' },
-          background: { color: primaryColor, opacity: 0.7, padding: 14, borderRadius: 8 },
+          font: { family: 'Montserrat Bold', size: 36, color: '#ffffff' },
+          background: { color: primaryColor, opacity: 0.75, padding: 12, borderRadius: 8 },
           alignment: { horizontal: 'center', vertical: 'center' } },
         start: 0, length: endCardStart,
-        position: 'bottom', offset: { y: 0.04 },
+        position: 'bottom', offset: { y: 0.22 },
       });
     }
     // Disclaimer (whole video, very small bottom)
@@ -162,9 +203,15 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Hide captions during the end card (so headline isn't covered)
+    const trimmedCaptions = captionClips
+      .filter((c) => c.start < endCardStart)
+      .map((c) => ({ ...c, length: Math.min(c.length, Math.max(0.1, endCardStart - c.start)) }));
+
     const tracks: any[] = [
-      { clips: overlayClips }, // overlays on top
-      { clips: videoClips },   // base video
+      { clips: trimmedCaptions }, // captions on very top so they're never hidden
+      { clips: overlayClips },    // titles / end card / phone
+      { clips: videoClips },      // base video
     ];
 
     if (voiceover?.audio_url) {

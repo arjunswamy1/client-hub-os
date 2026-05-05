@@ -34,6 +34,7 @@ import UnsubscribePage from "./pages/UnsubscribePage";
 import ProductionPage from "./pages/ProductionPage";
 import TalentApplyPage from "./pages/TalentApplyPage";
 import AIVideoStudioPage from "./pages/AIVideoStudioPage";
+import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 
 const queryClient = new QueryClient();
 

@@ -406,6 +406,19 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                 {genMusic ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Music className="mr-2 h-4 w-4" />}
                 {music ? 'Regenerate Music' : 'Generate Music'}
               </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={async () => {
+                  if (!voiceover) await generateVoiceover();
+                  if (!music && project.music_prompt) await generateMusic();
+                  toast.success('Audio ready — now click Compose Final Video');
+                }}
+                disabled={genVO || genMusic}
+              >
+                {(genVO || genMusic) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mic className="mr-2 h-4 w-4" />}
+                Generate VO + Music
+              </Button>
               <p className="ml-2 self-center text-xs text-muted-foreground">
                 Veo clips take ~1–3 minutes each. Keep this tab open.
               </p>

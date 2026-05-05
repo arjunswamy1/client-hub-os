@@ -87,11 +87,16 @@ Deno.serve(async (req) => {
     const overlayClips: any[] = [];
     const captionClips: any[] = [];
 
-    // Helper: split a VO sentence into ~6-word caption chunks for readability
+    // Helper: split a VO sentence into short caption chunks for readability.
+    // Strip speaker labels like "Daughter:"/"Mother:" so they don't appear on screen.
     const chunkCaption = (text: string, totalDuration: number) => {
-      const words = text.trim().split(/\s+/).filter(Boolean);
+      const cleaned = String(text)
+        .replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const words = cleaned.split(/\s+/).filter(Boolean);
       if (!words.length) return [] as { text: string; start: number; length: number }[];
-      const wordsPerChunk = 7;
+      const wordsPerChunk = 4;
       const chunks: string[] = [];
       for (let i = 0; i < words.length; i += wordsPerChunk) {
         chunks.push(words.slice(i, i + wordsPerChunk).join(' '));

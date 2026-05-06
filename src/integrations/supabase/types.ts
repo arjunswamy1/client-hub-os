@@ -684,6 +684,8 @@ export type Database = {
           started_at: string | null
           status: string
           text_overlay: Json | null
+          transition_overlap_seconds: number
+          transition_type: string
           veo_aspect_ratio: string | null
           veo_model: string | null
           veo_negative_prompt: string | null
@@ -717,6 +719,8 @@ export type Database = {
           started_at?: string | null
           status?: string
           text_overlay?: Json | null
+          transition_overlap_seconds?: number
+          transition_type?: string
           veo_aspect_ratio?: string | null
           veo_model?: string | null
           veo_negative_prompt?: string | null
@@ -750,6 +754,8 @@ export type Database = {
           started_at?: string | null
           status?: string
           text_overlay?: Json | null
+          transition_overlap_seconds?: number
+          transition_type?: string
           veo_aspect_ratio?: string | null
           veo_model?: string | null
           veo_negative_prompt?: string | null

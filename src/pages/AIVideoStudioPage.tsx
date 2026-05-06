@@ -499,7 +499,7 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
             </Card>
           )}
 
-
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {shots.map((s, i) => {
               const c = clipByNum.get(s.clip_number);
               const opt = c?.generated_options?.[c?.selected_option_index ?? 0];

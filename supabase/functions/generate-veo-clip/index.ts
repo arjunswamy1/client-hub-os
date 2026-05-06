@@ -83,7 +83,7 @@ async function progress(admin: any, clipId: string, pct: number, message: string
 }
 
 async function runVeoJob(params: {
-  admin: ReturnType<typeof createClient>;
+  admin: any;
   GEMINI_API_KEY: string;
   clipId: string;
   project_id: string;

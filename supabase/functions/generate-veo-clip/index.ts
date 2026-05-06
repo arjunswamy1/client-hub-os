@@ -256,6 +256,9 @@ Deno.serve(async (req) => {
       vo_text: shot.dialogue || shot.vo_segment || null,
       text_overlay: shot.text_overlay ? { text: shot.text_overlay } : null,
       status: "generating",
+      error_code: null,
+      error_message: null,
+      failed_at: null,
     };
 
     const { data: existing } = await admin

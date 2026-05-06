@@ -182,7 +182,9 @@ async function runVeoJob(params: {
     }).catch((e) => console.error("logMediaGenUsage failed:", e));
   } catch (e) {
     console.error("runVeoJob error:", e);
-    await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+    const msg = e instanceof Error ? e.message : String(e);
+    const { code, message } = classifyError(null, msg);
+    await failClip(admin, clipId, code, message);
   }
 }
 

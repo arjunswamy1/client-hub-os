@@ -262,6 +262,10 @@ Deno.serve(async (req) => {
     // Inject character descriptions and anti-caption guard if the director omitted them.
     const characters: any[] = Array.isArray(project.characters) ? project.characters : [];
     let prompt: string = String(shot.veo_prompt || "");
+    // Strip any director instructions that ask Veo to render disclaimer / legal / fine-print
+    // text on screen. Veo will hallucinate gibberish "lorem ipsum" looking paragraphs.
+    // Real disclaimers must be added as a Shotstack overlay in compose-video.
+    prompt = prompt.replace(/\b(disclaimer|fine[- ]?print|legal\s+text|terms\s+and\s+conditions|legal\s+disclaimer)[^.]*\.?/gi, '').trim();
     if (shot.speaker && shot.speaker !== "narrator_vo" && shot.speaker !== "none") {
       const ch = characters.find((c) => c?.name?.toLowerCase() === String(shot.speaker).toLowerCase());
       if (ch && !prompt.toLowerCase().includes(String(ch.description).slice(0, 30).toLowerCase())) {

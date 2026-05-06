@@ -77,8 +77,10 @@ Deno.serve(async (req) => {
     if (missing.length) {
       throw new Error(`Cannot compose — ${missing.length} of ${shotList.length} clips not generated yet. Missing: ${missing.join(', ')}. Generate each clip with Veo first.`);
     }
-    if (!voiceover?.audio_url) {
-      throw new Error(`No voiceover found. Click "Generate Voiceover" before composing — otherwise the final video will be silent.`);
+    // Voiceover only required when at least one shot uses narrator_vo
+    const needsNarrator = shotList.some((s: any) => s?.speaker === 'narrator_vo' && String(s?.vo_segment || '').trim());
+    if (needsNarrator && !voiceover?.audio_url) {
+      throw new Error(`Narrator voiceover required for this shot list but missing. Click "Generate Voiceover" first.`);
     }
 
     // Build clip track + caption track from vo_segment
@@ -87,22 +89,34 @@ Deno.serve(async (req) => {
     const overlayClips: any[] = [];
     const captionClips: any[] = [];
 
-    // Helper: split a VO sentence into short caption chunks for readability.
-    // Strip speaker labels like "Daughter:"/"Mother:" so they don't appear on screen.
+    const captionStyle = String((project as any).caption_style || 'tiktok').toLowerCase();
+    const STYLES: Record<string, any> = {
+      tiktok:    { font: 'Montserrat ExtraBold', size: 60, color: '#ffffff', highlight: '#FFEB3B', stroke: 6, wordsPerChunk: 2, yOffset: 0.18 },
+      hormozi:   { font: 'Montserrat ExtraBold', size: 64, color: '#FFEB3B', highlight: '#22c55e', stroke: 7, wordsPerChunk: 3, yOffset: 0.18 },
+      mrbeast:   { font: 'Montserrat ExtraBold', size: 68, color: '#ffffff', highlight: '#ff3b30', stroke: 7, wordsPerChunk: 1, yOffset: 0.20 },
+      editorial: { font: 'Montserrat Bold',      size: 42, color: '#ffffff', highlight: '#ffffff', stroke: 3, wordsPerChunk: 5, yOffset: 0.10 },
+      minimal:   { font: 'Montserrat Medium',    size: 36, color: '#ffffff', highlight: '#ffffff', stroke: 2, wordsPerChunk: 6, yOffset: 0.08 },
+    };
+    const S = STYLES[captionStyle] ?? STYLES.tiktok;
+    const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','worst','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','more','less','fast','easy','call','watch','wait','look','this','here','must','need']);
+
     const chunkCaption = (text: string, totalDuration: number) => {
       const cleaned = String(text)
         .replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+        .replace(/\s+/g, ' ').trim();
       const words = cleaned.split(/\s+/).filter(Boolean);
-      if (!words.length) return [] as { text: string; start: number; length: number }[];
-      const wordsPerChunk = 4;
-      const chunks: string[] = [];
-      for (let i = 0; i < words.length; i += wordsPerChunk) {
-        chunks.push(words.slice(i, i + wordsPerChunk).join(' '));
+      if (!words.length) return [] as { text: string; isHighlight: boolean; start: number; length: number }[];
+      const wpc = S.wordsPerChunk;
+      const chunks: { text: string; isHighlight: boolean }[] = [];
+      for (let i = 0; i < words.length; i += wpc) {
+        const slice = words.slice(i, i + wpc);
+        chunks.push({
+          text: slice.join(' '),
+          isHighlight: slice.some((w) => HIGHLIGHT_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, ''))),
+        });
       }
       const per = totalDuration / chunks.length;
-      return chunks.map((t, i) => ({ text: t, start: i * per, length: per }));
+      return chunks.map((c, i) => ({ ...c, start: i * per, length: per }));
     };
 
     for (const shot of shotList) {
@@ -111,51 +125,56 @@ Deno.serve(async (req) => {
       const url = dbClip!.override_video_url || opt!.url;
       const duration = Number(shot.duration_seconds) || 8;
 
+      // Keep Veo's native audio for in-scene character dialogue; mute narrator/silent shots.
+      const speaker = shot.speaker;
+      const isCharacterDialogue = speaker && speaker !== 'narrator_vo' && speaker !== 'none';
+      const videoVolume = isCharacterDialogue ? 1 : 0;
+
       videoClips.push({
-        asset: { type: 'video', src: url, volume: 0 },
+        asset: { type: 'video', src: url, volume: videoVolume },
         start: cursor,
         length: duration,
         fit: 'cover',
         transition: cursor === 0 ? undefined : { in: 'fade' },
       });
 
-      // Top-positioned label overlay (short title — does not collide with captions)
       if (shot.text_overlay) {
         const txt = typeof shot.text_overlay === 'string' ? shot.text_overlay : (shot.text_overlay.text ?? '');
         if (txt) {
           overlayClips.push({
             asset: {
-              type: 'text', text: txt,
+              type: 'text', text: String(txt).toUpperCase(),
               font: { family: 'Montserrat ExtraBold', size: 56, color: '#ffffff' },
-              background: { color: primaryColor, opacity: 0.6, padding: 20, borderRadius: 10 },
+              background: { color: primaryColor, opacity: 0.7, padding: 18, borderRadius: 8 },
               alignment: { horizontal: 'center', vertical: 'center' },
             },
             start: cursor + 0.2,
-            length: Math.max(1.5, duration - 0.4),
+            length: Math.min(2.0, duration - 0.4),
             position: 'top',
-            offset: { y: -0.06 },
+            offset: { y: -0.04 },
             transition: { in: 'fade', out: 'fade' },
           });
         }
       }
 
-      // Burned-in captions from vo_segment, positioned just above the bottom
-      if (shot.vo_segment) {
-        const chunks = chunkCaption(String(shot.vo_segment), duration);
+      const captionText = (shot.dialogue && String(shot.dialogue).trim()) || (shot.vo_segment && String(shot.vo_segment).trim()) || '';
+      if (captionText) {
+        const chunks = chunkCaption(captionText, duration);
         for (const ch of chunks) {
           captionClips.push({
             asset: {
-              type: 'text', text: ch.text,
-              font: { family: 'Montserrat Bold', size: 36, color: '#ffffff', lineHeight: 1.1 },
-              stroke: { color: '#000000', width: 3 },
-              width: Math.round(width * 0.7),
-              height: 120,
+              type: 'text', text: ch.text.toUpperCase(),
+              font: { family: S.font, size: S.size, color: ch.isHighlight ? S.highlight : S.color, lineHeight: 1.1 },
+              stroke: { color: '#000000', width: S.stroke },
+              width: Math.round(width * 0.85),
+              height: 200,
               alignment: { horizontal: 'center', vertical: 'center' },
             },
             start: cursor + ch.start,
-            length: Math.max(0.6, ch.length - 0.03),
+            length: Math.max(0.5, ch.length - 0.02),
             position: 'bottom',
-            offset: { y: 0.08 },
+            offset: { y: S.yOffset },
+            transition: { in: 'zoom', out: 'fade' },
           });
         }
       }

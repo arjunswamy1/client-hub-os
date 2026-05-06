@@ -748,15 +748,19 @@ export type Database = {
       }
       ai_video_projects: {
         Row: {
+          ad_framework: string | null
           additional_direction: string | null
           aspect_ratio: string | null
           brand_kit: Json | null
+          caption_style: string | null
+          characters: Json | null
           client_id: string
           created_at: string
           created_by_id: string | null
           cta: string | null
           current_version: number
           freeform_brief: string | null
+          hook_variants: Json | null
           id: string
           key_message: string | null
           landing_page_analysis: Json | null
@@ -767,6 +771,7 @@ export type Database = {
           overlay_plan: Json | null
           reference_image_urls: string[] | null
           reference_video_urls: string[] | null
+          selected_hook_index: number | null
           shot_list: Json | null
           status: string
           target_audience: string | null
@@ -782,15 +787,19 @@ export type Database = {
           vo_voice_id: string | null
         }
         Insert: {
+          ad_framework?: string | null
           additional_direction?: string | null
           aspect_ratio?: string | null
           brand_kit?: Json | null
+          caption_style?: string | null
+          characters?: Json | null
           client_id: string
           created_at?: string
           created_by_id?: string | null
           cta?: string | null
           current_version?: number
           freeform_brief?: string | null
+          hook_variants?: Json | null
           id?: string
           key_message?: string | null
           landing_page_analysis?: Json | null
@@ -801,6 +810,7 @@ export type Database = {
           overlay_plan?: Json | null
           reference_image_urls?: string[] | null
           reference_video_urls?: string[] | null
+          selected_hook_index?: number | null
           shot_list?: Json | null
           status?: string
           target_audience?: string | null
@@ -816,15 +826,19 @@ export type Database = {
           vo_voice_id?: string | null
         }
         Update: {
+          ad_framework?: string | null
           additional_direction?: string | null
           aspect_ratio?: string | null
           brand_kit?: Json | null
+          caption_style?: string | null
+          characters?: Json | null
           client_id?: string
           created_at?: string
           created_by_id?: string | null
           cta?: string | null
           current_version?: number
           freeform_brief?: string | null
+          hook_variants?: Json | null
           id?: string
           key_message?: string | null
           landing_page_analysis?: Json | null
@@ -835,6 +849,7 @@ export type Database = {
           overlay_plan?: Json | null
           reference_image_urls?: string[] | null
           reference_video_urls?: string[] | null
+          selected_hook_index?: number | null
           shot_list?: Json | null
           status?: string
           target_audience?: string | null

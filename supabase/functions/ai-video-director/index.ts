@@ -1,7 +1,7 @@
-// AI Video Director — turns a creative brief into a shot list, VO script,
-// music direction, and text-overlay plan using Claude.
+// AI Video Director — turns a creative brief into a winning ad: shot list with
+// per-shot speaker assignment (in-scene dialogue vs. narrator VO), reusable
+// character profiles, 3 hook variants, and music direction.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,7 +26,16 @@ interface Brief {
   reference_image_urls?: string[];
   additional_direction?: string;
   freeform_brief?: string;
+  ad_framework?: string;
 }
+
+const FRAMEWORK_GUIDE: Record<string, string> = {
+  PAS: "Problem → Agitate → Solve → CTA. Open on the pain, intensify it, reveal the product as relief, end with action.",
+  AIDA: "Attention → Interest → Desire → Action. Open with a pattern interrupt, build curiosity, stoke desire, drive CTA.",
+  HOOK_DRIVEN: "First 3 seconds = pattern interrupt hook (visual surprise + bold claim). Then proof, then offer, then CTA.",
+  TESTIMONIAL: "Real-feeling person speaking to camera (UGC style). Their problem → their result → recommendation → CTA card.",
+  BEFORE_AFTER: "Show the bad before-state, transition to the after-state via the product, end with social proof + CTA.",
+};
 
 async function fetchLandingPageSummary(url?: string): Promise<string> {
   if (!url) return "";
@@ -34,13 +43,13 @@ async function fetchLandingPageSummary(url?: string): Promise<string> {
     const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 CPM-Bot" } });
     if (!res.ok) return "";
     const html = await res.text();
-    const text = html
+    return html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
-      .trim();
-    return text.slice(0, 4000);
+      .trim()
+      .slice(0, 4000);
   } catch {
     return "";
   }
@@ -49,65 +58,121 @@ async function fetchLandingPageSummary(url?: string): Promise<string> {
 function buildPrompt(brief: Brief, landingSummary: string): string {
   const length = brief.target_length_seconds ?? 30;
   const numClips = Math.max(2, Math.round(length / 8));
-  return `You are an elite AI Video Director producing a ${length}-second performance ad.
+  const framework = (brief.ad_framework ?? "PAS").toUpperCase();
+  const frameworkInstr = FRAMEWORK_GUIDE[framework] ?? FRAMEWORK_GUIDE.PAS;
+  const aspect = brief.aspect_ratio ?? "9:16";
 
-BRIEF (structured):
+  return `You are a world-class direct-response video advertising director. You write ads that win on Meta, TikTok, and YouTube — measured by hook rate, hold rate, and CTR.
+
+You are producing a ${length}-second ${aspect} performance ad using the ${framework} framework:
+${frameworkInstr}
+
+BRIEF:
 ${JSON.stringify(brief, null, 2)}
 
 ${brief.freeform_brief ? `FREEFORM DIRECTION:\n${brief.freeform_brief}\n` : ""}
 ${landingSummary ? `LANDING PAGE CONTENT (truncated):\n${landingSummary}\n` : ""}
 
-Produce a shot list of EXACTLY ${numClips} clips, each 8 seconds. Each Veo prompt must include:
-- subject + action
-- camera direction (close-up, wide, tracking, overhead, etc.)
-- lighting (golden hour, studio, natural daylight, dramatic side-light, etc.)
-- cinematic descriptors (shallow depth of field, rack focus, slow-motion if needed)
-- aspect ratio reminder ("${brief.aspect_ratio ?? "9:16"} portrait/landscape")
-- the word "realistic" at the end
+============================================================
+CRITICAL RULES — read carefully, these determine if the ad works:
+============================================================
 
-Use the "generate_shot_list" tool to return the result. Do NOT include any prose outside the tool call.`;
+1. CHARACTERS (consistency is everything)
+   - Define 1–3 named characters in the "characters" array (e.g. "daughter", "mother", "technician").
+   - Each character needs a vivid, repeatable visual description: ethnicity, age, hair, build, signature wardrobe, distinguishing features.
+   - In every shot that features a character, repeat their full description in the veo_prompt — Veo has no memory between clips, so repetition = consistency.
+
+2. DIALOGUE vs. NARRATOR VO (this is the most important rule)
+   - Veo 3.1 generates SYNCHRONIZED LIP-SYNCED DIALOGUE natively. Use it.
+   - For each shot, set "speaker" to one of:
+       * "narrator_vo"  → off-camera narrator. Add the line to "vo_segment". Do NOT mention the line in veo_prompt.
+       * "<character_name>"  → the named on-screen character speaks. Add the EXACT spoken line to "dialogue". Embed it in veo_prompt like:  Daughter says with worried tone: "How are we supposed to pay for that?". Set vo_segment to "" (empty).
+       * "none"  → silent shot (b-roll, montage). vo_segment and dialogue both empty.
+   - NEVER write speaker labels ("Daughter:", "Mother:") inside vo_segment or dialogue text.
+
+3. ANTI-CAPTION (mandatory)
+   - Every veo_prompt must end with: "(no on-screen text, no subtitles, no captions, no watermarks, no UI overlays)".
+   - Veo will burn-in captions unless you explicitly forbid them.
+
+4. CINEMATOGRAPHY (every veo_prompt must include)
+   - Subject + specific action
+   - Named character description (re-stated every shot)
+   - Camera: shot size + movement (e.g. "medium close-up, slow push-in", "handheld over-shoulder", "static wide")
+   - Lighting: e.g. "warm golden hour through window", "harsh midday sun", "soft north-facing window light"
+   - Setting + props
+   - Lens/style: "shot on ARRI Alexa, 35mm, shallow depth of field, anamorphic, photoreal"
+   - Aspect: "${aspect}"
+   - End with: "Photorealistic, cinematic. (no on-screen text, no subtitles, no captions, no watermarks, no UI overlays)"
+
+5. PACING
+   - Clip 1 = HOOK. Pattern interrupt in first 1.5s. Make the viewer stop scrolling.
+   - Clips 2..N-1 = problem → agitate → solve.
+   - Final clip = product/CTA payoff. Hold the offer on screen.
+
+6. HOOK VARIANTS (3 of them, mandatory)
+   - Generate 3 different cold-open lines for clip 1, each <= 9 words.
+   - Each must be a different angle: question hook, contrarian/shocking hook, story hook.
+
+7. TEXT_OVERLAY
+   - Optional, max 3 words, ALL CAPS power words only (e.g. "SHOCKED", "STOP PAYING", "WATCH THIS"). Most shots = empty.
+
+8. MUSIC PROMPT
+   - Genre, BPM, energy arc, mood. Should match framework: PAS = tense → resolved; HOOK_DRIVEN = punchy from frame 1.
+
+Use the "generate_shot_list" tool to return the result. Produce EXACTLY ${numClips} shots, each ~${Math.round(length/numClips)} seconds. No prose outside the tool call.`;
 }
 
 const TOOL = {
   name: "generate_shot_list",
-  description: "Returns a structured shot list, VO script, music direction, and overlay plan.",
+  description: "Returns a structured ad: characters, hooks, shot list, narrator VO script, music direction.",
   input_schema: {
     type: "object",
     properties: {
+      characters: {
+        type: "array",
+        description: "Named on-screen characters with persistent visual descriptions.",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "lowercase id, e.g. 'daughter'" },
+            description: { type: "string", description: "full visual description, repeated in every shot they appear in" },
+            voice_direction: { type: "string", description: "voice tone, e.g. 'worried american female, mid-30s'" },
+          },
+          required: ["name", "description"],
+        },
+      },
+      hook_variants: {
+        type: "array",
+        description: "Exactly 3 cold-open lines for clip 1, each a different angle (question / contrarian / story).",
+        items: {
+          type: "object",
+          properties: {
+            angle: { type: "string", enum: ["question", "contrarian", "story"] },
+            line: { type: "string" },
+          },
+          required: ["angle", "line"],
+        },
+      },
       shot_list: {
         type: "array",
         items: {
           type: "object",
           properties: {
             clip_number: { type: "number" },
-            label: { type: "string", description: "Short label like 'THE PROBLEM'" },
+            label: { type: "string", description: "Story beat, e.g. 'HOOK', 'PROBLEM', 'AGITATE', 'SOLVE', 'CTA'" },
+            speaker: { type: "string", description: "'narrator_vo' | character name | 'none'" },
+            dialogue: { type: "string", description: "Exact spoken line if speaker is a character; empty otherwise." },
+            vo_segment: { type: "string", description: "Narrator line if speaker='narrator_vo'; empty otherwise." },
             veo_prompt: { type: "string" },
             text_overlay: { type: "string" },
-            vo_segment: { type: "string" },
             duration_seconds: { type: "number" },
           },
-          required: ["clip_number", "veo_prompt", "vo_segment", "duration_seconds"],
+          required: ["clip_number", "veo_prompt", "duration_seconds", "speaker"],
         },
       },
-      vo_script: { type: "string", description: "Full VO script joined together with natural pacing." },
-      music_prompt: { type: "string", description: "ElevenLabs Music prompt — genre, energy, tempo, mood." },
-      overlay_plan: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            clip_number: { type: "number" },
-            text: { type: "string" },
-            position: { type: "string", enum: ["top", "center", "bottom"] },
-            animation: { type: "string", enum: ["fade", "slide_up", "pop", "none"] },
-            appear_at_ms: { type: "number" },
-            disappear_at_ms: { type: "number" },
-          },
-          required: ["clip_number", "text", "position"],
-        },
-      },
+      music_prompt: { type: "string" },
     },
-    required: ["shot_list", "vo_script", "music_prompt", "overlay_plan"],
+    required: ["characters", "hook_variants", "shot_list", "music_prompt"],
   },
 } as const;
 
@@ -136,7 +201,6 @@ Deno.serve(async (req) => {
     const landingSummary = await fetchLandingPageSummary(project.landing_page_url);
     const userPrompt = buildPrompt(project as Brief, landingSummary);
 
-    // Call Claude with the structured tool
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY missing" }, 500);
 
@@ -149,7 +213,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-5-20250929",
-        max_tokens: 4096,
+        max_tokens: 6000,
         tools: [TOOL],
         tool_choice: { type: "tool", name: "generate_shot_list" },
         messages: [{ role: "user", content: userPrompt }],
@@ -166,24 +230,32 @@ Deno.serve(async (req) => {
     if (!toolUse) return json({ error: "No tool_use in response" }, 500);
 
     const out = toolUse.input as {
-      shot_list: any[]; vo_script: string; music_prompt: string; overlay_plan: any[];
+      characters: any[]; hook_variants: any[]; shot_list: any[]; music_prompt: string;
     };
 
-    // Persist to project
+    // Build narrator-only vo_script (filter out dialogue shots)
+    const voScript = (out.shot_list || [])
+      .filter((s: any) => s.speaker === "narrator_vo" && s.vo_segment?.trim())
+      .map((s: any) => s.vo_segment.trim())
+      .join(" ");
+
     const { error: updErr } = await supabase
       .from("ai_video_projects")
       .update({
-        shot_list: out.shot_list,
-        vo_script: out.vo_script,
+        characters: out.characters ?? [],
+        hook_variants: out.hook_variants ?? [],
+        selected_hook_index: 0,
+        shot_list: out.shot_list ?? [],
+        vo_script: voScript,
         music_prompt: out.music_prompt,
-        overlay_plan: out.overlay_plan,
+        overlay_plan: [],
         landing_page_analysis: landingSummary ? { length: landingSummary.length, summary: landingSummary.slice(0, 500) } : null,
         status: "shot_list_review",
       })
       .eq("id", project_id);
     if (updErr) return json({ error: updErr.message }, 500);
 
-    return json({ ok: true, ...out });
+    return json({ ok: true, ...out, vo_script: voScript });
   } catch (e) {
     console.error("ai-video-director error:", e);
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);

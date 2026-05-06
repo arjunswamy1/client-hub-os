@@ -80,6 +80,8 @@ function BriefForm({ clientId, onCreated }: { clientId: string; onCreated: (id: 
   const [platforms, setPlatforms] = useState<string[]>(['Meta Stories/Reels']);
   const [direction, setDirection] = useState('');
   const [freeform, setFreeform] = useState('');
+  const [framework, setFramework] = useState('PAS');
+  const [captionStyle, setCaptionStyle] = useState('tiktok');
   const [saving, setSaving] = useState(false);
 
   const handleCreate = async () => {
@@ -104,6 +106,8 @@ function BriefForm({ clientId, onCreated }: { clientId: string; onCreated: (id: 
           aspect_ratio: aspectFromPlatforms(platforms),
           additional_direction: direction || null,
           freeform_brief: freeform || null,
+          ad_framework: framework,
+          caption_style: captionStyle,
           created_by_id: teamMember?.id ?? null,
         })
         .select('id')
@@ -194,6 +198,35 @@ function BriefForm({ clientId, onCreated }: { clientId: string; onCreated: (id: 
           <Label className="mb-2 block">Target Platforms</Label>
           <MultiToggle options={PLATFORMS} value={platforms} onChange={setPlatforms} />
           <p className="mt-2 text-xs text-muted-foreground">Aspect ratio will be set to <strong>{aspectFromPlatforms(platforms)}</strong>.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Ad Framework</Label>
+            <Select value={framework} onValueChange={setFramework}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PAS">PAS — Problem · Agitate · Solve</SelectItem>
+                <SelectItem value="AIDA">AIDA — Attention · Interest · Desire · Action</SelectItem>
+                <SelectItem value="HOOK_DRIVEN">Hook-Driven (3-sec pattern interrupt)</SelectItem>
+                <SelectItem value="TESTIMONIAL">Testimonial / UGC</SelectItem>
+                <SelectItem value="BEFORE_AFTER">Before / After</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Caption Style</Label>
+            <Select value={captionStyle} onValueChange={setCaptionStyle}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tiktok">TikTok (yellow highlights, 2-word pops)</SelectItem>
+                <SelectItem value="hormozi">Hormozi (yellow + green emphasis)</SelectItem>
+                <SelectItem value="mrbeast">MrBeast (1-word punchy red)</SelectItem>
+                <SelectItem value="editorial">Editorial (clean, full sentences)</SelectItem>
+                <SelectItem value="minimal">Minimal (small, unobtrusive)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div>
@@ -424,6 +457,47 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
               </p>
             </CardContent>
           </Card>
+
+          {Array.isArray((project as any).hook_variants) && (project as any).hook_variants.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Hook Variants</CardTitle>
+                <CardDescription className="text-xs">Pick the cold-open angle. Regenerate clip 1 after changing.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(project as any).hook_variants.map((h: any, i: number) => (
+                  <button
+                    key={i}
+                    onClick={async () => {
+                      await supabase.from('ai_video_projects').update({ selected_hook_index: i }).eq('id', projectId);
+                      qc.invalidateQueries({ queryKey: ['ai-video-project', projectId] });
+                      toast.success(`Hook ${i + 1} selected — regenerate clip 1`);
+                    }}
+                    className={`w-full rounded-md border p-3 text-left text-sm transition-colors ${
+                      (project as any).selected_hook_index === i ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+                    }`}
+                  >
+                    <Badge variant="outline" className="mr-2 capitalize">{h.angle}</Badge>
+                    "{h.line}"
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {Array.isArray((project as any).characters) && (project as any).characters.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Characters</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                {(project as any).characters.map((c: any, i: number) => (
+                  <div key={i} className="rounded border p-2">
+                    <div className="font-semibold capitalize">{c.name}</div>
+                    <div className="text-muted-foreground">{c.description}</div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {shots.map((s, i) => {

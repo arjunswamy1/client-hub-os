@@ -57,8 +57,23 @@ Deno.serve(async (req) => {
       .from("ai_video_projects").select("*").eq("id", project_id).single();
     if (pErr || !project) return json({ error: "Project not found" }, 404);
 
-    const script = (script_override || project.vo_script || "").toString().trim();
-    if (!script) return json({ error: "No vo_script on project — generate shot list first" }, 400);
+    // Rebuild VO script from narrator-only shots (in case shot_list was edited).
+    // Strip stray speaker labels for safety.
+    let script = (script_override || "").toString().trim();
+    if (!script) {
+      const shots: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
+      const narratorLines = shots
+        .filter((s) => s?.speaker === "narrator_vo" && s?.vo_segment?.trim())
+        .map((s) => String(s.vo_segment).replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, "").trim());
+      script = narratorLines.join(" ").replace(/\s+/g, " ").trim() || (project.vo_script || "").trim();
+    }
+    if (!script) {
+      return json({
+        ok: true,
+        skipped: true,
+        reason: "No narrator voiceover needed — all dialogue is in-scene (Veo native).",
+      });
+    }
 
     const voiceId = voice_id || project.vo_voice_id || DEFAULT_VOICE_ID;
     const version = project.current_version ?? 1;

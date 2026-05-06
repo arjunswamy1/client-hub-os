@@ -42,12 +42,65 @@ function cleanCaptionLine(text: string) {
     .trim();
 }
 
-function clipTimelineDuration(shot: any, opt: any) {
+function clipTimelineDuration(shot: any, opt: any, dbClip?: any) {
   const planned = Number(shot?.duration_seconds) > 0 ? Number(shot.duration_seconds) : MAX_SAFE_VEO_CLIP_SECONDS;
+  // Prefer the actual measured duration from the downloaded MP4 if available.
+  const measured = Number(dbClip?.actual_duration_seconds);
   const generated = Number(opt?.duration_seconds ?? opt?.metadata?.duration_seconds ?? opt?.duration);
-  // Older generated clips do not have stored media duration. Veo clips are capped at 8s here so
-  // Shotstack does not hold/freeze a source after the real clip has ended.
-  return clampNumber(generated || Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS), 1, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+  const best = Number.isFinite(measured) && measured > 0
+    ? measured
+    : (generated || Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+  return clampNumber(best, 1, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+}
+
+interface WordTiming { word: string; start: number; end: number; }
+
+const PHRASE_LEAD_WORDS = new Set(['and', 'but', 'or', 'so', 'when', 'because', 'that', 'which', 'while', 'if', 'though']);
+const PREP_WORDS = new Set(['in', 'on', 'at', 'for', 'to', 'with', 'from', 'of', 'by', 'into', 'over', 'under']);
+
+// Split a transcript into natural phrase-sized caption chunks using ElevenLabs word timings.
+// Falls back to a heuristic word-count split when no timings are present.
+function chunkByPhrases(text: string, words: WordTiming[]): { text: string; start: number; end: number }[] {
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+  // Best-effort align tokens to word timings (whitespace tokenization may differ slightly).
+  const timed = words.length === tokens.length
+    ? tokens.map((t, i) => ({ word: t, start: words[i].start, end: words[i].end }))
+    : tokens.map((t, i) => {
+        const w = words[i];
+        return w ? { word: t, start: w.start, end: w.end } : null;
+      }).filter(Boolean) as WordTiming[];
+
+  if (!timed.length) return [];
+
+  const chunks: { text: string; start: number; end: number }[] = [];
+  let buf: WordTiming[] = [];
+  const flush = () => {
+    if (!buf.length) return;
+    chunks.push({
+      text: buf.map((w) => w.word).join(' '),
+      start: buf[0].start,
+      end: buf[buf.length - 1].end,
+    });
+    buf = [];
+  };
+
+  for (let i = 0; i < timed.length; i++) {
+    const w = timed[i];
+    buf.push(w);
+    const next = timed[i + 1];
+    const cleanWord = w.word.replace(/[^a-z]/gi, '').toLowerCase();
+    const nextClean = next?.word.replace(/[^a-z]/gi, '').toLowerCase();
+    const endsWithPunct = /[,.\-!?;:]$/.test(w.word);
+    const breathGap = next ? (next.start - w.end) > 0.2 : false;
+    const beforeConj = next && buf.length >= 3 && PHRASE_LEAD_WORDS.has(nextClean ?? '');
+    const beforePrep = next && buf.length >= 4 && PREP_WORDS.has(nextClean ?? '');
+    const hardCap = buf.length >= 6;
+    if (endsWithPunct || breathGap || beforeConj || beforePrep || hardCap || !next) {
+      flush();
+    }
+  }
+  return chunks;
 }
 
 Deno.serve(async (req) => {

@@ -28,6 +28,28 @@ function aspectToSize(aspect: string): { width: number; height: number; ratio: '
   }
 }
 
+const MAX_SAFE_VEO_CLIP_SECONDS = 8;
+
+function clampNumber(v: any, min: number, max: number, fb: number) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
+}
+
+function cleanCaptionLine(text: string) {
+  return String(text)
+    .replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clipTimelineDuration(shot: any, opt: any) {
+  const planned = Number(shot?.duration_seconds) > 0 ? Number(shot.duration_seconds) : MAX_SAFE_VEO_CLIP_SECONDS;
+  const generated = Number(opt?.duration_seconds ?? opt?.metadata?.duration_seconds ?? opt?.duration);
+  // Older generated clips do not have stored media duration. Veo clips are capped at 8s here so
+  // Shotstack does not hold/freeze a source after the real clip has ended.
+  return clampNumber(generated || Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS), 1, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 

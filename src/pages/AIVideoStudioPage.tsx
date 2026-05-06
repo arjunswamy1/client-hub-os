@@ -300,6 +300,20 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     enabled: !!project,
   });
 
+  const { data: pricing } = useQuery({
+    queryKey: ['tech-pricing-ai-video'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('tech_pricing')
+        .select('service, model, unit, rate_per_unit_usd')
+        .in('service', ['google_veo', 'elevenlabs'])
+        .or('effective_to.is.null,effective_to.gt.now()');
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const runDirector = async () => {
     setRunning(true);
     try {

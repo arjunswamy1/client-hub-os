@@ -422,6 +422,27 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
   const voiceover = (audio ?? []).find((a) => a.audio_type === 'voiceover');
   const music = (audio ?? []).find((a) => a.audio_type === 'music');
 
+  // Cost estimator — uses live rates from tech_pricing with sensible fallbacks.
+  const veoRate = pricing?.find((p: any) => p.service === 'google_veo' && p.unit === 'seconds')?.rate_per_unit_usd ?? 0.40;
+  const voRate = pricing?.find((p: any) => p.service === 'elevenlabs' && p.unit === 'characters')?.rate_per_unit_usd ?? 0.00015;
+  const musicRate = pricing?.find((p: any) => p.service === 'elevenlabs' && p.model === 'music' && p.unit === 'seconds')?.rate_per_unit_usd ?? 0.08;
+
+  const totalClipSeconds = shots.reduce((sum, s) => sum + (Number(s.duration_seconds) || 0), 0);
+  const remainingShots = shots.filter((s) => {
+    const c = clipByNum.get(s.clip_number);
+    return !c || c.status === 'failed' || c.status === 'pending' || !c.generated_options?.length;
+  });
+  const remainingSeconds = remainingShots.reduce((sum, s) => sum + (Number(s.duration_seconds) || 0), 0);
+  const voChars = (project.vo_script || '').length;
+  const musicSeconds = project.target_length_seconds || totalClipSeconds || 0;
+
+  const veoTotalCost = totalClipSeconds * veoRate;
+  const veoRemainingCost = remainingSeconds * veoRate;
+  const voCost = voChars * voRate;
+  const musicCost = musicSeconds * musicRate;
+  const totalProjectCost = veoTotalCost + voCost + musicCost;
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">

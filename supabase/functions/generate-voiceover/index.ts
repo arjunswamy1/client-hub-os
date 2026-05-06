@@ -43,9 +43,47 @@ function estimateSpeechDuration(text: string, fallbackSeconds: number): number {
   return Math.round(Math.min(cap, Math.max(0.7, estimated)) * 100) / 100;
 }
 
-async function tts(text: string, voiceId: string, key: string): Promise<Uint8Array> {
+interface CharAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+interface WordTiming {
+  word: string;
+  start: number;
+  end: number;
+}
+
+// Group character-level timestamps into word-level timings.
+function alignmentToWords(alignment: CharAlignment | null): WordTiming[] {
+  if (!alignment?.characters?.length) return [];
+  const words: WordTiming[] = [];
+  let curr = "";
+  let start = 0;
+  for (let i = 0; i < alignment.characters.length; i++) {
+    const ch = alignment.characters[i];
+    const cStart = alignment.character_start_times_seconds[i] ?? 0;
+    const cEnd = alignment.character_end_times_seconds[i] ?? cStart;
+    if (/\s/.test(ch)) {
+      if (curr.trim()) words.push({ word: curr, start, end: cStart });
+      curr = "";
+      start = cEnd;
+    } else {
+      if (!curr) start = cStart;
+      curr += ch;
+      if (i === alignment.characters.length - 1) {
+        words.push({ word: curr, start, end: cEnd });
+      }
+    }
+  }
+  return words;
+}
+
+// Returns audio bytes + alignment data (character-level timestamps from ElevenLabs).
+async function ttsWithTimestamps(text: string, voiceId: string, key: string): Promise<{ bytes: Uint8Array; alignment: CharAlignment | null; duration: number | null }> {
   const res = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps?output_format=mp3_44100_128`,
     {
       method: "POST",
       headers: { "xi-api-key": key, "Content-Type": "application/json" },
@@ -61,7 +99,18 @@ async function tts(text: string, voiceId: string, key: string): Promise<Uint8Arr
     const perm = parsePermissionError(t);
     throw new Error(perm ?? `ElevenLabs TTS ${res.status}: ${t.slice(0, 300)}`);
   }
-  return new Uint8Array(await res.arrayBuffer());
+  const data = await res.json();
+  const audioB64: string = data.audio_base64 || data.audio || "";
+  if (!audioB64) throw new Error("ElevenLabs returned no audio_base64");
+  const bin = atob(audioB64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const alignment: CharAlignment | null = data.alignment ?? data.normalized_alignment ?? null;
+  let duration: number | null = null;
+  if (alignment?.character_end_times_seconds?.length) {
+    duration = alignment.character_end_times_seconds[alignment.character_end_times_seconds.length - 1];
+  }
+  return { bytes, alignment, duration };
 }
 
 Deno.serve(async (req) => {

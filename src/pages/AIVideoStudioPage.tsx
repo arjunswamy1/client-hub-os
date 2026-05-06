@@ -106,6 +106,8 @@ function BriefForm({ clientId, onCreated }: { clientId: string; onCreated: (id: 
           aspect_ratio: aspectFromPlatforms(platforms),
           additional_direction: direction || null,
           freeform_brief: freeform || null,
+          ad_framework: framework,
+          caption_style: captionStyle,
           created_by_id: teamMember?.id ?? null,
         })
         .select('id')

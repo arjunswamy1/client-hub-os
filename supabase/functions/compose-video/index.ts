@@ -177,17 +177,18 @@ Deno.serve(async (req) => {
           captionClips.push({
             asset: {
               type: 'text', text: ch.text.toUpperCase(),
-              font: { family: S.font, size: S.size, color: ch.isHighlight ? S.highlight : S.color, lineHeight: 1.1 },
+              font: { family: S.font, size: S.size, color: ch.isHighlight ? S.highlight : S.color, lineHeight: 1.15 },
               stroke: { color: '#000000', width: S.stroke },
-              width: Math.round(width * 0.85),
-              height: 200,
+              background: { color: '#000000', opacity: 0.55, padding: 16, borderRadius: 12 },
+              width: Math.round(width * 0.82),
+              height: 220,
               alignment: { horizontal: 'center', vertical: 'center' },
             },
             start: cursor + ch.start,
-            length: Math.max(0.5, ch.length - 0.02),
+            length: Math.max(0.9, ch.length - 0.05),
             position: 'bottom',
             offset: { y: S.yOffset },
-            transition: { in: 'zoom', out: 'fade' },
+            transition: { in: 'fade', out: 'fade' },
           });
         }
       }

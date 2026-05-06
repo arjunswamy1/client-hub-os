@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
 
       const captionText = (shot.dialogue && String(shot.dialogue).trim()) || (shot.vo_segment && String(shot.vo_segment).trim()) || '';
       if (captionText) {
-        const chunks = chunkCaption(captionText, duration, voSegment?.duration_seconds);
+        const chunks = chunkCaption(captionText, duration, voSegment);
         for (const ch of chunks) {
           // Map numeric fade duration to Shotstack transition names
           const fadeName = S.fadeDuration <= 0.05

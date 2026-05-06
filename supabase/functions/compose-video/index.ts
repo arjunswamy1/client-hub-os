@@ -138,6 +138,7 @@ Deno.serve(async (req) => {
       const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
       const url = dbClip!.override_video_url || opt!.url;
       const duration = Number(shot.duration_seconds) || 8;
+      shotStartByNumber.set(Number(shot.clip_number), cursor);
 
       // Keep Veo's native audio for in-scene character dialogue; mute narrator/silent shots.
       const speaker = shot.speaker;

@@ -755,10 +755,30 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                       />
                     ) : (
                       <div
-                        className="flex items-center justify-center rounded-md border bg-muted text-xs text-muted-foreground"
+                        className="flex flex-col items-center justify-center gap-2 rounded-md border bg-muted p-4 text-xs text-muted-foreground"
                         style={{ aspectRatio: project.aspect_ratio?.replace(':', ' / ') ?? '9 / 16' }}
                       >
-                        {isGen ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating…</> : 'No clip yet'}
+                        {c?.status === 'generating' || c?.status === 'regenerating' || isGen ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            <div className="text-center">
+                              <div className="font-medium text-foreground">{c?.progress_message ?? 'Starting…'}</div>
+                              <div className="mt-1 font-mono tabular-nums">{c?.progress_pct ?? 0}%</div>
+                            </div>
+                            <div className="h-1.5 w-3/4 overflow-hidden rounded-full bg-background">
+                              <div
+                                className="h-full bg-primary transition-all duration-500"
+                                style={{ width: `${Math.max(2, c?.progress_pct ?? 0)}%` }}
+                              />
+                            </div>
+                          </>
+                        ) : c?.status === 'failed' ? (
+                          <div className="text-center">
+                            <AlertCircle className="mx-auto h-5 w-5 text-destructive" />
+                            <div className="mt-1 font-medium text-destructive">{c.error_code ?? 'Failed'}</div>
+                            <div className="mt-1 leading-snug">{c.error_message}</div>
+                          </div>
+                        ) : 'No clip yet'}
                       </div>
                     )}
                     <div>

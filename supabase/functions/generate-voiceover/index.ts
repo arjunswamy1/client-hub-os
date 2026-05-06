@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
       .map((s) => ({
         clip_number: Number(s.clip_number),
         text: cleanLine(s.vo_segment),
-        duration_seconds: estimateSpeechDuration(s.vo_segment, Number(s.duration_seconds) || 8),
+        planned_seconds: Number(s.duration_seconds) || 8,
       }));
 
     if (narratorShots.length === 0) {
@@ -162,19 +162,38 @@ Deno.serve(async (req) => {
     const voiceId = voice_id || project.vo_voice_id || DEFAULT_VOICE_ID;
     const version = project.current_version ?? 1;
 
-    // Generate one MP3 per narrator shot in parallel.
-    const segments: { clip_number: number; audio_url: string; text: string; chars: number; duration_seconds: number }[] = [];
+    // Generate one MP3 per narrator shot in parallel — with character-level timestamps.
+    const segments: {
+      clip_number: number;
+      audio_url: string;
+      text: string;
+      chars: number;
+      duration_seconds: number;
+      alignment: CharAlignment | null;
+      words: WordTiming[];
+    }[] = [];
     let totalChars = 0;
 
     const results = await Promise.allSettled(narratorShots.map(async (shot) => {
-      const bytes = await tts(shot.text, voiceId, ELEVEN_KEY);
+      const { bytes, alignment, duration } = await ttsWithTimestamps(shot.text, voiceId, ELEVEN_KEY);
       const path = `ai-video/${project_id}/audio/vo-v${version}-clip${shot.clip_number}-${Date.now()}.mp3`;
       const { error: upErr } = await admin.storage
         .from("creative-assets")
         .upload(path, bytes, { contentType: "audio/mpeg", upsert: true });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
       const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
-      return { clip_number: shot.clip_number, audio_url: pub.publicUrl, text: shot.text, chars: shot.text.length, duration_seconds: shot.duration_seconds };
+      const measured = duration && duration > 0
+        ? Math.round(duration * 100) / 100
+        : estimateSpeechDuration(shot.text, shot.planned_seconds);
+      return {
+        clip_number: shot.clip_number,
+        audio_url: pub.publicUrl,
+        text: shot.text,
+        chars: shot.text.length,
+        duration_seconds: measured,
+        alignment,
+        words: alignmentToWords(alignment),
+      };
     }));
 
     for (const r of results) {

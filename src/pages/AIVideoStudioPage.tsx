@@ -282,9 +282,35 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     refetchInterval: (q) => {
       const rows: any[] = (q.state.data as any[]) ?? [];
       const anyGenerating = rows.some(r => r.status === 'generating');
-      return (anyGenerating || generatingClip !== null || generatingAll) ? 5000 : false;
+      // Realtime handles most updates; keep a slow safety poll while generating.
+      return (anyGenerating || generatingClip !== null || generatingAll) ? 8000 : false;
     },
   });
+
+  // Realtime subscription — push progress updates to the cache as the edge function writes them.
+  useEffect(() => {
+    if (!projectId || !project?.current_version) return;
+    const channel = supabase
+      .channel(`ai_video_clips:${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ai_video_clips', filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const row: any = payload.new ?? payload.old;
+          if (!row || row.version !== project.current_version) return;
+          qc.setQueryData(['ai-video-clips', projectId, project.current_version], (prev: any[] = []) => {
+            const next = [...prev];
+            const idx = next.findIndex((c) => c.id === row.id);
+            if (payload.eventType === 'DELETE') return idx >= 0 ? next.filter((_, i) => i !== idx) : next;
+            if (idx >= 0) next[idx] = { ...next[idx], ...row };
+            else next.push(row);
+            return next.sort((a, b) => a.clip_number - b.clip_number);
+          });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [projectId, project?.current_version, qc]);
 
   const { data: audio } = useQuery({
     queryKey: ['ai-video-audio', projectId, project?.current_version],
@@ -626,7 +652,21 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                                 <div className="leading-snug">{(c as any).error_message}</div>
                               </div>
                             )}
-                            {!isFailed && (
+                            {!isFailed && (st === 'generating' || st === 'regenerating') && (
+                              <div className="mt-1 space-y-1">
+                                <div className="flex items-center justify-between text-muted-foreground">
+                                  <span className="truncate pr-2">{(c as any)?.progress_message ?? 'Working…'}</span>
+                                  <span className="font-mono tabular-nums">{(c as any)?.progress_pct ?? 0}%</span>
+                                </div>
+                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full bg-primary transition-all duration-500"
+                                    style={{ width: `${Math.max(2, (c as any)?.progress_pct ?? 0)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            {!isFailed && st !== 'generating' && st !== 'regenerating' && (
                               <div className="text-muted-foreground capitalize">{st.replace(/_/g, ' ')}</div>
                             )}
                           </div>
@@ -715,10 +755,30 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                       />
                     ) : (
                       <div
-                        className="flex items-center justify-center rounded-md border bg-muted text-xs text-muted-foreground"
+                        className="flex flex-col items-center justify-center gap-2 rounded-md border bg-muted p-4 text-xs text-muted-foreground"
                         style={{ aspectRatio: project.aspect_ratio?.replace(':', ' / ') ?? '9 / 16' }}
                       >
-                        {isGen ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating…</> : 'No clip yet'}
+                        {c?.status === 'generating' || c?.status === 'regenerating' || isGen ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            <div className="text-center">
+                              <div className="font-medium text-foreground">{c?.progress_message ?? 'Starting…'}</div>
+                              <div className="mt-1 font-mono tabular-nums">{c?.progress_pct ?? 0}%</div>
+                            </div>
+                            <div className="h-1.5 w-3/4 overflow-hidden rounded-full bg-background">
+                              <div
+                                className="h-full bg-primary transition-all duration-500"
+                                style={{ width: `${Math.max(2, c?.progress_pct ?? 0)}%` }}
+                              />
+                            </div>
+                          </>
+                        ) : c?.status === 'failed' ? (
+                          <div className="text-center">
+                            <AlertCircle className="mx-auto h-5 w-5 text-destructive" />
+                            <div className="mt-1 font-medium text-destructive">{c.error_code ?? 'Failed'}</div>
+                            <div className="mt-1 leading-snug">{c.error_message}</div>
+                          </div>
+                        ) : 'No clip yet'}
                       </div>
                     )}
                     <div>

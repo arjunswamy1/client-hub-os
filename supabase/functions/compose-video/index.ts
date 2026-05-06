@@ -433,16 +433,14 @@ Deno.serve(async (req) => {
     if (voSegments.length > 0) {
       const voClips = voSegments
         .map((seg) => {
-          const start = shotStartByNumber.get(Number(seg.clip_number));
-          if (start === undefined || !seg.audio_url) return null;
-          const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
-          const dbClip = clips?.find((c: any) => c.clip_number === Number(seg.clip_number));
-          const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
-          const len = Math.min(clipTimelineDuration(shot, opt, dbClip), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
+          if (!seg.audio_url) return null;
+          const t = timings.find((x) => Number(x.shot.clip_number) === Number(seg.clip_number));
+          if (!t) return null;
+          // J-cut: VO leads the visual cut. L-cut: VO trails into next shot's video.
           return {
             asset: { type: 'audio', src: seg.audio_url, volume: 1 },
-            start,
-            length: len,
+            start: t.audioStart,
+            length: t.audioLen,
           };
         })
         .filter(Boolean);

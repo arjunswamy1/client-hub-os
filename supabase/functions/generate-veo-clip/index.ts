@@ -31,6 +31,35 @@ function aspectToVeo(aspect?: string): string {
 // @ts-ignore - EdgeRuntime is provided by Supabase edge runtime
 declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 
+function classifyError(status: number | null, raw: string): { code: string; message: string } {
+  const text = (raw || "").toLowerCase();
+  if (status === 429 || text.includes("resource_exhausted") || text.includes("quota") || text.includes("prepayment")) {
+    return { code: "out_of_credits", message: "Google AI Studio prepayment credits depleted. Add credits at ai.studio/projects, then retry." };
+  }
+  if (status === 401 || status === 403 || text.includes("api key") || text.includes("permission")) {
+    return { code: "auth", message: "Gemini API key invalid or missing Veo access." };
+  }
+  if (text.includes("safety") || text.includes("blocked") || text.includes("policy")) {
+    return { code: "safety_block", message: "Prompt blocked by Veo safety filters. Edit the prompt and retry." };
+  }
+  if (text.includes("timeout") || text.includes("timed out")) {
+    return { code: "timeout", message: "Veo generation timed out (>10 min). Retry the clip." };
+  }
+  if (status && status >= 500) {
+    return { code: "upstream_5xx", message: `Veo upstream error (${status}). Retry in a moment.` };
+  }
+  return { code: "unknown", message: raw?.slice(0, 500) || "Unknown error" };
+}
+
+async function failClip(admin: any, clipId: string, code: string, message: string) {
+  await admin.from("ai_video_clips").update({
+    status: "failed",
+    error_code: code,
+    error_message: message,
+    failed_at: new Date().toISOString(),
+  }).eq("id", clipId);
+}
+
 async function runVeoJob(params: {
   admin: ReturnType<typeof createClient>;
   GEMINI_API_KEY: string;

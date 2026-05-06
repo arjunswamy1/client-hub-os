@@ -132,6 +132,17 @@ async function runVeoJob(params: {
       selected_option_index: 0,
       status: "generated",
     }).eq("id", clipId);
+
+    // Cost tracking — Veo billed per second of generated video.
+    logMediaGenUsage({
+      client_id,
+      service: "google_veo",
+      surface: "ai-video-studio",
+      model: VEO_MODEL,
+      unit: "seconds",
+      quantity: duration_seconds,
+      metadata: { project_id, clip_number, aspect },
+    }).catch((e) => console.error("logMediaGenUsage failed:", e));
   } catch (e) {
     console.error("runVeoJob error:", e);
     await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);

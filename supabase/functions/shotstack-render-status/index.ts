@@ -52,6 +52,23 @@ Deno.serve(async (req) => {
 
     await supabase.from('ai_video_renders').update(update).eq('id', render_id);
 
+    // On completion, kick off caption-timing validation. Skip if this render
+    // was itself spawned by a realign to avoid an infinite chain.
+    if (status === 'done' && !render.parent_render_id) {
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/validate-render-captions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${SERVICE_ROLE}`,
+          },
+          body: JSON.stringify({ render_id }),
+        });
+      } catch (e) {
+        console.warn('[shotstack-render-status] validator invoke failed:', (e as Error).message);
+      }
+    }
+
     return new Response(JSON.stringify({ status, output_url: update.output_url ?? null }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

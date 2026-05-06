@@ -1,0 +1,1 @@
+ALTER TABLE public.ai_video_projects ADD COLUMN IF NOT EXISTS caption_settings JSONB NOT NULL DEFAULT '{}'::jsonb;

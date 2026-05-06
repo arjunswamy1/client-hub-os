@@ -89,6 +89,7 @@ async function runVeoJob(params: {
 }) {
   const { admin, GEMINI_API_KEY, clipId, project_id, client_id, version, clip_number, prompt, aspect, duration_seconds } = params;
   try {
+    await progress(admin, clipId, 5, "Submitting prompt to Veo…");
     const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VEO_MODEL}:predictLongRunning?key=${GEMINI_API_KEY}`;
     const startRes = await fetch(startUrl, {
       method: "POST",
@@ -111,12 +112,23 @@ async function runVeoJob(params: {
       await failClip(admin, clipId, "no_operation", "Veo did not return an operation name.");
       return;
     }
+    await progress(admin, clipId, 15, "Veo job queued. Waiting for render…");
 
     const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opName}?key=${GEMINI_API_KEY}`;
     const startedAt = Date.now();
     let opData: any = null;
+    let lastReportedPct = 15;
+    // Estimate render time: ~25s per second of generated video, capped at MAX_POLL_MS.
+    const estMs = Math.min(MAX_POLL_MS, Math.max(60_000, duration_seconds * 25_000));
     while (Date.now() - startedAt < MAX_POLL_MS) {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      const elapsed = Date.now() - startedAt;
+      // Map elapsed/estMs into 15..80 range so progress feels live.
+      const elapsedPct = Math.min(80, 15 + Math.round((elapsed / estMs) * 65));
+      if (elapsedPct > lastReportedPct + 4) {
+        await progress(admin, clipId, elapsedPct, `Rendering with Veo… ${Math.round(elapsed / 1000)}s elapsed`);
+        lastReportedPct = elapsedPct;
+      }
       const pr = await fetch(pollUrl);
       if (!pr.ok) continue;
       const pd = await pr.json();
@@ -134,6 +146,7 @@ async function runVeoJob(params: {
       await failClip(admin, clipId, code, message);
       return;
     }
+    await progress(admin, clipId, 85, "Render complete. Downloading video…");
 
     const generated =
       opData.response?.generateVideoResponse?.generatedSamples ??
@@ -165,6 +178,7 @@ async function runVeoJob(params: {
       return;
     }
 
+    await progress(admin, clipId, 92, "Uploading to storage…");
     const path = `ai-video/${project_id}/clips/v${version}/clip-${clip_number}-${Date.now()}.mp4`;
     const { error: upErr } = await admin.storage
       .from("creative-assets")
@@ -183,6 +197,9 @@ async function runVeoJob(params: {
       error_code: null,
       error_message: null,
       failed_at: null,
+      progress_pct: 100,
+      progress_message: "Done",
+      progress_updated_at: new Date().toISOString(),
     }).eq("id", clipId);
 
     // Cost tracking — Veo billed per second of generated video.

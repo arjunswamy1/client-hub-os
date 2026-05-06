@@ -28,6 +28,28 @@ function aspectToSize(aspect: string): { width: number; height: number; ratio: '
   }
 }
 
+const MAX_SAFE_VEO_CLIP_SECONDS = 8;
+
+function clampNumber(v: any, min: number, max: number, fb: number) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
+}
+
+function cleanCaptionLine(text: string) {
+  return String(text)
+    .replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clipTimelineDuration(shot: any, opt: any) {
+  const planned = Number(shot?.duration_seconds) > 0 ? Number(shot.duration_seconds) : MAX_SAFE_VEO_CLIP_SECONDS;
+  const generated = Number(opt?.duration_seconds ?? opt?.metadata?.duration_seconds ?? opt?.duration);
+  // Older generated clips do not have stored media duration. Veo clips are capped at 8s here so
+  // Shotstack does not hold/freeze a source after the real clip has ended.
+  return clampNumber(generated || Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS), 1, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -108,23 +130,17 @@ Deno.serve(async (req) => {
     const baseStyle = STYLES[captionStyle] ?? STYLES.tiktok;
     // User-tunable overrides from project.caption_settings
     const cs = ((project as any).caption_settings ?? {}) as Record<string, any>;
-    const clamp = (v: any, min: number, max: number, fb: number) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
-    };
     const S = {
       ...baseStyle,
-      size: clamp(cs.font_size, 18, 96, baseStyle.size),
-      wordsPerChunk: clamp(cs.words_per_chunk, 1, 10, baseStyle.wordsPerChunk),
-      bgOpacity: clamp(cs.background_opacity, 0, 1, 0.55),
-      fadeDuration: clamp(cs.fade_duration, 0, 1.5, 0.25),
+      size: clampNumber(cs.font_size, 18, 96, baseStyle.size),
+      wordsPerChunk: clampNumber(cs.words_per_chunk, 1, 10, baseStyle.wordsPerChunk),
+      bgOpacity: clampNumber(cs.background_opacity, 0, 1, 0.55),
+      fadeDuration: clampNumber(cs.fade_duration, 0, 0.5, 0),
     };
     const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','fast','easy','call','watch']);
 
-    const chunkCaption = (text: string, totalDuration: number) => {
-      const cleaned = String(text)
-        .replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, '')
-        .replace(/\s+/g, ' ').trim();
+    const chunkCaption = (text: string, totalDuration: number, audioDuration?: number) => {
+      const cleaned = cleanCaptionLine(text);
       const words = cleaned.split(/\s+/).filter(Boolean);
       if (!words.length) return [] as { text: string; isHighlight: boolean; start: number; length: number }[];
       const wpc = S.wordsPerChunk;
@@ -138,13 +154,14 @@ Deno.serve(async (req) => {
       }
       // Allocate time proportional to character count so longer chunks linger.
       const totalChars = chunks.reduce((sum, c) => sum + Math.max(1, c.text.length), 0);
-      // Reserve a small lead-in so the first caption doesn't collide with cut-in.
-      const usable = Math.max(0.5, totalDuration - 0.2);
-      let t = 0.1;
+      // Narrator captions use generated VO duration when known; native-dialogue captions use
+      // the visible clip duration. No long fade/zoom transitions, which caused late subtitle pops.
+      const targetDuration = clampNumber(audioDuration, 0.5, totalDuration, totalDuration);
+      const usable = Math.max(0.5, Math.min(totalDuration, targetDuration) - 0.1);
+      let t = 0.05;
       return chunks.map((c) => {
         const share = (Math.max(1, c.text.length) / totalChars) * usable;
-        // Minimum 1.1s per chunk for readability, max 3.5s.
-        const len = Math.min(3.5, Math.max(1.1, share));
+        const len = Math.min(3.0, Math.max(0.8, share));
         const out = { ...c, start: t, length: len };
         t += len;
         return out;
@@ -155,7 +172,8 @@ Deno.serve(async (req) => {
       const dbClip = clips?.find((c: any) => c.clip_number === shot.clip_number);
       const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
       const url = dbClip!.override_video_url || opt!.url;
-      const duration = Number(shot.duration_seconds) || 8;
+      const voSegment = voSegments.find((seg) => Number(seg.clip_number) === Number(shot.clip_number));
+      const duration = clipTimelineDuration(shot, opt);
       shotStartByNumber.set(Number(shot.clip_number), cursor);
 
       // Keep Veo's native audio for in-scene character dialogue; mute narrator/silent shots.
@@ -168,7 +186,6 @@ Deno.serve(async (req) => {
         start: cursor,
         length: duration,
         fit: 'cover',
-        transition: cursor === 0 ? undefined : { in: 'fade' },
       });
 
       if (shot.text_overlay) {
@@ -192,7 +209,7 @@ Deno.serve(async (req) => {
 
       const captionText = (shot.dialogue && String(shot.dialogue).trim()) || (shot.vo_segment && String(shot.vo_segment).trim()) || '';
       if (captionText) {
-        const chunks = chunkCaption(captionText, duration);
+        const chunks = chunkCaption(captionText, duration, voSegment?.duration_seconds);
         for (const ch of chunks) {
           // Map numeric fade duration to Shotstack transition names
           const fadeName = S.fadeDuration <= 0.05
@@ -289,12 +306,13 @@ Deno.serve(async (req) => {
           const start = shotStartByNumber.get(Number(seg.clip_number));
           if (start === undefined || !seg.audio_url) return null;
           const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
-          const len = Math.max(0.5, Number(shot?.duration_seconds) || 8);
+          const dbClip = clips?.find((c: any) => c.clip_number === Number(seg.clip_number));
+          const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
+          const len = Math.min(clipTimelineDuration(shot, opt), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
           return {
             asset: { type: 'audio', src: seg.audio_url, volume: 1 },
             start,
             length: len,
-            transition: { in: 'fade', out: 'fade' },
           };
         })
         .filter(Boolean);

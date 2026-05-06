@@ -28,6 +28,13 @@ function aspectToVeo(aspect?: string): string {
   return aspect;
 }
 
+function stabilizeVeoPrompt(prompt: string): string {
+  return String(prompt)
+    .replace(/\b(cut to|cuts to|jump cut|quick cuts?|montage|split[- ]?screen|scene transition|transition to|fade (in|out)|crossfade|wipe|smash cut|hard cut)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // @ts-ignore - EdgeRuntime is provided by Supabase edge runtime
 declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 
@@ -76,7 +83,7 @@ async function progress(admin: any, clipId: string, pct: number, message: string
 }
 
 async function runVeoJob(params: {
-  admin: ReturnType<typeof createClient>;
+  admin: any;
   GEMINI_API_KEY: string;
   clipId: string;
   project_id: string;
@@ -265,7 +272,7 @@ Deno.serve(async (req) => {
     // Strip any director instructions that ask Veo to render disclaimer / legal / fine-print
     // text on screen. Veo will hallucinate gibberish "lorem ipsum" looking paragraphs.
     // Real disclaimers must be added as a Shotstack overlay in compose-video.
-    prompt = prompt.replace(/\b(disclaimer|fine[- ]?print|legal\s+text|terms\s+and\s+conditions|legal\s+disclaimer)[^.]*\.?/gi, '').trim();
+    prompt = stabilizeVeoPrompt(prompt.replace(/\b(disclaimer|fine[- ]?print|legal\s+text|terms\s+and\s+conditions|legal\s+disclaimer)[^.]*\.?/gi, '').trim());
     if (shot.speaker && shot.speaker !== "narrator_vo" && shot.speaker !== "none") {
       const ch = characters.find((c) => c?.name?.toLowerCase() === String(shot.speaker).toLowerCase());
       if (ch && !prompt.toLowerCase().includes(String(ch.description).slice(0, 30).toLowerCase())) {
@@ -279,6 +286,10 @@ Deno.serve(async (req) => {
     const ANTI_CAPTION = "(no on-screen text of any kind: no subtitles, no captions, no watermarks, no UI overlays, no headlines, no phone numbers, no legal disclaimer text, no fine-print paragraphs, no lorem ipsum, no fake or scrambled text. Any required text will be added in post-production.)";
     if (!prompt.toLowerCase().includes("no subtitles") && !prompt.toLowerCase().includes("no captions")) {
       prompt = `${prompt} ${ANTI_CAPTION}`;
+    }
+    const CONTINUITY_GUARD = "Single continuous shot only: no cuts, no edits, no montage, no scene changes, no transition effects. Keep the camera and action continuous for the entire clip.";
+    if (!prompt.toLowerCase().includes("single continuous shot")) {
+      prompt = `${CONTINUITY_GUARD} ${prompt}`;
     }
 
     const baseRow = {

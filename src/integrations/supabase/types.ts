@@ -674,9 +674,13 @@ export type Database = {
           is_override: boolean
           override_source: string | null
           override_video_url: string | null
+          progress_message: string | null
+          progress_pct: number | null
+          progress_updated_at: string | null
           project_id: string
           reference_image_urls: string[] | null
           selected_option_index: number | null
+          started_at: string | null
           status: string
           text_overlay: Json | null
           veo_aspect_ratio: string | null
@@ -702,9 +706,13 @@ export type Database = {
           is_override?: boolean
           override_source?: string | null
           override_video_url?: string | null
+          progress_message?: string | null
+          progress_pct?: number | null
+          progress_updated_at?: string | null
           project_id: string
           reference_image_urls?: string[] | null
           selected_option_index?: number | null
+          started_at?: string | null
           status?: string
           text_overlay?: Json | null
           veo_aspect_ratio?: string | null
@@ -730,9 +738,13 @@ export type Database = {
           is_override?: boolean
           override_source?: string | null
           override_video_url?: string | null
+          progress_message?: string | null
+          progress_pct?: number | null
+          progress_updated_at?: string | null
           project_id?: string
           reference_image_urls?: string[] | null
           selected_option_index?: number | null
+          started_at?: string | null
           status?: string
           text_overlay?: Json | null
           veo_aspect_ratio?: string | null

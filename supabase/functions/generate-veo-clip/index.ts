@@ -354,6 +354,7 @@ Deno.serve(async (req) => {
       veo_resolution: "1080p",
       vo_text: shot.dialogue || shot.vo_segment || null,
       text_overlay: shot.text_overlay ? { text: shot.text_overlay } : null,
+      transition_type: ["hard_cut", "j_cut", "l_cut", "fade_black"].includes(shot.transition_type) ? shot.transition_type : "hard_cut",
       status: "generating",
       error_code: null,
       error_message: null,

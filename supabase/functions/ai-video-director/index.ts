@@ -120,6 +120,13 @@ CRITICAL RULES — read carefully, these determine if the ad works:
 8. MUSIC PROMPT
    - Genre, BPM, energy arc, mood. Should match framework: PAS = tense → resolved; HOOK_DRIVEN = punchy from frame 1.
 
+9. TRANSITIONS (assign one per shot, applied between THIS shot and the NEXT)
+   - "hard_cut" — DEFAULT. Use for hooks, pattern interrupts, comedic beats, energetic talking-head edits. Most shots.
+   - "j_cut" — next clip's audio (VO/dialogue) starts ~0.3s BEFORE its video. Use when narration continues across a visual change ("...and that's why" [cut to product]). Smooths talky stretches.
+   - "l_cut" — current clip's audio bleeds ~0.5s INTO the next clip's video. Use for emotional reactions or to overlap dialogue with cutaways. Pairs well with shots that end on a beat the listener should sit with.
+   - "fade_black" — full ~0.4s dip to black. ONLY for major scene/time/location changes (e.g. before-and-after, day→night). Never between consecutive talking-head shots.
+   - The FINAL shot's transition is ignored.
+
 Use the "generate_shot_list" tool to return the result. Produce EXACTLY ${numClips} shots, each ~${Math.round(length/numClips)} seconds. No prose outside the tool call.`;
 }
 
@@ -167,6 +174,7 @@ const TOOL = {
             veo_prompt: { type: "string" },
             text_overlay: { type: "string" },
             duration_seconds: { type: "number" },
+            transition_type: { type: "string", enum: ["hard_cut", "j_cut", "l_cut", "fade_black"], description: "Transition INTO the next shot. Default hard_cut." },
           },
           required: ["clip_number", "veo_prompt", "duration_seconds", "speaker"],
         },

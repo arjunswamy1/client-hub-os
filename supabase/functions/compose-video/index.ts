@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
     }
 
     // Build clip track + caption track from vo_segment
-    let cursor = 0;
+    // (Phase 2: timing now driven by per-shot transition_type — see ShotTiming below.)
     const videoClips: any[] = [];
     const overlayClips: any[] = [];
     const captionClips: any[] = [];
@@ -255,24 +255,70 @@ Deno.serve(async (req) => {
       });
     };
 
-    for (const shot of shotList) {
+    // ---- Phase 2: pre-compute per-shot timings honoring transition_type ----
+    // J-cut: NEXT shot's audio leads its video by ~0.3s.
+    // L-cut: THIS shot's audio bleeds ~0.5s into the next shot's video.
+    // fade_black: ~0.4s dip-to-black on the seam (handled via Shotstack fade transitions).
+    type ShotTiming = {
+      shot: any;
+      voSegment: any | undefined;
+      url: string;
+      videoStart: number;
+      videoLen: number;
+      audioStart: number;
+      audioLen: number;
+      transition: 'hard_cut' | 'j_cut' | 'l_cut' | 'fade_black';
+      videoFade: boolean;
+    };
+
+    const J_CUT_LEAD = 0.30;
+    const L_CUT_TAIL = 0.50;
+
+    const timings: ShotTiming[] = [];
+    let cur = 0;
+    for (let i = 0; i < shotList.length; i++) {
+      const shot = shotList[i];
       const dbClip = clips?.find((c: any) => c.clip_number === shot.clip_number);
       const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
       const url = dbClip!.override_video_url || opt!.url;
       const voSegment = voSegments.find((seg) => Number(seg.clip_number) === Number(shot.clip_number));
-      const duration = clipTimelineDuration(shot, opt, dbClip);
-      shotStartByNumber.set(Number(shot.clip_number), cursor);
+      const videoLen = clipTimelineDuration(shot, opt, dbClip);
 
-      // Keep Veo's native audio for in-scene character dialogue; mute narrator/silent shots.
+      const rawT = String((dbClip?.transition_type ?? shot.transition_type ?? 'hard_cut')).toLowerCase();
+      const transition = (i === shotList.length - 1 ? 'hard_cut'
+        : (['hard_cut', 'j_cut', 'l_cut', 'fade_black'].includes(rawT) ? rawT : 'hard_cut')) as ShotTiming['transition'];
+
+      const prevT = i > 0 ? timings[i - 1].transition : 'hard_cut';
+      const audioLead = prevT === 'j_cut' ? J_CUT_LEAD : 0;
+      const audioTail = transition === 'l_cut' ? L_CUT_TAIL : 0;
+
+      const videoStart = cur;
+      const audioStart = Math.max(0, videoStart - audioLead);
+      const segDur = clampNumber(voSegment?.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS + L_CUT_TAIL, videoLen);
+      const audioLen = Math.min(MAX_SAFE_VEO_CLIP_SECONDS + L_CUT_TAIL, segDur + audioTail);
+
+      timings.push({
+        shot, voSegment, url,
+        videoStart, videoLen, audioStart, audioLen, transition,
+        videoFade: prevT === 'fade_black' || transition === 'fade_black',
+      });
+      shotStartByNumber.set(Number(shot.clip_number), videoStart);
+      cur += videoLen;
+    }
+    const totalDuration = cur;
+
+    for (const t of timings) {
+      const { shot, voSegment, url, videoStart, videoLen, audioStart, audioLen, videoFade } = t;
       const speaker = shot.speaker;
       const isCharacterDialogue = speaker && speaker !== 'narrator_vo' && speaker !== 'none';
       const videoVolume = isCharacterDialogue ? 1 : 0;
 
       videoClips.push({
         asset: { type: 'video', src: url, volume: videoVolume },
-        start: cursor,
-        length: duration,
+        start: videoStart,
+        length: videoLen,
         fit: 'cover',
+        transition: videoFade ? { in: 'fade', out: 'fade' } : undefined,
       });
 
       if (shot.text_overlay) {
@@ -285,8 +331,8 @@ Deno.serve(async (req) => {
               background: { color: primaryColor, opacity: 0.7, padding: 18, borderRadius: 8 },
               alignment: { horizontal: 'center', vertical: 'center' },
             },
-            start: cursor + 0.2,
-            length: Math.min(2.0, duration - 0.4),
+            start: videoStart + 0.2,
+            length: Math.min(2.0, videoLen - 0.4),
             position: 'top',
             offset: { y: -0.04 },
             transition: { in: 'fade', out: 'fade' },
@@ -296,9 +342,9 @@ Deno.serve(async (req) => {
 
       const captionText = (shot.dialogue && String(shot.dialogue).trim()) || (shot.vo_segment && String(shot.vo_segment).trim()) || '';
       if (captionText) {
-        const chunks = chunkCaption(captionText, duration, voSegment);
+        // Captions follow AUDIO timing so j-cut captions appear slightly before the visual cut.
+        const chunks = chunkCaption(captionText, audioLen, voSegment);
         for (const ch of chunks) {
-          // Map numeric fade duration to Shotstack transition names
           const fadeName = S.fadeDuration <= 0.05
             ? undefined
             : S.fadeDuration < 0.2 ? 'fadeFast'
@@ -314,7 +360,7 @@ Deno.serve(async (req) => {
               height: 220,
               alignment: { horizontal: 'center', vertical: 'center' },
             },
-            start: cursor + ch.start,
+            start: audioStart + ch.start,
             length: Math.max(0.9, ch.length - 0.05),
             position: 'bottom',
             offset: { y: S.yOffset },
@@ -322,10 +368,7 @@ Deno.serve(async (req) => {
           });
         }
       }
-      cursor += duration;
     }
-
-    const totalDuration = cursor;
 
     // End card (last 3s overlay band)
     const endCardLen = 3;
@@ -390,16 +433,14 @@ Deno.serve(async (req) => {
     if (voSegments.length > 0) {
       const voClips = voSegments
         .map((seg) => {
-          const start = shotStartByNumber.get(Number(seg.clip_number));
-          if (start === undefined || !seg.audio_url) return null;
-          const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
-          const dbClip = clips?.find((c: any) => c.clip_number === Number(seg.clip_number));
-          const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
-          const len = Math.min(clipTimelineDuration(shot, opt, dbClip), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
+          if (!seg.audio_url) return null;
+          const t = timings.find((x) => Number(x.shot.clip_number) === Number(seg.clip_number));
+          if (!t) return null;
+          // J-cut: VO leads the visual cut. L-cut: VO trails into next shot's video.
           return {
             asset: { type: 'audio', src: seg.audio_url, volume: 1 },
-            start,
-            length: len,
+            start: t.audioStart,
+            length: t.audioLen,
           };
         })
         .filter(Boolean);

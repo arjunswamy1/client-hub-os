@@ -830,6 +830,8 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
             </Card>
           )}
 
+          <CaptionSettingsCard projectId={projectId} initial={(project as any).caption_settings ?? {}} captionStyle={(project as any).caption_style ?? 'tiktok'} />
+
           <FinalRenderCard projectId={projectId} version={project.current_version ?? 1} />
         </>
       )}

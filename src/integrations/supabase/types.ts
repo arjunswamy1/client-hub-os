@@ -664,6 +664,9 @@ export type Database = {
         Row: {
           clip_number: number
           created_at: string
+          error_code: string | null
+          error_message: string | null
+          failed_at: string | null
           feedback: string | null
           feedback_applied: boolean
           generated_options: Json | null
@@ -689,6 +692,9 @@ export type Database = {
         Insert: {
           clip_number: number
           created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          failed_at?: string | null
           feedback?: string | null
           feedback_applied?: boolean
           generated_options?: Json | null
@@ -714,6 +720,9 @@ export type Database = {
         Update: {
           clip_number?: number
           created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          failed_at?: string | null
           feedback?: string | null
           feedback_applied?: boolean
           generated_options?: Json | null

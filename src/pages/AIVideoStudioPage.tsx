@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download } from 'lucide-react';
+import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download, AlertCircle, CheckCircle2, Clock, XCircle } from 'lucide-react';
 
 const TONES = ['Urgent', 'Calm', 'Premium', 'Playful', 'Dramatic', 'Informational', 'Emotional', 'High-Energy'];
 const STYLES = ['Cinematic', 'UGC-Style', 'Corporate', 'Lifestyle', 'Product-Focused', 'Abstract'];
@@ -335,20 +335,50 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     setGeneratingAll(true);
     try {
       const list: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
-      // Fire all in parallel — each function returns 202 immediately and runs Veo in background
-      await Promise.all(list.map((s) =>
+      // Skip clips that are already successfully generated; (re)run the rest.
+      const targets = list.filter((s) => {
+        const c = clipByNum.get(s.clip_number);
+        return !c || c.status === 'failed' || c.status === 'pending' || !c.generated_options?.length;
+      });
+      if (targets.length === 0) {
+        toast.info('All clips already generated. Use Regenerate on a clip to redo it.');
+        return;
+      }
+      await Promise.all(targets.map((s) =>
         supabase.functions.invoke('generate-veo-clip', {
           body: { project_id: projectId, clip_number: s.clip_number },
         }).then(({ error }) => {
           if (error) toast.error(`Clip ${s.clip_number}: ${error.message}`);
         })
       ));
-      toast.success('All clips started — generating in background (~1-3 min each)');
+      toast.success(`Started ${targets.length} clip${targets.length > 1 ? 's' : ''} — generating in background`);
       qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
     } catch (e: any) {
       toast.error(e.message || 'Generation failed');
     } finally {
       setGeneratingClip(null);
+      setGeneratingAll(false);
+    }
+  };
+
+  const retryFailedClips = async () => {
+    const failed = (clips ?? []).filter((c: any) => c.status === 'failed');
+    if (failed.length === 0) {
+      toast.info('No failed clips to retry');
+      return;
+    }
+    setGeneratingAll(true);
+    try {
+      await Promise.all(failed.map((c: any) =>
+        supabase.functions.invoke('generate-veo-clip', {
+          body: { project_id: projectId, clip_number: c.clip_number },
+        }).then(({ error }) => {
+          if (error) toast.error(`Clip ${c.clip_number}: ${error.message}`);
+        })
+      ));
+      toast.success(`Retrying ${failed.length} failed clip${failed.length > 1 ? 's' : ''}`);
+      qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+    } finally {
       setGeneratingAll(false);
     }
   };
@@ -452,11 +482,93 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                 {(genVO || genMusic) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mic className="mr-2 h-4 w-4" />}
                 Generate VO + Music
               </Button>
+              {(clips ?? []).some((c: any) => c.status === 'failed') && (
+                <Button size="sm" variant="destructive" onClick={retryFailedClips} disabled={generatingAll}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Retry Failed ({(clips ?? []).filter((c: any) => c.status === 'failed').length})
+                </Button>
+              )}
               <p className="ml-2 self-center text-xs text-muted-foreground">
                 Veo clips take ~1–3 minutes each. Keep this tab open.
               </p>
             </CardContent>
           </Card>
+
+          {/* Generation status panel */}
+          {shots.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Film className="h-4 w-4" /> Generation Status
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Live status of every clip in this version. Click a row to jump to it.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {(() => {
+                  const counts = { generated: 0, generating: 0, failed: 0, pending: 0 };
+                  shots.forEach((s) => {
+                    const c = clipByNum.get(s.clip_number);
+                    const st = c?.status ?? 'pending';
+                    if (st === 'generated' || st === 'approved' || st === 'selected') counts.generated++;
+                    else if (st === 'generating' || st === 'regenerating') counts.generating++;
+                    else if (st === 'failed') counts.failed++;
+                    else counts.pending++;
+                  });
+                  return (
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <Badge variant="default" className="gap-1"><CheckCircle2 className="h-3 w-3" /> {counts.generated} ready</Badge>
+                      {counts.generating > 0 && <Badge variant="outline" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {counts.generating} generating</Badge>}
+                      {counts.failed > 0 && <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> {counts.failed} failed</Badge>}
+                      {counts.pending > 0 && <Badge variant="secondary" className="gap-1"><Clock className="h-3 w-3" /> {counts.pending} pending</Badge>}
+                    </div>
+                  );
+                })()}
+                <div className="divide-y rounded-md border">
+                  {shots.map((s) => {
+                    const c = clipByNum.get(s.clip_number);
+                    const st = c?.status ?? 'pending';
+                    const isFailed = st === 'failed';
+                    return (
+                      <div key={s.clip_number} className="flex items-start justify-between gap-3 p-2 text-xs">
+                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                          {st === 'generated' || st === 'approved' || st === 'selected' ? (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600 mt-0.5" />
+                          ) : st === 'generating' || st === 'regenerating' ? (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600 mt-0.5" />
+                          ) : isFailed ? (
+                            <AlertCircle className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
+                          ) : (
+                            <Clock className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium">
+                              Clip {s.clip_number} {s.label && <span className="text-muted-foreground font-normal">· {s.label}</span>}
+                            </div>
+                            {isFailed && (c as any)?.error_message && (
+                              <div className="mt-1 text-destructive">
+                                <span className="font-mono text-[10px] uppercase tracking-wide opacity-70">{(c as any).error_code}</span>
+                                <div className="leading-snug">{(c as any).error_message}</div>
+                              </div>
+                            )}
+                            {!isFailed && (
+                              <div className="text-muted-foreground capitalize">{st.replace(/_/g, ' ')}</div>
+                            )}
+                          </div>
+                        </div>
+                        {isFailed && (
+                          <Button size="sm" variant="outline" className="h-7" onClick={() => generateClip(s.clip_number)} disabled={generatingAll || generatingClip === s.clip_number}>
+                            <RefreshCw className="mr-1 h-3 w-3" /> Retry
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {Array.isArray((project as any).hook_variants) && (project as any).hook_variants.length > 0 && (
             <Card>

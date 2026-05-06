@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
     const videoClips: any[] = [];
     const overlayClips: any[] = [];
     const captionClips: any[] = [];
+    const shotStartByNumber = new Map<number, number>();
 
     const captionStyle = String((project as any).caption_style || 'tiktok').toLowerCase();
     // Single, readable system across styles. Captions sit in a dark pill near the lower-third,

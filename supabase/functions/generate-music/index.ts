@@ -103,6 +103,17 @@ Deno.serve(async (req) => {
       .select("id, audio_url").single();
     if (insErr) return json({ error: insErr.message }, 500);
 
+    // Cost tracking — ElevenLabs Music billed per second of generated audio.
+    logMediaGenUsage({
+      client_id: (project as any).client_id ?? null,
+      service: "elevenlabs",
+      surface: "ai-video-studio",
+      model: "music",
+      unit: "seconds",
+      quantity: lengthSec,
+      metadata: { project_id, audio_type: "music" },
+    }).catch((e) => console.error("logMediaGenUsage failed:", e));
+
     return json({ ok: true, audio_id: row.id, audio_url: row.audio_url });
   } catch (e) {
     console.error("generate-music error:", e);

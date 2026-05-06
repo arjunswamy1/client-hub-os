@@ -189,12 +189,18 @@ Deno.serve(async (req) => {
       if (captionText) {
         const chunks = chunkCaption(captionText, duration);
         for (const ch of chunks) {
+          // Map numeric fade duration to Shotstack transition names
+          const fadeName = S.fadeDuration <= 0.05
+            ? undefined
+            : S.fadeDuration < 0.2 ? 'fadeFast'
+            : S.fadeDuration > 0.5 ? 'fadeSlow'
+            : 'fade';
           captionClips.push({
             asset: {
               type: 'text', text: ch.text.toUpperCase(),
               font: { family: S.font, size: S.size, color: ch.isHighlight ? S.highlight : S.color, lineHeight: 1.15 },
               stroke: { color: '#000000', width: S.stroke },
-              background: { color: '#000000', opacity: 0.55, padding: 16, borderRadius: 12 },
+              background: { color: '#000000', opacity: S.bgOpacity, padding: 16, borderRadius: 12 },
               width: Math.round(width * 0.82),
               height: 220,
               alignment: { horizontal: 'center', vertical: 'center' },
@@ -203,7 +209,7 @@ Deno.serve(async (req) => {
             length: Math.max(0.9, ch.length - 0.05),
             position: 'bottom',
             offset: { y: S.yOffset },
-            transition: { in: 'fade', out: 'fade' },
+            transition: fadeName ? { in: fadeName, out: fadeName } : undefined,
           });
         }
       }

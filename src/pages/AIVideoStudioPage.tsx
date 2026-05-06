@@ -652,7 +652,21 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                                 <div className="leading-snug">{(c as any).error_message}</div>
                               </div>
                             )}
-                            {!isFailed && (
+                            {!isFailed && (st === 'generating' || st === 'regenerating') && (
+                              <div className="mt-1 space-y-1">
+                                <div className="flex items-center justify-between text-muted-foreground">
+                                  <span className="truncate pr-2">{(c as any)?.progress_message ?? 'Working…'}</span>
+                                  <span className="font-mono tabular-nums">{(c as any)?.progress_pct ?? 0}%</span>
+                                </div>
+                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full bg-primary transition-all duration-500"
+                                    style={{ width: `${Math.max(2, (c as any)?.progress_pct ?? 0)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            {!isFailed && st !== 'generating' && st !== 'regenerating' && (
                               <div className="text-muted-foreground capitalize">{st.replace(/_/g, ' ')}</div>
                             )}
                           </div>

@@ -18,10 +18,11 @@ Schema: `ai_video_clips.actual_duration_seconds NUMERIC(5,2)`.
 
 ---
 
-### Phase 2 — Smart transitions (J-cuts / L-cuts)
+### Phase 2 — Smart transitions (J-cuts / L-cuts) ✅ SHIPPED
 
-- `ai-video-director`: tool schema gains `transition_type` (`hard_cut` | `j_cut` | `l_cut` | `fade_black`) and `overlap_seconds` per shot, plus prompt guidance for when to pick which.
-- `compose-video`: implement overlaps in the Shotstack timeline — J-cut starts next clip's audio 0.3s early; L-cut extends prior audio 0.5s into next clip's video; subtle 0.3s cross-dissolve on J/L; full fade-through-black only on `fade_black`. Recompute total duration accounting for overlaps.
+- `ai-video-director`: tool schema gains `transition_type` per shot + prompt guidance for when to pick which.
+- `generate-veo-clip`: persists `transition_type` onto the `ai_video_clips` row.
+- `compose-video`: precomputes a `ShotTiming[]` honoring transitions — J-cut = next VO/caption leads visual by 0.3s; L-cut = current VO bleeds 0.5s into next clip's video; fade_black = 0.4s fade-through-black on the seam (Shotstack `fade` in/out on the boundary clips). Captions follow audio timing, not video timing, so a J-cut caption appears at the audio start.
 
 Schema: `ai_video_clips.transition_type TEXT DEFAULT 'hard_cut'`, `transition_overlap_seconds NUMERIC(3,2) DEFAULT 0`.
 

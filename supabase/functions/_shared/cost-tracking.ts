@@ -198,3 +198,24 @@ export async function logEmailSend(input: EmailUsageInput): Promise<void> {
     metadata: input.metadata ?? {},
   });
 }
+
+export async function logMediaGenUsage(input: MediaGenUsageInput): Promise<void> {
+  if (!input.quantity || input.quantity <= 0) return;
+  const cost = await computeCost({
+    service: input.service,
+    model: input.model,
+    unit: input.unit,
+    quantity: input.quantity,
+  });
+  await insertEvent({
+    client_id: input.client_id ?? null,
+    category: "ai",
+    service: input.service,
+    surface: input.surface,
+    model: input.model,
+    quantity: input.quantity,
+    unit: input.unit,
+    cost_usd: cost,
+    metadata: input.metadata ?? {},
+  });
+}

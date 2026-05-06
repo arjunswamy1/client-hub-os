@@ -1,6 +1,7 @@
-// Generate the full voiceover for an AI video project using ElevenLabs TTS.
-// Uses the project's vo_script (from the AI Director) and stores the MP3
-// in the creative-assets bucket, then writes a row to ai_video_audio.
+// Generate per-shot voiceover audio for an AI video project.
+// Produces ONE MP3 per narrator shot so the compose step can place each
+// segment exactly during its own clip — never overlapping Veo's native
+// in-scene character dialogue. Segments are stored under settings.segments.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { logMediaGenUsage } from "../_shared/cost-tracking.ts";
 
@@ -19,14 +20,40 @@ function parsePermissionError(detail: string): string | null {
     const status = parsed?.detail?.status;
     const message = parsed?.detail?.message;
     if (status === "missing_permissions" && typeof message === "string") return message;
-  } catch {
-    // Non-JSON upstream errors are handled by the generic response below.
-  }
+  } catch { /* ignore */ }
   return null;
 }
 
 function json(b: unknown, status = 200) {
   return new Response(JSON.stringify(b), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
+function cleanLine(text: string): string {
+  return String(text)
+    .replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function tts(text: string, voiceId: string, key: string): Promise<Uint8Array> {
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: MODEL_ID,
+        voice_settings: { stability: 0.55, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true, speed: 1.0 },
+      }),
+    },
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    const perm = parsePermissionError(t);
+    throw new Error(perm ?? `ElevenLabs TTS ${res.status}: ${t.slice(0, 300)}`);
+  }
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 Deno.serve(async (req) => {
@@ -51,24 +78,22 @@ Deno.serve(async (req) => {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) return json({ error: "Unauthorized" }, 401);
 
-    const { project_id, voice_id, script_override } = await req.json();
+    const { project_id, voice_id } = await req.json();
     if (!project_id) return json({ error: "project_id required" }, 400);
 
     const { data: project, error: pErr } = await supabase
       .from("ai_video_projects").select("*").eq("id", project_id).single();
     if (pErr || !project) return json({ error: "Project not found" }, 404);
 
-    // Rebuild VO script from narrator-only shots (in case shot_list was edited).
-    // Strip stray speaker labels for safety.
-    let script = (script_override || "").toString().trim();
-    if (!script) {
-      const shots: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
-      const narratorLines = shots
-        .filter((s) => s?.speaker === "narrator_vo" && s?.vo_segment?.trim())
-        .map((s) => String(s.vo_segment).replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, "").trim());
-      script = narratorLines.join(" ").replace(/\s+/g, " ").trim() || (project.vo_script || "").trim();
-    }
-    if (!script) {
+    const shots: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
+    const narratorShots = shots
+      .filter((s) => s?.speaker === "narrator_vo" && cleanLine(s?.vo_segment || ""))
+      .map((s) => ({
+        clip_number: Number(s.clip_number),
+        text: cleanLine(s.vo_segment),
+      }));
+
+    if (narratorShots.length === 0) {
       return json({
         ok: true,
         skipped: true,
@@ -79,39 +104,40 @@ Deno.serve(async (req) => {
     const voiceId = voice_id || project.vo_voice_id || DEFAULT_VOICE_ID;
     const version = project.current_version ?? 1;
 
-    const ttsRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
-      {
-        method: "POST",
-        headers: { "xi-api-key": ELEVEN_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: script,
-          model_id: MODEL_ID,
-          voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, use_speaker_boost: true, speed: 1.0 },
-        }),
-      },
-    );
-    if (!ttsRes.ok) {
-      const t = await ttsRes.text();
-      console.error("ElevenLabs TTS error:", ttsRes.status, t);
-      const permissionMessage = parsePermissionError(t);
-      if (permissionMessage) {
-        return json({
-          error: "ElevenLabs API key is missing text-to-speech permission",
-          detail: permissionMessage,
-        }, 403);
+    // Generate one MP3 per narrator shot in parallel.
+    const segments: { clip_number: number; audio_url: string; text: string; chars: number }[] = [];
+    let totalChars = 0;
+
+    const results = await Promise.allSettled(narratorShots.map(async (shot) => {
+      const bytes = await tts(shot.text, voiceId, ELEVEN_KEY);
+      const path = `ai-video/${project_id}/audio/vo-v${version}-clip${shot.clip_number}-${Date.now()}.mp3`;
+      const { error: upErr } = await admin.storage
+        .from("creative-assets")
+        .upload(path, bytes, { contentType: "audio/mpeg", upsert: true });
+      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+      const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
+      return { clip_number: shot.clip_number, audio_url: pub.publicUrl, text: shot.text, chars: shot.text.length };
+    }));
+
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        segments.push(r.value);
+        totalChars += r.value.chars;
+      } else {
+        console.error("Segment failed:", r.reason);
       }
-      return json({ error: "TTS failed", detail: t.slice(0, 300) }, 500);
     }
-    const audioBytes = new Uint8Array(await ttsRes.arrayBuffer());
+    if (segments.length === 0) {
+      return json({ error: "All voiceover segments failed", detail: String((results[0] as any)?.reason ?? "") }, 500);
+    }
+    segments.sort((a, b) => a.clip_number - b.clip_number);
 
-    const path = `ai-video/${project_id}/audio/voiceover-v${version}-${Date.now()}.mp3`;
-    const { error: upErr } = await admin.storage
-      .from("creative-assets")
-      .upload(path, audioBytes, { contentType: "audio/mpeg", upsert: true });
-    if (upErr) return json({ error: "Storage upload failed", detail: upErr.message }, 500);
-    const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
+    // Replace any existing voiceover row for this version.
+    await admin.from("ai_video_audio")
+      .delete()
+      .eq("project_id", project_id).eq("version", version).eq("audio_type", "voiceover");
 
+    const combinedScript = segments.map((s) => s.text).join(" ");
     const { data: row, error: insErr } = await admin
       .from("ai_video_audio")
       .insert({
@@ -120,9 +146,15 @@ Deno.serve(async (req) => {
         version,
         elevenlabs_voice_id: voiceId,
         elevenlabs_model: MODEL_ID,
-        script_text: script,
-        audio_url: pub.publicUrl,
-        settings: { stability: 0.5, similarity_boost: 0.75, style: 0.4, speed: 1.0 },
+        script_text: combinedScript,
+        // First segment URL kept in audio_url for backwards-compat preview;
+        // compose-video reads settings.segments for true per-shot placement.
+        audio_url: segments[0].audio_url,
+        settings: {
+          stability: 0.55, similarity_boost: 0.8, style: 0.35, speed: 1.0,
+          per_shot: true,
+          segments,
+        },
       })
       .select("id, audio_url").single();
     if (insErr) return json({ error: insErr.message }, 500);
@@ -131,18 +163,17 @@ Deno.serve(async (req) => {
       .update({ vo_voice_id: voiceId })
       .eq("id", project_id);
 
-    // Cost tracking — ElevenLabs TTS billed per character.
     logMediaGenUsage({
       client_id: (project as any).client_id ?? null,
       service: "elevenlabs",
       surface: "ai-video-studio",
       model: MODEL_ID,
       unit: "characters",
-      quantity: script.length,
-      metadata: { project_id, voice_id: voiceId, audio_type: "voiceover" },
+      quantity: totalChars,
+      metadata: { project_id, voice_id: voiceId, audio_type: "voiceover", segments: segments.length },
     }).catch((e) => console.error("logMediaGenUsage failed:", e));
 
-    return json({ ok: true, audio_id: row.id, audio_url: row.audio_url });
+    return json({ ok: true, audio_id: row.id, segments: segments.length });
   } catch (e) {
     console.error("generate-voiceover error:", e);
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);

@@ -11,7 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download, AlertCircle, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
+import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download, AlertCircle, CheckCircle2, Clock, XCircle, Type } from 'lucide-react';
 
 const TONES = ['Urgent', 'Calm', 'Premium', 'Playful', 'Dramatic', 'Informational', 'Emotional', 'High-Energy'];
 const STYLES = ['Cinematic', 'UGC-Style', 'Corporate', 'Lifestyle', 'Product-Focused', 'Abstract'];
@@ -829,10 +830,135 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
             </Card>
           )}
 
+          <CaptionSettingsCard projectId={projectId} initial={(project as any).caption_settings ?? {}} captionStyle={(project as any).caption_style ?? 'tiktok'} />
+
           <FinalRenderCard projectId={projectId} version={project.current_version ?? 1} />
         </>
       )}
     </div>
+  );
+}
+
+function CaptionSettingsCard({ projectId, initial, captionStyle }: { projectId: string; initial: Record<string, any>; captionStyle: string }) {
+  const qc = useQueryClient();
+  const STYLE_DEFAULTS: Record<string, { size: number; wpc: number }> = {
+    tiktok:    { size: 52, wpc: 4 },
+    hormozi:   { size: 56, wpc: 4 },
+    mrbeast:   { size: 60, wpc: 3 },
+    editorial: { size: 38, wpc: 6 },
+    minimal:   { size: 34, wpc: 7 },
+  };
+  const def = STYLE_DEFAULTS[captionStyle] ?? STYLE_DEFAULTS.tiktok;
+  const [fontSize, setFontSize] = useState<number>(Number(initial.font_size) || def.size);
+  const [wpc, setWpc] = useState<number>(Number(initial.words_per_chunk) || def.wpc);
+  const [opacity, setOpacity] = useState<number>(
+    Number.isFinite(Number(initial.background_opacity)) ? Number(initial.background_opacity) : 0.55
+  );
+  const [fade, setFade] = useState<number>(
+    Number.isFinite(Number(initial.fade_duration)) ? Number(initial.fade_duration) : 0.25
+  );
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('ai_video_projects')
+        .update({
+          caption_settings: {
+            font_size: fontSize,
+            words_per_chunk: wpc,
+            background_opacity: opacity,
+            fade_duration: fade,
+          },
+        })
+        .eq('id', projectId);
+      if (error) throw error;
+      toast.success('Caption settings saved — recompose to apply');
+      qc.invalidateQueries({ queryKey: ['ai-video-project', projectId] });
+    } catch (e: any) {
+      toast.error(e.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reset = () => {
+    setFontSize(def.size);
+    setWpc(def.wpc);
+    setOpacity(0.55);
+    setFade(0.25);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2"><Type className="h-4 w-4" />Caption Tuning</CardTitle>
+        <CardDescription className="text-xs">
+          Override the <strong className="capitalize">{captionStyle}</strong> preset. Save and recompose to apply.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Font size</Label>
+              <span className="text-xs tabular-nums text-muted-foreground">{fontSize}px</span>
+            </div>
+            <Slider min={18} max={96} step={2} value={[fontSize]} onValueChange={(v) => setFontSize(v[0])} />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Words per chunk</Label>
+              <span className="text-xs tabular-nums text-muted-foreground">{wpc}</span>
+            </div>
+            <Slider min={1} max={10} step={1} value={[wpc]} onValueChange={(v) => setWpc(v[0])} />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Background opacity</Label>
+              <span className="text-xs tabular-nums text-muted-foreground">{Math.round(opacity * 100)}%</span>
+            </div>
+            <Slider min={0} max={1} step={0.05} value={[opacity]} onValueChange={(v) => setOpacity(v[0])} />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Fade duration</Label>
+              <span className="text-xs tabular-nums text-muted-foreground">{fade.toFixed(2)}s</span>
+            </div>
+            <Slider min={0} max={1} step={0.05} value={[fade]} onValueChange={(v) => setFade(v[0])} />
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-muted/30 p-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Preview</div>
+          <div className="flex justify-center">
+            <div
+              className="rounded-xl text-white text-center"
+              style={{
+                backgroundColor: `rgba(0,0,0,${opacity})`,
+                padding: '12px 18px',
+                fontSize: `${Math.max(14, fontSize / 2.2)}px`,
+                fontWeight: 800,
+                lineHeight: 1.15,
+                textShadow: '0 0 4px rgba(0,0,0,0.8)',
+                transition: `opacity ${fade}s ease`,
+              }}
+            >
+              {Array.from({ length: wpc }).map((_, i) => `WORD${i + 1}`).join(' ')}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={reset} disabled={saving}>Reset</Button>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save settings
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

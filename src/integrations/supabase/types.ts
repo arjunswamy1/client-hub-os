@@ -773,6 +773,7 @@ export type Database = {
           additional_direction: string | null
           aspect_ratio: string | null
           brand_kit: Json | null
+          caption_settings: Json
           caption_style: string | null
           characters: Json | null
           client_id: string
@@ -812,6 +813,7 @@ export type Database = {
           additional_direction?: string | null
           aspect_ratio?: string | null
           brand_kit?: Json | null
+          caption_settings?: Json
           caption_style?: string | null
           characters?: Json | null
           client_id: string
@@ -851,6 +853,7 @@ export type Database = {
           additional_direction?: string | null
           aspect_ratio?: string | null
           brand_kit?: Json | null
+          caption_settings?: Json
           caption_style?: string | null
           characters?: Json | null
           client_id?: string

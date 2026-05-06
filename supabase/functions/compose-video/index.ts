@@ -100,7 +100,20 @@ Deno.serve(async (req) => {
       editorial: { font: 'Montserrat Bold',      size: 38, color: '#ffffff', highlight: '#ffffff', stroke: 2, wordsPerChunk: 6, yOffset: 0.10 },
       minimal:   { font: 'Montserrat Medium',    size: 34, color: '#ffffff', highlight: '#ffffff', stroke: 2, wordsPerChunk: 7, yOffset: 0.08 },
     };
-    const S = STYLES[captionStyle] ?? STYLES.tiktok;
+    const baseStyle = STYLES[captionStyle] ?? STYLES.tiktok;
+    // User-tunable overrides from project.caption_settings
+    const cs = ((project as any).caption_settings ?? {}) as Record<string, any>;
+    const clamp = (v: any, min: number, max: number, fb: number) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
+    };
+    const S = {
+      ...baseStyle,
+      size: clamp(cs.font_size, 18, 96, baseStyle.size),
+      wordsPerChunk: clamp(cs.words_per_chunk, 1, 10, baseStyle.wordsPerChunk),
+      bgOpacity: clamp(cs.background_opacity, 0, 1, 0.55),
+      fadeDuration: clamp(cs.fade_duration, 0, 1.5, 0.25),
+    };
     const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','fast','easy','call','watch']);
 
     const chunkCaption = (text: string, totalDuration: number) => {
@@ -176,12 +189,18 @@ Deno.serve(async (req) => {
       if (captionText) {
         const chunks = chunkCaption(captionText, duration);
         for (const ch of chunks) {
+          // Map numeric fade duration to Shotstack transition names
+          const fadeName = S.fadeDuration <= 0.05
+            ? undefined
+            : S.fadeDuration < 0.2 ? 'fadeFast'
+            : S.fadeDuration > 0.5 ? 'fadeSlow'
+            : 'fade';
           captionClips.push({
             asset: {
               type: 'text', text: ch.text.toUpperCase(),
               font: { family: S.font, size: S.size, color: ch.isHighlight ? S.highlight : S.color, lineHeight: 1.15 },
               stroke: { color: '#000000', width: S.stroke },
-              background: { color: '#000000', opacity: 0.55, padding: 16, borderRadius: 12 },
+              background: { color: '#000000', opacity: S.bgOpacity, padding: 16, borderRadius: 12 },
               width: Math.round(width * 0.82),
               height: 220,
               alignment: { horizontal: 'center', vertical: 'center' },
@@ -190,7 +209,7 @@ Deno.serve(async (req) => {
             length: Math.max(0.9, ch.length - 0.05),
             position: 'bottom',
             offset: { y: S.yOffset },
-            transition: { in: 'fade', out: 'fade' },
+            transition: fadeName ? { in: fadeName, out: fadeName } : undefined,
           });
         }
       }

@@ -200,6 +200,35 @@ function BriefForm({ clientId, onCreated }: { clientId: string; onCreated: (id: 
           <p className="mt-2 text-xs text-muted-foreground">Aspect ratio will be set to <strong>{aspectFromPlatforms(platforms)}</strong>.</p>
         </div>
 
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Ad Framework</Label>
+            <Select value={framework} onValueChange={setFramework}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PAS">PAS — Problem · Agitate · Solve</SelectItem>
+                <SelectItem value="AIDA">AIDA — Attention · Interest · Desire · Action</SelectItem>
+                <SelectItem value="HOOK_DRIVEN">Hook-Driven (3-sec pattern interrupt)</SelectItem>
+                <SelectItem value="TESTIMONIAL">Testimonial / UGC</SelectItem>
+                <SelectItem value="BEFORE_AFTER">Before / After</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Caption Style</Label>
+            <Select value={captionStyle} onValueChange={setCaptionStyle}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tiktok">TikTok (yellow highlights, 2-word pops)</SelectItem>
+                <SelectItem value="hormozi">Hormozi (yellow + green emphasis)</SelectItem>
+                <SelectItem value="mrbeast">MrBeast (1-word punchy red)</SelectItem>
+                <SelectItem value="editorial">Editorial (clean, full sentences)</SelectItem>
+                <SelectItem value="minimal">Minimal (small, unobtrusive)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         <div>
           <Label>Additional Direction</Label>
           <Textarea value={direction} onChange={e => setDirection(e.target.value)} rows={3} placeholder="Anything else the AI Director should know" />

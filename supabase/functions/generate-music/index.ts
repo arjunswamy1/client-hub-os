@@ -2,6 +2,7 @@
 // Uses the project's music_prompt (from the AI Director) and the target
 // length, stores the MP3 in creative-assets, writes ai_video_audio row.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { logMediaGenUsage } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

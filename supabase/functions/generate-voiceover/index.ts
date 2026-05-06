@@ -131,6 +131,17 @@ Deno.serve(async (req) => {
       .update({ vo_voice_id: voiceId })
       .eq("id", project_id);
 
+    // Cost tracking — ElevenLabs TTS billed per character.
+    logMediaGenUsage({
+      client_id: (project as any).client_id ?? null,
+      service: "elevenlabs",
+      surface: "ai-video-studio",
+      model: MODEL_ID,
+      unit: "characters",
+      quantity: script.length,
+      metadata: { project_id, voice_id: voiceId, audio_type: "voiceover" },
+    }).catch((e) => console.error("logMediaGenUsage failed:", e));
+
     return json({ ok: true, audio_id: row.id, audio_url: row.audio_url });
   } catch (e) {
     console.error("generate-voiceover error:", e);

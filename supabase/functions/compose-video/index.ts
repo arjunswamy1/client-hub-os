@@ -54,8 +54,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const { project_id } = await req.json();
+    const { project_id, realign, parent_render_id } = await req.json();
     if (!project_id) throw new Error('project_id required');
+    const isRealign = Boolean(realign);
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
@@ -154,14 +155,21 @@ Deno.serve(async (req) => {
       }
       // Allocate time proportional to character count so longer chunks linger.
       const totalChars = chunks.reduce((sum, c) => sum + Math.max(1, c.text.length), 0);
-      // Narrator captions use generated VO duration when known; native-dialogue captions use
-      // the visible clip duration. No long fade/zoom transitions, which caused late subtitle pops.
-      const targetDuration = clampNumber(audioDuration, 0.5, totalDuration, totalDuration);
-      const usable = Math.max(0.5, Math.min(totalDuration, targetDuration) - 0.1);
-      let t = 0.05;
+      // In realign mode we ignore the visible-clip duration entirely and snap captions to the
+      // narrator audio length, with no per-chunk cap and zero pre-roll. This is what the
+      // post-render validator triggers when drift is detected.
+      const targetDuration = isRealign && Number(audioDuration) > 0
+        ? Number(audioDuration)
+        : clampNumber(audioDuration, 0.5, totalDuration, totalDuration);
+      const usable = isRealign
+        ? Math.max(0.5, targetDuration)
+        : Math.max(0.5, Math.min(totalDuration, targetDuration) - 0.1);
+      let t = isRealign ? 0 : 0.05;
+      const perChunkCap = isRealign ? targetDuration : 3.0;
+      const perChunkFloor = isRealign ? 0.4 : 0.8;
       return chunks.map((c) => {
         const share = (Math.max(1, c.text.length) / totalChars) * usable;
-        const len = Math.min(3.0, Math.max(0.8, share));
+        const len = Math.min(perChunkCap, Math.max(perChunkFloor, share));
         const out = { ...c, start: t, length: len };
         t += len;
         return out;
@@ -342,6 +350,8 @@ Deno.serve(async (req) => {
         status: 'submitting',
         edit_json: edit,
         duration_seconds: totalDuration,
+        parent_render_id: parent_render_id ?? null,
+        caption_realign_count: isRealign ? 1 : 0,
       })
       .select('id').single();
     if (rErr) throw new Error(rErr.message);

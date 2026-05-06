@@ -907,6 +907,8 @@ export type Database = {
       }
       ai_video_renders: {
         Row: {
+          caption_realign_count: number
+          caption_validation: Json | null
           completed_at: string | null
           created_at: string
           duration_seconds: number | null
@@ -914,6 +916,7 @@ export type Database = {
           error_message: string | null
           id: string
           output_url: string | null
+          parent_render_id: string | null
           poster_url: string | null
           project_id: string
           requested_by_id: string | null
@@ -924,6 +927,8 @@ export type Database = {
           version: number
         }
         Insert: {
+          caption_realign_count?: number
+          caption_validation?: Json | null
           completed_at?: string | null
           created_at?: string
           duration_seconds?: number | null
@@ -931,6 +936,7 @@ export type Database = {
           error_message?: string | null
           id?: string
           output_url?: string | null
+          parent_render_id?: string | null
           poster_url?: string | null
           project_id: string
           requested_by_id?: string | null
@@ -941,6 +947,8 @@ export type Database = {
           version?: number
         }
         Update: {
+          caption_realign_count?: number
+          caption_validation?: Json | null
           completed_at?: string | null
           created_at?: string
           duration_seconds?: number | null
@@ -948,6 +956,7 @@ export type Database = {
           error_message?: string | null
           id?: string
           output_url?: string | null
+          parent_render_id?: string | null
           poster_url?: string | null
           project_id?: string
           requested_by_id?: string | null
@@ -958,6 +967,13 @@ export type Database = {
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "ai_video_renders_parent_render_id_fkey"
+            columns: ["parent_render_id"]
+            isOneToOne: false
+            referencedRelation: "ai_video_renders"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ai_video_renders_project_id_fkey"
             columns: ["project_id"]

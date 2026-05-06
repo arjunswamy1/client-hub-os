@@ -80,6 +80,8 @@ function BriefForm({ clientId, onCreated }: { clientId: string; onCreated: (id: 
   const [platforms, setPlatforms] = useState<string[]>(['Meta Stories/Reels']);
   const [direction, setDirection] = useState('');
   const [freeform, setFreeform] = useState('');
+  const [framework, setFramework] = useState('PAS');
+  const [captionStyle, setCaptionStyle] = useState('tiktok');
   const [saving, setSaving] = useState(false);
 
   const handleCreate = async () => {

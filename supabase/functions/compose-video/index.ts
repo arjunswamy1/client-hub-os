@@ -88,17 +88,20 @@ Deno.serve(async (req) => {
     const videoClips: any[] = [];
     const overlayClips: any[] = [];
     const captionClips: any[] = [];
+    const shotStartByNumber = new Map<number, number>();
 
     const captionStyle = String((project as any).caption_style || 'tiktok').toLowerCase();
+    // Single, readable system across styles. Captions sit in a dark pill near the lower-third,
+    // chunked into 3–5 word groups, soft fade in/out — no zoom pop, no per-word flicker.
     const STYLES: Record<string, any> = {
-      tiktok:    { font: 'Montserrat ExtraBold', size: 60, color: '#ffffff', highlight: '#FFEB3B', stroke: 6, wordsPerChunk: 2, yOffset: 0.18 },
-      hormozi:   { font: 'Montserrat ExtraBold', size: 64, color: '#FFEB3B', highlight: '#22c55e', stroke: 7, wordsPerChunk: 3, yOffset: 0.18 },
-      mrbeast:   { font: 'Montserrat ExtraBold', size: 68, color: '#ffffff', highlight: '#ff3b30', stroke: 7, wordsPerChunk: 1, yOffset: 0.20 },
-      editorial: { font: 'Montserrat Bold',      size: 42, color: '#ffffff', highlight: '#ffffff', stroke: 3, wordsPerChunk: 5, yOffset: 0.10 },
-      minimal:   { font: 'Montserrat Medium',    size: 36, color: '#ffffff', highlight: '#ffffff', stroke: 2, wordsPerChunk: 6, yOffset: 0.08 },
+      tiktok:    { font: 'Montserrat ExtraBold', size: 52, color: '#ffffff', highlight: '#FFEB3B', stroke: 4, wordsPerChunk: 4, yOffset: 0.14 },
+      hormozi:   { font: 'Montserrat ExtraBold', size: 56, color: '#FFEB3B', highlight: '#22c55e', stroke: 5, wordsPerChunk: 4, yOffset: 0.14 },
+      mrbeast:   { font: 'Montserrat ExtraBold', size: 60, color: '#ffffff', highlight: '#ff3b30', stroke: 5, wordsPerChunk: 3, yOffset: 0.16 },
+      editorial: { font: 'Montserrat Bold',      size: 38, color: '#ffffff', highlight: '#ffffff', stroke: 2, wordsPerChunk: 6, yOffset: 0.10 },
+      minimal:   { font: 'Montserrat Medium',    size: 34, color: '#ffffff', highlight: '#ffffff', stroke: 2, wordsPerChunk: 7, yOffset: 0.08 },
     };
     const S = STYLES[captionStyle] ?? STYLES.tiktok;
-    const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','worst','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','more','less','fast','easy','call','watch','wait','look','this','here','must','need']);
+    const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','fast','easy','call','watch']);
 
     const chunkCaption = (text: string, totalDuration: number) => {
       const cleaned = String(text)
@@ -115,8 +118,19 @@ Deno.serve(async (req) => {
           isHighlight: slice.some((w) => HIGHLIGHT_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, ''))),
         });
       }
-      const per = totalDuration / chunks.length;
-      return chunks.map((c, i) => ({ ...c, start: i * per, length: per }));
+      // Allocate time proportional to character count so longer chunks linger.
+      const totalChars = chunks.reduce((sum, c) => sum + Math.max(1, c.text.length), 0);
+      // Reserve a small lead-in so the first caption doesn't collide with cut-in.
+      const usable = Math.max(0.5, totalDuration - 0.2);
+      let t = 0.1;
+      return chunks.map((c) => {
+        const share = (Math.max(1, c.text.length) / totalChars) * usable;
+        // Minimum 1.1s per chunk for readability, max 3.5s.
+        const len = Math.min(3.5, Math.max(1.1, share));
+        const out = { ...c, start: t, length: len };
+        t += len;
+        return out;
+      });
     };
 
     for (const shot of shotList) {
@@ -124,6 +138,7 @@ Deno.serve(async (req) => {
       const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
       const url = dbClip!.override_video_url || opt!.url;
       const duration = Number(shot.duration_seconds) || 8;
+      shotStartByNumber.set(Number(shot.clip_number), cursor);
 
       // Keep Veo's native audio for in-scene character dialogue; mute narrator/silent shots.
       const speaker = shot.speaker;
@@ -164,17 +179,18 @@ Deno.serve(async (req) => {
           captionClips.push({
             asset: {
               type: 'text', text: ch.text.toUpperCase(),
-              font: { family: S.font, size: S.size, color: ch.isHighlight ? S.highlight : S.color, lineHeight: 1.1 },
+              font: { family: S.font, size: S.size, color: ch.isHighlight ? S.highlight : S.color, lineHeight: 1.15 },
               stroke: { color: '#000000', width: S.stroke },
-              width: Math.round(width * 0.85),
-              height: 200,
+              background: { color: '#000000', opacity: 0.55, padding: 16, borderRadius: 12 },
+              width: Math.round(width * 0.82),
+              height: 220,
               alignment: { horizontal: 'center', vertical: 'center' },
             },
             start: cursor + ch.start,
-            length: Math.max(0.5, ch.length - 0.02),
+            length: Math.max(0.9, ch.length - 0.05),
             position: 'bottom',
             offset: { y: S.yOffset },
-            transition: { in: 'zoom', out: 'fade' },
+            transition: { in: 'fade', out: 'fade' },
           });
         }
       }
@@ -240,7 +256,27 @@ Deno.serve(async (req) => {
       { clips: videoClips },      // base video
     ];
 
-    if (voiceover?.audio_url) {
+    // Voiceover — prefer per-shot segments so narrator only plays during narrator clips,
+    // never overlapping Veo's in-scene character dialogue. Falls back to a single track for
+    // legacy projects.
+    const voSegments: any[] = Array.isArray(voiceover?.settings?.segments) ? voiceover.settings.segments : [];
+    if (voSegments.length > 0) {
+      const voClips = voSegments
+        .map((seg) => {
+          const start = shotStartByNumber.get(Number(seg.clip_number));
+          if (start === undefined || !seg.audio_url) return null;
+          const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
+          const len = Math.max(0.5, Number(shot?.duration_seconds) || 8);
+          return {
+            asset: { type: 'audio', src: seg.audio_url, volume: 1 },
+            start,
+            length: len,
+            transition: { in: 'fade', out: 'fade' },
+          };
+        })
+        .filter(Boolean);
+      if (voClips.length) tracks.push({ clips: voClips });
+    } else if (voiceover?.audio_url) {
       tracks.push({ clips: [{ asset: { type: 'audio', src: voiceover.audio_url, volume: 1 }, start: 0, length: totalDuration }] });
     }
     if (music?.audio_url) {

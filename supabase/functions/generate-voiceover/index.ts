@@ -43,9 +43,47 @@ function estimateSpeechDuration(text: string, fallbackSeconds: number): number {
   return Math.round(Math.min(cap, Math.max(0.7, estimated)) * 100) / 100;
 }
 
-async function tts(text: string, voiceId: string, key: string): Promise<Uint8Array> {
+interface CharAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+interface WordTiming {
+  word: string;
+  start: number;
+  end: number;
+}
+
+// Group character-level timestamps into word-level timings.
+function alignmentToWords(alignment: CharAlignment | null): WordTiming[] {
+  if (!alignment?.characters?.length) return [];
+  const words: WordTiming[] = [];
+  let curr = "";
+  let start = 0;
+  for (let i = 0; i < alignment.characters.length; i++) {
+    const ch = alignment.characters[i];
+    const cStart = alignment.character_start_times_seconds[i] ?? 0;
+    const cEnd = alignment.character_end_times_seconds[i] ?? cStart;
+    if (/\s/.test(ch)) {
+      if (curr.trim()) words.push({ word: curr, start, end: cStart });
+      curr = "";
+      start = cEnd;
+    } else {
+      if (!curr) start = cStart;
+      curr += ch;
+      if (i === alignment.characters.length - 1) {
+        words.push({ word: curr, start, end: cEnd });
+      }
+    }
+  }
+  return words;
+}
+
+// Returns audio bytes + alignment data (character-level timestamps from ElevenLabs).
+async function ttsWithTimestamps(text: string, voiceId: string, key: string): Promise<{ bytes: Uint8Array; alignment: CharAlignment | null; duration: number | null }> {
   const res = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps?output_format=mp3_44100_128`,
     {
       method: "POST",
       headers: { "xi-api-key": key, "Content-Type": "application/json" },
@@ -61,7 +99,18 @@ async function tts(text: string, voiceId: string, key: string): Promise<Uint8Arr
     const perm = parsePermissionError(t);
     throw new Error(perm ?? `ElevenLabs TTS ${res.status}: ${t.slice(0, 300)}`);
   }
-  return new Uint8Array(await res.arrayBuffer());
+  const data = await res.json();
+  const audioB64: string = data.audio_base64 || data.audio || "";
+  if (!audioB64) throw new Error("ElevenLabs returned no audio_base64");
+  const bin = atob(audioB64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const alignment: CharAlignment | null = data.alignment ?? data.normalized_alignment ?? null;
+  let duration: number | null = null;
+  if (alignment?.character_end_times_seconds?.length) {
+    duration = alignment.character_end_times_seconds[alignment.character_end_times_seconds.length - 1];
+  }
+  return { bytes, alignment, duration };
 }
 
 Deno.serve(async (req) => {
@@ -99,7 +148,7 @@ Deno.serve(async (req) => {
       .map((s) => ({
         clip_number: Number(s.clip_number),
         text: cleanLine(s.vo_segment),
-        duration_seconds: estimateSpeechDuration(s.vo_segment, Number(s.duration_seconds) || 8),
+        planned_seconds: Number(s.duration_seconds) || 8,
       }));
 
     if (narratorShots.length === 0) {
@@ -113,19 +162,38 @@ Deno.serve(async (req) => {
     const voiceId = voice_id || project.vo_voice_id || DEFAULT_VOICE_ID;
     const version = project.current_version ?? 1;
 
-    // Generate one MP3 per narrator shot in parallel.
-    const segments: { clip_number: number; audio_url: string; text: string; chars: number; duration_seconds: number }[] = [];
+    // Generate one MP3 per narrator shot in parallel — with character-level timestamps.
+    const segments: {
+      clip_number: number;
+      audio_url: string;
+      text: string;
+      chars: number;
+      duration_seconds: number;
+      alignment: CharAlignment | null;
+      words: WordTiming[];
+    }[] = [];
     let totalChars = 0;
 
     const results = await Promise.allSettled(narratorShots.map(async (shot) => {
-      const bytes = await tts(shot.text, voiceId, ELEVEN_KEY);
+      const { bytes, alignment, duration } = await ttsWithTimestamps(shot.text, voiceId, ELEVEN_KEY);
       const path = `ai-video/${project_id}/audio/vo-v${version}-clip${shot.clip_number}-${Date.now()}.mp3`;
       const { error: upErr } = await admin.storage
         .from("creative-assets")
         .upload(path, bytes, { contentType: "audio/mpeg", upsert: true });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
       const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
-      return { clip_number: shot.clip_number, audio_url: pub.publicUrl, text: shot.text, chars: shot.text.length, duration_seconds: shot.duration_seconds };
+      const measured = duration && duration > 0
+        ? Math.round(duration * 100) / 100
+        : estimateSpeechDuration(shot.text, shot.planned_seconds);
+      return {
+        clip_number: shot.clip_number,
+        audio_url: pub.publicUrl,
+        text: shot.text,
+        chars: shot.text.length,
+        duration_seconds: measured,
+        alignment,
+        words: alignmentToWords(alignment),
+      };
     }));
 
     for (const r of results) {

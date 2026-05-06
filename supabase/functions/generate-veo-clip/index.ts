@@ -35,6 +35,51 @@ function stabilizeVeoPrompt(prompt: string): string {
     .trim();
 }
 
+// Tiny MP4 duration probe — walks ISO BMFF atoms to find `mvhd` and reads
+// (duration / timescale). Avoids pulling in an ffmpeg dependency. Returns
+// seconds or null if the file is not a parseable MP4 (rare for Veo output).
+function probeMp4DurationSeconds(buf: Uint8Array): number | null {
+  try {
+    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const findAtom = (start: number, end: number, name: string): { offset: number; size: number } | null => {
+      let o = start;
+      while (o + 8 <= end) {
+        const size = view.getUint32(o);
+        const type = String.fromCharCode(buf[o + 4], buf[o + 5], buf[o + 6], buf[o + 7]);
+        if (size < 8) return null;
+        if (type === name) return { offset: o, size };
+        o += size;
+      }
+      return null;
+    };
+    const moov = findAtom(0, buf.length, 'moov');
+    if (!moov) return null;
+    const mvhd = findAtom(moov.offset + 8, moov.offset + moov.size, 'mvhd');
+    if (!mvhd) return null;
+    // mvhd payload: version(1) + flags(3) + ...
+    const version = view.getUint8(mvhd.offset + 8);
+    let timescale: number;
+    let duration: number;
+    if (version === 1) {
+      // ctime(8) + mtime(8) + timescale(4) + duration(8)
+      timescale = view.getUint32(mvhd.offset + 8 + 4 + 16);
+      // 64-bit duration — read as two 32s; assume fits in safe int.
+      const hi = view.getUint32(mvhd.offset + 8 + 4 + 20);
+      const lo = view.getUint32(mvhd.offset + 8 + 4 + 24);
+      duration = hi * 2 ** 32 + lo;
+    } else {
+      // ctime(4) + mtime(4) + timescale(4) + duration(4)
+      timescale = view.getUint32(mvhd.offset + 8 + 4 + 8);
+      duration = view.getUint32(mvhd.offset + 8 + 4 + 12);
+    }
+    if (!timescale || !duration) return null;
+    return Math.round((duration / timescale) * 100) / 100;
+  } catch (e) {
+    console.warn('probeMp4DurationSeconds failed:', (e as Error).message);
+    return null;
+  }
+}
+
 // @ts-ignore - EdgeRuntime is provided by Supabase edge runtime
 declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 
@@ -186,6 +231,12 @@ async function runVeoJob(params: {
     }
 
     await progress(admin, clipId, 92, "Uploading to storage…");
+    // Probe the actual content duration of the MP4 so the composer can place the
+    // clip on the timeline without overrunning into a frozen final frame.
+    const measuredDuration = probeMp4DurationSeconds(videoBytes);
+    if (measuredDuration) {
+      console.log(`[veo] clip ${clip_number} measured duration: ${measuredDuration}s (planned ${duration_seconds}s)`);
+    }
     const path = `ai-video/${project_id}/clips/v${version}/clip-${clip_number}-${Date.now()}.mp4`;
     const { error: upErr } = await admin.storage
       .from("creative-assets")
@@ -198,8 +249,9 @@ async function runVeoJob(params: {
     const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
 
     await admin.from("ai_video_clips").update({
-      generated_options: [{ url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString() }],
+      generated_options: [{ url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString(), duration_seconds: measuredDuration }],
       selected_option_index: 0,
+      actual_duration_seconds: measuredDuration ?? null,
       status: "generated",
       error_code: null,
       error_message: null,

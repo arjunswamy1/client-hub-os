@@ -42,12 +42,65 @@ function cleanCaptionLine(text: string) {
     .trim();
 }
 
-function clipTimelineDuration(shot: any, opt: any) {
+function clipTimelineDuration(shot: any, opt: any, dbClip?: any) {
   const planned = Number(shot?.duration_seconds) > 0 ? Number(shot.duration_seconds) : MAX_SAFE_VEO_CLIP_SECONDS;
+  // Prefer the actual measured duration from the downloaded MP4 if available.
+  const measured = Number(dbClip?.actual_duration_seconds);
   const generated = Number(opt?.duration_seconds ?? opt?.metadata?.duration_seconds ?? opt?.duration);
-  // Older generated clips do not have stored media duration. Veo clips are capped at 8s here so
-  // Shotstack does not hold/freeze a source after the real clip has ended.
-  return clampNumber(generated || Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS), 1, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+  const best = Number.isFinite(measured) && measured > 0
+    ? measured
+    : (generated || Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+  return clampNumber(best, 1, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+}
+
+interface WordTiming { word: string; start: number; end: number; }
+
+const PHRASE_LEAD_WORDS = new Set(['and', 'but', 'or', 'so', 'when', 'because', 'that', 'which', 'while', 'if', 'though']);
+const PREP_WORDS = new Set(['in', 'on', 'at', 'for', 'to', 'with', 'from', 'of', 'by', 'into', 'over', 'under']);
+
+// Split a transcript into natural phrase-sized caption chunks using ElevenLabs word timings.
+// Falls back to a heuristic word-count split when no timings are present.
+function chunkByPhrases(text: string, words: WordTiming[]): { text: string; start: number; end: number }[] {
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+  // Best-effort align tokens to word timings (whitespace tokenization may differ slightly).
+  const timed = words.length === tokens.length
+    ? tokens.map((t, i) => ({ word: t, start: words[i].start, end: words[i].end }))
+    : tokens.map((t, i) => {
+        const w = words[i];
+        return w ? { word: t, start: w.start, end: w.end } : null;
+      }).filter(Boolean) as WordTiming[];
+
+  if (!timed.length) return [];
+
+  const chunks: { text: string; start: number; end: number }[] = [];
+  let buf: WordTiming[] = [];
+  const flush = () => {
+    if (!buf.length) return;
+    chunks.push({
+      text: buf.map((w) => w.word).join(' '),
+      start: buf[0].start,
+      end: buf[buf.length - 1].end,
+    });
+    buf = [];
+  };
+
+  for (let i = 0; i < timed.length; i++) {
+    const w = timed[i];
+    buf.push(w);
+    const next = timed[i + 1];
+    const cleanWord = w.word.replace(/[^a-z]/gi, '').toLowerCase();
+    const nextClean = next?.word.replace(/[^a-z]/gi, '').toLowerCase();
+    const endsWithPunct = /[,.\-!?;:]$/.test(w.word);
+    const breathGap = next ? (next.start - w.end) > 0.2 : false;
+    const beforeConj = next && buf.length >= 3 && PHRASE_LEAD_WORDS.has(nextClean ?? '');
+    const beforePrep = next && buf.length >= 4 && PREP_WORDS.has(nextClean ?? '');
+    const hardCap = buf.length >= 6;
+    if (endsWithPunct || breathGap || beforeConj || beforePrep || hardCap || !next) {
+      flush();
+    }
+  }
+  return chunks;
 }
 
 Deno.serve(async (req) => {
@@ -140,26 +193,52 @@ Deno.serve(async (req) => {
     };
     const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','fast','easy','call','watch']);
 
-    const chunkCaption = (text: string, totalDuration: number, audioDuration?: number) => {
+    // Phrase-based caption builder. When the VO segment carries word-level timestamps
+    // from ElevenLabs (alignment), we snap each chunk's start/length to the actual audio.
+    // Otherwise we fall back to a proportional split inside the visible clip duration.
+    const chunkCaption = (text: string, totalDuration: number, voSeg?: any) => {
       const cleaned = cleanCaptionLine(text);
-      const words = cleaned.split(/\s+/).filter(Boolean);
-      if (!words.length) return [] as { text: string; isHighlight: boolean; start: number; length: number }[];
+      if (!cleaned) return [] as { text: string; isHighlight: boolean; start: number; length: number }[];
+
+      const words: WordTiming[] = Array.isArray(voSeg?.words) ? voSeg.words : [];
+      const audioDuration = Number(voSeg?.duration_seconds);
+
+      const markHighlight = (chunkText: string) =>
+        chunkText.split(/\s+/).some((w) => HIGHLIGHT_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, '')));
+
+      // Path A — phrase chunking from real ElevenLabs timestamps.
+      if (words.length) {
+        const phrased = chunkByPhrases(cleaned, words);
+        if (phrased.length) {
+          // Cap last chunk's end so it never exceeds the clip's visible duration.
+          const ceiling = Math.max(0.5, totalDuration);
+          return phrased.map((p) => {
+            const start = Math.max(0, Math.min(ceiling - 0.1, p.start));
+            const end = Math.max(start + 0.4, Math.min(ceiling, p.end));
+            return {
+              text: p.text,
+              isHighlight: markHighlight(p.text),
+              start,
+              length: Math.max(0.4, end - start),
+            };
+          });
+        }
+      }
+
+      // Path B — fallback heuristic when alignment is missing (legacy segments).
+      const allWords = cleaned.split(/\s+/).filter(Boolean);
       const wpc = S.wordsPerChunk;
       const chunks: { text: string; isHighlight: boolean }[] = [];
-      for (let i = 0; i < words.length; i += wpc) {
-        const slice = words.slice(i, i + wpc);
+      for (let i = 0; i < allWords.length; i += wpc) {
+        const slice = allWords.slice(i, i + wpc);
         chunks.push({
           text: slice.join(' '),
           isHighlight: slice.some((w) => HIGHLIGHT_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, ''))),
         });
       }
-      // Allocate time proportional to character count so longer chunks linger.
       const totalChars = chunks.reduce((sum, c) => sum + Math.max(1, c.text.length), 0);
-      // In realign mode we ignore the visible-clip duration entirely and snap captions to the
-      // narrator audio length, with no per-chunk cap and zero pre-roll. This is what the
-      // post-render validator triggers when drift is detected.
-      const targetDuration = isRealign && Number(audioDuration) > 0
-        ? Number(audioDuration)
+      const targetDuration = isRealign && Number.isFinite(audioDuration) && audioDuration > 0
+        ? audioDuration
         : clampNumber(audioDuration, 0.5, totalDuration, totalDuration);
       const usable = isRealign
         ? Math.max(0.5, targetDuration)
@@ -181,7 +260,7 @@ Deno.serve(async (req) => {
       const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
       const url = dbClip!.override_video_url || opt!.url;
       const voSegment = voSegments.find((seg) => Number(seg.clip_number) === Number(shot.clip_number));
-      const duration = clipTimelineDuration(shot, opt);
+      const duration = clipTimelineDuration(shot, opt, dbClip);
       shotStartByNumber.set(Number(shot.clip_number), cursor);
 
       // Keep Veo's native audio for in-scene character dialogue; mute narrator/silent shots.
@@ -217,7 +296,7 @@ Deno.serve(async (req) => {
 
       const captionText = (shot.dialogue && String(shot.dialogue).trim()) || (shot.vo_segment && String(shot.vo_segment).trim()) || '';
       if (captionText) {
-        const chunks = chunkCaption(captionText, duration, voSegment?.duration_seconds);
+        const chunks = chunkCaption(captionText, duration, voSegment);
         for (const ch of chunks) {
           // Map numeric fade duration to Shotstack transition names
           const fadeName = S.fadeDuration <= 0.05
@@ -316,7 +395,7 @@ Deno.serve(async (req) => {
           const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
           const dbClip = clips?.find((c: any) => c.clip_number === Number(seg.clip_number));
           const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
-          const len = Math.min(clipTimelineDuration(shot, opt), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
+          const len = Math.min(clipTimelineDuration(shot, opt, dbClip), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
           return {
             asset: { type: 'audio', src: seg.audio_url, volume: 1 },
             start,

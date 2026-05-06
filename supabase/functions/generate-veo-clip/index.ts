@@ -291,6 +291,10 @@ Deno.serve(async (req) => {
       error_code: null,
       error_message: null,
       failed_at: null,
+      progress_pct: 1,
+      progress_message: "Queued — starting Veo job…",
+      progress_updated_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
     };
 
     const { data: existing } = await admin

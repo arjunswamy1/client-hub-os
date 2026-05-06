@@ -300,6 +300,20 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     enabled: !!project,
   });
 
+  const { data: pricing } = useQuery({
+    queryKey: ['tech-pricing-ai-video'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('tech_pricing')
+        .select('service, model, unit, rate_per_unit_usd')
+        .in('service', ['google_veo', 'elevenlabs'])
+        .or('effective_to.is.null,effective_to.gt.now()');
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const runDirector = async () => {
     setRunning(true);
     try {
@@ -422,6 +436,27 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
   const voiceover = (audio ?? []).find((a) => a.audio_type === 'voiceover');
   const music = (audio ?? []).find((a) => a.audio_type === 'music');
 
+  // Cost estimator — uses live rates from tech_pricing with sensible fallbacks.
+  const veoRate = pricing?.find((p: any) => p.service === 'google_veo' && p.unit === 'seconds')?.rate_per_unit_usd ?? 0.40;
+  const voRate = pricing?.find((p: any) => p.service === 'elevenlabs' && p.unit === 'characters')?.rate_per_unit_usd ?? 0.00015;
+  const musicRate = pricing?.find((p: any) => p.service === 'elevenlabs' && p.model === 'music' && p.unit === 'seconds')?.rate_per_unit_usd ?? 0.08;
+
+  const totalClipSeconds = shots.reduce((sum, s) => sum + (Number(s.duration_seconds) || 0), 0);
+  const remainingShots = shots.filter((s) => {
+    const c = clipByNum.get(s.clip_number);
+    return !c || c.status === 'failed' || c.status === 'pending' || !c.generated_options?.length;
+  });
+  const remainingSeconds = remainingShots.reduce((sum, s) => sum + (Number(s.duration_seconds) || 0), 0);
+  const voChars = (project.vo_script || '').length;
+  const musicSeconds = project.target_length_seconds || totalClipSeconds || 0;
+
+  const veoTotalCost = totalClipSeconds * veoRate;
+  const veoRemainingCost = remainingSeconds * veoRate;
+  const voCost = voChars * voRate;
+  const musicCost = musicSeconds * musicRate;
+  const totalProjectCost = veoTotalCost + voCost + musicCost;
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -449,6 +484,45 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
         </Card>
       ) : (
         <>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Wand2 className="h-4 w-4" /> Cost Estimate
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Estimated AI spend before you generate. Based on current pricing — actual cost may vary.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Veo video (all)</div>
+                  <div className="mt-1 text-lg font-semibold">{fmt(veoTotalCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{shots.length} clips · {totalClipSeconds}s @ {fmt(veoRate)}/s</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Veo (remaining)</div>
+                  <div className="mt-1 text-lg font-semibold text-primary">{fmt(veoRemainingCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{remainingShots.length} to generate · {remainingSeconds}s</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Voiceover</div>
+                  <div className="mt-1 text-lg font-semibold">{fmt(voCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{voChars.toLocaleString()} chars @ {fmt(voRate * 1000)}/1k</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Music</div>
+                  <div className="mt-1 text-lg font-semibold">{fmt(musicCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{musicSeconds}s @ {fmt(musicRate)}/s</div>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between rounded-md border bg-muted/40 p-3">
+                <div className="text-xs text-muted-foreground">Total project (full run)</div>
+                <div className="text-base font-bold">{fmt(totalProjectCost)}</div>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Production</CardTitle>

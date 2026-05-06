@@ -86,13 +86,14 @@ async function runVeoJob(params: {
     if (!startRes.ok) {
       const t = await startRes.text();
       console.error("Veo start error:", startRes.status, t);
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      const { code, message } = classifyError(startRes.status, t);
+      await failClip(admin, clipId, code, message);
       return;
     }
     const startData = await startRes.json();
     const opName: string | undefined = startData.name;
     if (!opName) {
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      await failClip(admin, clipId, "no_operation", "Veo did not return an operation name.");
       return;
     }
 
@@ -108,12 +109,14 @@ async function runVeoJob(params: {
     }
     if (!opData) {
       console.error("Veo poll timeout", opName);
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      await failClip(admin, clipId, "timeout", "Veo generation timed out (>10 min). Retry the clip.");
       return;
     }
     if (opData.error) {
       console.error("Veo op error:", opData.error);
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      const msg = typeof opData.error === "string" ? opData.error : JSON.stringify(opData.error);
+      const { code, message } = classifyError(opData.error?.code ?? null, msg);
+      await failClip(admin, clipId, code, message);
       return;
     }
 
@@ -130,8 +133,10 @@ async function runVeoJob(params: {
       const sep = videoUri.includes("?") ? "&" : "?";
       const dl = await fetch(`${videoUri}${sep}key=${GEMINI_API_KEY}`);
       if (!dl.ok) {
-        console.error("Veo download failed:", await dl.text());
-        await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+        const t = await dl.text();
+        console.error("Veo download failed:", t);
+        const { code, message } = classifyError(dl.status, t);
+        await failClip(admin, clipId, code, message);
         return;
       }
       videoBytes = new Uint8Array(await dl.arrayBuffer());
@@ -141,7 +146,7 @@ async function runVeoJob(params: {
       for (let i = 0; i < bin.length; i++) videoBytes[i] = bin.charCodeAt(i);
     } else {
       console.error("No video in response", opData.response);
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      await failClip(admin, clipId, "no_video", "Veo finished but returned no video data. Likely safety-filtered. Edit the prompt and retry.");
       return;
     }
 
@@ -151,7 +156,7 @@ async function runVeoJob(params: {
       .upload(path, videoBytes, { contentType: "video/mp4", upsert: true });
     if (upErr) {
       console.error("Storage upload failed:", upErr.message);
-      await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
+      await failClip(admin, clipId, "storage", `Storage upload failed: ${upErr.message}`);
       return;
     }
     const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
@@ -160,6 +165,9 @@ async function runVeoJob(params: {
       generated_options: [{ url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString() }],
       selected_option_index: 0,
       status: "generated",
+      error_code: null,
+      error_message: null,
+      failed_at: null,
     }).eq("id", clipId);
 
     // Cost tracking — Veo billed per second of generated video.

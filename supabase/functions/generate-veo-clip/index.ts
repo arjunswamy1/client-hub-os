@@ -174,15 +174,33 @@ Deno.serve(async (req) => {
     const aspect = aspectToVeo(project.aspect_ratio);
     const version = project.current_version ?? 1;
 
+    // Inject character descriptions and anti-caption guard if the director omitted them.
+    const characters: any[] = Array.isArray(project.characters) ? project.characters : [];
+    let prompt: string = String(shot.veo_prompt || "");
+    if (shot.speaker && shot.speaker !== "narrator_vo" && shot.speaker !== "none") {
+      const ch = characters.find((c) => c?.name?.toLowerCase() === String(shot.speaker).toLowerCase());
+      if (ch && !prompt.toLowerCase().includes(String(ch.description).slice(0, 30).toLowerCase())) {
+        prompt = `${ch.description}. ${prompt}`;
+      }
+      if (shot.dialogue && !prompt.includes(shot.dialogue)) {
+        const tone = ch?.voice_direction ? ` (${ch.voice_direction})` : "";
+        prompt = `${prompt} The character speaks${tone} with natural lip sync, saying: "${shot.dialogue}".`;
+      }
+    }
+    const ANTI_CAPTION = "(no on-screen text, no subtitles, no captions, no watermarks, no UI overlays)";
+    if (!prompt.toLowerCase().includes("no subtitles") && !prompt.toLowerCase().includes("no captions")) {
+      prompt = `${prompt} ${ANTI_CAPTION}`;
+    }
+
     const baseRow = {
       project_id,
       version,
       clip_number,
-      veo_prompt: shot.veo_prompt,
+      veo_prompt: prompt,
       veo_model: VEO_MODEL,
       veo_aspect_ratio: aspect,
       veo_resolution: "1080p",
-      vo_text: shot.vo_segment ?? null,
+      vo_text: shot.dialogue || shot.vo_segment || null,
       text_overlay: shot.text_overlay ? { text: shot.text_overlay } : null,
       status: "generating",
     };
@@ -206,10 +224,9 @@ Deno.serve(async (req) => {
 
     await admin.from("ai_video_projects").update({ status: "generating" }).eq("id", project_id);
 
-    // Run the long-running Veo job in the background
     EdgeRuntime.waitUntil(runVeoJob({
       admin, GEMINI_API_KEY, clipId, project_id, version, clip_number,
-      prompt: shot.veo_prompt, aspect,
+      prompt, aspect,
     }));
 
     return json({ ok: true, clip_id: clipId, status: "generating" }, 202);

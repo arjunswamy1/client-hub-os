@@ -458,7 +458,48 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {Array.isArray((project as any).hook_variants) && (project as any).hook_variants.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Hook Variants</CardTitle>
+                <CardDescription className="text-xs">Pick the cold-open angle. Regenerate clip 1 after changing.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(project as any).hook_variants.map((h: any, i: number) => (
+                  <button
+                    key={i}
+                    onClick={async () => {
+                      await supabase.from('ai_video_projects').update({ selected_hook_index: i }).eq('id', projectId);
+                      qc.invalidateQueries({ queryKey: ['ai-video-project', projectId] });
+                      toast.success(`Hook ${i + 1} selected — regenerate clip 1`);
+                    }}
+                    className={`w-full rounded-md border p-3 text-left text-sm transition-colors ${
+                      (project as any).selected_hook_index === i ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+                    }`}
+                  >
+                    <Badge variant="outline" className="mr-2 capitalize">{h.angle}</Badge>
+                    "{h.line}"
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {Array.isArray((project as any).characters) && (project as any).characters.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Characters</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                {(project as any).characters.map((c: any, i: number) => (
+                  <div key={i} className="rounded border p-2">
+                    <div className="font-semibold capitalize">{c.name}</div>
+                    <div className="text-muted-foreground">{c.description}</div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+
             {shots.map((s, i) => {
               const c = clipByNum.get(s.clip_number);
               const opt = c?.generated_options?.[c?.selected_option_index ?? 0];

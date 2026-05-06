@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
     }
 
     // Build clip track + caption track from vo_segment
-    let cursor = 0;
+    // (Phase 2: timing now driven by per-shot transition_type — see ShotTiming below.)
     const videoClips: any[] = [];
     const overlayClips: any[] = [];
     const captionClips: any[] = [];

@@ -486,6 +486,45 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
         <>
           <Card>
             <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Wand2 className="h-4 w-4" /> Cost Estimate
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Estimated AI spend before you generate. Based on current pricing — actual cost may vary.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Veo video (all)</div>
+                  <div className="mt-1 text-lg font-semibold">{fmt(veoTotalCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{shots.length} clips · {totalClipSeconds}s @ {fmt(veoRate)}/s</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Veo (remaining)</div>
+                  <div className="mt-1 text-lg font-semibold text-primary">{fmt(veoRemainingCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{remainingShots.length} to generate · {remainingSeconds}s</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Voiceover</div>
+                  <div className="mt-1 text-lg font-semibold">{fmt(voCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{voChars.toLocaleString()} chars @ {fmt(voRate * 1000)}/1k</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Music</div>
+                  <div className="mt-1 text-lg font-semibold">{fmt(musicCost)}</div>
+                  <div className="text-[11px] text-muted-foreground">{musicSeconds}s @ {fmt(musicRate)}/s</div>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between rounded-md border bg-muted/40 p-3">
+                <div className="text-xs text-muted-foreground">Total project (full run)</div>
+                <div className="text-base font-bold">{fmt(totalProjectCost)}</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
               <CardTitle className="text-sm">Production</CardTitle>
               <CardDescription className="text-xs">Generate Veo 3.1 video clips and ElevenLabs audio for this version.</CardDescription>
             </CardHeader>

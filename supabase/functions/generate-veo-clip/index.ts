@@ -57,7 +57,22 @@ async function failClip(admin: any, clipId: string, code: string, message: strin
     error_code: code,
     error_message: message,
     failed_at: new Date().toISOString(),
+    progress_pct: 0,
+    progress_message: `Failed: ${message}`,
+    progress_updated_at: new Date().toISOString(),
   }).eq("id", clipId);
+}
+
+async function progress(admin: any, clipId: string, pct: number, message: string) {
+  try {
+    await admin.from("ai_video_clips").update({
+      progress_pct: Math.max(0, Math.min(100, Math.round(pct))),
+      progress_message: message,
+      progress_updated_at: new Date().toISOString(),
+    }).eq("id", clipId);
+  } catch (e) {
+    console.error("progress update failed:", e);
+  }
 }
 
 async function runVeoJob(params: {

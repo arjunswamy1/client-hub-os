@@ -256,7 +256,27 @@ Deno.serve(async (req) => {
       { clips: videoClips },      // base video
     ];
 
-    if (voiceover?.audio_url) {
+    // Voiceover — prefer per-shot segments so narrator only plays during narrator clips,
+    // never overlapping Veo's in-scene character dialogue. Falls back to a single track for
+    // legacy projects.
+    const voSegments: any[] = Array.isArray(voiceover?.settings?.segments) ? voiceover.settings.segments : [];
+    if (voSegments.length > 0) {
+      const voClips = voSegments
+        .map((seg) => {
+          const start = shotStartByNumber.get(Number(seg.clip_number));
+          if (start === undefined || !seg.audio_url) return null;
+          const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
+          const len = Math.max(0.5, Number(shot?.duration_seconds) || 8);
+          return {
+            asset: { type: 'audio', src: seg.audio_url, volume: 1 },
+            start,
+            length: len,
+            transition: { in: 'fade', out: 'fade' },
+          };
+        })
+        .filter(Boolean);
+      if (voClips.length) tracks.push({ clips: voClips });
+    } else if (voiceover?.audio_url) {
       tracks.push({ clips: [{ asset: { type: 'audio', src: voiceover.audio_url, volume: 1 }, start: 0, length: totalDuration }] });
     }
     if (music?.audio_url) {

@@ -350,6 +350,8 @@ Deno.serve(async (req) => {
         status: 'submitting',
         edit_json: edit,
         duration_seconds: totalDuration,
+        parent_render_id: parent_render_id ?? null,
+        caption_realign_count: isRealign ? 1 : 0,
       })
       .select('id').single();
     if (rErr) throw new Error(rErr.message);

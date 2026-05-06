@@ -238,9 +238,12 @@ Deno.serve(async (req) => {
 
     await admin.from("ai_video_projects").update({ status: "generating" }).eq("id", project_id);
 
+    const durationSec = Number(shot.duration_seconds) > 0 ? Number(shot.duration_seconds) : 8;
     EdgeRuntime.waitUntil(runVeoJob({
-      admin, GEMINI_API_KEY, clipId, project_id, version, clip_number,
-      prompt, aspect,
+      admin, GEMINI_API_KEY, clipId, project_id,
+      client_id: (project as any).client_id ?? null,
+      version, clip_number, prompt, aspect,
+      duration_seconds: durationSec,
     }));
 
     return json({ ok: true, clip_id: clipId, status: "generating" }, 202);

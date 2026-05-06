@@ -335,20 +335,50 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     setGeneratingAll(true);
     try {
       const list: any[] = Array.isArray(project.shot_list) ? project.shot_list : [];
-      // Fire all in parallel — each function returns 202 immediately and runs Veo in background
-      await Promise.all(list.map((s) =>
+      // Skip clips that are already successfully generated; (re)run the rest.
+      const targets = list.filter((s) => {
+        const c = clipByNum.get(s.clip_number);
+        return !c || c.status === 'failed' || c.status === 'pending' || !c.generated_options?.length;
+      });
+      if (targets.length === 0) {
+        toast.info('All clips already generated. Use Regenerate on a clip to redo it.');
+        return;
+      }
+      await Promise.all(targets.map((s) =>
         supabase.functions.invoke('generate-veo-clip', {
           body: { project_id: projectId, clip_number: s.clip_number },
         }).then(({ error }) => {
           if (error) toast.error(`Clip ${s.clip_number}: ${error.message}`);
         })
       ));
-      toast.success('All clips started — generating in background (~1-3 min each)');
+      toast.success(`Started ${targets.length} clip${targets.length > 1 ? 's' : ''} — generating in background`);
       qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
     } catch (e: any) {
       toast.error(e.message || 'Generation failed');
     } finally {
       setGeneratingClip(null);
+      setGeneratingAll(false);
+    }
+  };
+
+  const retryFailedClips = async () => {
+    const failed = (clips ?? []).filter((c: any) => c.status === 'failed');
+    if (failed.length === 0) {
+      toast.info('No failed clips to retry');
+      return;
+    }
+    setGeneratingAll(true);
+    try {
+      await Promise.all(failed.map((c: any) =>
+        supabase.functions.invoke('generate-veo-clip', {
+          body: { project_id: projectId, clip_number: c.clip_number },
+        }).then(({ error }) => {
+          if (error) toast.error(`Clip ${c.clip_number}: ${error.message}`);
+        })
+      ));
+      toast.success(`Retrying ${failed.length} failed clip${failed.length > 1 ? 's' : ''}`);
+      qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+    } finally {
       setGeneratingAll(false);
     }
   };

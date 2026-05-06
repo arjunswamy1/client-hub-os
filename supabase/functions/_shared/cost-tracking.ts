@@ -49,6 +49,16 @@ export interface EmailUsageInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface MediaGenUsageInput {
+  client_id?: string | null;
+  service: string; // 'google_veo' | 'elevenlabs'
+  surface: string; // 'ai-video-studio' etc.
+  model: string;  // 'veo-3.1-generate-preview' | 'eleven_multilingual_v2' | 'music'
+  unit: 'seconds' | 'characters';
+  quantity: number;
+  metadata?: Record<string, unknown>;
+}
+
 async function computeCost(params: {
   service: string;
   model: string | null;
@@ -184,6 +194,27 @@ export async function logEmailSend(input: EmailUsageInput): Promise<void> {
     service,
     quantity: emails,
     unit: "emails",
+    cost_usd: cost,
+    metadata: input.metadata ?? {},
+  });
+}
+
+export async function logMediaGenUsage(input: MediaGenUsageInput): Promise<void> {
+  if (!input.quantity || input.quantity <= 0) return;
+  const cost = await computeCost({
+    service: input.service,
+    model: input.model,
+    unit: input.unit,
+    quantity: input.quantity,
+  });
+  await insertEvent({
+    client_id: input.client_id ?? null,
+    category: "ai",
+    service: input.service,
+    surface: input.surface,
+    model: input.model,
+    quantity: input.quantity,
+    unit: input.unit,
     cost_usd: cost,
     metadata: input.metadata ?? {},
   });

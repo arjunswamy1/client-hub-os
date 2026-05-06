@@ -2,6 +2,7 @@
 // Uses the project's music_prompt (from the AI Director) and the target
 // length, stores the MP3 in creative-assets, writes ai_video_audio row.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { logMediaGenUsage } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -101,6 +102,17 @@ Deno.serve(async (req) => {
       })
       .select("id, audio_url").single();
     if (insErr) return json({ error: insErr.message }, 500);
+
+    // Cost tracking — ElevenLabs Music billed per second of generated audio.
+    logMediaGenUsage({
+      client_id: (project as any).client_id ?? null,
+      service: "elevenlabs",
+      surface: "ai-video-studio",
+      model: "music",
+      unit: "seconds",
+      quantity: lengthSec,
+      metadata: { project_id, audio_type: "music" },
+    }).catch((e) => console.error("logMediaGenUsage failed:", e));
 
     return json({ ok: true, audio_id: row.id, audio_url: row.audio_url });
   } catch (e) {

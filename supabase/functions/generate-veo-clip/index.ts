@@ -3,6 +3,7 @@
 // poll/download/upload in the background via EdgeRuntime.waitUntil.
 // Frontend polls the ai_video_clips row to observe status transitions.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { logMediaGenUsage } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,12 +36,14 @@ async function runVeoJob(params: {
   GEMINI_API_KEY: string;
   clipId: string;
   project_id: string;
+  client_id: string | null;
   version: number;
   clip_number: number;
   prompt: string;
   aspect: string;
+  duration_seconds: number;
 }) {
-  const { admin, GEMINI_API_KEY, clipId, project_id, version, clip_number, prompt, aspect } = params;
+  const { admin, GEMINI_API_KEY, clipId, project_id, client_id, version, clip_number, prompt, aspect, duration_seconds } = params;
   try {
     const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VEO_MODEL}:predictLongRunning?key=${GEMINI_API_KEY}`;
     const startRes = await fetch(startUrl, {
@@ -129,6 +132,17 @@ async function runVeoJob(params: {
       selected_option_index: 0,
       status: "generated",
     }).eq("id", clipId);
+
+    // Cost tracking — Veo billed per second of generated video.
+    logMediaGenUsage({
+      client_id,
+      service: "google_veo",
+      surface: "ai-video-studio",
+      model: VEO_MODEL,
+      unit: "seconds",
+      quantity: duration_seconds,
+      metadata: { project_id, clip_number, aspect },
+    }).catch((e) => console.error("logMediaGenUsage failed:", e));
   } catch (e) {
     console.error("runVeoJob error:", e);
     await admin.from("ai_video_clips").update({ status: "failed" }).eq("id", clipId);
@@ -224,9 +238,12 @@ Deno.serve(async (req) => {
 
     await admin.from("ai_video_projects").update({ status: "generating" }).eq("id", project_id);
 
+    const durationSec = Number(shot.duration_seconds) > 0 ? Number(shot.duration_seconds) : 8;
     EdgeRuntime.waitUntil(runVeoJob({
-      admin, GEMINI_API_KEY, clipId, project_id, version, clip_number,
-      prompt, aspect,
+      admin, GEMINI_API_KEY, clipId, project_id,
+      client_id: (project as any).client_id ?? null,
+      version, clip_number, prompt, aspect,
+      duration_seconds: durationSec,
     }));
 
     return json({ ok: true, clip_id: clipId, status: "generating" }, 202);

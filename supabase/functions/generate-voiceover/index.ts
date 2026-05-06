@@ -2,6 +2,7 @@
 // Uses the project's vo_script (from the AI Director) and stores the MP3
 // in the creative-assets bucket, then writes a row to ai_video_audio.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { logMediaGenUsage } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -129,6 +130,17 @@ Deno.serve(async (req) => {
     await admin.from("ai_video_projects")
       .update({ vo_voice_id: voiceId })
       .eq("id", project_id);
+
+    // Cost tracking — ElevenLabs TTS billed per character.
+    logMediaGenUsage({
+      client_id: (project as any).client_id ?? null,
+      service: "elevenlabs",
+      surface: "ai-video-studio",
+      model: MODEL_ID,
+      unit: "characters",
+      quantity: script.length,
+      metadata: { project_id, voice_id: voiceId, audio_type: "voiceover" },
+    }).catch((e) => console.error("logMediaGenUsage failed:", e));
 
     return json({ ok: true, audio_id: row.id, audio_url: row.audio_url });
   } catch (e) {

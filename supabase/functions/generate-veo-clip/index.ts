@@ -231,6 +231,12 @@ async function runVeoJob(params: {
     }
 
     await progress(admin, clipId, 92, "Uploading to storage…");
+    // Probe the actual content duration of the MP4 so the composer can place the
+    // clip on the timeline without overrunning into a frozen final frame.
+    const measuredDuration = probeMp4DurationSeconds(videoBytes);
+    if (measuredDuration) {
+      console.log(`[veo] clip ${clip_number} measured duration: ${measuredDuration}s (planned ${duration_seconds}s)`);
+    }
     const path = `ai-video/${project_id}/clips/v${version}/clip-${clip_number}-${Date.now()}.mp4`;
     const { error: upErr } = await admin.storage
       .from("creative-assets")
@@ -243,8 +249,9 @@ async function runVeoJob(params: {
     const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
 
     await admin.from("ai_video_clips").update({
-      generated_options: [{ url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString() }],
+      generated_options: [{ url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString(), duration_seconds: measuredDuration }],
       selected_option_index: 0,
+      actual_duration_seconds: measuredDuration ?? null,
       status: "generated",
       error_code: null,
       error_message: null,

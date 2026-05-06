@@ -130,23 +130,17 @@ Deno.serve(async (req) => {
     const baseStyle = STYLES[captionStyle] ?? STYLES.tiktok;
     // User-tunable overrides from project.caption_settings
     const cs = ((project as any).caption_settings ?? {}) as Record<string, any>;
-    const clamp = (v: any, min: number, max: number, fb: number) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
-    };
     const S = {
       ...baseStyle,
-      size: clamp(cs.font_size, 18, 96, baseStyle.size),
-      wordsPerChunk: clamp(cs.words_per_chunk, 1, 10, baseStyle.wordsPerChunk),
-      bgOpacity: clamp(cs.background_opacity, 0, 1, 0.55),
-      fadeDuration: clamp(cs.fade_duration, 0, 1.5, 0.25),
+      size: clampNumber(cs.font_size, 18, 96, baseStyle.size),
+      wordsPerChunk: clampNumber(cs.words_per_chunk, 1, 10, baseStyle.wordsPerChunk),
+      bgOpacity: clampNumber(cs.background_opacity, 0, 1, 0.55),
+      fadeDuration: clampNumber(cs.fade_duration, 0, 0.5, 0),
     };
     const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','fast','easy','call','watch']);
 
-    const chunkCaption = (text: string, totalDuration: number) => {
-      const cleaned = String(text)
-        .replace(/\b(Daughter|Mother|Father|Son|Narrator|Voiceover|VO|Speaker\s*\d*)\s*:/gi, '')
-        .replace(/\s+/g, ' ').trim();
+    const chunkCaption = (text: string, totalDuration: number, audioDuration?: number) => {
+      const cleaned = cleanCaptionLine(text);
       const words = cleaned.split(/\s+/).filter(Boolean);
       if (!words.length) return [] as { text: string; isHighlight: boolean; start: number; length: number }[];
       const wpc = S.wordsPerChunk;
@@ -160,13 +154,14 @@ Deno.serve(async (req) => {
       }
       // Allocate time proportional to character count so longer chunks linger.
       const totalChars = chunks.reduce((sum, c) => sum + Math.max(1, c.text.length), 0);
-      // Reserve a small lead-in so the first caption doesn't collide with cut-in.
-      const usable = Math.max(0.5, totalDuration - 0.2);
-      let t = 0.1;
+      // Narrator captions use generated VO duration when known; native-dialogue captions use
+      // the visible clip duration. No long fade/zoom transitions, which caused late subtitle pops.
+      const targetDuration = clampNumber(audioDuration, 0.5, totalDuration, totalDuration);
+      const usable = Math.max(0.5, Math.min(totalDuration, targetDuration) - 0.1);
+      let t = 0.05;
       return chunks.map((c) => {
         const share = (Math.max(1, c.text.length) / totalChars) * usable;
-        // Minimum 1.1s per chunk for readability, max 3.5s.
-        const len = Math.min(3.5, Math.max(1.1, share));
+        const len = Math.min(3.0, Math.max(0.8, share));
         const out = { ...c, start: t, length: len };
         t += len;
         return out;

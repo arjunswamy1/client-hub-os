@@ -66,6 +66,8 @@ Deno.serve(async (req) => {
     const primaryColor = brand.primary_color ?? '#0F172A';
     const accentColor = brand.accent_color ?? '#3B82F6';
 
+    const voSegments: any[] = Array.isArray(voiceover?.settings?.segments) ? voiceover.settings.segments : [];
+
     // Pre-flight: list ALL missing clips so the user fixes them in one pass
     const missing: number[] = [];
     for (const shot of shotList) {
@@ -77,10 +79,13 @@ Deno.serve(async (req) => {
     if (missing.length) {
       throw new Error(`Cannot compose — ${missing.length} of ${shotList.length} clips not generated yet. Missing: ${missing.join(', ')}. Generate each clip with Veo first.`);
     }
-    // Voiceover only required when at least one shot uses narrator_vo
+    // Voiceover only required when at least one shot uses narrator_vo.
+    // Mixed dialogue/narrator projects must use per-shot VO segments; a legacy
+    // full-length narrator file would overlap Veo's native character dialogue.
     const needsNarrator = shotList.some((s: any) => s?.speaker === 'narrator_vo' && String(s?.vo_segment || '').trim());
-    if (needsNarrator && !voiceover?.audio_url) {
-      throw new Error(`Narrator voiceover required for this shot list but missing. Click "Generate Voiceover" first.`);
+    const hasCharacterDialogue = shotList.some((s: any) => s?.speaker && s.speaker !== 'narrator_vo' && s.speaker !== 'none');
+    if (needsNarrator && (!voiceover?.audio_url || (hasCharacterDialogue && voSegments.length === 0))) {
+      throw new Error(`Narrator voiceover must be regenerated as per-clip segments before composing. Click "Regenerate Voiceover", then compose again.`);
     }
 
     // Build clip track + caption track from vo_segment
@@ -278,7 +283,6 @@ Deno.serve(async (req) => {
     // Voiceover — prefer per-shot segments so narrator only plays during narrator clips,
     // never overlapping Veo's in-scene character dialogue. Falls back to a single track for
     // legacy projects.
-    const voSegments: any[] = Array.isArray(voiceover?.settings?.segments) ? voiceover.settings.segments : [];
     if (voSegments.length > 0) {
       const voClips = voSegments
         .map((seg) => {
@@ -295,7 +299,7 @@ Deno.serve(async (req) => {
         })
         .filter(Boolean);
       if (voClips.length) tracks.push({ clips: voClips });
-    } else if (voiceover?.audio_url) {
+    } else if (voiceover?.audio_url && !hasCharacterDialogue) {
       tracks.push({ clips: [{ asset: { type: 'audio', src: voiceover.audio_url, volume: 1 }, start: 0, length: totalDuration }] });
     }
     if (music?.audio_url) {

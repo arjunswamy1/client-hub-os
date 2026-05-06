@@ -395,7 +395,7 @@ Deno.serve(async (req) => {
           const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
           const dbClip = clips?.find((c: any) => c.clip_number === Number(seg.clip_number));
           const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
-          const len = Math.min(clipTimelineDuration(shot, opt), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
+          const len = Math.min(clipTimelineDuration(shot, opt, dbClip), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
           return {
             asset: { type: 'audio', src: seg.audio_url, volume: 1 },
             start,

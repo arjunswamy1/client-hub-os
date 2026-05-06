@@ -174,6 +174,7 @@ const TOOL = {
             veo_prompt: { type: "string" },
             text_overlay: { type: "string" },
             duration_seconds: { type: "number" },
+            transition_type: { type: "string", enum: ["hard_cut", "j_cut", "l_cut", "fade_black"], description: "Transition INTO the next shot. Default hard_cut." },
           },
           required: ["clip_number", "veo_prompt", "duration_seconds", "speaker"],
         },

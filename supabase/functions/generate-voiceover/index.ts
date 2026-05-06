@@ -35,6 +35,14 @@ function cleanLine(text: string): string {
     .trim();
 }
 
+function estimateSpeechDuration(text: string, fallbackSeconds: number): number {
+  const words = cleanLine(text).split(/\s+/).filter(Boolean).length;
+  const punctuationPauses = (text.match(/[,.!?;:]/g) || []).length * 0.12;
+  const estimated = words / 2.55 + punctuationPauses + 0.15;
+  const cap = Number.isFinite(fallbackSeconds) && fallbackSeconds > 0 ? fallbackSeconds : 8;
+  return Math.round(Math.min(cap, Math.max(0.7, estimated)) * 100) / 100;
+}
+
 async function tts(text: string, voiceId: string, key: string): Promise<Uint8Array> {
   const res = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
@@ -91,6 +99,7 @@ Deno.serve(async (req) => {
       .map((s) => ({
         clip_number: Number(s.clip_number),
         text: cleanLine(s.vo_segment),
+        duration_seconds: estimateSpeechDuration(s.vo_segment, Number(s.duration_seconds) || 8),
       }));
 
     if (narratorShots.length === 0) {
@@ -105,7 +114,7 @@ Deno.serve(async (req) => {
     const version = project.current_version ?? 1;
 
     // Generate one MP3 per narrator shot in parallel.
-    const segments: { clip_number: number; audio_url: string; text: string; chars: number }[] = [];
+    const segments: { clip_number: number; audio_url: string; text: string; chars: number; duration_seconds: number }[] = [];
     let totalChars = 0;
 
     const results = await Promise.allSettled(narratorShots.map(async (shot) => {
@@ -116,7 +125,7 @@ Deno.serve(async (req) => {
         .upload(path, bytes, { contentType: "audio/mpeg", upsert: true });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
       const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
-      return { clip_number: shot.clip_number, audio_url: pub.publicUrl, text: shot.text, chars: shot.text.length };
+      return { clip_number: shot.clip_number, audio_url: pub.publicUrl, text: shot.text, chars: shot.text.length, duration_seconds: shot.duration_seconds };
     }));
 
     for (const r of results) {

@@ -77,8 +77,10 @@ Deno.serve(async (req) => {
     if (missing.length) {
       throw new Error(`Cannot compose — ${missing.length} of ${shotList.length} clips not generated yet. Missing: ${missing.join(', ')}. Generate each clip with Veo first.`);
     }
-    if (!voiceover?.audio_url) {
-      throw new Error(`No voiceover found. Click "Generate Voiceover" before composing — otherwise the final video will be silent.`);
+    // Voiceover only required when at least one shot uses narrator_vo
+    const needsNarrator = shotList.some((s: any) => s?.speaker === 'narrator_vo' && String(s?.vo_segment || '').trim());
+    if (needsNarrator && !voiceover?.audio_url) {
+      throw new Error(`Narrator voiceover required for this shot list but missing. Click "Generate Voiceover" first.`);
     }
 
     // Build clip track + caption track from vo_segment

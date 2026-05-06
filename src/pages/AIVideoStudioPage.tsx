@@ -282,9 +282,35 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
     refetchInterval: (q) => {
       const rows: any[] = (q.state.data as any[]) ?? [];
       const anyGenerating = rows.some(r => r.status === 'generating');
-      return (anyGenerating || generatingClip !== null || generatingAll) ? 5000 : false;
+      // Realtime handles most updates; keep a slow safety poll while generating.
+      return (anyGenerating || generatingClip !== null || generatingAll) ? 8000 : false;
     },
   });
+
+  // Realtime subscription — push progress updates to the cache as the edge function writes them.
+  useEffect(() => {
+    if (!projectId || !project?.current_version) return;
+    const channel = supabase
+      .channel(`ai_video_clips:${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ai_video_clips', filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const row: any = payload.new ?? payload.old;
+          if (!row || row.version !== project.current_version) return;
+          qc.setQueryData(['ai-video-clips', projectId, project.current_version], (prev: any[] = []) => {
+            const next = [...prev];
+            const idx = next.findIndex((c) => c.id === row.id);
+            if (payload.eventType === 'DELETE') return idx >= 0 ? next.filter((_, i) => i !== idx) : next;
+            if (idx >= 0) next[idx] = { ...next[idx], ...row };
+            else next.push(row);
+            return next.sort((a, b) => a.clip_number - b.clip_number);
+          });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [projectId, project?.current_version, qc]);
 
   const { data: audio } = useQuery({
     queryKey: ['ai-video-audio', projectId, project?.current_version],

@@ -2,6 +2,7 @@
 // per-shot speaker assignment (in-scene dialogue vs. narrator VO), reusable
 // character profiles, 3 hook variants, and music direction.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { logAiUsage } from "../_shared/cost-tracking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

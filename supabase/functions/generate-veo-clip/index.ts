@@ -36,12 +36,14 @@ async function runVeoJob(params: {
   GEMINI_API_KEY: string;
   clipId: string;
   project_id: string;
+  client_id: string | null;
   version: number;
   clip_number: number;
   prompt: string;
   aspect: string;
+  duration_seconds: number;
 }) {
-  const { admin, GEMINI_API_KEY, clipId, project_id, version, clip_number, prompt, aspect } = params;
+  const { admin, GEMINI_API_KEY, clipId, project_id, client_id, version, clip_number, prompt, aspect, duration_seconds } = params;
   try {
     const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VEO_MODEL}:predictLongRunning?key=${GEMINI_API_KEY}`;
     const startRes = await fetch(startUrl, {

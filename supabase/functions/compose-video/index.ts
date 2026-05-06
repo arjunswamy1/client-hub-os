@@ -193,26 +193,52 @@ Deno.serve(async (req) => {
     };
     const HIGHLIGHT_WORDS = new Set(['free','now','new','only','today','stop','never','best','huge','massive','crazy','shocking','warning','secret','proven','guaranteed','save','fast','easy','call','watch']);
 
-    const chunkCaption = (text: string, totalDuration: number, audioDuration?: number) => {
+    // Phrase-based caption builder. When the VO segment carries word-level timestamps
+    // from ElevenLabs (alignment), we snap each chunk's start/length to the actual audio.
+    // Otherwise we fall back to a proportional split inside the visible clip duration.
+    const chunkCaption = (text: string, totalDuration: number, voSeg?: any) => {
       const cleaned = cleanCaptionLine(text);
-      const words = cleaned.split(/\s+/).filter(Boolean);
-      if (!words.length) return [] as { text: string; isHighlight: boolean; start: number; length: number }[];
+      if (!cleaned) return [] as { text: string; isHighlight: boolean; start: number; length: number }[];
+
+      const words: WordTiming[] = Array.isArray(voSeg?.words) ? voSeg.words : [];
+      const audioDuration = Number(voSeg?.duration_seconds);
+
+      const markHighlight = (chunkText: string) =>
+        chunkText.split(/\s+/).some((w) => HIGHLIGHT_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, '')));
+
+      // Path A — phrase chunking from real ElevenLabs timestamps.
+      if (words.length) {
+        const phrased = chunkByPhrases(cleaned, words);
+        if (phrased.length) {
+          // Cap last chunk's end so it never exceeds the clip's visible duration.
+          const ceiling = Math.max(0.5, totalDuration);
+          return phrased.map((p) => {
+            const start = Math.max(0, Math.min(ceiling - 0.1, p.start));
+            const end = Math.max(start + 0.4, Math.min(ceiling, p.end));
+            return {
+              text: p.text,
+              isHighlight: markHighlight(p.text),
+              start,
+              length: Math.max(0.4, end - start),
+            };
+          });
+        }
+      }
+
+      // Path B — fallback heuristic when alignment is missing (legacy segments).
+      const allWords = cleaned.split(/\s+/).filter(Boolean);
       const wpc = S.wordsPerChunk;
       const chunks: { text: string; isHighlight: boolean }[] = [];
-      for (let i = 0; i < words.length; i += wpc) {
-        const slice = words.slice(i, i + wpc);
+      for (let i = 0; i < allWords.length; i += wpc) {
+        const slice = allWords.slice(i, i + wpc);
         chunks.push({
           text: slice.join(' '),
           isHighlight: slice.some((w) => HIGHLIGHT_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, ''))),
         });
       }
-      // Allocate time proportional to character count so longer chunks linger.
       const totalChars = chunks.reduce((sum, c) => sum + Math.max(1, c.text.length), 0);
-      // In realign mode we ignore the visible-clip duration entirely and snap captions to the
-      // narrator audio length, with no per-chunk cap and zero pre-roll. This is what the
-      // post-render validator triggers when drift is detected.
-      const targetDuration = isRealign && Number(audioDuration) > 0
-        ? Number(audioDuration)
+      const targetDuration = isRealign && Number.isFinite(audioDuration) && audioDuration > 0
+        ? audioDuration
         : clampNumber(audioDuration, 0.5, totalDuration, totalDuration);
       const usable = isRealign
         ? Math.max(0.5, targetDuration)

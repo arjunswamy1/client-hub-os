@@ -230,6 +230,20 @@ Deno.serve(async (req) => {
     const toolUse = (data.content || []).find((b: any) => b.type === "tool_use");
     if (!toolUse) return json({ error: "No tool_use in response" }, 500);
 
+    // Cost tracking — Anthropic Claude usage attributed to the project's client.
+    if (data.usage) {
+      logAiUsage({
+        client_id: (project as any).client_id ?? null,
+        surface: "ai-video-director",
+        model: "claude-sonnet-4-5-20250929",
+        input_tokens: data.usage.input_tokens ?? 0,
+        output_tokens: data.usage.output_tokens ?? 0,
+        cache_read_tokens: data.usage.cache_read_input_tokens ?? 0,
+        cache_write_tokens: data.usage.cache_creation_input_tokens ?? 0,
+        metadata: { project_id, framework: (project as any).ad_framework },
+      }).catch((e) => console.error("logAiUsage failed:", e));
+    }
+
     const out = toolUse.input as {
       characters: any[]; hook_variants: any[]; shot_list: any[]; music_prompt: string;
     };

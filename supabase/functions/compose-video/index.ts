@@ -172,7 +172,8 @@ Deno.serve(async (req) => {
       const dbClip = clips?.find((c: any) => c.clip_number === shot.clip_number);
       const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
       const url = dbClip!.override_video_url || opt!.url;
-      const duration = Number(shot.duration_seconds) || 8;
+      const voSegment = voSegments.find((seg) => Number(seg.clip_number) === Number(shot.clip_number));
+      const duration = clipTimelineDuration(shot, opt);
       shotStartByNumber.set(Number(shot.clip_number), cursor);
 
       // Keep Veo's native audio for in-scene character dialogue; mute narrator/silent shots.
@@ -185,7 +186,6 @@ Deno.serve(async (req) => {
         start: cursor,
         length: duration,
         fit: 'cover',
-        transition: cursor === 0 ? undefined : { in: 'fade' },
       });
 
       if (shot.text_overlay) {
@@ -209,7 +209,7 @@ Deno.serve(async (req) => {
 
       const captionText = (shot.dialogue && String(shot.dialogue).trim()) || (shot.vo_segment && String(shot.vo_segment).trim()) || '';
       if (captionText) {
-        const chunks = chunkCaption(captionText, duration);
+        const chunks = chunkCaption(captionText, duration, voSegment?.duration_seconds);
         for (const ch of chunks) {
           // Map numeric fade duration to Shotstack transition names
           const fadeName = S.fadeDuration <= 0.05
@@ -306,12 +306,13 @@ Deno.serve(async (req) => {
           const start = shotStartByNumber.get(Number(seg.clip_number));
           if (start === undefined || !seg.audio_url) return null;
           const shot = shotList.find((s: any) => Number(s.clip_number) === Number(seg.clip_number));
-          const len = Math.max(0.5, Number(shot?.duration_seconds) || 8);
+          const dbClip = clips?.find((c: any) => c.clip_number === Number(seg.clip_number));
+          const opt = dbClip?.generated_options?.[dbClip?.selected_option_index ?? 0];
+          const len = Math.min(clipTimelineDuration(shot, opt), clampNumber(seg.duration_seconds, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, MAX_SAFE_VEO_CLIP_SECONDS));
           return {
             asset: { type: 'audio', src: seg.audio_url, volume: 1 },
             start,
             length: len,
-            transition: { in: 'fade', out: 'fade' },
           };
         })
         .filter(Boolean);

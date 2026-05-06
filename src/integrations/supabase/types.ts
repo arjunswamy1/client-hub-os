@@ -662,6 +662,7 @@ export type Database = {
       }
       ai_video_clips: {
         Row: {
+          actual_duration_seconds: number | null
           clip_number: number
           created_at: string
           error_code: string | null
@@ -694,6 +695,7 @@ export type Database = {
           vo_text: string | null
         }
         Insert: {
+          actual_duration_seconds?: number | null
           clip_number: number
           created_at?: string
           error_code?: string | null
@@ -726,6 +728,7 @@ export type Database = {
           vo_text?: string | null
         }
         Update: {
+          actual_duration_seconds?: number | null
           clip_number?: number
           created_at?: string
           error_code?: string | null

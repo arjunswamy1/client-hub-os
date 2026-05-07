@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Slider } from '@/components/ui/slider';
-import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download, AlertCircle, CheckCircle2, Clock, XCircle, Type } from 'lucide-react';
+import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download, AlertCircle, CheckCircle2, Clock, XCircle, Type, Zap, MessageSquare, DollarSign } from 'lucide-react';
 
 const TONES = ['Urgent', 'Calm', 'Premium', 'Playful', 'Dramatic', 'Informational', 'Emotional', 'High-Energy'];
 const STYLES = ['Cinematic', 'UGC-Style', 'Corporate', 'Lifestyle', 'Product-Focused', 'Abstract'];
@@ -796,7 +796,44 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                       <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Voiceover</div>
                       <p className="mt-1 italic">"{s.vo_segment}"</p>
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {opt?.url && (c?.generated_options?.length ?? 0) > 1 && (
+                        <Select
+                          value={String(c.selected_option_index ?? 0)}
+                          onValueChange={async (v) => {
+                            await supabase.from('ai_video_clips').update({ selected_option_index: Number(v) }).eq('id', c.id);
+                            qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {(c.generated_options as any[]).map((_o: any, idx: number) => (
+                              <SelectItem key={idx} value={String(idx)}>Take {idx + 1}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {opt?.url && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={async () => {
+                            try {
+                              const { error } = await supabase.functions.invoke('generate-veo-clip', {
+                                body: { project_id: projectId, clip_number: s.clip_number, append_take: true },
+                              });
+                              if (error) throw error;
+                              toast.success(`Generating another take for clip ${s.clip_number}…`);
+                              qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+                            } catch (e: any) {
+                              toast.error(e.message || 'Failed');
+                            }
+                          }}
+                          disabled={isGen || generatingAll}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />Try Another Take
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" onClick={() => generateClip(s.clip_number)} disabled={isGen || generatingAll}>
                         {isGen ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Video className="mr-2 h-4 w-4" />}
                         {opt?.url ? 'Regenerate' : 'Generate Clip'}
@@ -831,6 +868,10 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
           )}
 
           <CaptionSettingsCard projectId={projectId} initial={(project as any).caption_settings ?? {}} captionStyle={(project as any).caption_style ?? 'tiktok'} />
+
+          <QuickFixCard projectId={projectId} project={project as any} />
+
+          <TargetedFeedbackCard projectId={projectId} />
 
           <FinalRenderCard projectId={projectId} version={project.current_version ?? 1} />
         </>
@@ -957,6 +998,215 @@ function CaptionSettingsCard({ projectId, initial, captionStyle }: { projectId: 
             Save settings
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function QuickFixCard({ projectId, project }: { projectId: string; project: any }) {
+  const qc = useQueryClient();
+  const [phone, setPhone] = useState<string>(project.phone_overlay ?? '');
+  const [cta, setCta] = useState<string>(project.cta_overlay ?? '');
+  const [endCard, setEndCard] = useState<string>(project.end_card_text ?? '');
+  const [disclaimer, setDisclaimer] = useState<string>(project.disclaimer_overlay ?? '');
+  const [musicVol, setMusicVol] = useState<number>(
+    Number.isFinite(Number(project.music_volume)) ? Number(project.music_volume) : 0.18,
+  );
+  const [saving, setSaving] = useState(false);
+
+  const dirty =
+    phone !== (project.phone_overlay ?? '') ||
+    cta !== (project.cta_overlay ?? '') ||
+    endCard !== (project.end_card_text ?? '') ||
+    disclaimer !== (project.disclaimer_overlay ?? '') ||
+    Math.abs(musicVol - (Number(project.music_volume) || 0.18)) > 0.001;
+
+  const apply = async (recompose: boolean) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('ai_video_projects')
+        .update({
+          phone_overlay: phone || null,
+          cta_overlay: cta || null,
+          end_card_text: endCard || null,
+          disclaimer_overlay: disclaimer || null,
+          music_volume: musicVol,
+        })
+        .eq('id', projectId);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ['ai-video-project', projectId] });
+      if (recompose) {
+        const { error: cErr } = await supabase.functions.invoke('compose-video', { body: { project_id: projectId } });
+        if (cErr) throw cErr;
+        toast.success('Quick Fix applied — re-rendering (~30s, ~$0.03)');
+        qc.invalidateQueries({ queryKey: ['ai-video-render', projectId] });
+      } else {
+        toast.success('Saved — recompose to apply');
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Quick Fix failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2"><Zap className="h-4 w-4" />Quick Fixes</CardTitle>
+        <CardDescription className="text-xs">
+          Edit overlay text and music volume without burning AI credits. Re-render only — about <strong>$0.03, ~30s</strong>.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label className="text-xs">Phone overlay</Label>
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="555-867-5309" />
+          </div>
+          <div>
+            <Label className="text-xs">CTA text</Label>
+            <Input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="Get Quote Now" />
+          </div>
+          <div>
+            <Label className="text-xs">End card headline</Label>
+            <Input value={endCard} onChange={(e) => setEndCard(e.target.value)} placeholder="Call today!" />
+          </div>
+          <div>
+            <Label className="text-xs">Disclaimer (small print)</Label>
+            <Input value={disclaimer} onChange={(e) => setDisclaimer(e.target.value)} placeholder="*Restrictions apply." />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Music volume</Label>
+            <span className="text-xs tabular-nums text-muted-foreground">{Math.round(musicVol * 100)}%</span>
+          </div>
+          <Slider min={0} max={1} step={0.02} value={[musicVol]} onValueChange={(v) => setMusicVol(v[0])} />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => apply(false)} disabled={!dirty || saving}>Save only</Button>
+          <Button size="sm" onClick={() => apply(true)} disabled={!dirty || saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+            Apply &amp; Re-render
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TargetedFeedbackCard({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [text, setText] = useState('');
+  const [classifying, setClassifying] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [classification, setClassification] = useState<any>(null);
+
+  const classify = async () => {
+    if (!text.trim()) return;
+    setClassifying(true);
+    setClassification(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('classify-video-feedback', {
+        body: { project_id: projectId, feedback_text: text.trim() },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setClassification(data);
+    } catch (e: any) {
+      toast.error(e.message || 'Classification failed');
+    } finally {
+      setClassifying(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!classification) return;
+    setApplying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('apply-video-edit', {
+        body: {
+          project_id: projectId,
+          feedback_text: text.trim(),
+          classification,
+          is_quick_fix: ['OVERLAY_EDIT', 'CAPTION_EDIT', 'TIMING_EDIT', 'MUSIC_EDIT'].includes(classification.category),
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(`Applied: ${classification.summary}`);
+      setText('');
+      setClassification(null);
+      qc.invalidateQueries({ queryKey: ['ai-video-project', projectId] });
+      qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+      qc.invalidateQueries({ queryKey: ['ai-video-render', projectId] });
+    } catch (e: any) {
+      toast.error(e.message || 'Apply failed');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const categoryColor = (c: string) => {
+    if (c === 'VISUAL_EDIT') return 'destructive';
+    if (c === 'VO_EDIT') return 'default';
+    return 'secondary';
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2"><MessageSquare className="h-4 w-4" />Targeted Feedback</CardTitle>
+        <CardDescription className="text-xs">
+          Describe what to change in plain English. The AI routes it to the cheapest action and shows cost before applying.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Textarea
+          rows={3}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder='e.g. "Make the captions bigger" · "Change the phone number to 555-1234" · "Clip 3 should show a happier family"'
+        />
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={classify} disabled={!text.trim() || classifying}>
+            {classifying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            Analyze
+          </Button>
+        </div>
+
+        {classification && (
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Badge variant={categoryColor(classification.category) as any}>{classification.category}</Badge>
+              <div className="flex items-center gap-1 text-sm font-semibold tabular-nums">
+                <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                {Number(classification.estimated_cost ?? 0).toFixed(2)}
+              </div>
+            </div>
+            <p className="text-sm">{classification.summary}</p>
+            {Array.isArray(classification.affected_clips) && classification.affected_clips.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                Affects clip{classification.affected_clips.length > 1 ? 's' : ''}: {classification.affected_clips.join(', ')}
+              </div>
+            )}
+            {classification.changes && Object.keys(classification.changes).length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">Show changes</summary>
+                <pre className="mt-2 overflow-auto rounded bg-background p-2 text-[11px]">{JSON.stringify(classification.changes, null, 2)}</pre>
+              </details>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button size="sm" variant="ghost" onClick={() => setClassification(null)} disabled={applying}>Cancel</Button>
+              <Button size="sm" onClick={apply} disabled={applying}>
+                {applying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                Confirm &amp; Apply (${Number(classification.estimated_cost ?? 0).toFixed(2)})
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

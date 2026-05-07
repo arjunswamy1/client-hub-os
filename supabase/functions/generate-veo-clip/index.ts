@@ -138,8 +138,10 @@ async function runVeoJob(params: {
   prompt: string;
   aspect: string;
   duration_seconds: number;
+  append_take?: boolean;
+  existing_options?: any[];
 }) {
-  const { admin, GEMINI_API_KEY, clipId, project_id, client_id, version, clip_number, prompt, aspect, duration_seconds } = params;
+  const { admin, GEMINI_API_KEY, clipId, project_id, client_id, version, clip_number, prompt, aspect, duration_seconds, append_take, existing_options } = params;
   try {
     await progress(admin, clipId, 5, "Submitting prompt to Veo…");
     const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VEO_MODEL}:predictLongRunning?key=${GEMINI_API_KEY}`;
@@ -248,16 +250,22 @@ async function runVeoJob(params: {
     }
     const { data: pub } = admin.storage.from("creative-assets").getPublicUrl(path);
 
+    const newOption = { url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString(), duration_seconds: measuredDuration };
+    const finalOptions = append_take && Array.isArray(existing_options) && existing_options.length > 0
+      ? [...existing_options, newOption]
+      : [newOption];
+    const finalSelectedIndex = append_take ? finalOptions.length - 1 : 0;
+
     await admin.from("ai_video_clips").update({
-      generated_options: [{ url: pub.publicUrl, source: "veo", generated_at: new Date().toISOString(), duration_seconds: measuredDuration }],
-      selected_option_index: 0,
+      generated_options: finalOptions,
+      selected_option_index: finalSelectedIndex,
       actual_duration_seconds: measuredDuration ?? null,
       status: "generated",
       error_code: null,
       error_message: null,
       failed_at: null,
       progress_pct: 100,
-      progress_message: "Done",
+      progress_message: append_take ? `Take ${finalOptions.length} ready` : "Done",
       progress_updated_at: new Date().toISOString(),
     }).eq("id", clipId);
 
@@ -302,10 +310,11 @@ Deno.serve(async (req) => {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) return json({ error: "Unauthorized" }, 401);
 
-    const { project_id, clip_number } = await req.json();
+    const { project_id, clip_number, append_take } = await req.json();
     if (!project_id || typeof clip_number !== "number") {
       return json({ error: "project_id and clip_number required" }, 400);
     }
+    const isAppendTake = Boolean(append_take);
 
     const { data: project, error: pErr } = await supabase
       .from("ai_video_projects").select("*").eq("id", project_id).single();
@@ -360,21 +369,27 @@ Deno.serve(async (req) => {
       error_message: null,
       failed_at: null,
       progress_pct: 1,
-      progress_message: "Queued — starting Veo job…",
+      progress_message: isAppendTake ? "Generating additional take…" : "Queued — starting Veo job…",
       progress_updated_at: new Date().toISOString(),
       started_at: new Date().toISOString(),
     };
 
     const { data: existing } = await admin
       .from("ai_video_clips")
-      .select("id")
+      .select("id, generated_options")
       .eq("project_id", project_id).eq("version", version).eq("clip_number", clip_number)
       .maybeSingle();
 
     let clipId: string;
+    let existingOptions: any[] = [];
     if (existing) {
       clipId = (existing as any).id;
-      await admin.from("ai_video_clips").update(baseRow).eq("id", clipId);
+      existingOptions = Array.isArray((existing as any).generated_options) ? (existing as any).generated_options : [];
+      // When appending a take we keep existing options; only update status & prompt.
+      const update = isAppendTake
+        ? { status: baseRow.status, progress_pct: baseRow.progress_pct, progress_message: baseRow.progress_message, progress_updated_at: baseRow.progress_updated_at, started_at: baseRow.started_at, error_code: null, error_message: null, failed_at: null }
+        : baseRow;
+      await admin.from("ai_video_clips").update(update).eq("id", clipId);
     } else {
       const { data: ins, error: insErr } = await admin
         .from("ai_video_clips").insert(baseRow).select("id").single();
@@ -390,6 +405,8 @@ Deno.serve(async (req) => {
       client_id: (project as any).client_id ?? null,
       version, clip_number, prompt, aspect,
       duration_seconds: durationSec,
+      append_take: isAppendTake,
+      existing_options: existingOptions,
     }));
 
     return json({ ok: true, clip_id: clipId, status: "generating" }, 202);

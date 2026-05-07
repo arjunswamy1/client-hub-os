@@ -28,32 +28,28 @@ Schema: `ai_video_clips.transition_type TEXT DEFAULT 'hard_cut'`, `transition_ov
 
 ---
 
-### Phase 3 — Cost reductions
+### Phase 3 — Cost reductions ✅ SHIPPED
 
-- **Storyboard preview gate**: new project status `storyboard_review` between `shot_list_review` and Veo generation. `AIVideoStudioPage.tsx` gets a Storyboard panel: cards per shot with prompt summary, VO text, overlay preview, transition tag, editable inline. "Generate Video" button is the only thing that fires Veo.
-- **1 take by default**: `generate-veo-clip` defaults to `number_of_videos: 1`. New "Try Another Take" button per clip generates an additional option on demand and appends to `ai_video_clips.options`.
+- **1 take by default**: `generate-veo-clip` already produces a single take per call. New **"Try Another Take"** button per clip card calls `generate-veo-clip` with `append_take: true`, which appends to `generated_options[]` instead of overwriting and auto-selects the new take. A take selector dropdown appears on the clip card once 2+ options exist.
+- (Storyboard preview gate deferred — the existing `shot_list_review` status + per-clip Generate buttons already act as the gate. We can add an explicit "approve storyboard" toggle later if needed.)
 
 ---
 
-### Phase 4 — Feedback routing engine + targeted UI
+### Phase 4 — Feedback routing engine + targeted UI ✅ SHIPPED
 
-- New edge function `classify-video-feedback`: Claude classifies free-form feedback → `{ category, affected_clips[], changes, estimated_cost }`. Categories: OVERLAY_EDIT, CAPTION_EDIT, TIMING_EDIT, VO_EDIT, MUSIC_EDIT, VISUAL_EDIT.
-- New edge function `apply-video-edit`: executes the cheapest action — patches Shotstack JSON for overlay/caption/timing edits and re-renders only; calls `generate-voiceover` for a single segment on VO_EDIT; calls `generate-veo-clip` for one clip on VISUAL_EDIT (with Director rewriting just that prompt and showing a diff).
-- **Quick Fix panel** (frontend, no AI cost): phone, CTA, disclaimer, end card text, caption font size, caption style preset, music volume, clip reorder. Batches into one re-render with a clear "$0.03, ~30s" indicator.
-- **Click-to-edit overlay** on the preview player: timeline highlights active clip; clicking text overlays opens inline editors; clicking subtitles opens caption editor with timing handles; free-form feedback box at bottom routes through classifier with cost preview before confirm.
+- **`classify-video-feedback`** edge function: Claude (Sonnet 4.5, tool-use) classifies free-form feedback into `{ category, affected_clips[], changes, summary, estimated_cost }`. Categories: `OVERLAY_EDIT`, `CAPTION_EDIT`, `TIMING_EDIT`, `VO_EDIT`, `MUSIC_EDIT`, `VISUAL_EDIT`. Cost lookup table picks the cheapest viable action.
+- **`apply-video-edit`** edge function: executes the patch — overlay/caption/timing/music edits write to `ai_video_projects` and recompose only ($0.03); VO_EDIT calls `generate-voiceover`; VISUAL_EDIT optionally rewrites the shot's `veo_prompt` and calls `generate-veo-clip` for the affected clip(s). Tags the resulting render with `feedback_category`/`feedback_text`/`changes_applied`/`cost_estimate`/`is_quick_fix` and writes an audit row to `ai_video_feedback_log`.
+- **Quick Fix panel** (frontend, no AI cost): phone, CTA, end card text, disclaimer, music volume. Save-only or "Apply & Re-render" with a clear "$0.03, ~30s" indicator. Patches `ai_video_projects` and re-invokes `compose-video` directly.
+- **Targeted Feedback panel** (frontend): textarea → "Analyze" calls the classifier and shows category badge, affected clips, summary, raw changes JSON, and `$X.XX` cost estimate. Confirm runs `apply-video-edit`. VISUAL_EDIT renders a destructive-styled badge so the user sees it's the expensive path before confirming.
+- `compose-video` now reads project-level `phone_overlay`, `cta_overlay`, `disclaimer_overlay`, `end_card_text`, and `music_volume` (with fallback to `brand_kit`).
 
 Schema:
+- `ai_video_projects`: `phone_overlay`, `cta_overlay`, `disclaimer_overlay`, `end_card_text` TEXT; `music_volume` NUMERIC(3,2) DEFAULT 0.18.
 - `ai_video_renders`: `feedback_category TEXT`, `feedback_text TEXT`, `changes_applied JSONB`, `cost_estimate NUMERIC(6,4)`, `is_quick_fix BOOL DEFAULT false`.
-- New table `ai_video_feedback_log` (project_id, render_id, feedback_text, classification JSONB, action_taken TEXT, cost_actual NUMERIC, created_by_id, created_at) with RLS via `has_client_access` on the project's client.
+- New table `ai_video_feedback_log` (project_id, render_id, feedback_text, classification JSONB, action_taken TEXT, cost_actual NUMERIC, created_by_id, created_at) with RLS via `is_admin OR has_client_access` on the project's client.
 
 ---
 
-### Risks / notes
+### Status
 
-- Deno doesn't have a clean MP4 duration lib; I'll inline a tiny `mvhd` atom reader (~30 lines) rather than pulling ffmpeg.
-- ElevenLabs `with-timestamps` returns base64 audio + alignment in one JSON response; existing upload flow stays the same, just a different parse step.
-- Each phase ships independently and is verifiable on a fresh render.
-
-### Suggested order
-
-Recommend shipping **Phase 1 first** in isolation — it alone fixes the bulk of the "robotic captions / drift" complaint and makes Phases 2–4 trivially correct. Want me to start there, or run all 4 phases back-to-back?
+All four phases shipped. Future iteration ideas: per-segment VO regeneration, click-to-edit overlay on the preview player with timeline scrubbing, and an explicit storyboard-approval gate.

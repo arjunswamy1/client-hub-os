@@ -869,6 +869,10 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
 
           <CaptionSettingsCard projectId={projectId} initial={(project as any).caption_settings ?? {}} captionStyle={(project as any).caption_style ?? 'tiktok'} />
 
+          <QuickFixCard projectId={projectId} project={project as any} />
+
+          <TargetedFeedbackCard projectId={projectId} />
+
           <FinalRenderCard projectId={projectId} version={project.current_version ?? 1} />
         </>
       )}

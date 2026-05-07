@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Slider } from '@/components/ui/slider';
-import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download, AlertCircle, CheckCircle2, Clock, XCircle, Type } from 'lucide-react';
+import { Sparkles, Film, Loader2, Plus, ArrowLeft, RefreshCw, Video, Mic, Music, Wand2, Download, AlertCircle, CheckCircle2, Clock, XCircle, Type, Zap, MessageSquare, DollarSign } from 'lucide-react';
 
 const TONES = ['Urgent', 'Calm', 'Premium', 'Playful', 'Dramatic', 'Informational', 'Emotional', 'High-Energy'];
 const STYLES = ['Cinematic', 'UGC-Style', 'Corporate', 'Lifestyle', 'Product-Focused', 'Abstract'];

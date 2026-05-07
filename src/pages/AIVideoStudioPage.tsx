@@ -796,7 +796,44 @@ function ShotListView({ projectId, onBack }: { projectId: string; onBack: () => 
                       <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Voiceover</div>
                       <p className="mt-1 italic">"{s.vo_segment}"</p>
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {opt?.url && (c?.generated_options?.length ?? 0) > 1 && (
+                        <Select
+                          value={String(c.selected_option_index ?? 0)}
+                          onValueChange={async (v) => {
+                            await supabase.from('ai_video_clips').update({ selected_option_index: Number(v) }).eq('id', c.id);
+                            qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {(c.generated_options as any[]).map((_o: any, idx: number) => (
+                              <SelectItem key={idx} value={String(idx)}>Take {idx + 1}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {opt?.url && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={async () => {
+                            try {
+                              const { error } = await supabase.functions.invoke('generate-veo-clip', {
+                                body: { project_id: projectId, clip_number: s.clip_number, append_take: true },
+                              });
+                              if (error) throw error;
+                              toast.success(`Generating another take for clip ${s.clip_number}…`);
+                              qc.invalidateQueries({ queryKey: ['ai-video-clips', projectId] });
+                            } catch (e: any) {
+                              toast.error(e.message || 'Failed');
+                            }
+                          }}
+                          disabled={isGen || generatingAll}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />Try Another Take
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" onClick={() => generateClip(s.clip_number)} disabled={isGen || generatingAll}>
                         {isGen ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Video className="mr-2 h-4 w-4" />}
                         {opt?.url ? 'Regenerate' : 'Generate Clip'}

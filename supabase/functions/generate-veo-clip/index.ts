@@ -302,10 +302,11 @@ Deno.serve(async (req) => {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) return json({ error: "Unauthorized" }, 401);
 
-    const { project_id, clip_number } = await req.json();
+    const { project_id, clip_number, append_take } = await req.json();
     if (!project_id || typeof clip_number !== "number") {
       return json({ error: "project_id and clip_number required" }, 400);
     }
+    const isAppendTake = Boolean(append_take);
 
     const { data: project, error: pErr } = await supabase
       .from("ai_video_projects").select("*").eq("id", project_id).single();

@@ -135,12 +135,14 @@ Deno.serve(async (req) => {
 
     const { width, height, ratio } = aspectToSize(project.aspect_ratio ?? '9:16');
     const brand = (project.brand_kit ?? {}) as Record<string, any>;
-    const phone = brand.phone ?? brand.phone_number ?? '';
-    const disclaimer = brand.disclaimer ?? '';
-    const endCardHeadline = brand.end_card_headline ?? project.cta ?? '';
+    // Phase 3+4: project-level Quick Fix overrides take precedence over brand_kit.
+    const phone = (project as any).phone_overlay || brand.phone || brand.phone_number || '';
+    const disclaimer = (project as any).disclaimer_overlay || brand.disclaimer || '';
+    const endCardHeadline = (project as any).end_card_text || brand.end_card_headline || project.cta || '';
     const endCardSub = brand.end_card_sub ?? phone;
     const primaryColor = brand.primary_color ?? '#0F172A';
     const accentColor = brand.accent_color ?? '#3B82F6';
+    const musicVolume = clampNumber((project as any).music_volume, 0, 1, 0.18);
 
     const voSegments: any[] = Array.isArray(voiceover?.settings?.segments) ? voiceover.settings.segments : [];
 
@@ -450,7 +452,7 @@ Deno.serve(async (req) => {
     }
     if (music?.audio_url) {
       tracks.push({ clips: [{
-        asset: { type: 'audio', src: music.audio_url, volume: voiceover?.audio_url ? 0.18 : 0.6 },
+        asset: { type: 'audio', src: music.audio_url, volume: voiceover?.audio_url || voSegments.length > 0 ? musicVolume : Math.max(musicVolume, 0.5) },
         start: 0, length: totalDuration,
         transition: { in: 'fade', out: 'fade' },
       }]});

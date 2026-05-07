@@ -776,6 +776,57 @@ export type Database = {
           },
         ]
       }
+      ai_video_feedback_log: {
+        Row: {
+          action_taken: string | null
+          classification: Json | null
+          cost_actual: number | null
+          created_at: string
+          created_by_id: string | null
+          feedback_text: string
+          id: string
+          project_id: string
+          render_id: string | null
+        }
+        Insert: {
+          action_taken?: string | null
+          classification?: Json | null
+          cost_actual?: number | null
+          created_at?: string
+          created_by_id?: string | null
+          feedback_text: string
+          id?: string
+          project_id: string
+          render_id?: string | null
+        }
+        Update: {
+          action_taken?: string | null
+          classification?: Json | null
+          cost_actual?: number | null
+          created_at?: string
+          created_by_id?: string | null
+          feedback_text?: string
+          id?: string
+          project_id?: string
+          render_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_video_feedback_log_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "ai_video_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_video_feedback_log_render_id_fkey"
+            columns: ["render_id"]
+            isOneToOne: false
+            referencedRelation: "ai_video_renders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_video_projects: {
         Row: {
           ad_framework: string | null
@@ -789,7 +840,10 @@ export type Database = {
           created_at: string
           created_by_id: string | null
           cta: string | null
+          cta_overlay: string | null
           current_version: number
+          disclaimer_overlay: string | null
+          end_card_text: string | null
           freeform_brief: string | null
           hook_variants: Json | null
           id: string
@@ -798,8 +852,10 @@ export type Database = {
           landing_page_url: string | null
           music_prompt: string | null
           music_settings: Json | null
+          music_volume: number | null
           objective: string | null
           overlay_plan: Json | null
+          phone_overlay: string | null
           reference_image_urls: string[] | null
           reference_video_urls: string[] | null
           selected_hook_index: number | null
@@ -829,7 +885,10 @@ export type Database = {
           created_at?: string
           created_by_id?: string | null
           cta?: string | null
+          cta_overlay?: string | null
           current_version?: number
+          disclaimer_overlay?: string | null
+          end_card_text?: string | null
           freeform_brief?: string | null
           hook_variants?: Json | null
           id?: string
@@ -838,8 +897,10 @@ export type Database = {
           landing_page_url?: string | null
           music_prompt?: string | null
           music_settings?: Json | null
+          music_volume?: number | null
           objective?: string | null
           overlay_plan?: Json | null
+          phone_overlay?: string | null
           reference_image_urls?: string[] | null
           reference_video_urls?: string[] | null
           selected_hook_index?: number | null
@@ -869,7 +930,10 @@ export type Database = {
           created_at?: string
           created_by_id?: string | null
           cta?: string | null
+          cta_overlay?: string | null
           current_version?: number
+          disclaimer_overlay?: string | null
+          end_card_text?: string | null
           freeform_brief?: string | null
           hook_variants?: Json | null
           id?: string
@@ -878,8 +942,10 @@ export type Database = {
           landing_page_url?: string | null
           music_prompt?: string | null
           music_settings?: Json | null
+          music_volume?: number | null
           objective?: string | null
           overlay_plan?: Json | null
+          phone_overlay?: string | null
           reference_image_urls?: string[] | null
           reference_video_urls?: string[] | null
           selected_hook_index?: number | null
@@ -918,12 +984,17 @@ export type Database = {
         Row: {
           caption_realign_count: number
           caption_validation: Json | null
+          changes_applied: Json | null
           completed_at: string | null
+          cost_estimate: number | null
           created_at: string
           duration_seconds: number | null
           edit_json: Json | null
           error_message: string | null
+          feedback_category: string | null
+          feedback_text: string | null
           id: string
+          is_quick_fix: boolean
           output_url: string | null
           parent_render_id: string | null
           poster_url: string | null
@@ -938,12 +1009,17 @@ export type Database = {
         Insert: {
           caption_realign_count?: number
           caption_validation?: Json | null
+          changes_applied?: Json | null
           completed_at?: string | null
+          cost_estimate?: number | null
           created_at?: string
           duration_seconds?: number | null
           edit_json?: Json | null
           error_message?: string | null
+          feedback_category?: string | null
+          feedback_text?: string | null
           id?: string
+          is_quick_fix?: boolean
           output_url?: string | null
           parent_render_id?: string | null
           poster_url?: string | null
@@ -958,12 +1034,17 @@ export type Database = {
         Update: {
           caption_realign_count?: number
           caption_validation?: Json | null
+          changes_applied?: Json | null
           completed_at?: string | null
+          cost_estimate?: number | null
           created_at?: string
           duration_seconds?: number | null
           edit_json?: Json | null
           error_message?: string | null
+          feedback_category?: string | null
+          feedback_text?: string | null
           id?: string
+          is_quick_fix?: boolean
           output_url?: string | null
           parent_render_id?: string | null
           poster_url?: string | null

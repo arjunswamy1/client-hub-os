@@ -218,7 +218,10 @@ Deno.serve(async (req) => {
 
       // Path A — phrase chunking from real ElevenLabs timestamps.
       if (words.length) {
-        const phrased = chunkByPhrases(cleaned, words);
+        // Char cap scales inversely with font size so chunks always fit the asset width.
+        // Tuned for Montserrat ExtraBold uppercase at the styles defined above.
+        const charCap = Math.round(1500 / Math.max(28, S.size));
+        const phrased = chunkByPhrases(cleaned, words, { wordCap: S.wordsPerChunk, charCap });
         if (phrased.length) {
           // Cap last chunk's end so it never exceeds the clip's visible duration.
           const ceiling = Math.max(0.5, totalDuration);

@@ -60,7 +60,13 @@ const PREP_WORDS = new Set(['in', 'on', 'at', 'for', 'to', 'with', 'from', 'of',
 
 // Split a transcript into natural phrase-sized caption chunks using ElevenLabs word timings.
 // Falls back to a heuristic word-count split when no timings are present.
-function chunkByPhrases(text: string, words: WordTiming[]): { text: string; start: number; end: number }[] {
+function chunkByPhrases(
+  text: string,
+  words: WordTiming[],
+  opts: { wordCap?: number; charCap?: number } = {},
+): { text: string; start: number; end: number }[] {
+  const wordCap = Math.max(2, Math.min(8, opts.wordCap ?? 4));
+  const charCap = Math.max(14, Math.min(40, opts.charCap ?? 26));
   const tokens = text.split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
   // Best-effort align tokens to word timings (whitespace tokenization may differ slightly).
@@ -89,14 +95,16 @@ function chunkByPhrases(text: string, words: WordTiming[]): { text: string; star
     const w = timed[i];
     buf.push(w);
     const next = timed[i + 1];
-    const cleanWord = w.word.replace(/[^a-z]/gi, '').toLowerCase();
     const nextClean = next?.word.replace(/[^a-z]/gi, '').toLowerCase();
     const endsWithPunct = /[,.\-!?;:]$/.test(w.word);
     const breathGap = next ? (next.start - w.end) > 0.2 : false;
-    const beforeConj = next && buf.length >= 3 && PHRASE_LEAD_WORDS.has(nextClean ?? '');
-    const beforePrep = next && buf.length >= 4 && PREP_WORDS.has(nextClean ?? '');
-    const hardCap = buf.length >= 6;
-    if (endsWithPunct || breathGap || beforeConj || beforePrep || hardCap || !next) {
+    const beforeConj = next && buf.length >= 2 && PHRASE_LEAD_WORDS.has(nextClean ?? '');
+    const beforePrep = next && buf.length >= 3 && PREP_WORDS.has(nextClean ?? '');
+    const currentChars = buf.reduce((n, x) => n + x.word.length, 0) + (buf.length - 1);
+    const nextChars = next ? currentChars + 1 + next.word.length : currentChars;
+    const wordCapHit = buf.length >= wordCap;
+    const charCapHit = next ? nextChars > charCap : false;
+    if (endsWithPunct || breathGap || beforeConj || beforePrep || wordCapHit || charCapHit || !next) {
       flush();
     }
   }

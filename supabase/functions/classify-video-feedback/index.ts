@@ -102,7 +102,7 @@ REQUIRED key formats for "changes" by category:
 - VO_EDIT: {vo_script}
 - VISUAL_EDIT: {veo_prompt} with affected_clips=[N]
 
-Use the classify_feedback tool.\`;
+Use the classify_feedback tool.`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

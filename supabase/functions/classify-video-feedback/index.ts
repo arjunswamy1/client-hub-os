@@ -92,7 +92,17 @@ User feedback:
 ${feedback_text}
 """
 
-Choose ONE category. Prefer the cheapest action that satisfies the feedback. Only choose VISUAL_EDIT if the user explicitly wants different visuals/footage that cannot be solved with overlays, captions, timing, audio, or VO. Use the classify_feedback tool.`;
+Choose ONE category. Prefer the cheapest action that satisfies the feedback. Only choose VISUAL_EDIT if the user explicitly wants different visuals/footage that cannot be solved with overlays, captions, timing, audio, or VO.
+
+REQUIRED key formats for "changes" by category:
+- OVERLAY_EDIT: {phone, cta, disclaimer, end_card}
+- CAPTION_EDIT: {font_size, words_per_chunk, background_opacity, fade_duration, style}
+- MUSIC_EDIT: {music_volume (0..1), music_prompt}
+- TIMING_EDIT: EITHER per-clip "clip_<N>_duration" (final length sec, 0.5-8) and/or "clip_<N>_trim_start" (skip sec from front), OR set affected_clips=[N] plus {trim_start, trim_end} describing seconds to REMOVE from the source clip. You may also set {order: [clip_numbers]} to reorder. Example: "cut seconds 4-8 of clip 2" → affected_clips=[2], changes={trim_start:4, trim_end:8}. "make clip 1 only 3 seconds" → changes={clip_1_duration:3}.
+- VO_EDIT: {vo_script}
+- VISUAL_EDIT: {veo_prompt} with affected_clips=[N]
+
+Use the classify_feedback tool.\`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

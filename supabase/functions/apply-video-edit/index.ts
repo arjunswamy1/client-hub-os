@@ -77,20 +77,45 @@ Deno.serve(async (req) => {
       if (changes.music_volume !== undefined) projectUpdate.music_volume = Math.max(0, Math.min(1, Number(changes.music_volume)));
       if (changes.music_prompt !== undefined) projectUpdate.music_prompt = String(changes.music_prompt);
     } else if (category === "TIMING_EDIT") {
-      // Patch durations / order on shot_list.
+      // Patch durations / trims / order on shot_list.
       const shots = Array.isArray((project as any).shot_list) ? [...(project as any).shot_list] : [];
+      const setShot = (cn: number, patch: Record<string, any>) => {
+        const idx = shots.findIndex((s: any) => Number(s.clip_number) === cn);
+        if (idx >= 0) shots[idx] = { ...shots[idx], ...patch };
+      };
+      // Pattern 1: explicit clip_N_duration / clip_N_trim_start
       Object.entries(changes).forEach(([k, v]) => {
-        const m = k.match(/^clip_(\d+)_duration$/);
-        if (m) {
-          const cn = Number(m[1]);
-          const idx = shots.findIndex((s: any) => Number(s.clip_number) === cn);
-          if (idx >= 0) shots[idx] = { ...shots[idx], duration_seconds: Math.max(2, Math.min(8, Number(v))) };
-        }
+        const md = k.match(/^clip_(\d+)_duration$/);
+        if (md) setShot(Number(md[1]), { duration_seconds: Math.max(0.5, Math.min(8, Number(v))) });
+        const mt = k.match(/^clip_(\d+)_trim_start$/);
+        if (mt) setShot(Number(mt[1]), { trim_start_seconds: Math.max(0, Math.min(8, Number(v))) });
       });
+      // Pattern 2: affected_clips + trim_start / trim_end (treat as "remove seconds [trim_start..trim_end] from each clip")
+      const ts = changes.trim_start !== undefined ? Number(changes.trim_start) : null;
+      const te = changes.trim_end !== undefined ? Number(changes.trim_end) : null;
+      if (affected.length && (ts !== null || te !== null)) {
+        for (const cn of affected) {
+          const cur = shots.find((s: any) => Number(s.clip_number) === cn);
+          const sourceLen = Number(cur?.duration_seconds) > 0 ? Number(cur.duration_seconds) : 8;
+          const start = ts !== null ? Math.max(0, ts) : 0;
+          const end = te !== null ? Math.min(sourceLen, te) : sourceLen;
+          // Two interpretations: if trim_start>0 keep [0..start] (drop tail), else trim from front.
+          // Most common feedback is "cut seconds X to Y" = remove that range. If start==0 → keep [end..sourceLen] (trim front).
+          // Otherwise → keep [0..start] (drop tail). Pick whichever leaves more content.
+          const keepHead = start;
+          const keepTail = sourceLen - end;
+          if (keepHead >= keepTail) {
+            setShot(cn, { duration_seconds: Math.max(0.5, keepHead), trim_start_seconds: 0 });
+          } else {
+            setShot(cn, { duration_seconds: Math.max(0.5, keepTail), trim_start_seconds: end });
+          }
+        }
+      }
       if (Array.isArray(changes.order)) {
         const order: number[] = changes.order.map((n: any) => Number(n));
         const reordered = order.map((cn) => shots.find((s: any) => Number(s.clip_number) === cn)).filter(Boolean);
         if (reordered.length === shots.length) projectUpdate.shot_list = reordered;
+        else projectUpdate.shot_list = shots;
       } else {
         projectUpdate.shot_list = shots;
       }

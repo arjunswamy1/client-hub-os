@@ -330,8 +330,9 @@ Deno.serve(async (req) => {
       const isCharacterDialogue = speaker && speaker !== 'narrator_vo' && speaker !== 'none';
       const videoVolume = isCharacterDialogue ? 1 : 0;
 
+      const trimStart = Math.max(0, Number(shot?.trim_start_seconds) || 0);
       videoClips.push({
-        asset: { type: 'video', src: url, volume: videoVolume },
+        asset: { type: 'video', src: url, volume: videoVolume, ...(trimStart > 0 ? { trim: trimStart } : {}) },
         start: videoStart,
         length: videoLen,
         fit: 'cover',

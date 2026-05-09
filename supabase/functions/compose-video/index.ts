@@ -47,10 +47,14 @@ function clipTimelineDuration(shot: any, opt: any, dbClip?: any) {
   // Prefer the actual measured duration from the downloaded MP4 if available.
   const measured = Number(dbClip?.actual_duration_seconds);
   const generated = Number(opt?.duration_seconds ?? opt?.metadata?.duration_seconds ?? opt?.duration);
-  const best = Number.isFinite(measured) && measured > 0
+  const sourceLen = Number.isFinite(measured) && measured > 0
     ? measured
     : (generated || Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
-  return clampNumber(best, 1, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
+  const trimStart = Math.max(0, Number(shot?.trim_start_seconds) || 0);
+  const available = Math.max(0.5, sourceLen - trimStart);
+  // shot.duration_seconds acts as an UPPER CAP on the timeline length so TIMING_EDIT trims work.
+  const capped = Math.min(available, planned);
+  return clampNumber(capped, 0.5, MAX_SAFE_VEO_CLIP_SECONDS, Math.min(planned, MAX_SAFE_VEO_CLIP_SECONDS));
 }
 
 interface WordTiming { word: string; start: number; end: number; }

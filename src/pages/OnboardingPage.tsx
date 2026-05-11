@@ -232,6 +232,14 @@ function OnboardingSurvey({ clientId, tokenData }: { clientId: string; tokenData
         ) : (
           <>
             {currentStep === 0 && (
+              <KickoffIntro
+                clientName={tokenData.client_name}
+                videoUrl={tokenData.kickoff_video_url}
+                intro={tokenData.kickoff_intro}
+                actionItems={tokenData.kickoff_action_items}
+              />
+            )}
+            {currentStep === 0 && (
               <CampaignSection
                 data={sectionData.campaign}
                 onUpdate={(f, v) => updateSectionField('campaign', f, v)}

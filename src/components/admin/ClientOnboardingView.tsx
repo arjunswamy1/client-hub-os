@@ -17,8 +17,37 @@ interface OnboardingClient {
   company: string | null;
   status: string;
   created_at: string;
+  kickoff_video_url?: string | null;
   responses?: any[];
   context?: any;
+}
+
+function KickoffVideoEditor({ token, onSaved }: { token: OnboardingClient; onSaved: (url: string) => void }) {
+  const [url, setUrl] = useState(token.kickoff_video_url || '');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('onboarding_tokens')
+      .update({ kickoff_video_url: url.trim() || null })
+      .eq('id', token.id);
+    setSaving(false);
+    if (error) toast.error(error.message);
+    else { toast.success('Kickoff video saved'); onSaved(url.trim()); }
+  };
+  return (
+    <Card>
+      <CardHeader className="py-3"><CardTitle className="text-sm">Kickoff Welcome Video</CardTitle></CardHeader>
+      <CardContent className="space-y-2">
+        <Input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://youtu.be/... or https://www.youtube.com/watch?v=..."
+        />
+        <Button size="sm" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Video URL'}</Button>
+      </CardContent>
+    </Card>
+  );
 }
 
 function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
@@ -29,6 +58,7 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
   const [company, setCompany] = useState('');
   const [slug, setSlug] = useState('');
   const [color, setColor] = useState('#3CAB7A');
+  const [kickoffVideoUrl, setKickoffVideoUrl] = useState('');
   const [clients, setClients] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
 
@@ -92,6 +122,7 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
       client_name: finalClientName,
       company: company || null,
       status: 'invited',
+      kickoff_video_url: kickoffVideoUrl.trim() || null,
     });
 
     if (error) {
@@ -196,6 +227,16 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
           <div>
             <label className="text-sm font-medium">Company Name (optional)</label>
             <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Parent company or DBA" />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium">Kickoff Welcome Video URL (optional)</label>
+            <Input
+              value={kickoffVideoUrl}
+              onChange={e => setKickoffVideoUrl(e.target.value)}
+              placeholder="https://youtu.be/... or https://www.youtube.com/watch?v=..."
+            />
+            <p className="text-xs text-muted-foreground mt-1">YouTube link from Charles thanking the client. Editable later.</p>
           </div>
 
           <Button onClick={handleCreate} disabled={creating} className="w-full">
@@ -338,6 +379,18 @@ export function ClientOnboardingView() {
           </span>
         </div>
         {selectedToken.company && <p className="text-sm text-muted-foreground">{selectedToken.company}</p>}
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => copyLink(selectedToken.token)}>
+            <Copy className="w-3.5 h-3.5 mr-1" /> Copy Onboarding Link
+          </Button>
+        </div>
+        <KickoffVideoEditor
+          token={selectedToken}
+          onSaved={(url) => {
+            setSelectedToken({ ...selectedToken, kickoff_video_url: url });
+            fetchTokens();
+          }}
+        />
         <ResponseViewer responses={responses} context={context} />
       </div>
     );

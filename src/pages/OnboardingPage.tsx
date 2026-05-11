@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useOnboarding, useOnboardingToken } from '@/hooks/useOnboarding';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
 import { OnboardingSuccess } from '@/components/onboarding/OnboardingSuccess';
+import { KickoffIntro } from '@/components/onboarding/KickoffIntro';
 import { CampaignSection } from '@/components/onboarding/sections/CampaignSection';
 import { CreativeSection } from '@/components/onboarding/sections/CreativeSection';
 import { AccessSection } from '@/components/onboarding/sections/AccessSection';
@@ -93,7 +94,14 @@ function CreateAccountStep({ tokenData, onAccountCreated }: {
         </div>
       </div>
 
-      <div className="max-w-[480px] mx-auto mt-12 px-5">
+      <div className="max-w-[680px] mx-auto mt-12 px-5 space-y-6">
+        <KickoffIntro
+          clientName={tokenData.client_name}
+          videoUrl={(tokenData as any).kickoff_video_url}
+          intro={(tokenData as any).kickoff_intro}
+          actionItems={(tokenData as any).kickoff_action_items}
+        />
+
         <div className="bg-white rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="bg-[#3CAB7A] px-8 py-8">
             <h1 className="text-2xl font-bold text-white">Create Your Client Hub Account</h1>
@@ -158,7 +166,7 @@ function CreateAccountStep({ tokenData, onAccountCreated }: {
   );
 }
 
-function OnboardingSurvey({ clientId }: { clientId: string }) {
+function OnboardingSurvey({ clientId, tokenData }: { clientId: string; tokenData: any }) {
   const {
     sectionData, currentStep, isLoading, isSaving, isSubmitting, isComplete,
     updateSectionField, nextStep, prevStep, submitOnboarding,
@@ -223,6 +231,14 @@ function OnboardingSurvey({ clientId }: { clientId: string }) {
           <OnboardingSuccess />
         ) : (
           <>
+            {currentStep === 0 && (
+              <KickoffIntro
+                clientName={tokenData.client_name}
+                videoUrl={tokenData.kickoff_video_url}
+                intro={tokenData.kickoff_intro}
+                actionItems={tokenData.kickoff_action_items}
+              />
+            )}
             {currentStep === 0 && (
               <CampaignSection
                 data={sectionData.campaign}
@@ -306,5 +322,5 @@ export default function OnboardingPage() {
     return <CreateAccountStep tokenData={tokenData} onAccountCreated={() => setIsAuthenticated(true)} />;
   }
 
-  return <OnboardingSurvey clientId={tokenData.client_id} />;
+  return <OnboardingSurvey clientId={tokenData.client_id} tokenData={tokenData} />;
 }

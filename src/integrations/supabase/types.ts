@@ -2973,6 +2973,9 @@ export type Database = {
           created_at: string
           expires_at: string | null
           id: string
+          kickoff_action_items: Json
+          kickoff_intro: string | null
+          kickoff_video_url: string | null
           status: string
           token: string
           updated_at: string
@@ -2985,6 +2988,9 @@ export type Database = {
           created_at?: string
           expires_at?: string | null
           id?: string
+          kickoff_action_items?: Json
+          kickoff_intro?: string | null
+          kickoff_video_url?: string | null
           status?: string
           token: string
           updated_at?: string
@@ -2997,6 +3003,9 @@ export type Database = {
           created_at?: string
           expires_at?: string | null
           id?: string
+          kickoff_action_items?: Json
+          kickoff_intro?: string | null
+          kickoff_video_url?: string | null
           status?: string
           token?: string
           updated_at?: string

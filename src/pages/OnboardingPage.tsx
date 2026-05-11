@@ -94,19 +94,25 @@ function CreateAccountStep({ tokenData, onAccountCreated }: {
         </div>
       </div>
 
-      <div className="max-w-[680px] mx-auto mt-12 px-5 space-y-6">
+      <div className="max-w-[680px] mx-auto mt-12 px-5 space-y-6 pb-16">
         <KickoffIntro
           clientName={tokenData.client_name}
           videoUrl={(tokenData as any).kickoff_video_url}
           intro={(tokenData as any).kickoff_intro}
           actionItems={(tokenData as any).kickoff_action_items}
+          ctaItem={{
+            label: 'Create your CPM Client Hub account to start onboarding',
+            targetId: 'create-account-form',
+            done: false,
+          }}
         />
 
-        <div className="bg-white rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.08)] overflow-hidden">
+        <div id="create-account-form" className="bg-white rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.08)] overflow-hidden scroll-mt-6">
           <div className="bg-[#3CAB7A] px-8 py-8">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/70 mb-1">Final step</div>
             <h1 className="text-2xl font-bold text-white">Create Your Client Hub Account</h1>
             <p className="mt-2 text-sm text-white/80">
-              Welcome, {tokenData.client_name}! Create your account to begin onboarding.
+              This unlocks your dashboard and the rest of the onboarding survey.
             </p>
           </div>
 

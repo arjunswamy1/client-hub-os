@@ -87,13 +87,13 @@ export function KickoffIntro({ clientName, videoUrl, intro, actionItems, ctaItem
         </div>
       )}
 
-      {items.length > 0 && (
+      {(items.length > 0 || ctaItem) && (
         <div className="px-8 py-6">
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">
             Action items from our kickoff
           </h3>
 
-          {evolveItems.length > 0 && (
+          {(evolveItems.length > 0 || ctaItem) && (
             <div className="mb-4">
               <div className="text-[11px] font-semibold text-[#3CAB7A] uppercase tracking-wider mb-2">
                 What we need from you
@@ -119,6 +119,37 @@ export function KickoffIntro({ clientName, videoUrl, intro, actionItems, ctaItem
                     </li>
                   );
                 })}
+                {ctaItem && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = document.getElementById(ctaItem.targetId);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                      className={`w-full flex items-center gap-3 text-left p-3 rounded-lg border-2 transition-all ${
+                        ctaItem.done
+                          ? 'border-[#3CAB7A] bg-[#3CAB7A]/5'
+                          : 'border-[#3CAB7A] bg-[#3CAB7A] hover:bg-[#2D8F63] shadow-md'
+                      }`}
+                    >
+                      {ctaItem.done
+                        ? <CheckCircle2 className="w-5 h-5 text-[#3CAB7A] flex-shrink-0" />
+                        : <Circle className="w-5 h-5 text-white flex-shrink-0" strokeWidth={2.5} />
+                      }
+                      <span className={`text-sm font-semibold leading-snug flex-1 ${
+                        ctaItem.done ? 'text-[#2D8F63]' : 'text-white'
+                      }`}>
+                        {ctaItem.label}
+                      </span>
+                      {!ctaItem.done && (
+                        <span className="text-xs font-bold uppercase tracking-wider text-white/90">
+                          Start →
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                )}
               </ul>
             </div>
           )}

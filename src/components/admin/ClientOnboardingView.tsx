@@ -29,6 +29,7 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
   const [company, setCompany] = useState('');
   const [slug, setSlug] = useState('');
   const [color, setColor] = useState('#3CAB7A');
+  const [kickoffVideoUrl, setKickoffVideoUrl] = useState('');
   const [clients, setClients] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
 

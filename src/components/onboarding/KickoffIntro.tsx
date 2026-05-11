@@ -13,6 +13,8 @@ interface KickoffIntroProps {
   videoUrl?: string | null;
   intro?: string | null;
   actionItems?: ActionItem[];
+  /** Optional CTA appended at end of "what we need from you" — usually "Create your account". */
+  ctaItem?: { label: string; targetId: string; done?: boolean };
 }
 
 // Convert a YouTube watch/shorts/youtu.be URL into an embed URL

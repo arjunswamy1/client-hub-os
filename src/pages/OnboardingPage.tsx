@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useOnboarding, useOnboardingToken } from '@/hooks/useOnboarding';
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader';
 import { OnboardingSuccess } from '@/components/onboarding/OnboardingSuccess';
+import { KickoffIntro } from '@/components/onboarding/KickoffIntro';
 import { CampaignSection } from '@/components/onboarding/sections/CampaignSection';
 import { CreativeSection } from '@/components/onboarding/sections/CreativeSection';
 import { AccessSection } from '@/components/onboarding/sections/AccessSection';

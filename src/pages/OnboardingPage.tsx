@@ -166,7 +166,7 @@ function CreateAccountStep({ tokenData, onAccountCreated }: {
   );
 }
 
-function OnboardingSurvey({ clientId }: { clientId: string }) {
+function OnboardingSurvey({ clientId, tokenData }: { clientId: string; tokenData: any }) {
   const {
     sectionData, currentStep, isLoading, isSaving, isSubmitting, isComplete,
     updateSectionField, nextStep, prevStep, submitOnboarding,

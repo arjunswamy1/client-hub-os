@@ -379,6 +379,18 @@ export function ClientOnboardingView() {
           </span>
         </div>
         {selectedToken.company && <p className="text-sm text-muted-foreground">{selectedToken.company}</p>}
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => copyLink(selectedToken.token)}>
+            <Copy className="w-3.5 h-3.5 mr-1" /> Copy Onboarding Link
+          </Button>
+        </div>
+        <KickoffVideoEditor
+          token={selectedToken}
+          onSaved={(url) => {
+            setSelectedToken({ ...selectedToken, kickoff_video_url: url });
+            fetchTokens();
+          }}
+        />
         <ResponseViewer responses={responses} context={context} />
       </div>
     );

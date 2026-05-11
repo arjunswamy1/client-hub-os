@@ -322,5 +322,5 @@ export default function OnboardingPage() {
     return <CreateAccountStep tokenData={tokenData} onAccountCreated={() => setIsAuthenticated(true)} />;
   }
 
-  return <OnboardingSurvey clientId={tokenData.client_id} />;
+  return <OnboardingSurvey clientId={tokenData.client_id} tokenData={tokenData} />;
 }

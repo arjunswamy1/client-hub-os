@@ -200,6 +200,16 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
             <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Parent company or DBA" />
           </div>
 
+          <div>
+            <label className="text-sm font-medium">Kickoff Welcome Video URL (optional)</label>
+            <Input
+              value={kickoffVideoUrl}
+              onChange={e => setKickoffVideoUrl(e.target.value)}
+              placeholder="https://youtu.be/... or https://www.youtube.com/watch?v=..."
+            />
+            <p className="text-xs text-muted-foreground mt-1">YouTube link from Charles thanking the client. Editable later.</p>
+          </div>
+
           <Button onClick={handleCreate} disabled={creating} className="w-full">
             {creating ? 'Creating...' : mode === 'new' ? 'Create Client & Generate Link' : 'Generate Onboarding Link'}
           </Button>

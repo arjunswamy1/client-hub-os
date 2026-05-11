@@ -94,7 +94,14 @@ function CreateAccountStep({ tokenData, onAccountCreated }: {
         </div>
       </div>
 
-      <div className="max-w-[480px] mx-auto mt-12 px-5">
+      <div className="max-w-[680px] mx-auto mt-12 px-5 space-y-6">
+        <KickoffIntro
+          clientName={tokenData.client_name}
+          videoUrl={(tokenData as any).kickoff_video_url}
+          intro={(tokenData as any).kickoff_intro}
+          actionItems={(tokenData as any).kickoff_action_items}
+        />
+
         <div className="bg-white rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="bg-[#3CAB7A] px-8 py-8">
             <h1 className="text-2xl font-bold text-white">Create Your Client Hub Account</h1>

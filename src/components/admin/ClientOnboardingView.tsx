@@ -17,8 +17,37 @@ interface OnboardingClient {
   company: string | null;
   status: string;
   created_at: string;
+  kickoff_video_url?: string | null;
   responses?: any[];
   context?: any;
+}
+
+function KickoffVideoEditor({ token, onSaved }: { token: OnboardingClient; onSaved: (url: string) => void }) {
+  const [url, setUrl] = useState(token.kickoff_video_url || '');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('onboarding_tokens')
+      .update({ kickoff_video_url: url.trim() || null })
+      .eq('id', token.id);
+    setSaving(false);
+    if (error) toast.error(error.message);
+    else { toast.success('Kickoff video saved'); onSaved(url.trim()); }
+  };
+  return (
+    <Card>
+      <CardHeader className="py-3"><CardTitle className="text-sm">Kickoff Welcome Video</CardTitle></CardHeader>
+      <CardContent className="space-y-2">
+        <Input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://youtu.be/... or https://www.youtube.com/watch?v=..."
+        />
+        <Button size="sm" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Video URL'}</Button>
+      </CardContent>
+    </Card>
+  );
 }
 
 function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {

@@ -39,7 +39,7 @@ function toYouTubeEmbed(url: string): string | null {
   }
 }
 
-export function KickoffIntro({ clientName, videoUrl, intro, actionItems }: KickoffIntroProps) {
+export function KickoffIntro({ clientName, videoUrl, intro, actionItems, ctaItem }: KickoffIntroProps) {
   const items = actionItems || [];
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 

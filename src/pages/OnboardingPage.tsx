@@ -243,8 +243,15 @@ function OnboardingSurvey({ clientId, tokenData }: { clientId: string; tokenData
                 videoUrl={tokenData.kickoff_video_url}
                 intro={tokenData.kickoff_intro}
                 actionItems={tokenData.kickoff_action_items}
+                ctaItem={{
+                  label: 'Create your CPM Client Hub account to start onboarding',
+                  targetId: 'onboarding-survey-start',
+                  done: true,
+                }}
               />
             )}
+            <div id="onboarding-survey-start" />
+
             {currentStep === 0 && (
               <CampaignSection
                 data={sectionData.campaign}

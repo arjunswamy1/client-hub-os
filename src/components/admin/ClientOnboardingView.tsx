@@ -93,6 +93,7 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
       client_name: finalClientName,
       company: company || null,
       status: 'invited',
+      kickoff_video_url: kickoffVideoUrl.trim() || null,
     });
 
     if (error) {

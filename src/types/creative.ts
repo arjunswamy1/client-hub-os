@@ -135,7 +135,7 @@ export const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   ready_for_review: { label: 'Ready for Review', color: 'bg-purple-100 text-purple-700' },
   revision_requested: { label: 'Revision Requested', color: 'bg-orange-100 text-orange-700' },
   approved: { label: 'Approved', color: 'bg-green-100 text-green-700' },
-  delivered: { label: 'Delivered', color: 'bg-green-200 text-green-800' },
+  delivered: { label: 'Done', color: 'bg-green-200 text-green-800' },
 };
 
 export const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {

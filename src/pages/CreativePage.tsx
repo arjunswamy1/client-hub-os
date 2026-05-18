@@ -97,6 +97,7 @@ export default function CreativePage() {
             <TabsList>
               <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
               <TabsTrigger value="mywork">My Work</TabsTrigger>
+              <TabsTrigger value="kanban">Kanban</TabsTrigger>
               <TabsTrigger value="planner">Planner</TabsTrigger>
               <TabsTrigger value="hours">Hours</TabsTrigger>
             </TabsList>
@@ -108,6 +109,14 @@ export default function CreativePage() {
 
           <TabsContent value="mywork" className="mt-4">
             <MyWorkQueue onBriefClick={setSelectedId} />
+          </TabsContent>
+
+          <TabsContent value="kanban" className="mt-4">
+            <BriefKanban
+              briefs={briefs}
+              onBriefClick={setSelectedId}
+              onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
+            />
           </TabsContent>
 
           <TabsContent value="planner" className="mt-4">

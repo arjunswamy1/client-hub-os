@@ -35,7 +35,7 @@ interface Props {
 
 export function BriefKanban({ briefs, onBriefClick, onStatusChange }: Props) {
   const { isAdmin, teamMember } = useAuth();
-  const canManage = isAdmin || ['account_manager', 'creative_director'].includes(teamMember?.role || '');
+  const canManage = isAdmin || ['account_manager', 'creative_director', 'designer'].includes(teamMember?.role || '');
   const queryClient = useQueryClient();
   const [editingBrief, setEditingBrief] = useState<any | null>(null);
   const [deletingBrief, setDeletingBrief] = useState<any | null>(null);

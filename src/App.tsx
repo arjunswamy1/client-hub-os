@@ -35,6 +35,7 @@ import ProductionPage from "./pages/ProductionPage";
 import TalentApplyPage from "./pages/TalentApplyPage";
 import AIVideoStudioPage from "./pages/AIVideoStudioPage";
 import IntegrationHealthPage from "./pages/IntegrationHealthPage";
+import ClientDIDsPage from "./pages/ClientDIDsPage";
 
 const queryClient = new QueryClient();
 
@@ -129,6 +130,7 @@ function ProtectedRoutes() {
           <Route path="/production" element={<ProductionPage />} />
           <Route path="/ai-video" element={<AIVideoStudioPage />} />
           <Route path="/integration-health" element={<IntegrationHealthPage />} />
+          <Route path="/dids" element={<ClientDIDsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

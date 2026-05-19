@@ -1659,6 +1659,132 @@ export type Database = {
           },
         ]
       }
+      client_did_history: {
+        Row: {
+          ad_length: string | null
+          audience_cluster: string | null
+          campaign_name: string | null
+          changed_at: string
+          changed_by_id: string | null
+          creative_name: string | null
+          did_id: string
+          id: string
+          platform: string | null
+          status: string | null
+        }
+        Insert: {
+          ad_length?: string | null
+          audience_cluster?: string | null
+          campaign_name?: string | null
+          changed_at?: string
+          changed_by_id?: string | null
+          creative_name?: string | null
+          did_id: string
+          id?: string
+          platform?: string | null
+          status?: string | null
+        }
+        Update: {
+          ad_length?: string | null
+          audience_cluster?: string | null
+          campaign_name?: string | null
+          changed_at?: string
+          changed_by_id?: string | null
+          creative_name?: string | null
+          did_id?: string
+          id?: string
+          platform?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_did_history_changed_by_id_fkey"
+            columns: ["changed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_did_history_did_id_fkey"
+            columns: ["did_id"]
+            isOneToOne: false
+            referencedRelation: "client_dids"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_dids: {
+        Row: {
+          ad_length: string | null
+          assigned_at: string
+          assigned_by_id: string | null
+          audience_cluster: string | null
+          campaign_name: string | null
+          client_id: string
+          created_at: string
+          creative_name: string | null
+          did: string
+          did_formatted: string | null
+          id: string
+          notes: string | null
+          platform: string | null
+          status: string
+          targeting_notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          ad_length?: string | null
+          assigned_at?: string
+          assigned_by_id?: string | null
+          audience_cluster?: string | null
+          campaign_name?: string | null
+          client_id: string
+          created_at?: string
+          creative_name?: string | null
+          did: string
+          did_formatted?: string | null
+          id?: string
+          notes?: string | null
+          platform?: string | null
+          status?: string
+          targeting_notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ad_length?: string | null
+          assigned_at?: string
+          assigned_by_id?: string | null
+          audience_cluster?: string | null
+          campaign_name?: string | null
+          client_id?: string
+          created_at?: string
+          creative_name?: string | null
+          did?: string
+          did_formatted?: string | null
+          id?: string
+          notes?: string | null
+          platform?: string | null
+          status?: string
+          targeting_notes?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_dids_assigned_by_id_fkey"
+            columns: ["assigned_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_dids_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_drive_config: {
         Row: {
           client_id: string
@@ -3091,6 +3217,75 @@ export type Database = {
           },
         ]
       }
+      platform_spend_4js: {
+        Row: {
+          audience_cluster: string | null
+          campaign_name: string | null
+          clicks: number | null
+          client_id: string
+          completed_views: number | null
+          created_at: string
+          creative_name: string | null
+          date: string
+          id: string
+          impressions: number | null
+          platform: string
+          source: string
+          spend: number | null
+          updated_at: string
+          uploaded_by_id: string | null
+        }
+        Insert: {
+          audience_cluster?: string | null
+          campaign_name?: string | null
+          clicks?: number | null
+          client_id: string
+          completed_views?: number | null
+          created_at?: string
+          creative_name?: string | null
+          date: string
+          id?: string
+          impressions?: number | null
+          platform: string
+          source?: string
+          spend?: number | null
+          updated_at?: string
+          uploaded_by_id?: string | null
+        }
+        Update: {
+          audience_cluster?: string | null
+          campaign_name?: string | null
+          clicks?: number | null
+          client_id?: string
+          completed_views?: number | null
+          created_at?: string
+          creative_name?: string | null
+          date?: string
+          id?: string
+          impressions?: number | null
+          platform?: string
+          source?: string
+          spend?: number | null
+          updated_at?: string
+          uploaded_by_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_spend_4js_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_spend_4js_uploaded_by_id_fkey"
+            columns: ["uploaded_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ringba_calls: {
         Row: {
           call_date: string
@@ -3146,6 +3341,89 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ringba_calls_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ringba_calls_4js: {
+        Row: {
+          audience_cluster: string | null
+          buyer_name: string | null
+          call_duration_seconds: number | null
+          call_start: string
+          caller_city: string | null
+          caller_number: string | null
+          caller_state: string | null
+          campaign_name: string | null
+          client_id: string
+          connected: boolean | null
+          connection_duration_seconds: number | null
+          created_at: string
+          creative_name: string | null
+          did: string
+          disposition: string | null
+          id: string
+          payout: number | null
+          platform: string | null
+          publisher_name: string | null
+          ringba_call_id: string
+          tags: Json | null
+          target_name: string | null
+        }
+        Insert: {
+          audience_cluster?: string | null
+          buyer_name?: string | null
+          call_duration_seconds?: number | null
+          call_start: string
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_name?: string | null
+          client_id: string
+          connected?: boolean | null
+          connection_duration_seconds?: number | null
+          created_at?: string
+          creative_name?: string | null
+          did: string
+          disposition?: string | null
+          id?: string
+          payout?: number | null
+          platform?: string | null
+          publisher_name?: string | null
+          ringba_call_id: string
+          tags?: Json | null
+          target_name?: string | null
+        }
+        Update: {
+          audience_cluster?: string | null
+          buyer_name?: string | null
+          call_duration_seconds?: number | null
+          call_start?: string
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_name?: string | null
+          client_id?: string
+          connected?: boolean | null
+          connection_duration_seconds?: number | null
+          created_at?: string
+          creative_name?: string | null
+          did?: string
+          disposition?: string | null
+          id?: string
+          payout?: number | null
+          platform?: string | null
+          publisher_name?: string | null
+          ringba_call_id?: string
+          tags?: Json | null
+          target_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ringba_calls_4js_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"

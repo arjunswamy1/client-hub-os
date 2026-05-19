@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
-  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall
+  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -25,6 +25,7 @@ const clientNavItems = [
   { title: 'AI Assistant', url: '/ai', icon: Bot },
   { title: 'Campaign Build', url: '/campaign-build', icon: Rocket },
   { title: 'DIDs', url: '/dids', icon: PhoneCall },
+  { title: 'Spend Upload', url: '/spend-upload', icon: Upload },
 ];
 
 const bottomItems = [

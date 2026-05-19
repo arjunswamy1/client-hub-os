@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useFourJsCalls, useFourJsSpend, triggerFourJsSync, FourJsCall } from "@/hooks/useFourJsData";
+import { useFourJsCalls, useFourJsSpend, triggerFourJsSync, triggerGoogleDemandGenSync, FourJsCall } from "@/hooks/useFourJsData";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -64,6 +64,7 @@ export default function FourJsDashboard() {
   const { data: calls = [], isLoading: callsLoading, dataUpdatedAt, refetch: refetchCalls } = useFourJsCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useFourJsSpend();
   const [syncing, setSyncing] = useState(false);
+  const [syncingGoogle, setSyncingGoogle] = useState(false);
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + Number(r.spend || 0), 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);
@@ -136,14 +137,33 @@ export default function FourJsDashboard() {
     } finally { setSyncing(false); }
   };
 
+  const handleGoogleSync = async () => {
+    setSyncingGoogle(true);
+    try {
+      const { data, error } = await triggerGoogleDemandGenSync(30);
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Google Demand Gen synced — ${data?.records_synced ?? 0} rows`);
+      await refetchSpend();
+    } catch (e: any) {
+      toast.error(e.message || "Google sync failed");
+    } finally { setSyncingGoogle(false); }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Last synced: {lastSync}</p>
-        <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} className="gap-1.5">
-          <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Syncing…" : "Refresh now"}
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={handleGoogleSync} disabled={syncingGoogle} className="gap-1.5">
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingGoogle ? "animate-spin" : ""}`} />
+            {syncingGoogle ? "Syncing Google…" : "Sync Google Demand Gen"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} className="gap-1.5">
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing…" : "Refresh Ringba"}
+          </Button>
+        </div>
       </div>
 
       {/* KPI Row */}

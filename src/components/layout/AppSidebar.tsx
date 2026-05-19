@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
-  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles
+  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -24,6 +24,7 @@ const clientNavItems = [
   { title: 'Context Feed', url: '/context', icon: Database },
   { title: 'AI Assistant', url: '/ai', icon: Bot },
   { title: 'Campaign Build', url: '/campaign-build', icon: Rocket },
+  { title: 'DIDs', url: '/dids', icon: PhoneCall },
 ];
 
 const bottomItems = [

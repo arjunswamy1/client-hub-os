@@ -5,6 +5,7 @@ import CrossChannelView from '@/components/dashboard/CrossChannelView';
 import GoogleDashboard from '@/components/dashboard/GoogleDashboard';
 import MetaDashboard from '@/components/dashboard/MetaDashboard';
 import BillyDashboard from '@/components/dashboard/BillyDashboard';
+import FourJsDashboard from '@/components/dashboard/FourJsDashboard';
 import DashboardHighlights from '@/components/dashboard/DashboardHighlights';
 import DateRangePicker from '@/components/dashboard/DateRangePicker';
 import { BookCallButton } from '@/components/portal/BookCallButton';
@@ -17,6 +18,14 @@ function isBillyClient(client: { slug: string; name: string } | null): boolean {
   const slug = client.slug.toLowerCase();
   const name = client.name.toLowerCase();
   return slug.includes('billy') || name.includes('billy');
+}
+
+/** Detect 4Js Final Expense client */
+function isFourJsClient(client: { slug: string; name: string } | null): boolean {
+  if (!client) return false;
+  const slug = client.slug.toLowerCase();
+  const name = client.name.toLowerCase();
+  return slug === '4js' || slug.includes('four-j') || name.includes('4js') || name.includes("four j");
 }
 
 function DashboardContent() {
@@ -32,6 +41,7 @@ function DashboardContent() {
   }
 
   const isBilly = isBillyClient(activeClient) || config?.revenue_source === 'ringba';
+  const isFourJs = isFourJsClient(activeClient);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -39,7 +49,7 @@ function DashboardContent() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">{activeClient.name}</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
-            {isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
+            {isFourJs ? 'Final Expense — Pay-per-Call Attribution' : isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -48,7 +58,9 @@ function DashboardContent() {
         </div>
       </div>
 
-      {isBilly ? (
+      {isFourJs ? (
+        <FourJsDashboard />
+      ) : isBilly ? (
         <BillyDashboard />
       ) : (
         <Tabs defaultValue="highlights" className="space-y-4">

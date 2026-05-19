@@ -83,3 +83,9 @@ export function triggerFourJsSync(daysBack = 7) {
     body: { days_back: daysBack },
   });
 }
+
+export function triggerGoogleDemandGenSync(daysBack = 30) {
+  return supabase.functions.invoke("sync-google-demand-gen-4js", {
+    body: { days_back: daysBack },
+  });
+}

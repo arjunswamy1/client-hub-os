@@ -253,25 +253,12 @@ Deno.serve(async (req) => {
               const isCreativeOnly = CREATIVE_ONLY_CHANNELS.includes(normalizedChannel) ||
                                      CREATIVE_ONLY_CHANNELS.includes(task.channel);
 
-              // ──── Creative-only channels: create brief, SKIP task entirely ────
+              // ──── Creative-only channels (e.g. #cpm_malena): SKIP entirely ────
+              // Briefs for Malena should only be created manually by Henry/Belu
+              // via the Creative Production flow — not auto-generated from Slack.
               if (isCreativeOnly) {
-                try {
-                  const briefPriority = task.priority === 'high' ? 'high' : task.priority === 'low' ? 'low' : 'medium';
-                  const { error: briefError } = await supabase.from('creative_briefs').insert({
-                    client_id,
-                    title: task.title,
-                    status: 'draft',
-                    priority: briefPriority,
-                    creative_type: 'static',
-                    assigned_to_id: assigneeId,
-                    notes: `[Auto-created from Slack #${normalizedChannel}]\n\n${task.context}`,
-                  });
-                  if (briefError) console.error('Creative brief creation error:', briefError);
-                  else console.log('Creative brief auto-created (no task) for:', task.title);
-                } catch (briefErr) {
-                  console.error('Creative brief creation exception:', briefErr);
-                }
-                continue; // Skip task creation for creative-only channels
+                console.log('Skipping auto-creation for creative-only channel:', normalizedChannel, '—', task.title);
+                continue;
               }
 
               // ──── Normal channel: create a task ────

@@ -3,27 +3,49 @@ import { CheckCircle2, Circle, PlayCircle } from 'lucide-react';
 
 function linkify(text: string): React.ReactNode[] {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
-  const matches = text.match(urlRegex) || [];
+  // Strip any Slack invite URLs that appear as plain text (we render a single clean link instead)
+  const slackUrlRegex = /https?:\/\/(?:[^\s]*\.)?slack\.com\/[^\s]+/gi;
+  let firstSlackUrl: string | null = null;
+  const cleaned = text.replace(slackUrlRegex, (m) => {
+    if (!firstSlackUrl) firstSlackUrl = m;
+    return '';
+  }).replace(/\s{2,}/g, ' ').replace(/\s+([.,;:!?])/g, '$1').trim();
+
+  const parts = cleaned.split(urlRegex);
+  const matches = cleaned.match(urlRegex) || [];
   const result: React.ReactNode[] = [];
   parts.forEach((part, i) => {
     result.push(part);
     if (matches[i]) {
-      const isSlack = matches[i].includes('join.slack.com');
       result.push(
         <a
-          key={i}
+          key={`m-${i}`}
           href={matches[i]}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[#3CAB7A] underline hover:text-[#2D8F63] break-all"
           onClick={(e) => e.stopPropagation()}
         >
-          {isSlack ? 'Click to join CPM Slack' : matches[i]}
+          {matches[i]}
         </a>
       );
     }
   });
+
+  if (firstSlackUrl) {
+    result.push(
+      <a
+        key="slack-invite"
+        href={firstSlackUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[#3CAB7A] underline hover:text-[#2D8F63] font-medium"
+        onClick={(e) => e.stopPropagation()}
+      >
+        Click to join CPM Slack
+      </a>
+    );
+  }
   return result;
 }
 

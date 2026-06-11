@@ -9,6 +9,7 @@ function linkify(text: string): React.ReactNode[] {
   parts.forEach((part, i) => {
     result.push(part);
     if (matches[i]) {
+      const isSlack = matches[i].includes('join.slack.com');
       result.push(
         <a
           key={i}
@@ -18,7 +19,7 @@ function linkify(text: string): React.ReactNode[] {
           className="text-[#3CAB7A] underline hover:text-[#2D8F63] break-all"
           onClick={(e) => e.stopPropagation()}
         >
-          {matches[i]}
+          {isSlack ? 'Click to join CPM Slack' : matches[i]}
         </a>
       );
     }

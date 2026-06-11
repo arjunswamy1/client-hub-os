@@ -1,6 +1,31 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle2, Circle, PlayCircle } from 'lucide-react';
 
+function linkify(text: string): React.ReactNode[] {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  const matches = text.match(urlRegex) || [];
+  const result: React.ReactNode[] = [];
+  parts.forEach((part, i) => {
+    result.push(part);
+    if (matches[i]) {
+      result.push(
+        <a
+          key={i}
+          href={matches[i]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#3CAB7A] underline hover:text-[#2D8F63] break-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {matches[i]}
+        </a>
+      );
+    }
+  });
+  return result;
+}
+
 interface ActionItem {
   id: string;
   label: string;

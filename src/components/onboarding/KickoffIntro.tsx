@@ -138,7 +138,7 @@ export function KickoffIntro({ clientName, videoUrl, intro, actionItems, ctaItem
                           : <Circle className="w-5 h-5 text-gray-300 flex-shrink-0 mt-0.5" />
                         }
                         <span className={`text-sm leading-snug ${done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                          {item.label}
+                          {linkify(item.label)}
                         </span>
                       </button>
                     </li>

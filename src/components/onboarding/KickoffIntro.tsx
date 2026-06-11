@@ -130,7 +130,10 @@ export function KickoffIntro({ clientName, videoUrl, intro, actionItems, ctaItem
                     <li key={item.id}>
                       <button
                         type="button"
-                        onClick={() => toggle(item.id)}
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest('a')) return;
+                          toggle(item.id);
+                        }}
                         className="w-full flex items-start gap-3 text-left p-2.5 rounded-md hover:bg-gray-50 transition-colors"
                       >
                         {done

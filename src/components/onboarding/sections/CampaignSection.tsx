@@ -26,6 +26,14 @@ export function CampaignSection({ data, onUpdate, onNext, errors }: CampaignSect
         </div>
       </div>
 
+      {/* Pre-filled notice */}
+      <div className="mx-6 md:mx-9 mt-6 bg-amber-50 border-l-4 border-amber-400 rounded-lg px-5 py-4">
+        <div className="text-[13px] font-bold text-amber-700 uppercase tracking-wide mb-1.5">Please Review</div>
+        <div className="text-sm text-amber-900 leading-relaxed">
+          We've pre-filled some answers from your kickoff call. Please review each field and edit or add anything that needs updating.
+        </div>
+      </div>
+
       <div className="px-6 md:px-9 py-7 flex flex-col gap-7">
         <OnboardingField label="Vertical(s)" hint="Select all that apply." required error={errors.verticals}>
           <CheckboxGrid

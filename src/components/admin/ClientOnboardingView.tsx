@@ -114,7 +114,12 @@ function GenerateTokenDialog({ onCreated }: { onCreated: () => void }) {
       if (!finalClientName) finalClientName = selectedClient?.name || '';
     }
 
-    const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+    // Token = clean brand slug (no random suffix) for shareable URLs like /onboarding/spektrafin
+    const baseSlug = (slug || finalClientName)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '')
+      .replace(/^-|-$/g, '');
+    const token = baseSlug || crypto.randomUUID().replace(/-/g, '').slice(0, 16);
     
     const { error } = await supabase.from('onboarding_tokens').insert({
       token,

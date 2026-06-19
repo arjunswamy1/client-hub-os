@@ -361,9 +361,44 @@ export function DesignerDashboard({ onBriefClick }: Props) {
           )}
         </div>
       </div>
+
+      {/* Recent time entries — for corrections */}
+      {allEntries.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground" /> Recent Entries
+          </h2>
+          <div className="space-y-1.5">
+            {allEntries.slice(0, 8).map((e: any) => {
+              const label = e.brief?.title || (e.category && e.category !== 'task'
+                ? e.category.charAt(0).toUpperCase() + e.category.slice(1)
+                : 'Untitled');
+              return (
+                <div key={e.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm hover:bg-accent/40 transition-colors">
+                  <Badge variant="outline" className="text-[10px] capitalize">{e.category || 'task'}</Badge>
+                  <span className="flex-1 truncate">{label}</span>
+                  <span className="text-xs text-muted-foreground">{format(new Date(e.started_at), 'MMM d')}</span>
+                  <span className="font-mono text-xs font-medium">{e.duration_minutes}m</span>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEntry(e); setLogOpen(true); }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <LogTimeDialog
+        open={logOpen}
+        onOpenChange={(o) => { setLogOpen(o); if (!o) setEditEntry(null); }}
+        briefs={briefs as any}
+        editEntry={editEntry}
+      />
     </div>
   );
 }
+
 
 function StatCard({ icon, label, value, extra, alert, alertText }: {
   icon: React.ReactNode;

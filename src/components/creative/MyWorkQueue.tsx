@@ -75,8 +75,9 @@ export function MyWorkQueue({ onBriefClick }: Props) {
   });
 
   // ----- Filter + categorize the designer's active briefs -----
+  // Include 'draft' so a brief assigned to the designer never hides from My Work just because it hasn't been formally submitted yet.
   const items = useMemo(() => {
-    const active = ['submitted', 'in_design', 'ready_for_review', 'revision_requested'];
+    const active = ['draft', 'submitted', 'in_design', 'ready_for_review', 'revision_requested'];
     const mine = briefs.filter((b: any) =>
       b.assigned_to_id === designerId && active.includes(b.status)
     );
@@ -117,7 +118,7 @@ export function MyWorkQueue({ onBriefClick }: Props) {
 
   // Counts for filter chips (computed from full list, not filtered)
   const counts = useMemo(() => {
-    const active = ['submitted', 'in_design', 'ready_for_review', 'revision_requested'];
+    const active = ['draft', 'submitted', 'in_design', 'ready_for_review', 'revision_requested'];
     const mine = briefs.filter((b: any) => b.assigned_to_id === designerId && active.includes(b.status));
     return {
       all: mine.length,

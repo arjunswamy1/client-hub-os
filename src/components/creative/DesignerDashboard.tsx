@@ -150,7 +150,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
   };
 
   // Categorize briefs
-  const activeStatuses = ['submitted', 'in_design', 'ready_for_review', 'revision_requested'];
+  const activeStatuses = ['draft', 'submitted', 'in_design', 'ready_for_review', 'revision_requested'];
   const todayBriefs = briefs
     .filter((b: any) => activeStatuses.includes(b.status) && b.scheduled_date && isSameDay(new Date(b.scheduled_date), now));
   const revisionBriefs = briefs.filter((b: any) => b.status === 'revision_requested');

@@ -141,7 +141,8 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   };
 
   // Filter and sort briefs
-  const activeStatuses = ['submitted', 'in_design', 'ready_for_review', 'revision_requested', 'approved', 'delivered'];
+  // Include 'draft' so designers see every brief assigned to them in one place — no task hides from Planner just because it hasn't been formally submitted yet.
+  const activeStatuses = ['draft', 'submitted', 'in_design', 'ready_for_review', 'revision_requested', 'approved', 'delivered'];
   const statusMap: Record<string, string[]> = {
     todo: ['submitted'],
     in_progress: ['in_design'],

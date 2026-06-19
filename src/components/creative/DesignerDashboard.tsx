@@ -299,7 +299,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
                 key={brief.id}
                 brief={brief}
                 actualHours={briefHoursMap[brief.id]}
-                isTimerActive={activeTimer?.briefId === brief.id}
+                isTimerActive={timer?.briefId === brief.id}
                 onStart={() => startTimer(brief.id)}
                 onStop={() => stopTimer.mutate()}
                 onClick={() => onBriefClick(brief.id)}
@@ -322,7 +322,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
                 key={brief.id}
                 brief={brief}
                 actualHours={briefHoursMap[brief.id]}
-                isTimerActive={activeTimer?.briefId === brief.id}
+                isTimerActive={timer?.briefId === brief.id}
                 onStart={() => startTimer(brief.id)}
                 onStop={() => stopTimer.mutate()}
                 onClick={() => onBriefClick(brief.id)}
@@ -348,7 +348,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
                 key={brief.id}
                 brief={brief}
                 actualHours={briefHoursMap[brief.id]}
-                isTimerActive={activeTimer?.briefId === brief.id}
+                isTimerActive={timer?.briefId === brief.id}
                 onStart={() => startTimer(brief.id)}
                 onStop={() => stopTimer.mutate()}
                 onClick={() => onBriefClick(brief.id)}

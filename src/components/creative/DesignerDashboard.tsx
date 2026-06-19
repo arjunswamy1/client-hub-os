@@ -208,23 +208,46 @@ export function DesignerDashboard({ onBriefClick }: Props) {
           </div>
 
           {/* Active timer banner */}
-          {activeTimer && (
-            <div className="mt-4 flex items-center gap-4 rounded-xl bg-card/80 backdrop-blur border border-primary/20 p-4">
-              <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
-              <div className="flex-1">
-                <p className="text-xs text-muted-foreground">Currently working on</p>
+          {timer && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-card/80 backdrop-blur border border-primary/20 p-4">
+              <div className={`h-3 w-3 rounded-full ${isRunning ? 'bg-red-500 animate-pulse' : 'bg-yellow-500'}`} />
+              <div className="flex-1 min-w-[160px]">
+                <p className="text-xs text-muted-foreground">{isPaused ? 'Paused on' : 'Currently working on'}</p>
                 <p className="font-medium text-sm">
-                  {briefs.find((b: any) => b.id === activeTimer.briefId)?.title || 'Task'}
+                  {timer.briefId ? (briefs.find((b: any) => b.id === timer.briefId)?.title || 'Task') : 'Untitled timer'}
                 </p>
               </div>
               <div className="font-mono text-2xl font-bold tabular-nums tracking-wider text-primary">
                 {formatTime(elapsed)}
               </div>
-              <Button variant="destructive" size="sm" onClick={() => stopTimer.mutate()} className="gap-1.5">
-                <Square className="h-3 w-3" /> Stop
+              {isRunning ? (
+                <Button variant="outline" size="sm" onClick={pauseTimer} className="gap-1.5">
+                  <Pause className="h-3 w-3" /> Pause
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={resumeTimer} className="gap-1.5">
+                  <Play className="h-3 w-3" /> Resume
+                </Button>
+              )}
+              <Button variant="default" size="sm" onClick={() => stopTimer.mutate()} className="gap-1.5" disabled={stopTimer.isPending}>
+                <Square className="h-3 w-3" /> Save & Stop
+              </Button>
+              <Button variant="ghost" size="sm" onClick={discardTimer} className="gap-1.5 text-muted-foreground">
+                <Trash2 className="h-3 w-3" /> Discard
               </Button>
             </div>
           )}
+
+          {/* Quick log actions */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditEntry(null); setLogOpen(true); }}>
+              <Plus className="h-3 w-3" /> Log time manually
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditEntry({ category: 'call', duration_minutes: '', started_at: new Date().toISOString() }); setLogOpen(true); }}>
+              <Phone className="h-3 w-3" /> Log a call
+            </Button>
+          </div>
+
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2" />
       </div>

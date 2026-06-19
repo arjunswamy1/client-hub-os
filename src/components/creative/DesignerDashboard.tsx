@@ -8,13 +8,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
-  Play, Square, Clock, Flame, Timer,
+  Play, Pause, Square, Clock, Flame, Timer, Plus, Phone, Trash2, Pencil,
   TrendingUp, AlertTriangle, ChevronRight, Zap, Target
 } from 'lucide-react';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { toast } from 'sonner';
+import { LogTimeDialog } from './LogTimeDialog';
+
 
 interface Props {
   onBriefClick: (briefId: string) => void;
@@ -27,47 +29,31 @@ export function DesignerDashboard({ onBriefClick }: Props) {
   const { data: cap } = useDesignerCap(teamMember?.id || null);
   const { data: allEntries = [] } = useTimeEntries(null, teamMember?.id);
 
-  // Persist timer in localStorage so it survives page reloads / tab close
-  const TIMER_KEY = teamMember?.id ? `creative_timer_${teamMember.id}` : null;
-  const [activeTimer, setActiveTimer] = useState<{ briefId: string; startedAt: Date } | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      // Read using a stable key derived synchronously; we re-hydrate when teamMember loads
-      const raw = localStorage.getItem('creative_timer_pending');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return { briefId: parsed.briefId, startedAt: new Date(parsed.startedAt) };
-    } catch { return null; }
-  });
+  // ---- Timer state (supports pause/resume) ----
+  // accumulatedSec = time logged in previous run segments (before current segment / pause)
+  // segmentStart   = when the *current* running segment began; null when paused
+  type TimerState = { briefId: string | null; accumulatedSec: number; segmentStart: string | null };
+  const TIMER_KEY = teamMember?.id ? `creative_timer_v2_${teamMember.id}` : null;
+  const [timer, setTimer] = useState<TimerState | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [logOpen, setLogOpen] = useState(false);
+  const [editEntry, setEditEntry] = useState<any | null>(null);
 
-  // Re-hydrate timer once we know who the user is (per-user key)
+  // Re-hydrate
   useEffect(() => {
     if (!TIMER_KEY) return;
     try {
       const raw = localStorage.getItem(TIMER_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setActiveTimer({ briefId: parsed.briefId, startedAt: new Date(parsed.startedAt) });
-        // Clean up the temporary fallback key
-        localStorage.removeItem('creative_timer_pending');
-      }
+      if (raw) setTimer(JSON.parse(raw));
     } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [TIMER_KEY]);
 
-  // Persist whenever activeTimer changes
+  // Persist
   useEffect(() => {
     if (!TIMER_KEY) return;
-    if (activeTimer) {
-      const payload = JSON.stringify({ briefId: activeTimer.briefId, startedAt: activeTimer.startedAt.toISOString() });
-      localStorage.setItem(TIMER_KEY, payload);
-      localStorage.setItem('creative_timer_pending', payload);
-    } else {
-      localStorage.removeItem(TIMER_KEY);
-      localStorage.removeItem('creative_timer_pending');
-    }
-  }, [activeTimer, TIMER_KEY]);
+    if (timer) localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
+    else localStorage.removeItem(TIMER_KEY);
+  }, [timer, TIMER_KEY]);
 
   const now = new Date();
   const monthStart = startOfMonth(now);
@@ -94,6 +80,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
   const briefHoursMap = useMemo(() => {
     const map: Record<string, number> = {};
     allEntries.forEach((e: any) => {
+      if (!e.brief_id) return;
       if (!map[e.brief_id]) map[e.brief_id] = 0;
       map[e.brief_id] += (e.duration_minutes || 0) / 60;
     });
@@ -102,45 +89,81 @@ export function DesignerDashboard({ onBriefClick }: Props) {
 
   // Timer tick
   useEffect(() => {
-    if (!activeTimer) { setElapsed(0); return; }
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - activeTimer.startedAt.getTime()) / 1000));
-    }, 1000);
+    if (!timer) { setElapsed(0); return; }
+    const compute = () => {
+      const live = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      setElapsed(timer.accumulatedSec + live);
+    };
+    compute();
+    if (!timer.segmentStart) return; // paused — don't tick
+    const interval = setInterval(compute, 1000);
     return () => clearInterval(interval);
-  }, [activeTimer]);
+  }, [timer]);
+
+  const isPaused = !!timer && !timer.segmentStart;
+  const isRunning = !!timer && !!timer.segmentStart;
 
   const startTimer = useCallback((briefId: string) => {
-    if (activeTimer && activeTimer.briefId !== briefId) {
-      toast.error('Stop the current timer first');
+    if (timer && timer.briefId && timer.briefId !== briefId) {
+      toast.error('Stop or save the current timer first');
       return;
     }
-    setActiveTimer({ briefId, startedAt: new Date() });
-    toast.info('Timer started — let\'s go! 🔥');
-  }, [activeTimer]);
+    // Resume or fresh start on this brief
+    setTimer(prev => prev && prev.briefId === briefId
+      ? { ...prev, segmentStart: new Date().toISOString() }
+      : { briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() });
+    toast.info('Timer started');
+  }, [timer]);
+
+  const pauseTimer = useCallback(() => {
+    setTimer(prev => {
+      if (!prev || !prev.segmentStart) return prev;
+      const liveSec = Math.floor((Date.now() - new Date(prev.segmentStart).getTime()) / 1000);
+      return { ...prev, accumulatedSec: prev.accumulatedSec + liveSec, segmentStart: null };
+    });
+    toast.info('Paused');
+  }, []);
+
+  const resumeTimer = useCallback(() => {
+    setTimer(prev => prev ? { ...prev, segmentStart: new Date().toISOString() } : prev);
+  }, []);
 
   const stopTimer = useMutation({
     mutationFn: async () => {
-      if (!activeTimer || !teamMember) return;
-      const brief = briefs.find((b: any) => b.id === activeTimer.briefId);
-      const duration = Math.round(elapsed / 60);
+      if (!timer || !teamMember) return;
+      // Compute final seconds
+      const liveSec = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      const totalSec = timer.accumulatedSec + liveSec;
+      const duration = Math.max(1, Math.round(totalSec / 60));
+      const startedAt = new Date(Date.now() - totalSec * 1000).toISOString();
+      const brief = briefs.find((b: any) => b.id === timer.briefId);
       const { error } = await supabase.from('creative_time_entries').insert({
-        brief_id: activeTimer.briefId,
+        brief_id: timer.briefId,
         team_member_id: teamMember.id,
-        client_id: brief?.client_id,
-        started_at: activeTimer.startedAt.toISOString(),
+        client_id: brief?.client_id ?? null,
+        category: 'task',
+        started_at: startedAt,
         ended_at: new Date().toISOString(),
-        duration_minutes: Math.max(1, duration),
+        duration_minutes: duration,
         is_manual: false,
       });
       if (error) throw error;
+      return duration;
     },
-    onSuccess: () => {
-      setActiveTimer(null);
+    onSuccess: (duration) => {
+      setTimer(null);
       queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-      toast.success(`Logged ${Math.round(elapsed / 60)} min ✓`);
+      toast.success(`Logged ${duration} min ✓`);
     },
     onError: (err: any) => toast.error(err.message),
   });
+
+  const discardTimer = useCallback(() => {
+    setTimer(null);
+    toast.info('Timer discarded');
+  }, []);
+
+
 
   const formatTime = (secs: number) => {
     const h = Math.floor(secs / 3600);
@@ -185,23 +208,46 @@ export function DesignerDashboard({ onBriefClick }: Props) {
           </div>
 
           {/* Active timer banner */}
-          {activeTimer && (
-            <div className="mt-4 flex items-center gap-4 rounded-xl bg-card/80 backdrop-blur border border-primary/20 p-4">
-              <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
-              <div className="flex-1">
-                <p className="text-xs text-muted-foreground">Currently working on</p>
+          {timer && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-card/80 backdrop-blur border border-primary/20 p-4">
+              <div className={`h-3 w-3 rounded-full ${isRunning ? 'bg-red-500 animate-pulse' : 'bg-yellow-500'}`} />
+              <div className="flex-1 min-w-[160px]">
+                <p className="text-xs text-muted-foreground">{isPaused ? 'Paused on' : 'Currently working on'}</p>
                 <p className="font-medium text-sm">
-                  {briefs.find((b: any) => b.id === activeTimer.briefId)?.title || 'Task'}
+                  {timer.briefId ? (briefs.find((b: any) => b.id === timer.briefId)?.title || 'Task') : 'Untitled timer'}
                 </p>
               </div>
               <div className="font-mono text-2xl font-bold tabular-nums tracking-wider text-primary">
                 {formatTime(elapsed)}
               </div>
-              <Button variant="destructive" size="sm" onClick={() => stopTimer.mutate()} className="gap-1.5">
-                <Square className="h-3 w-3" /> Stop
+              {isRunning ? (
+                <Button variant="outline" size="sm" onClick={pauseTimer} className="gap-1.5">
+                  <Pause className="h-3 w-3" /> Pause
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={resumeTimer} className="gap-1.5">
+                  <Play className="h-3 w-3" /> Resume
+                </Button>
+              )}
+              <Button variant="default" size="sm" onClick={() => stopTimer.mutate()} className="gap-1.5" disabled={stopTimer.isPending}>
+                <Square className="h-3 w-3" /> Save & Stop
+              </Button>
+              <Button variant="ghost" size="sm" onClick={discardTimer} className="gap-1.5 text-muted-foreground">
+                <Trash2 className="h-3 w-3" /> Discard
               </Button>
             </div>
           )}
+
+          {/* Quick log actions */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditEntry(null); setLogOpen(true); }}>
+              <Plus className="h-3 w-3" /> Log time manually
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditEntry({ category: 'call', duration_minutes: '', started_at: new Date().toISOString() }); setLogOpen(true); }}>
+              <Phone className="h-3 w-3" /> Log a call
+            </Button>
+          </div>
+
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2" />
       </div>
@@ -253,7 +299,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
                 key={brief.id}
                 brief={brief}
                 actualHours={briefHoursMap[brief.id]}
-                isTimerActive={activeTimer?.briefId === brief.id}
+                isTimerActive={timer?.briefId === brief.id}
                 onStart={() => startTimer(brief.id)}
                 onStop={() => stopTimer.mutate()}
                 onClick={() => onBriefClick(brief.id)}
@@ -276,7 +322,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
                 key={brief.id}
                 brief={brief}
                 actualHours={briefHoursMap[brief.id]}
-                isTimerActive={activeTimer?.briefId === brief.id}
+                isTimerActive={timer?.briefId === brief.id}
                 onStart={() => startTimer(brief.id)}
                 onStop={() => stopTimer.mutate()}
                 onClick={() => onBriefClick(brief.id)}
@@ -302,7 +348,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
                 key={brief.id}
                 brief={brief}
                 actualHours={briefHoursMap[brief.id]}
-                isTimerActive={activeTimer?.briefId === brief.id}
+                isTimerActive={timer?.briefId === brief.id}
                 onStart={() => startTimer(brief.id)}
                 onStop={() => stopTimer.mutate()}
                 onClick={() => onBriefClick(brief.id)}
@@ -315,9 +361,44 @@ export function DesignerDashboard({ onBriefClick }: Props) {
           )}
         </div>
       </div>
+
+      {/* Recent time entries — for corrections */}
+      {allEntries.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground" /> Recent Entries
+          </h2>
+          <div className="space-y-1.5">
+            {allEntries.slice(0, 8).map((e: any) => {
+              const label = e.brief?.title || (e.category && e.category !== 'task'
+                ? e.category.charAt(0).toUpperCase() + e.category.slice(1)
+                : 'Untitled');
+              return (
+                <div key={e.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm hover:bg-accent/40 transition-colors">
+                  <Badge variant="outline" className="text-[10px] capitalize">{e.category || 'task'}</Badge>
+                  <span className="flex-1 truncate">{label}</span>
+                  <span className="text-xs text-muted-foreground">{format(new Date(e.started_at), 'MMM d')}</span>
+                  <span className="font-mono text-xs font-medium">{e.duration_minutes}m</span>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEntry(e); setLogOpen(true); }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <LogTimeDialog
+        open={logOpen}
+        onOpenChange={(o) => { setLogOpen(o); if (!o) setEditEntry(null); }}
+        briefs={briefs as any}
+        editEntry={editEntry}
+      />
     </div>
   );
 }
+
 
 function StatCard({ icon, label, value, extra, alert, alertText }: {
   icon: React.ReactNode;

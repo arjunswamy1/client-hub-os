@@ -2588,8 +2588,9 @@ export type Database = {
       }
       creative_time_entries: {
         Row: {
-          brief_id: string
-          client_id: string
+          brief_id: string | null
+          category: string
+          client_id: string | null
           created_at: string
           description: string | null
           duration_minutes: number | null
@@ -2601,8 +2602,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          brief_id: string
-          client_id: string
+          brief_id?: string | null
+          category?: string
+          client_id?: string | null
           created_at?: string
           description?: string | null
           duration_minutes?: number | null
@@ -2614,8 +2616,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          brief_id?: string
-          client_id?: string
+          brief_id?: string | null
+          category?: string
+          client_id?: string | null
           created_at?: string
           description?: string | null
           duration_minutes?: number | null

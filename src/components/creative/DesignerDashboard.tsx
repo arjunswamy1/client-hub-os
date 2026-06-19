@@ -8,13 +8,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
-  Play, Square, Clock, Flame, Timer,
+  Play, Pause, Square, Clock, Flame, Timer, Plus, Phone, Trash2, Pencil,
   TrendingUp, AlertTriangle, ChevronRight, Zap, Target
 } from 'lucide-react';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { toast } from 'sonner';
+import { LogTimeDialog } from './LogTimeDialog';
+
 
 interface Props {
   onBriefClick: (briefId: string) => void;

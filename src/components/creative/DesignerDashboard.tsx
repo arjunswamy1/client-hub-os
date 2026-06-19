@@ -29,47 +29,31 @@ export function DesignerDashboard({ onBriefClick }: Props) {
   const { data: cap } = useDesignerCap(teamMember?.id || null);
   const { data: allEntries = [] } = useTimeEntries(null, teamMember?.id);
 
-  // Persist timer in localStorage so it survives page reloads / tab close
-  const TIMER_KEY = teamMember?.id ? `creative_timer_${teamMember.id}` : null;
-  const [activeTimer, setActiveTimer] = useState<{ briefId: string; startedAt: Date } | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      // Read using a stable key derived synchronously; we re-hydrate when teamMember loads
-      const raw = localStorage.getItem('creative_timer_pending');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return { briefId: parsed.briefId, startedAt: new Date(parsed.startedAt) };
-    } catch { return null; }
-  });
+  // ---- Timer state (supports pause/resume) ----
+  // accumulatedSec = time logged in previous run segments (before current segment / pause)
+  // segmentStart   = when the *current* running segment began; null when paused
+  type TimerState = { briefId: string | null; accumulatedSec: number; segmentStart: string | null };
+  const TIMER_KEY = teamMember?.id ? `creative_timer_v2_${teamMember.id}` : null;
+  const [timer, setTimer] = useState<TimerState | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [logOpen, setLogOpen] = useState(false);
+  const [editEntry, setEditEntry] = useState<any | null>(null);
 
-  // Re-hydrate timer once we know who the user is (per-user key)
+  // Re-hydrate
   useEffect(() => {
     if (!TIMER_KEY) return;
     try {
       const raw = localStorage.getItem(TIMER_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setActiveTimer({ briefId: parsed.briefId, startedAt: new Date(parsed.startedAt) });
-        // Clean up the temporary fallback key
-        localStorage.removeItem('creative_timer_pending');
-      }
+      if (raw) setTimer(JSON.parse(raw));
     } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [TIMER_KEY]);
 
-  // Persist whenever activeTimer changes
+  // Persist
   useEffect(() => {
     if (!TIMER_KEY) return;
-    if (activeTimer) {
-      const payload = JSON.stringify({ briefId: activeTimer.briefId, startedAt: activeTimer.startedAt.toISOString() });
-      localStorage.setItem(TIMER_KEY, payload);
-      localStorage.setItem('creative_timer_pending', payload);
-    } else {
-      localStorage.removeItem(TIMER_KEY);
-      localStorage.removeItem('creative_timer_pending');
-    }
-  }, [activeTimer, TIMER_KEY]);
+    if (timer) localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
+    else localStorage.removeItem(TIMER_KEY);
+  }, [timer, TIMER_KEY]);
 
   const now = new Date();
   const monthStart = startOfMonth(now);
@@ -96,6 +80,7 @@ export function DesignerDashboard({ onBriefClick }: Props) {
   const briefHoursMap = useMemo(() => {
     const map: Record<string, number> = {};
     allEntries.forEach((e: any) => {
+      if (!e.brief_id) return;
       if (!map[e.brief_id]) map[e.brief_id] = 0;
       map[e.brief_id] += (e.duration_minutes || 0) / 60;
     });
@@ -104,45 +89,81 @@ export function DesignerDashboard({ onBriefClick }: Props) {
 
   // Timer tick
   useEffect(() => {
-    if (!activeTimer) { setElapsed(0); return; }
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - activeTimer.startedAt.getTime()) / 1000));
-    }, 1000);
+    if (!timer) { setElapsed(0); return; }
+    const compute = () => {
+      const live = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      setElapsed(timer.accumulatedSec + live);
+    };
+    compute();
+    if (!timer.segmentStart) return; // paused — don't tick
+    const interval = setInterval(compute, 1000);
     return () => clearInterval(interval);
-  }, [activeTimer]);
+  }, [timer]);
+
+  const isPaused = !!timer && !timer.segmentStart;
+  const isRunning = !!timer && !!timer.segmentStart;
 
   const startTimer = useCallback((briefId: string) => {
-    if (activeTimer && activeTimer.briefId !== briefId) {
-      toast.error('Stop the current timer first');
+    if (timer && timer.briefId && timer.briefId !== briefId) {
+      toast.error('Stop or save the current timer first');
       return;
     }
-    setActiveTimer({ briefId, startedAt: new Date() });
-    toast.info('Timer started — let\'s go! 🔥');
-  }, [activeTimer]);
+    // Resume or fresh start on this brief
+    setTimer(prev => prev && prev.briefId === briefId
+      ? { ...prev, segmentStart: new Date().toISOString() }
+      : { briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() });
+    toast.info('Timer started');
+  }, [timer]);
+
+  const pauseTimer = useCallback(() => {
+    setTimer(prev => {
+      if (!prev || !prev.segmentStart) return prev;
+      const liveSec = Math.floor((Date.now() - new Date(prev.segmentStart).getTime()) / 1000);
+      return { ...prev, accumulatedSec: prev.accumulatedSec + liveSec, segmentStart: null };
+    });
+    toast.info('Paused');
+  }, []);
+
+  const resumeTimer = useCallback(() => {
+    setTimer(prev => prev ? { ...prev, segmentStart: new Date().toISOString() } : prev);
+  }, []);
 
   const stopTimer = useMutation({
     mutationFn: async () => {
-      if (!activeTimer || !teamMember) return;
-      const brief = briefs.find((b: any) => b.id === activeTimer.briefId);
-      const duration = Math.round(elapsed / 60);
+      if (!timer || !teamMember) return;
+      // Compute final seconds
+      const liveSec = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      const totalSec = timer.accumulatedSec + liveSec;
+      const duration = Math.max(1, Math.round(totalSec / 60));
+      const startedAt = new Date(Date.now() - totalSec * 1000).toISOString();
+      const brief = briefs.find((b: any) => b.id === timer.briefId);
       const { error } = await supabase.from('creative_time_entries').insert({
-        brief_id: activeTimer.briefId,
+        brief_id: timer.briefId,
         team_member_id: teamMember.id,
-        client_id: brief?.client_id,
-        started_at: activeTimer.startedAt.toISOString(),
+        client_id: brief?.client_id ?? null,
+        category: 'task',
+        started_at: startedAt,
         ended_at: new Date().toISOString(),
-        duration_minutes: Math.max(1, duration),
+        duration_minutes: duration,
         is_manual: false,
       });
       if (error) throw error;
+      return duration;
     },
-    onSuccess: () => {
-      setActiveTimer(null);
+    onSuccess: (duration) => {
+      setTimer(null);
       queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-      toast.success(`Logged ${Math.round(elapsed / 60)} min ✓`);
+      toast.success(`Logged ${duration} min ✓`);
     },
     onError: (err: any) => toast.error(err.message),
   });
+
+  const discardTimer = useCallback(() => {
+    setTimer(null);
+    toast.info('Timer discarded');
+  }, []);
+
+
 
   const formatTime = (secs: number) => {
     const h = Math.floor(secs / 3600);

@@ -289,6 +289,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
       toast.success('Brief created with ' + expectedDeliverables + ' deliverables');
       onOpenChange(false);
       setForm({ ...INITIAL_FORM });
+      setUploadedRefs([]);
       setStep(0);
     },
     onError: (err: any) => toast.error(err.message),

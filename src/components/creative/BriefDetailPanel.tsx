@@ -317,19 +317,58 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
             {brief.notes && <InfoBlock label="Notes" text={brief.notes} />}
 
             {/* Reference assets */}
-            {brief.reference_assets && Array.isArray(brief.reference_assets) && brief.reference_assets.length > 0 && (
-              <div>
-                <span className="text-xs text-muted-foreground block mb-2">Reference Assets</span>
-                <div className="space-y-1">
-                  {brief.reference_assets.map((ref: any, i: number) => (
-                    <a key={i} href={ref.drive_url || ref.url} target="_blank" rel="noopener noreferrer"
-                      className="block text-xs text-primary hover:underline truncate">
-                      {ref.file_name || ref.drive_url || ref.url}
-                    </a>
-                  ))}
-                </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground">Reference Assets</span>
+                <label className="inline-flex items-center gap-1.5 text-xs text-primary cursor-pointer hover:underline">
+                  <Paperclip className="h-3 w-3" />
+                  {isUploadingRefs ? 'Uploading…' : 'Attach files'}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.doc,.docx"
+                    className="hidden"
+                    onChange={handleReferenceUpload}
+                    disabled={isUploadingRefs}
+                  />
+                </label>
               </div>
-            )}
+              {Array.isArray(brief.reference_assets) && brief.reference_assets.length > 0 ? (
+                <div className="space-y-2">
+                  {brief.reference_assets.map((ref: any, i: number) => {
+                    const href = ref.drive_url || ref.url;
+                    return (
+                      <div key={i} className="rounded-lg border p-2 space-y-1.5">
+                        {isVideo(ref) && href && (
+                          <video src={href} controls className="w-full max-h-64 rounded bg-black" />
+                        )}
+                        {isImage(ref) && href && !isVideo(ref) && (
+                          <img src={href} alt={ref.file_name || ''} className="w-full max-h-64 object-contain rounded bg-muted" />
+                        )}
+                        <div className="flex items-center justify-between gap-2">
+                          <a href={href} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline truncate flex-1">
+                            {ref.file_name || href}
+                          </a>
+                          {ref.source === 'upload' && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveReference(i)}
+                              className="text-muted-foreground hover:text-destructive shrink-0"
+                              title="Remove"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No references yet — attach videos, images, or docs above.</p>
+              )}
+            </div>
 
             {/* Status actions */}
             <div className="flex gap-2 flex-wrap pt-2 border-t">

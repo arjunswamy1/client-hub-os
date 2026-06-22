@@ -66,6 +66,52 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
     },
   });
 
+  // Reference attachments
+  const initialRefs = Array.isArray(brief.reference_assets) ? brief.reference_assets : [];
+  const [refs, setRefs] = useState<any[]>(initialRefs);
+  const [uploadingRefs, setUploadingRefs] = useState(false);
+
+  useEffect(() => {
+    setRefs(Array.isArray(brief.reference_assets) ? brief.reference_assets : []);
+  }, [brief.id, brief.reference_assets]);
+
+  const handleRefUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setUploadingRefs(true);
+    try {
+      const clientName = brief.client?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
+      const briefSlug = brief.title?.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40) || brief.id.slice(0, 8);
+      const added: any[] = [];
+      for (const file of Array.from(files)) {
+        const filePath = `${clientName}/${briefSlug}/refs/${Date.now()}_${file.name}`;
+        const { error: upErr } = await supabase.storage.from('creative-assets').upload(filePath, file);
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('creative-assets').getPublicUrl(filePath);
+        added.push({
+          source: 'upload', url: urlData.publicUrl, drive_url: urlData.publicUrl,
+          file_name: file.name, file_type: file.type, size: file.size, storage_path: filePath,
+        });
+      }
+      setRefs(prev => [...prev, ...added]);
+      toast.success(`${added.length} file(s) attached`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setUploadingRefs(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeRef = async (idx: number) => {
+    const next = [...refs];
+    const removed = next.splice(idx, 1)[0];
+    if (removed?.storage_path) {
+      await supabase.storage.from('creative-assets').remove([removed.storage_path]).catch(() => {});
+    }
+    setRefs(next);
+  };
+
   const update = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from('creative_briefs').update({

@@ -34,6 +34,8 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
   const [reviewComments, setReviewComments] = useState('');
   const [commentText, setCommentText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingRefs, setIsUploadingRefs] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;

@@ -76,6 +76,36 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
   const { teamMember } = useAuth();
   const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM, client_id: clientId || '' });
   const [step, setStep] = useState(0);
+  const [uploadedRefs, setUploadedRefs] = useState<UploadedReference[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const newRefs: UploadedReference[] = [];
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop();
+        const path = `brief-refs/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error } = await supabase.storage.from('creative-assets').upload(path, file, {
+          cacheControl: '3600', upsert: false,
+        });
+        if (error) throw error;
+        const { data: pub } = supabase.storage.from('creative-assets').getPublicUrl(path);
+        newRefs.push({ file_name: file.name, url: pub.publicUrl, file_type: file.type, size: file.size });
+      }
+      setUploadedRefs(prev => [...prev, ...newRefs]);
+      toast.success(`${newRefs.length} file(s) uploaded`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeUploadedRef = (idx: number) => {
+    setUploadedRefs(prev => prev.filter((_, i) => i !== idx));
+  };
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients_for_brief'],

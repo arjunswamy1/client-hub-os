@@ -221,9 +221,13 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
     mutationFn: async () => {
       const designer = teamMembers.find((m: any) => m.role === 'designer');
       const assignedTo = form.assigned_to_id || designer?.id || null;
-      const references = form.reference_urls
+      const urlRefs = form.reference_urls
         ? form.reference_urls.split('\n').filter(Boolean).map(url => ({ source: 'url', drive_url: url.trim(), note: '' }))
         : [];
+      const fileRefs = uploadedRefs.map(r => ({
+        source: 'upload', url: r.url, drive_url: r.url, file_name: r.file_name, file_type: r.file_type, size: r.size,
+      }));
+      const references = [...urlRefs, ...fileRefs];
 
       const isSpecialClient = form.client_id.startsWith('__');
       const specialLabel = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id)?.name || INTERNAL_OPTIONS.find(o => o.id === form.client_id)?.name;

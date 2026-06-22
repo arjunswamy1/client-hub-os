@@ -230,6 +230,42 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
               onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
             />
           </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Reference Files</Label>
+              <label className="inline-flex items-center gap-1.5 text-xs text-primary cursor-pointer hover:underline">
+                <Paperclip className="h-3 w-3" />
+                {uploadingRefs ? 'Uploading…' : 'Attach files'}
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.doc,.docx"
+                  className="hidden"
+                  disabled={uploadingRefs}
+                  onChange={handleRefUpload}
+                />
+              </label>
+            </div>
+            {refs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No files attached. Click "Attach files" to add videos, images, or docs.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {refs.map((r: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5 text-xs">
+                    <a href={r.drive_url || r.url} target="_blank" rel="noopener noreferrer"
+                      className="text-primary hover:underline truncate flex-1">
+                      {r.file_name || r.drive_url || r.url}
+                    </a>
+                    {r.size && <span className="text-muted-foreground shrink-0">{(r.size / 1024).toFixed(0)} KB</span>}
+                    <button type="button" onClick={() => removeRef(i)} className="text-muted-foreground hover:text-destructive shrink-0">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <DialogFooter>

@@ -108,7 +108,70 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
     }
   };
 
+
+  // Upload reference assets (videos, images, PDFs) attached to the brief itself
+  const handleReferenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setIsUploadingRefs(true);
+    try {
+      const clientName = brief.client?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
+      const briefSlug = brief.title?.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40) || brief.id.slice(0, 8);
+      const newRefs: any[] = [];
+      for (const file of Array.from(files)) {
+        const filePath = `${clientName}/${briefSlug}/refs/${Date.now()}_${file.name}`;
+        const { error: upErr } = await supabase.storage.from('creative-assets').upload(filePath, file);
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('creative-assets').getPublicUrl(filePath);
+        newRefs.push({
+          source: 'upload', url: urlData.publicUrl, drive_url: urlData.publicUrl,
+          file_name: file.name, file_type: file.type, size: file.size, storage_path: filePath,
+        });
+      }
+      const existing = Array.isArray(brief.reference_assets) ? brief.reference_assets : [];
+      const { error: updErr } = await supabase
+        .from('creative_briefs')
+        .update({ reference_assets: [...existing, ...newRefs] as any })
+        .eq('id', brief.id);
+      if (updErr) throw updErr;
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success(`${newRefs.length} reference${newRefs.length > 1 ? 's' : ''} attached`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setIsUploadingRefs(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveReference = async (idx: number) => {
+    const existing = Array.isArray(brief.reference_assets) ? [...brief.reference_assets] : [];
+    const removed = existing.splice(idx, 1)[0];
+    try {
+      if (removed?.storage_path) {
+        await supabase.storage.from('creative-assets').remove([removed.storage_path]);
+      }
+      const { error } = await supabase
+        .from('creative_briefs')
+        .update({ reference_assets: existing as any })
+        .eq('id', brief.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success('Reference removed');
+    } catch (err: any) {
+      toast.error(err.message || 'Remove failed');
+    }
+  };
+
+  const isVideo = (ref: any) =>
+    (ref.file_type && ref.file_type.startsWith('video/')) ||
+    /\.(mp4|mov|webm|m4v|avi)$/i.test(ref.file_name || ref.url || ref.drive_url || '');
+  const isImage = (ref: any) =>
+    (ref.file_type && ref.file_type.startsWith('image/')) ||
+    /\.(png|jpe?g|gif|webp|svg)$/i.test(ref.file_name || ref.url || ref.drive_url || '');
+
   const copySuggestions = Array.isArray(brief.copy_suggestions) ? brief.copy_suggestions : [];
+
 
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col border-l bg-card shadow-xl overflow-hidden">

@@ -622,11 +622,38 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                 <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} />
               </div>
 
-              {/* Drive asset browser placeholder */}
-              <div className="rounded-lg border-2 border-dashed border-muted p-6 text-center">
-                <FileUp className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Google Drive Asset Browser</p>
-                <p className="text-xs text-muted-foreground">Connect Google Drive in Settings to browse and attach client assets</p>
+              {/* File uploads */}
+              <div className="space-y-2">
+                <Label>Reference Files</Label>
+                <label className="block rounded-lg border-2 border-dashed border-muted p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-accent/30 transition-colors">
+                  <FileUp className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm font-medium">
+                    {uploading ? 'Uploading…' : 'Click to upload reference files'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Images, videos, PDFs, docs — anything Malena should see</p>
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(e) => { handleFileUpload(e.target.files); e.target.value = ''; }}
+                  />
+                </label>
+                {uploadedRefs.length > 0 && (
+                  <div className="space-y-1.5">
+                    {uploadedRefs.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5 text-xs">
+                        <a href={r.url} target="_blank" rel="noopener noreferrer" className="truncate text-primary hover:underline flex-1">
+                          {r.file_name}
+                        </a>
+                        <span className="text-muted-foreground shrink-0">{(r.size / 1024).toFixed(0)} KB</span>
+                        <button type="button" onClick={() => removeUploadedRef(i)} className="text-muted-foreground hover:text-destructive">
+                          <Minus className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Summary */}

@@ -124,6 +124,7 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
         assigned_to_id: form.assigned_to_id || null,
         client_id: form.client_id || null,
         notes: form.notes || null,
+        reference_assets: refs as any,
       } as any).eq('id', brief.id);
       if (error) throw error;
     },

@@ -49,6 +49,13 @@ const SPECIAL_CLIENT_OPTIONS = [
   { id: '__other__', name: 'Other / Ad Hoc', color: '#94a3b8' },
 ];
 
+interface UploadedReference {
+  file_name: string;
+  url: string;
+  file_type: string;
+  size: number;
+}
+
 const INITIAL_FORM: BriefFormData = {
   title: '', client_id: '', creative_types: [], platforms: [], sizes: [],
   funnel_stage: '', num_concepts: 1, objective: '', key_message: '',

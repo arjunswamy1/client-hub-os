@@ -607,6 +607,10 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
           </TabsContent>
         </Tabs>
       </div>
+
+      {editOpen && (
+        <EditBriefDialog brief={brief} open={editOpen} onOpenChange={setEditOpen} />
+      )}
     </div>
   );
 }

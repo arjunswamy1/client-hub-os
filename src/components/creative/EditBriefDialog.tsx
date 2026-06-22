@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Paperclip, Trash2 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -65,6 +66,52 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
     },
   });
 
+  // Reference attachments
+  const initialRefs = Array.isArray(brief.reference_assets) ? brief.reference_assets : [];
+  const [refs, setRefs] = useState<any[]>(initialRefs);
+  const [uploadingRefs, setUploadingRefs] = useState(false);
+
+  useEffect(() => {
+    setRefs(Array.isArray(brief.reference_assets) ? brief.reference_assets : []);
+  }, [brief.id, brief.reference_assets]);
+
+  const handleRefUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setUploadingRefs(true);
+    try {
+      const clientName = brief.client?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
+      const briefSlug = brief.title?.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40) || brief.id.slice(0, 8);
+      const added: any[] = [];
+      for (const file of Array.from(files)) {
+        const filePath = `${clientName}/${briefSlug}/refs/${Date.now()}_${file.name}`;
+        const { error: upErr } = await supabase.storage.from('creative-assets').upload(filePath, file);
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('creative-assets').getPublicUrl(filePath);
+        added.push({
+          source: 'upload', url: urlData.publicUrl, drive_url: urlData.publicUrl,
+          file_name: file.name, file_type: file.type, size: file.size, storage_path: filePath,
+        });
+      }
+      setRefs(prev => [...prev, ...added]);
+      toast.success(`${added.length} file(s) attached`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setUploadingRefs(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeRef = async (idx: number) => {
+    const next = [...refs];
+    const removed = next.splice(idx, 1)[0];
+    if (removed?.storage_path) {
+      await supabase.storage.from('creative-assets').remove([removed.storage_path]).catch(() => {});
+    }
+    setRefs(next);
+  };
+
   const update = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from('creative_briefs').update({
@@ -77,6 +124,7 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
         assigned_to_id: form.assigned_to_id || null,
         client_id: form.client_id || null,
         notes: form.notes || null,
+        reference_assets: refs as any,
       } as any).eq('id', brief.id);
       if (error) throw error;
     },
@@ -181,6 +229,42 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
               value={form.notes}
               onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
             />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Reference Files</Label>
+              <label className="inline-flex items-center gap-1.5 text-xs text-primary cursor-pointer hover:underline">
+                <Paperclip className="h-3 w-3" />
+                {uploadingRefs ? 'Uploading…' : 'Attach files'}
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.doc,.docx"
+                  className="hidden"
+                  disabled={uploadingRefs}
+                  onChange={handleRefUpload}
+                />
+              </label>
+            </div>
+            {refs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No files attached. Click "Attach files" to add videos, images, or docs.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {refs.map((r: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5 text-xs">
+                    <a href={r.drive_url || r.url} target="_blank" rel="noopener noreferrer"
+                      className="text-primary hover:underline truncate flex-1">
+                      {r.file_name || r.drive_url || r.url}
+                    </a>
+                    {r.size && <span className="text-muted-foreground shrink-0">{(r.size / 1024).toFixed(0)} KB</span>}
+                    <button type="button" onClick={() => removeRef(i)} className="text-muted-foreground hover:text-destructive shrink-0">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

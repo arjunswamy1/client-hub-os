@@ -181,7 +181,12 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
           <Badge variant="secondary" className={`text-xs ${statusConf.color}`}>{statusConf.label}</Badge>
           <Badge variant="secondary" className={`text-xs ${priorityConf.color}`}>{priorityConf.label}</Badge>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)} className="gap-1.5">
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">

@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Download } from 'lucide-react';
+import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Download, Pencil, Paperclip, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
@@ -15,6 +15,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { EditBriefDialog } from '@/components/creative/EditBriefDialog';
 
 interface Props {
   brief: any;
@@ -33,6 +34,8 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
   const [reviewComments, setReviewComments] = useState('');
   const [commentText, setCommentText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingRefs, setIsUploadingRefs] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
@@ -105,7 +108,70 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
     }
   };
 
+
+  // Upload reference assets (videos, images, PDFs) attached to the brief itself
+  const handleReferenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setIsUploadingRefs(true);
+    try {
+      const clientName = brief.client?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
+      const briefSlug = brief.title?.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40) || brief.id.slice(0, 8);
+      const newRefs: any[] = [];
+      for (const file of Array.from(files)) {
+        const filePath = `${clientName}/${briefSlug}/refs/${Date.now()}_${file.name}`;
+        const { error: upErr } = await supabase.storage.from('creative-assets').upload(filePath, file);
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('creative-assets').getPublicUrl(filePath);
+        newRefs.push({
+          source: 'upload', url: urlData.publicUrl, drive_url: urlData.publicUrl,
+          file_name: file.name, file_type: file.type, size: file.size, storage_path: filePath,
+        });
+      }
+      const existing = Array.isArray(brief.reference_assets) ? brief.reference_assets : [];
+      const { error: updErr } = await supabase
+        .from('creative_briefs')
+        .update({ reference_assets: [...existing, ...newRefs] as any })
+        .eq('id', brief.id);
+      if (updErr) throw updErr;
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success(`${newRefs.length} reference${newRefs.length > 1 ? 's' : ''} attached`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setIsUploadingRefs(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveReference = async (idx: number) => {
+    const existing = Array.isArray(brief.reference_assets) ? [...brief.reference_assets] : [];
+    const removed = existing.splice(idx, 1)[0];
+    try {
+      if (removed?.storage_path) {
+        await supabase.storage.from('creative-assets').remove([removed.storage_path]);
+      }
+      const { error } = await supabase
+        .from('creative_briefs')
+        .update({ reference_assets: existing as any })
+        .eq('id', brief.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success('Reference removed');
+    } catch (err: any) {
+      toast.error(err.message || 'Remove failed');
+    }
+  };
+
+  const isVideo = (ref: any) =>
+    (ref.file_type && ref.file_type.startsWith('video/')) ||
+    /\.(mp4|mov|webm|m4v|avi)$/i.test(ref.file_name || ref.url || ref.drive_url || '');
+  const isImage = (ref: any) =>
+    (ref.file_type && ref.file_type.startsWith('image/')) ||
+    /\.(png|jpe?g|gif|webp|svg)$/i.test(ref.file_name || ref.url || ref.drive_url || '');
+
   const copySuggestions = Array.isArray(brief.copy_suggestions) ? brief.copy_suggestions : [];
+
 
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col border-l bg-card shadow-xl overflow-hidden">
@@ -115,7 +181,12 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
           <Badge variant="secondary" className={`text-xs ${statusConf.color}`}>{statusConf.label}</Badge>
           <Badge variant="secondary" className={`text-xs ${priorityConf.color}`}>{priorityConf.label}</Badge>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)} className="gap-1.5">
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -246,19 +317,58 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
             {brief.notes && <InfoBlock label="Notes" text={brief.notes} />}
 
             {/* Reference assets */}
-            {brief.reference_assets && Array.isArray(brief.reference_assets) && brief.reference_assets.length > 0 && (
-              <div>
-                <span className="text-xs text-muted-foreground block mb-2">Reference Assets</span>
-                <div className="space-y-1">
-                  {brief.reference_assets.map((ref: any, i: number) => (
-                    <a key={i} href={ref.drive_url || ref.url} target="_blank" rel="noopener noreferrer"
-                      className="block text-xs text-primary hover:underline truncate">
-                      {ref.file_name || ref.drive_url || ref.url}
-                    </a>
-                  ))}
-                </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground">Reference Assets</span>
+                <label className="inline-flex items-center gap-1.5 text-xs text-primary cursor-pointer hover:underline">
+                  <Paperclip className="h-3 w-3" />
+                  {isUploadingRefs ? 'Uploading…' : 'Attach files'}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.doc,.docx"
+                    className="hidden"
+                    onChange={handleReferenceUpload}
+                    disabled={isUploadingRefs}
+                  />
+                </label>
               </div>
-            )}
+              {Array.isArray(brief.reference_assets) && brief.reference_assets.length > 0 ? (
+                <div className="space-y-2">
+                  {brief.reference_assets.map((ref: any, i: number) => {
+                    const href = ref.drive_url || ref.url;
+                    return (
+                      <div key={i} className="rounded-lg border p-2 space-y-1.5">
+                        {isVideo(ref) && href && (
+                          <video src={href} controls className="w-full max-h-64 rounded bg-black" />
+                        )}
+                        {isImage(ref) && href && !isVideo(ref) && (
+                          <img src={href} alt={ref.file_name || ''} className="w-full max-h-64 object-contain rounded bg-muted" />
+                        )}
+                        <div className="flex items-center justify-between gap-2">
+                          <a href={href} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline truncate flex-1">
+                            {ref.file_name || href}
+                          </a>
+                          {ref.source === 'upload' && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveReference(i)}
+                              className="text-muted-foreground hover:text-destructive shrink-0"
+                              title="Remove"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No references yet — attach videos, images, or docs above.</p>
+              )}
+            </div>
 
             {/* Status actions */}
             <div className="flex gap-2 flex-wrap pt-2 border-t">
@@ -497,6 +607,10 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
           </TabsContent>
         </Tabs>
       </div>
+
+      {editOpen && (
+        <EditBriefDialog brief={brief} open={editOpen} onOpenChange={setEditOpen} />
+      )}
     </div>
   );
 }

@@ -49,6 +49,13 @@ const SPECIAL_CLIENT_OPTIONS = [
   { id: '__other__', name: 'Other / Ad Hoc', color: '#94a3b8' },
 ];
 
+interface UploadedReference {
+  file_name: string;
+  url: string;
+  file_type: string;
+  size: number;
+}
+
 const INITIAL_FORM: BriefFormData = {
   title: '', client_id: '', creative_types: [], platforms: [], sizes: [],
   funnel_stage: '', num_concepts: 1, objective: '', key_message: '',
@@ -69,6 +76,36 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
   const { teamMember } = useAuth();
   const [form, setForm] = useState<BriefFormData>({ ...INITIAL_FORM, client_id: clientId || '' });
   const [step, setStep] = useState(0);
+  const [uploadedRefs, setUploadedRefs] = useState<UploadedReference[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const newRefs: UploadedReference[] = [];
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop();
+        const path = `brief-refs/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error } = await supabase.storage.from('creative-assets').upload(path, file, {
+          cacheControl: '3600', upsert: false,
+        });
+        if (error) throw error;
+        const { data: pub } = supabase.storage.from('creative-assets').getPublicUrl(path);
+        newRefs.push({ file_name: file.name, url: pub.publicUrl, file_type: file.type, size: file.size });
+      }
+      setUploadedRefs(prev => [...prev, ...newRefs]);
+      toast.success(`${newRefs.length} file(s) uploaded`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeUploadedRef = (idx: number) => {
+    setUploadedRefs(prev => prev.filter((_, i) => i !== idx));
+  };
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients_for_brief'],
@@ -184,9 +221,13 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
     mutationFn: async () => {
       const designer = teamMembers.find((m: any) => m.role === 'designer');
       const assignedTo = form.assigned_to_id || designer?.id || null;
-      const references = form.reference_urls
+      const urlRefs = form.reference_urls
         ? form.reference_urls.split('\n').filter(Boolean).map(url => ({ source: 'url', drive_url: url.trim(), note: '' }))
         : [];
+      const fileRefs = uploadedRefs.map(r => ({
+        source: 'upload', url: r.url, drive_url: r.url, file_name: r.file_name, file_type: r.file_type, size: r.size,
+      }));
+      const references = [...urlRefs, ...fileRefs];
 
       const isSpecialClient = form.client_id.startsWith('__');
       const specialLabel = SPECIAL_CLIENT_OPTIONS.find(o => o.id === form.client_id)?.name || INTERNAL_OPTIONS.find(o => o.id === form.client_id)?.name;
@@ -248,6 +289,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
       toast.success('Brief created with ' + expectedDeliverables + ' deliverables');
       onOpenChange(false);
       setForm({ ...INITIAL_FORM });
+      setUploadedRefs([]);
       setStep(0);
     },
     onError: (err: any) => toast.error(err.message),
@@ -580,11 +622,38 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                 <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} />
               </div>
 
-              {/* Drive asset browser placeholder */}
-              <div className="rounded-lg border-2 border-dashed border-muted p-6 text-center">
-                <FileUp className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Google Drive Asset Browser</p>
-                <p className="text-xs text-muted-foreground">Connect Google Drive in Settings to browse and attach client assets</p>
+              {/* File uploads */}
+              <div className="space-y-2">
+                <Label>Reference Files</Label>
+                <label className="block rounded-lg border-2 border-dashed border-muted p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-accent/30 transition-colors">
+                  <FileUp className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm font-medium">
+                    {uploading ? 'Uploading…' : 'Click to upload reference files'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Images, videos, PDFs, docs — anything Malena should see</p>
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(e) => { handleFileUpload(e.target.files); e.target.value = ''; }}
+                  />
+                </label>
+                {uploadedRefs.length > 0 && (
+                  <div className="space-y-1.5">
+                    {uploadedRefs.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5 text-xs">
+                        <a href={r.url} target="_blank" rel="noopener noreferrer" className="truncate text-primary hover:underline flex-1">
+                          {r.file_name}
+                        </a>
+                        <span className="text-muted-foreground shrink-0">{(r.size / 1024).toFixed(0)} KB</span>
+                        <button type="button" onClick={() => removeUploadedRef(i)} className="text-muted-foreground hover:text-destructive">
+                          <Minus className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Summary */}

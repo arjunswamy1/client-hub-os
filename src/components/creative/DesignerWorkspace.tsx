@@ -333,6 +333,14 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                   onClick={() => onBriefClick(brief.id)}
                                   onEstimateChange={(hrs) => updateEstimate.mutate({ briefId: brief.id, hours: hrs })}
                                   onUnschedule={() => updateSchedule.mutate({ briefId: brief.id, date: null })}
+                                  isTimerActive={timer?.briefId === brief.id}
+                                  isRunning={isRunning && timer?.briefId === brief.id}
+                                  elapsedLabel={timer?.briefId === brief.id ? formatTime(elapsed) : null}
+                                  onStart={() => startTimer(brief.id)}
+                                  onPause={pauseTimer}
+                                  onStop={() => stopTimer.mutate()}
+                                  onMarkDone={() => markDone.mutate(brief.id)}
+                                  onLogTime={() => { setLogBriefId(brief.id); setLogOpen(true); }}
                                 />
                               </div>
                             )}

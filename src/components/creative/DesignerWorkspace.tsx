@@ -8,12 +8,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Play, Square, AlertTriangle, Calendar, Clock, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Pause, Square, AlertTriangle, Calendar, Clock, User, ChevronLeft, ChevronRight, Check, Pencil, Trash2 } from 'lucide-react';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, addDays, isSameDay } from 'date-fns';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { toast } from 'sonner';
+import { LogTimeDialog } from './LogTimeDialog';
 
 interface Props {
   onBriefClick: (briefId: string) => void;
@@ -27,10 +28,26 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { data: cap } = useDesignerCap(teamMember?.id || null);
   const { data: allEntries = [] } = useTimeEntries(null, teamMember?.id);
-  const [activeTimer, setActiveTimer] = useState<{ briefId: string; startedAt: Date } | null>(null);
+  // Shared v2 timer (matches DesignerDashboard) — supports pause/resume across views.
+  type TimerState = { briefId: string | null; accumulatedSec: number; segmentStart: string | null };
+  const TIMER_KEY = teamMember?.id ? `creative_timer_v2_${teamMember.id}` : null;
+  const [timer, setTimer] = useState<TimerState | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [statusFilter, setStatusFilter] = useState('all');
   const [weekOffset, setWeekOffset] = useState(0);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logBriefId, setLogBriefId] = useState<string | null>(null);
+
+  // Rehydrate + persist timer
+  useEffect(() => {
+    if (!TIMER_KEY) return;
+    try { const raw = localStorage.getItem(TIMER_KEY); if (raw) setTimer(JSON.parse(raw)); } catch { /* ignore */ }
+  }, [TIMER_KEY]);
+  useEffect(() => {
+    if (!TIMER_KEY) return;
+    if (timer) localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
+    else localStorage.removeItem(TIMER_KEY);
+  }, [timer, TIMER_KEY]);
 
   // For admin planner view, fetch all designers
   const { data: designers = [] } = useQuery({
@@ -66,38 +83,82 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
 
   // Timer tick
   useEffect(() => {
-    if (!activeTimer) { setElapsed(0); return; }
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - activeTimer.startedAt.getTime()) / 1000));
-    }, 1000);
+    if (!timer) { setElapsed(0); return; }
+    const compute = () => {
+      const live = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      setElapsed(timer.accumulatedSec + live);
+    };
+    compute();
+    if (!timer.segmentStart) return;
+    const interval = setInterval(compute, 1000);
     return () => clearInterval(interval);
-  }, [activeTimer]);
+  }, [timer]);
+
+  const isPaused = !!timer && !timer.segmentStart;
+  const isRunning = !!timer && !!timer.segmentStart;
 
   const startTimer = useCallback((briefId: string) => {
-    setActiveTimer({ briefId, startedAt: new Date() });
+    setTimer(prev => {
+      if (prev && prev.briefId && prev.briefId !== briefId) {
+        toast.error('Stop or save the current timer first');
+        return prev;
+      }
+      if (prev && prev.briefId === briefId) {
+        return { ...prev, segmentStart: new Date().toISOString() };
+      }
+      return { briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() };
+    });
     toast.info('Timer started');
+  }, []);
+
+  const pauseTimer = useCallback(() => {
+    setTimer(prev => {
+      if (!prev || !prev.segmentStart) return prev;
+      const liveSec = Math.floor((Date.now() - new Date(prev.segmentStart).getTime()) / 1000);
+      return { ...prev, accumulatedSec: prev.accumulatedSec + liveSec, segmentStart: null };
+    });
+    toast.info('Paused');
   }, []);
 
   const stopTimer = useMutation({
     mutationFn: async () => {
-      if (!activeTimer || !teamMember) return;
-      const brief = briefs.find((b: any) => b.id === activeTimer.briefId);
-      const duration = Math.round(elapsed / 60);
+      if (!timer || !teamMember) return;
+      const liveSec = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      const totalSec = timer.accumulatedSec + liveSec;
+      const duration = Math.max(1, Math.round(totalSec / 60));
+      const startedAt = new Date(Date.now() - totalSec * 1000).toISOString();
+      const brief = briefs.find((b: any) => b.id === timer.briefId);
       const { error } = await supabase.from('creative_time_entries').insert({
-        brief_id: activeTimer.briefId,
+        brief_id: timer.briefId,
         team_member_id: teamMember.id,
-        client_id: brief?.client_id,
-        started_at: activeTimer.startedAt.toISOString(),
+        client_id: brief?.client_id ?? null,
+        category: 'task',
+        started_at: startedAt,
         ended_at: new Date().toISOString(),
-        duration_minutes: Math.max(1, duration),
+        duration_minutes: duration,
         is_manual: false,
       });
       if (error) throw error;
+      return duration;
+    },
+    onSuccess: (duration) => {
+      setTimer(null);
+      queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+      toast.success(`Logged ${duration} min ✓`);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const discardTimer = useCallback(() => { setTimer(null); toast.info('Timer discarded'); }, []);
+
+  const markDone = useMutation({
+    mutationFn: async (briefId: string) => {
+      const { error } = await supabase.from('creative_briefs').update({ status: 'delivered' } as any).eq('id', briefId);
+      if (error) throw error;
     },
     onSuccess: () => {
-      setActiveTimer(null);
-      queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-      toast.success(`Logged ${Math.round(elapsed / 60)} min`);
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success('Marked as Done ✓');
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -272,6 +333,14 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                   onClick={() => onBriefClick(brief.id)}
                                   onEstimateChange={(hrs) => updateEstimate.mutate({ briefId: brief.id, hours: hrs })}
                                   onUnschedule={() => updateSchedule.mutate({ briefId: brief.id, date: null })}
+                                  isTimerActive={timer?.briefId === brief.id}
+                                  isRunning={isRunning && timer?.briefId === brief.id}
+                                  elapsedLabel={timer?.briefId === brief.id ? formatTime(elapsed) : null}
+                                  onStart={() => startTimer(brief.id)}
+                                  onPause={pauseTimer}
+                                  onStop={() => stopTimer.mutate()}
+                                  onMarkDone={() => markDone.mutate(brief.id)}
+                                  onLogTime={() => { setLogBriefId(brief.id); setLogOpen(true); }}
                                 />
                               </div>
                             )}
@@ -338,7 +407,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                 )}
                                 <p className="text-sm font-medium truncate">{brief.title}</p>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <Badge variant="secondary" className={`text-[9px] ${STATUS_CONFIG[brief.status]?.color}`}>
                                   {STATUS_CONFIG[brief.status]?.label}
                                 </Badge>
@@ -357,6 +426,17 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                     onBlur={e => updateEstimate.mutate({ briefId: brief.id, hours: e.target.value ? parseFloat(e.target.value) : null })}
                                     placeholder="hrs"
                                   />
+                                  <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={() => startTimer(brief.id)} title="Start timer">
+                                    <Play className="h-2.5 w-2.5" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1" onClick={() => { setLogBriefId(brief.id); setLogOpen(true); }} title="Log time manually">
+                                    <Pencil className="h-2.5 w-2.5" />
+                                  </Button>
+                                  {brief.status !== 'delivered' && (
+                                    <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1 text-green-700" onClick={() => markDone.mutate(brief.id)} title="Mark Done">
+                                      <Check className="h-2.5 w-2.5" />
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             </CardContent>
@@ -374,6 +454,12 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
             </Droppable>
           </div>
         </div>
+        <LogTimeDialog
+          open={logOpen}
+          onOpenChange={(o) => { setLogOpen(o); if (!o) setLogBriefId(null); }}
+          briefs={briefs as any}
+          editEntry={logBriefId ? { brief_id: logBriefId, category: 'task', started_at: new Date().toISOString(), duration_minutes: '' } : null}
+        />
       </DragDropContext>
     );
   }
@@ -408,13 +494,19 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
               <p className="text-lg font-semibold">{(dayMinutes / 60).toFixed(1)}</p>
               <p className="text-[10px] text-muted-foreground">Today</p>
             </div>
-            {activeTimer && (
+            {timer && (
               <div className="flex items-center gap-2 bg-primary/10 rounded-lg px-3 py-2">
-                <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-red-500 animate-pulse' : 'bg-yellow-500'}`} />
                 <span className="text-sm font-mono font-medium">{formatTime(elapsed)}</span>
+                {isRunning ? (
+                  <Button size="sm" variant="outline" onClick={pauseTimer}><Pause className="h-3 w-3 mr-1" /> Pause</Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => timer.briefId && startTimer(timer.briefId)}><Play className="h-3 w-3 mr-1" /> Resume</Button>
+                )}
                 <Button size="sm" variant="destructive" onClick={() => stopTimer.mutate()}>
                   <Square className="h-3 w-3 mr-1" /> Stop
                 </Button>
+                <Button size="sm" variant="ghost" onClick={discardTimer} title="Discard"><Trash2 className="h-3 w-3" /></Button>
               </div>
             )}
           </div>
@@ -445,7 +537,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
           const daysLeft = dueDate ? differenceInDays(dueDate, now) : null;
           const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
           const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
-          const isTimerActive = activeTimer?.briefId === brief.id;
+          const isTimerActive = timer?.briefId === brief.id;
 
           return (
             <Card
@@ -502,18 +594,33 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   );
 }
 
-function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
+function PlannerBriefCard({
+  brief, onClick, onEstimateChange, onUnschedule,
+  isTimerActive, isRunning, elapsedLabel,
+  onStart, onPause, onStop, onMarkDone, onLogTime,
+}: {
   brief: any;
   onClick: () => void;
   onEstimateChange: (hrs: number | null) => void;
   onUnschedule?: () => void;
+  isTimerActive?: boolean;
+  isRunning?: boolean;
+  elapsedLabel?: string | null;
+  onStart?: () => void;
+  onPause?: () => void;
+  onStop?: () => void;
+  onMarkDone?: () => void;
+  onLogTime?: () => void;
 }) {
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
+  const isDone = brief.status === 'delivered';
+
+  const stop = (e: React.MouseEvent | React.PointerEvent) => { e.stopPropagation(); };
 
   return (
     <div
-      className="group rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs relative"
+      className={`group rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs relative ${isTimerActive ? 'ring-2 ring-primary/50' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-start gap-1.5 mb-1">
@@ -536,12 +643,12 @@ function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
           </button>
         )}
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-1">
         <Badge variant="secondary" className={`text-[8px] px-1 py-0 ${statusConf.color}`}>{statusConf.label}</Badge>
         <div
           className="flex items-center gap-1"
-          onClick={e => e.stopPropagation()}
-          onMouseDown={e => e.stopPropagation()}
+          onClick={stop}
+          onMouseDown={stop as any}
         >
           <Clock className="h-2.5 w-2.5 text-muted-foreground" />
           <Input
@@ -555,6 +662,51 @@ function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
           />
         </div>
       </div>
+
+      {/* Timer + done controls */}
+      {(onStart || onMarkDone || onLogTime) && (
+        <div
+          className="mt-1.5 pt-1.5 border-t flex items-center gap-1 flex-wrap"
+          onClick={stop}
+          onMouseDown={stop as any}
+        >
+          {isTimerActive && elapsedLabel && (
+            <span className={`font-mono text-[10px] ${isRunning ? 'text-primary' : 'text-muted-foreground'}`}>
+              {elapsedLabel}
+            </span>
+          )}
+          {!isTimerActive && onStart && !isDone && (
+            <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={onStart}>
+              <Play className="h-2.5 w-2.5" /> Start
+            </Button>
+          )}
+          {isTimerActive && isRunning && onPause && (
+            <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={onPause}>
+              <Pause className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {isTimerActive && !isRunning && onStart && (
+            <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={onStart}>
+              <Play className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {isTimerActive && onStop && (
+            <Button size="sm" variant="default" className="h-6 px-1.5 text-[10px] gap-1" onClick={onStop}>
+              <Square className="h-2.5 w-2.5" /> Save
+            </Button>
+          )}
+          {onLogTime && (
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1 ml-auto" onClick={onLogTime} title="Log time manually">
+              <Pencil className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {onMarkDone && !isDone && (
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1 text-green-700 hover:text-green-800 hover:bg-green-50" onClick={onMarkDone} title="Mark as Done">
+              <Check className="h-2.5 w-2.5" /> Done
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

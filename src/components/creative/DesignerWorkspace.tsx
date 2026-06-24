@@ -469,13 +469,19 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
               <p className="text-lg font-semibold">{(dayMinutes / 60).toFixed(1)}</p>
               <p className="text-[10px] text-muted-foreground">Today</p>
             </div>
-            {activeTimer && (
+            {timer && (
               <div className="flex items-center gap-2 bg-primary/10 rounded-lg px-3 py-2">
-                <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-red-500 animate-pulse' : 'bg-yellow-500'}`} />
                 <span className="text-sm font-mono font-medium">{formatTime(elapsed)}</span>
+                {isRunning ? (
+                  <Button size="sm" variant="outline" onClick={pauseTimer}><Pause className="h-3 w-3 mr-1" /> Pause</Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => timer.briefId && startTimer(timer.briefId)}><Play className="h-3 w-3 mr-1" /> Resume</Button>
+                )}
                 <Button size="sm" variant="destructive" onClick={() => stopTimer.mutate()}>
                   <Square className="h-3 w-3 mr-1" /> Stop
                 </Button>
+                <Button size="sm" variant="ghost" onClick={discardTimer} title="Discard"><Trash2 className="h-3 w-3" /></Button>
               </div>
             )}
           </div>

@@ -512,7 +512,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
           const daysLeft = dueDate ? differenceInDays(dueDate, now) : null;
           const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
           const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
-          const isTimerActive = activeTimer?.briefId === brief.id;
+          const isTimerActive = timer?.briefId === brief.id;
 
           return (
             <Card

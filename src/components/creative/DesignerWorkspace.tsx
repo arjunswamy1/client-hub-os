@@ -577,18 +577,33 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   );
 }
 
-function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
+function PlannerBriefCard({
+  brief, onClick, onEstimateChange, onUnschedule,
+  isTimerActive, isRunning, elapsedLabel,
+  onStart, onPause, onStop, onMarkDone, onLogTime,
+}: {
   brief: any;
   onClick: () => void;
   onEstimateChange: (hrs: number | null) => void;
   onUnschedule?: () => void;
+  isTimerActive?: boolean;
+  isRunning?: boolean;
+  elapsedLabel?: string | null;
+  onStart?: () => void;
+  onPause?: () => void;
+  onStop?: () => void;
+  onMarkDone?: () => void;
+  onLogTime?: () => void;
 }) {
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
+  const isDone = brief.status === 'delivered';
+
+  const stop = (e: React.MouseEvent | React.PointerEvent) => { e.stopPropagation(); };
 
   return (
     <div
-      className="group rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs relative"
+      className={`group rounded-md border bg-card p-2 cursor-pointer hover:shadow-sm transition-all text-xs relative ${isTimerActive ? 'ring-2 ring-primary/50' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-start gap-1.5 mb-1">
@@ -611,12 +626,12 @@ function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
           </button>
         )}
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-1">
         <Badge variant="secondary" className={`text-[8px] px-1 py-0 ${statusConf.color}`}>{statusConf.label}</Badge>
         <div
           className="flex items-center gap-1"
-          onClick={e => e.stopPropagation()}
-          onMouseDown={e => e.stopPropagation()}
+          onClick={stop}
+          onMouseDown={stop as any}
         >
           <Clock className="h-2.5 w-2.5 text-muted-foreground" />
           <Input
@@ -630,6 +645,51 @@ function PlannerBriefCard({ brief, onClick, onEstimateChange, onUnschedule }: {
           />
         </div>
       </div>
+
+      {/* Timer + done controls */}
+      {(onStart || onMarkDone || onLogTime) && (
+        <div
+          className="mt-1.5 pt-1.5 border-t flex items-center gap-1 flex-wrap"
+          onClick={stop}
+          onMouseDown={stop as any}
+        >
+          {isTimerActive && elapsedLabel && (
+            <span className={`font-mono text-[10px] ${isRunning ? 'text-primary' : 'text-muted-foreground'}`}>
+              {elapsedLabel}
+            </span>
+          )}
+          {!isTimerActive && onStart && !isDone && (
+            <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={onStart}>
+              <Play className="h-2.5 w-2.5" /> Start
+            </Button>
+          )}
+          {isTimerActive && isRunning && onPause && (
+            <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={onPause}>
+              <Pause className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {isTimerActive && !isRunning && onStart && (
+            <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={onStart}>
+              <Play className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {isTimerActive && onStop && (
+            <Button size="sm" variant="default" className="h-6 px-1.5 text-[10px] gap-1" onClick={onStop}>
+              <Square className="h-2.5 w-2.5" /> Save
+            </Button>
+          )}
+          {onLogTime && (
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1 ml-auto" onClick={onLogTime} title="Log time manually">
+              <Pencil className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {onMarkDone && !isDone && (
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1 text-green-700 hover:text-green-800 hover:bg-green-50" onClick={onMarkDone} title="Mark as Done">
+              <Check className="h-2.5 w-2.5" /> Done
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

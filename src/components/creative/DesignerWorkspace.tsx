@@ -83,38 +83,82 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
 
   // Timer tick
   useEffect(() => {
-    if (!activeTimer) { setElapsed(0); return; }
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - activeTimer.startedAt.getTime()) / 1000));
-    }, 1000);
+    if (!timer) { setElapsed(0); return; }
+    const compute = () => {
+      const live = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      setElapsed(timer.accumulatedSec + live);
+    };
+    compute();
+    if (!timer.segmentStart) return;
+    const interval = setInterval(compute, 1000);
     return () => clearInterval(interval);
-  }, [activeTimer]);
+  }, [timer]);
+
+  const isPaused = !!timer && !timer.segmentStart;
+  const isRunning = !!timer && !!timer.segmentStart;
 
   const startTimer = useCallback((briefId: string) => {
-    setActiveTimer({ briefId, startedAt: new Date() });
+    setTimer(prev => {
+      if (prev && prev.briefId && prev.briefId !== briefId) {
+        toast.error('Stop or save the current timer first');
+        return prev;
+      }
+      if (prev && prev.briefId === briefId) {
+        return { ...prev, segmentStart: new Date().toISOString() };
+      }
+      return { briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() };
+    });
     toast.info('Timer started');
+  }, []);
+
+  const pauseTimer = useCallback(() => {
+    setTimer(prev => {
+      if (!prev || !prev.segmentStart) return prev;
+      const liveSec = Math.floor((Date.now() - new Date(prev.segmentStart).getTime()) / 1000);
+      return { ...prev, accumulatedSec: prev.accumulatedSec + liveSec, segmentStart: null };
+    });
+    toast.info('Paused');
   }, []);
 
   const stopTimer = useMutation({
     mutationFn: async () => {
-      if (!activeTimer || !teamMember) return;
-      const brief = briefs.find((b: any) => b.id === activeTimer.briefId);
-      const duration = Math.round(elapsed / 60);
+      if (!timer || !teamMember) return;
+      const liveSec = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      const totalSec = timer.accumulatedSec + liveSec;
+      const duration = Math.max(1, Math.round(totalSec / 60));
+      const startedAt = new Date(Date.now() - totalSec * 1000).toISOString();
+      const brief = briefs.find((b: any) => b.id === timer.briefId);
       const { error } = await supabase.from('creative_time_entries').insert({
-        brief_id: activeTimer.briefId,
+        brief_id: timer.briefId,
         team_member_id: teamMember.id,
-        client_id: brief?.client_id,
-        started_at: activeTimer.startedAt.toISOString(),
+        client_id: brief?.client_id ?? null,
+        category: 'task',
+        started_at: startedAt,
         ended_at: new Date().toISOString(),
-        duration_minutes: Math.max(1, duration),
+        duration_minutes: duration,
         is_manual: false,
       });
       if (error) throw error;
+      return duration;
+    },
+    onSuccess: (duration) => {
+      setTimer(null);
+      queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+      toast.success(`Logged ${duration} min ✓`);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const discardTimer = useCallback(() => { setTimer(null); toast.info('Timer discarded'); }, []);
+
+  const markDone = useMutation({
+    mutationFn: async (briefId: string) => {
+      const { error } = await supabase.from('creative_briefs').update({ status: 'delivered' } as any).eq('id', briefId);
+      if (error) throw error;
     },
     onSuccess: () => {
-      setActiveTimer(null);
-      queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-      toast.success(`Logged ${Math.round(elapsed / 60)} min`);
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      toast.success('Marked as Done ✓');
     },
     onError: (err: any) => toast.error(err.message),
   });

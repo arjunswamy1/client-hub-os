@@ -41,13 +41,37 @@ export function BriefKanban({ briefs, onBriefClick, onStatusChange }: Props) {
   const [deletingBrief, setDeletingBrief] = useState<any | null>(null);
 
   const deleteBrief = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('creative_briefs').delete().eq('id', id);
+    mutationFn: async (brief: any) => {
+      const deletedAt = new Date().toISOString();
+      // Soft-delete brief and any of its time entries together
+      const { error } = await supabase
+        .from('creative_briefs')
+        .update({ deleted_at: deletedAt } as any)
+        .eq('id', brief.id);
       if (error) throw error;
+      await supabase
+        .from('creative_time_entries')
+        .update({ deleted_at: deletedAt } as any)
+        .eq('brief_id', brief.id)
+        .is('deleted_at', null);
+      return { brief, deletedAt };
     },
-    onSuccess: () => {
+    onSuccess: ({ brief }) => {
       queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
-      toast.success('Brief deleted');
+      queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+      toast.success(`Deleted "${brief.title}"`, {
+        duration: 15000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            await supabase.from('creative_briefs').update({ deleted_at: null } as any).eq('id', brief.id);
+            await supabase.from('creative_time_entries').update({ deleted_at: null } as any).eq('brief_id', brief.id);
+            queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+            queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+            toast.success('Brief restored');
+          },
+        },
+      });
       setDeletingBrief(null);
     },
     onError: (err: any) => toast.error(err.message),
@@ -134,13 +158,13 @@ export function BriefKanban({ briefs, onBriefClick, onStatusChange }: Props) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this brief?</AlertDialogTitle>
             <AlertDialogDescription>
-              "{deletingBrief?.title}" and all its comments, reviews, and time entries will be permanently removed. This cannot be undone.
+              "{deletingBrief?.title}" will be removed. You'll have 15 seconds to undo from the toast.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deletingBrief && deleteBrief.mutate(deletingBrief.id)}
+              onClick={() => deletingBrief && deleteBrief.mutate(deletingBrief)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete

@@ -407,7 +407,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                 )}
                                 <p className="text-sm font-medium truncate">{brief.title}</p>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <Badge variant="secondary" className={`text-[9px] ${STATUS_CONFIG[brief.status]?.color}`}>
                                   {STATUS_CONFIG[brief.status]?.label}
                                 </Badge>
@@ -426,6 +426,17 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
                                     onBlur={e => updateEstimate.mutate({ briefId: brief.id, hours: e.target.value ? parseFloat(e.target.value) : null })}
                                     placeholder="hrs"
                                   />
+                                  <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px] gap-1" onClick={() => startTimer(brief.id)} title="Start timer">
+                                    <Play className="h-2.5 w-2.5" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1" onClick={() => { setLogBriefId(brief.id); setLogOpen(true); }} title="Log time manually">
+                                    <Pencil className="h-2.5 w-2.5" />
+                                  </Button>
+                                  {brief.status !== 'delivered' && (
+                                    <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] gap-1 text-green-700" onClick={() => markDone.mutate(brief.id)} title="Mark Done">
+                                      <Check className="h-2.5 w-2.5" />
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             </CardContent>

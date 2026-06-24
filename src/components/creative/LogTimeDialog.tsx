@@ -98,12 +98,26 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
   const remove = useMutation({
     mutationFn: async () => {
       if (!editEntry) return;
-      const { error } = await supabase.from('creative_time_entries').delete().eq('id', editEntry.id);
+      const { error } = await supabase
+        .from('creative_time_entries')
+        .update({ deleted_at: new Date().toISOString() } as any)
+        .eq('id', editEntry.id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-      toast.success('Entry deleted');
+      const entryId = editEntry?.id;
+      toast.success('Entry deleted', {
+        duration: 15000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            await supabase.from('creative_time_entries').update({ deleted_at: null } as any).eq('id', entryId);
+            queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+            toast.success('Entry restored');
+          },
+        },
+      });
       onOpenChange(false);
     },
     onError: (err: any) => toast.error(err.message),

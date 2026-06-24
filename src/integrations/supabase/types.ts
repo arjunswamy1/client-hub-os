@@ -2272,6 +2272,7 @@ export type Database = {
           created_by_id: string | null
           creative_type: string
           creative_types: string[] | null
+          deleted_at: string | null
           delivered_at: string | null
           dos_and_donts: string | null
           drive_approved_folder_id: string | null
@@ -2310,6 +2311,7 @@ export type Database = {
           created_by_id?: string | null
           creative_type?: string
           creative_types?: string[] | null
+          deleted_at?: string | null
           delivered_at?: string | null
           dos_and_donts?: string | null
           drive_approved_folder_id?: string | null
@@ -2348,6 +2350,7 @@ export type Database = {
           created_by_id?: string | null
           creative_type?: string
           creative_types?: string[] | null
+          deleted_at?: string | null
           delivered_at?: string | null
           dos_and_donts?: string | null
           drive_approved_folder_id?: string | null
@@ -2592,6 +2595,7 @@ export type Database = {
           category: string
           client_id: string | null
           created_at: string
+          deleted_at: string | null
           description: string | null
           duration_minutes: number | null
           ended_at: string | null
@@ -2606,6 +2610,7 @@ export type Database = {
           category?: string
           client_id?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           duration_minutes?: number | null
           ended_at?: string | null
@@ -2620,6 +2625,7 @@ export type Database = {
           category?: string
           client_id?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           duration_minutes?: number | null
           ended_at?: string | null

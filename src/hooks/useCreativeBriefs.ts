@@ -20,6 +20,7 @@ export function useCreativeBriefs(options?: { allClients?: boolean }) {
           assigned_to:team_members!creative_briefs_assigned_to_id_fkey(id, name, email, avatar_url),
           created_by:team_members!creative_briefs_created_by_id_fkey(id, name)
         `)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
       if (!options?.allClients && activeClient) {
@@ -101,6 +102,7 @@ export function useTimeEntries(briefId?: string | null, teamMemberId?: string | 
       let query = supabase
         .from('creative_time_entries')
         .select('*, brief:creative_briefs!creative_time_entries_brief_id_fkey(title, client_id), client:clients!creative_time_entries_client_id_fkey(name, color)')
+        .is('deleted_at', null)
         .order('started_at', { ascending: false });
 
       if (briefId) query = query.eq('brief_id', briefId);

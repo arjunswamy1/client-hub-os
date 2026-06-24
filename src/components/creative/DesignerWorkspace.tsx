@@ -458,7 +458,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
           open={logOpen}
           onOpenChange={(o) => { setLogOpen(o); if (!o) setLogBriefId(null); }}
           briefs={briefs as any}
-          editEntry={logBriefId ? { brief_id: logBriefId, category: 'task', started_at: new Date().toISOString(), duration_minutes: '' } : null}
+          defaultBriefId={logBriefId}
         />
       </DragDropContext>
     );

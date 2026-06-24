@@ -28,10 +28,26 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { data: cap } = useDesignerCap(teamMember?.id || null);
   const { data: allEntries = [] } = useTimeEntries(null, teamMember?.id);
-  const [activeTimer, setActiveTimer] = useState<{ briefId: string; startedAt: Date } | null>(null);
+  // Shared v2 timer (matches DesignerDashboard) — supports pause/resume across views.
+  type TimerState = { briefId: string | null; accumulatedSec: number; segmentStart: string | null };
+  const TIMER_KEY = teamMember?.id ? `creative_timer_v2_${teamMember.id}` : null;
+  const [timer, setTimer] = useState<TimerState | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [statusFilter, setStatusFilter] = useState('all');
   const [weekOffset, setWeekOffset] = useState(0);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logBriefId, setLogBriefId] = useState<string | null>(null);
+
+  // Rehydrate + persist timer
+  useEffect(() => {
+    if (!TIMER_KEY) return;
+    try { const raw = localStorage.getItem(TIMER_KEY); if (raw) setTimer(JSON.parse(raw)); } catch { /* ignore */ }
+  }, [TIMER_KEY]);
+  useEffect(() => {
+    if (!TIMER_KEY) return;
+    if (timer) localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
+    else localStorage.removeItem(TIMER_KEY);
+  }, [timer, TIMER_KEY]);
 
   // For admin planner view, fetch all designers
   const { data: designers = [] } = useQuery({

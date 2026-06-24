@@ -8,12 +8,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Play, Square, AlertTriangle, Calendar, Clock, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Pause, Square, AlertTriangle, Calendar, Clock, User, ChevronLeft, ChevronRight, Check, Pencil, Trash2 } from 'lucide-react';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, addDays, isSameDay } from 'date-fns';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { toast } from 'sonner';
+import { LogTimeDialog } from './LogTimeDialog';
 
 interface Props {
   onBriefClick: (briefId: string) => void;

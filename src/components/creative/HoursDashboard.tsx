@@ -93,11 +93,23 @@ export function HoursDashboard({ teamMemberId }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold">Hours Dashboard — {format(now, 'MMMM yyyy')}</h2>
-        <Button size="sm" variant="outline" onClick={exportCSV}>
-          <Download className="h-3 w-3 mr-1" /> Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+          {isOwn && (
+            <>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditEntry(null); setLogOpen(true); }}>
+                <Plus className="h-3 w-3" /> Log time
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditEntry({ category: 'call', duration_minutes: '', started_at: new Date().toISOString() }); setLogOpen(true); }}>
+                <Phone className="h-3 w-3" /> Log a call
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant="outline" onClick={exportCSV}>
+            <Download className="h-3 w-3 mr-1" /> Export CSV
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}

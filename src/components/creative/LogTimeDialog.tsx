@@ -21,6 +21,8 @@ interface Props {
   /** Pre-fill a task when opening (e.g. quick "log to current timer task") */
   defaultBriefId?: string | null;
   defaultMinutes?: number;
+  defaultCategory?: string;
+  defaultNote?: string;
 }
 
 const CATEGORIES = [
@@ -31,9 +33,10 @@ const CATEGORIES = [
   { value: 'other', label: 'Other' },
 ];
 
-export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBriefId, defaultMinutes }: Props) {
+export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBriefId, defaultMinutes, defaultCategory, defaultNote }: Props) {
   const { teamMember } = useAuth();
   const queryClient = useQueryClient();
+  const isEditing = Boolean(editEntry?.id);
 
   const [category, setCategory] = useState<string>('task');
   const [briefId, setBriefId] = useState<string>('');
@@ -44,19 +47,19 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
   useEffect(() => {
     if (!open) return;
     if (editEntry) {
-      setCategory(editEntry.category || 'task');
+      setCategory(editEntry.category || defaultCategory || 'task');
       setBriefId(editEntry.brief_id || '');
       setMinutes(String(editEntry.duration_minutes ?? ''));
       setDate((editEntry.started_at || new Date().toISOString()).slice(0, 10));
-      setNote(editEntry.description || '');
+      setNote(editEntry.description || defaultNote || '');
     } else {
-      setCategory(defaultBriefId ? 'task' : 'task');
+      setCategory(defaultCategory || (defaultBriefId ? 'task' : 'task'));
       setBriefId(defaultBriefId || '');
       setMinutes(defaultMinutes ? String(defaultMinutes) : '');
       setDate(new Date().toISOString().slice(0, 10));
-      setNote('');
+      setNote(defaultNote || '');
     }
-  }, [open, editEntry, defaultBriefId, defaultMinutes]);
+  }, [open, editEntry, defaultBriefId, defaultMinutes, defaultCategory, defaultNote]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -64,6 +67,7 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
       const mins = parseFloat(minutes);
       if (!mins || mins <= 0) throw new Error('Enter minutes greater than 0');
       const chosenBrief = briefs.find(b => b.id === briefId);
+      if (category === 'task' && !chosenBrief) throw new Error('Pick a task, or choose Call/Admin/Other');
       const startedAt = new Date(`${date}T12:00:00`);
       const endedAt = new Date(startedAt.getTime() + mins * 60000);
 
@@ -79,7 +83,7 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
         description: note || null,
       };
 
-      if (editEntry) {
+      if (isEditing) {
         const { error } = await supabase.from('creative_time_entries').update(payload).eq('id', editEntry.id);
         if (error) throw error;
       } else {
@@ -89,7 +93,7 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-      toast.success(editEntry ? 'Entry updated' : 'Time logged');
+      toast.success(isEditing ? 'Entry updated' : 'Time logged');
       onOpenChange(false);
     },
     onError: (err: any) => toast.error(err.message),
@@ -127,9 +131,9 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{editEntry ? 'Edit time entry' : 'Log time'}</DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit time entry' : 'Log time'}</DialogTitle>
           <DialogDescription>
-            {editEntry ? 'Correct or remove a logged entry.' : 'Add time for a task, call, or admin work.'}
+            {isEditing ? 'Correct or remove a logged entry.' : 'Add time for a task, call, or admin work.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -174,7 +178,7 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
         </div>
         <DialogFooter className="flex sm:justify-between gap-2">
           <div>
-            {editEntry && (
+            {isEditing && (
               <Button variant="destructive" size="sm" onClick={() => remove.mutate()} disabled={remove.isPending}>
                 Delete
               </Button>
@@ -182,7 +186,7 @@ export function LogTimeDialog({ open, onOpenChange, briefs, editEntry, defaultBr
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending}>{editEntry ? 'Save' : 'Log'}</Button>
+            <Button onClick={() => save.mutate()} disabled={save.isPending}>{isEditing ? 'Save' : 'Log'}</Button>
           </div>
         </DialogFooter>
       </DialogContent>

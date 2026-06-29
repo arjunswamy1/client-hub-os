@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { startOfMonth, endOfMonth, format, eachDayOfInterval, isSameDay } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Plus, Phone, Pencil, Clock } from 'lucide-react';
+import { Download, Plus, Phone, Pencil, Clock, AlertTriangle } from 'lucide-react';
 import { LogTimeDialog } from './LogTimeDialog';
 
 interface Props {
@@ -38,6 +38,14 @@ export function HoursDashboard({ teamMemberId }: Props) {
   const totalMinutes = monthEntries.reduce((s: number, e: any) => s + (e.duration_minutes || 0), 0);
   const totalHours = totalMinutes / 60;
   const capPercent = Math.min(100, (totalHours / capHours) * 100);
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - 6);
+  weekStart.setHours(0, 0, 0, 0);
+  const todayEntries = entries.filter((e: any) => isSameDay(new Date(e.started_at), now));
+  const weekEntries = entries.filter((e: any) => new Date(e.started_at) >= weekStart);
+  const todayMinutes = todayEntries.reduce((s: number, e: any) => s + (e.duration_minutes || 0), 0);
+  const weekMinutes = weekEntries.reduce((s: number, e: any) => s + (e.duration_minutes || 0), 0);
+  const remainingHours = capHours - totalHours;
 
   // Hours by client
   const clientMap: Record<string, { name: string; minutes: number; color: string }> = {};
@@ -94,7 +102,7 @@ export function HoursDashboard({ teamMemberId }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-lg font-semibold">Hours Dashboard — {format(now, 'MMMM yyyy')}</h2>
+        <h2 className="text-lg font-semibold">Work Log — {format(now, 'MMMM yyyy')}</h2>
         <div className="flex items-center gap-2">
           {isOwn && (
             <>
@@ -104,6 +112,9 @@ export function HoursDashboard({ teamMemberId }: Props) {
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditEntry({ category: 'call', duration_minutes: '', started_at: new Date().toISOString() }); setLogOpen(true); }}>
                 <Phone className="h-3 w-3" /> Log a call
               </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditEntry({ category: 'admin', duration_minutes: '', started_at: new Date().toISOString(), description: 'Admin work — ' }); setLogOpen(true); }}>
+                <Clock className="h-3 w-3" /> Log admin
+              </Button>
             </>
           )}
           <Button size="sm" variant="outline" onClick={exportCSV}>
@@ -111,6 +122,64 @@ export function HoursDashboard({ teamMemberId }: Props) {
           </Button>
         </div>
       </div>
+
+      {/* Work log */}
+      {isOwn && (
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" /> Work Log
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Today: {(todayMinutes / 60).toFixed(1)}h · Last 7 days: {(weekMinutes / 60).toFixed(1)}h
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditEntry({ category: 'other', duration_minutes: '', started_at: new Date().toISOString(), description: 'Extra hours needed — ' }); setLogOpen(true); }}>
+                <AlertTriangle className="h-3 w-3" /> Flag extra hours
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
+              <div className="space-y-1.5">
+                {entries.slice(0, 8).map((e: any) => {
+                  const label = e.brief?.title || (e.category && e.category !== 'task'
+                    ? e.category.charAt(0).toUpperCase() + e.category.slice(1)
+                    : 'Untitled');
+                  return (
+                    <div key={e.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm hover:bg-accent/40 transition-colors">
+                      <Badge variant="outline" className="text-[10px] capitalize">{e.category || 'task'}</Badge>
+                      <span className="flex-1 truncate">{label}</span>
+                      <span className="text-xs text-muted-foreground">{format(new Date(e.started_at), 'MMM d')}</span>
+                      <span className="font-mono text-xs font-medium">{e.duration_minutes}m</span>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEntry(e); setLogOpen(true); }}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+                {entries.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No time logged yet</p>}
+              </div>
+
+              <div className="rounded-lg border p-3 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Monthly cap</span>
+                  <span className="font-medium">{capHours}h</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Logged</span>
+                  <span className="font-medium">{totalHours.toFixed(1)}h</span>
+                </div>
+                <div className="flex items-center justify-between border-t pt-2">
+                  <span className="text-muted-foreground">Remaining</span>
+                  <span className={remainingHours < 0 ? 'font-medium text-red-600' : 'font-medium'}>{remainingHours.toFixed(1)}h</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -191,35 +260,6 @@ export function HoursDashboard({ teamMemberId }: Props) {
           </div>
         </CardContent>
       </Card>
-
-      {/* Recent entries — edit/delete */}
-      {isOwn && entries.length > 0 && (
-        <Card>
-          <CardContent className="p-4">
-            <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" /> Recent Entries
-            </h3>
-            <div className="space-y-1.5">
-              {entries.slice(0, 15).map((e: any) => {
-                const label = e.brief?.title || (e.category && e.category !== 'task'
-                  ? e.category.charAt(0).toUpperCase() + e.category.slice(1)
-                  : 'Untitled');
-                return (
-                  <div key={e.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm hover:bg-accent/40 transition-colors">
-                    <Badge variant="outline" className="text-[10px] capitalize">{e.category || 'task'}</Badge>
-                    <span className="flex-1 truncate">{label}</span>
-                    <span className="text-xs text-muted-foreground">{format(new Date(e.started_at), 'MMM d')}</span>
-                    <span className="font-mono text-xs font-medium">{e.duration_minutes}m</span>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEntry(e); setLogOpen(true); }}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <LogTimeDialog
         open={logOpen}

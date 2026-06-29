@@ -99,7 +99,7 @@ export default function CreativePage() {
               <TabsTrigger value="mywork">My Work</TabsTrigger>
               <TabsTrigger value="kanban">Kanban</TabsTrigger>
               <TabsTrigger value="planner">Planner</TabsTrigger>
-              <TabsTrigger value="hours">Hours</TabsTrigger>
+              <TabsTrigger value="hours">Work Log</TabsTrigger>
             </TabsList>
           </div>
 

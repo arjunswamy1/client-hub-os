@@ -97,42 +97,61 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   const isPaused = !!timer && !timer.segmentStart;
   const isRunning = !!timer && !!timer.segmentStart;
 
+  const saveTimerEntry = useCallback(async (value: TimerState) => {
+    if (!value.briefId || !teamMember) return 0;
+    const liveSec = value.segmentStart ? Math.floor((Date.now() - new Date(value.segmentStart).getTime()) / 1000) : 0;
+    const totalSec = value.accumulatedSec + liveSec;
+    if (totalSec <= 0) return 0;
+
+    const duration = Math.max(1, Math.round(totalSec / 60));
+    const endedAt = new Date();
+    const startedAt = value.segmentStart
+      ? new Date(new Date(value.segmentStart).getTime() - value.accumulatedSec * 1000)
+      : new Date(endedAt.getTime() - totalSec * 1000);
+    const brief = briefs.find((b: any) => b.id === value.briefId);
+
+    const { error } = await supabase.from('creative_time_entries').insert({
+      brief_id: value.briefId,
+      team_member_id: teamMember.id,
+      client_id: brief?.client_id ?? null,
+      category: 'task',
+      started_at: startedAt.toISOString(),
+      ended_at: endedAt.toISOString(),
+      duration_minutes: duration,
+      is_manual: false,
+    });
+    if (error) throw error;
+    return duration;
+  }, [briefs, teamMember]);
+
   const startTimer = useCallback(async (briefId: string) => {
-    // If switching to a different task, save the previous timer's elapsed time first
-    // so Malena can hop between quick changes without losing hours.
-    if (timer && timer.briefId && timer.briefId !== briefId && teamMember) {
-      const liveSec = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
-      const totalSec = timer.accumulatedSec + liveSec;
-      if (totalSec >= 30) {
-        const duration = Math.max(1, Math.round(totalSec / 60));
-        const startedAt = new Date(Date.now() - totalSec * 1000).toISOString();
-        const prevBrief = briefs.find((b: any) => b.id === timer.briefId);
-        const { error } = await supabase.from('creative_time_entries').insert({
-          brief_id: timer.briefId,
-          team_member_id: teamMember.id,
-          client_id: prevBrief?.client_id ?? null,
-          category: 'task',
-          started_at: startedAt,
-          ended_at: new Date().toISOString(),
-          duration_minutes: duration,
-          is_manual: false,
-        });
-        if (error) { toast.error(`Couldn't save previous timer: ${error.message}`); return; }
-        queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-        toast.success(`Saved ${duration} min to previous task ✓`);
+    if (!teamMember) return;
+
+    if (timer?.briefId === briefId) {
+      if (timer.segmentStart) {
+        toast.info('Timer is already running');
+        return;
       }
-      setTimer({ briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() });
-      toast.info('Switched to new task');
+      setTimer({ ...timer, segmentStart: new Date().toISOString() });
+      toast.info('Timer resumed');
       return;
     }
-    setTimer(prev => {
-      if (prev && prev.briefId === briefId) {
-        return { ...prev, segmentStart: new Date().toISOString() };
+
+    if (timer?.briefId && timer.briefId !== briefId) {
+      try {
+        const duration = await saveTimerEntry(timer);
+        queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+        setTimer({ briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() });
+        toast.success(duration > 0 ? `Saved ${duration} min and switched tasks` : 'Switched to new task');
+      } catch (err: any) {
+        toast.error(`Couldn't save previous timer: ${err.message}`);
       }
-      return { briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() };
-    });
+      return;
+    }
+
+    setTimer({ briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() });
     toast.info('Timer started');
-  }, [timer, teamMember, briefs, queryClient]);
+  }, [timer, teamMember, queryClient, saveTimerEntry]);
 
   const pauseTimer = useCallback(() => {
     setTimer(prev => {
@@ -145,34 +164,22 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
 
   const stopTimer = useMutation({
     mutationFn: async () => {
-      if (!timer || !teamMember) return;
-      const liveSec = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
-      const totalSec = timer.accumulatedSec + liveSec;
-      const duration = Math.max(1, Math.round(totalSec / 60));
-      const startedAt = new Date(Date.now() - totalSec * 1000).toISOString();
-      const brief = briefs.find((b: any) => b.id === timer.briefId);
-      const { error } = await supabase.from('creative_time_entries').insert({
-        brief_id: timer.briefId,
-        team_member_id: teamMember.id,
-        client_id: brief?.client_id ?? null,
-        category: 'task',
-        started_at: startedAt,
-        ended_at: new Date().toISOString(),
-        duration_minutes: duration,
-        is_manual: false,
-      });
-      if (error) throw error;
-      return duration;
+      if (!timer || !teamMember) return 0;
+      return saveTimerEntry(timer);
     },
     onSuccess: (duration) => {
       setTimer(null);
       queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
-      toast.success(`Logged ${duration} min ✓`);
+      toast.success(duration > 0 ? `Logged ${duration} min ✓` : 'Timer cleared');
     },
     onError: (err: any) => toast.error(err.message),
   });
 
-  const discardTimer = useCallback(() => { setTimer(null); toast.info('Timer discarded'); }, []);
+  const discardTimer = useCallback(() => {
+    if (elapsed > 0 && !window.confirm('Clear this unsaved timer without logging the time?')) return;
+    setTimer(null);
+    toast.info('Timer cleared');
+  }, [elapsed]);
 
   const markDone = useMutation({
     mutationFn: async (briefId: string) => {

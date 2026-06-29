@@ -1,11 +1,14 @@
 
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
+import { Badge } from '@/components/ui/badge';
+import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { startOfMonth, endOfMonth, format, eachDayOfInterval, isSameDay } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download } from 'lucide-react';
+import { Download, Plus, Phone, Pencil, Clock } from 'lucide-react';
+import { LogTimeDialog } from './LogTimeDialog';
 
 interface Props {
   teamMemberId?: string;
@@ -14,8 +17,12 @@ interface Props {
 export function HoursDashboard({ teamMemberId }: Props) {
   const { teamMember } = useAuth();
   const targetId = teamMemberId || teamMember?.id;
+  const isOwn = !teamMemberId || teamMemberId === teamMember?.id;
   const { data: cap } = useDesignerCap(targetId || null);
   const { data: entries = [] } = useTimeEntries(null, targetId);
+  const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
+  const [logOpen, setLogOpen] = useState(false);
+  const [editEntry, setEditEntry] = useState<any | null>(null);
 
   const now = new Date();
   const monthStart = startOfMonth(now);

@@ -97,19 +97,42 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   const isPaused = !!timer && !timer.segmentStart;
   const isRunning = !!timer && !!timer.segmentStart;
 
-  const startTimer = useCallback((briefId: string) => {
-    setTimer(prev => {
-      if (prev && prev.briefId && prev.briefId !== briefId) {
-        toast.error('Stop or save the current timer first');
-        return prev;
+  const startTimer = useCallback(async (briefId: string) => {
+    // If switching to a different task, save the previous timer's elapsed time first
+    // so Malena can hop between quick changes without losing hours.
+    if (timer && timer.briefId && timer.briefId !== briefId && teamMember) {
+      const liveSec = timer.segmentStart ? Math.floor((Date.now() - new Date(timer.segmentStart).getTime()) / 1000) : 0;
+      const totalSec = timer.accumulatedSec + liveSec;
+      if (totalSec >= 30) {
+        const duration = Math.max(1, Math.round(totalSec / 60));
+        const startedAt = new Date(Date.now() - totalSec * 1000).toISOString();
+        const prevBrief = briefs.find((b: any) => b.id === timer.briefId);
+        const { error } = await supabase.from('creative_time_entries').insert({
+          brief_id: timer.briefId,
+          team_member_id: teamMember.id,
+          client_id: prevBrief?.client_id ?? null,
+          category: 'task',
+          started_at: startedAt,
+          ended_at: new Date().toISOString(),
+          duration_minutes: duration,
+          is_manual: false,
+        });
+        if (error) { toast.error(`Couldn't save previous timer: ${error.message}`); return; }
+        queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+        toast.success(`Saved ${duration} min to previous task ✓`);
       }
+      setTimer({ briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() });
+      toast.info('Switched to new task');
+      return;
+    }
+    setTimer(prev => {
       if (prev && prev.briefId === briefId) {
         return { ...prev, segmentStart: new Date().toISOString() };
       }
       return { briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() };
     });
     toast.info('Timer started');
-  }, []);
+  }, [timer, teamMember, briefs, queryClient]);
 
   const pauseTimer = useCallback(() => {
     setTimer(prev => {

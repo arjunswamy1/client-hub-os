@@ -168,7 +168,6 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
       return saveTimerEntry(timer);
     },
     onSuccess: (duration) => {
-      setTimer({ briefId, accumulatedSec: 0, segmentStart: new Date().toISOString() });
       setTimer(null);
       queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
       toast.success(duration > 0 ? `Logged ${duration} min ✓` : 'Timer cleared');

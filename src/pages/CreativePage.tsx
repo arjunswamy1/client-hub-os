@@ -125,7 +125,7 @@ export default function CreativePage() {
           </TabsContent>
 
           <TabsContent value="hours" className="mt-4">
-            <HoursDashboard />
+            <WorkCalendar />
           </TabsContent>
         </Tabs>
 

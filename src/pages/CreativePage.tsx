@@ -16,6 +16,7 @@ import { DesignerDashboard } from '@/components/creative/DesignerDashboard';
 import { MyWorkQueue } from '@/components/creative/MyWorkQueue';
 import { TraffickingQueue } from '@/components/creative/TraffickingQueue';
 import { HoursDashboard } from '@/components/creative/HoursDashboard';
+import { WorkCalendar } from '@/components/creative/WorkCalendar';
 import { DateRangeProvider } from '@/contexts/DateRangeContext';
 import DateRangePicker from '@/components/dashboard/DateRangePicker';
 import { ContentCalendar } from '@/components/trafficking/ContentCalendar';

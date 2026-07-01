@@ -1,14 +1,18 @@
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
-import { startOfMonth, endOfMonth, format, eachDayOfInterval, isSameDay } from 'date-fns';
+import { startOfMonth, endOfMonth, format, eachDayOfInterval, isSameDay, subMonths, addMonths } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Plus, Phone, Pencil, Clock, AlertTriangle } from 'lucide-react';
+import { Download, Plus, Phone, Pencil, Clock, AlertTriangle, ChevronLeft, ChevronRight, Merge } from 'lucide-react';
 import { LogTimeDialog } from './LogTimeDialog';
+import { toast } from 'sonner';
 
 interface Props {
   teamMemberId?: string;
@@ -16,6 +20,7 @@ interface Props {
 
 export function HoursDashboard({ teamMemberId }: Props) {
   const { teamMember } = useAuth();
+  const queryClient = useQueryClient();
   const targetId = teamMemberId || teamMember?.id;
   const isOwn = !teamMemberId || teamMemberId === teamMember?.id;
   const { data: cap } = useDesignerCap(targetId || null);
@@ -24,12 +29,26 @@ export function HoursDashboard({ teamMemberId }: Props) {
   const [logOpen, setLogOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<any | null>(null);
 
-  const now = new Date();
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
+  // Month cursor — lets Malena review June/July separately
+  const [cursor, setCursor] = useState(new Date());
+  const monthStart = startOfMonth(cursor);
+  const monthEnd = endOfMonth(cursor);
   const capHours = (cap as any)?.cap_hours || 80;
+  const now = new Date();
 
-  // Monthly entries
+  // Build list of months present in entries for the picker
+  const monthOptions = useMemo(() => {
+    const set = new Map<string, Date>();
+    entries.forEach((e: any) => {
+      const d = startOfMonth(new Date(e.started_at));
+      set.set(format(d, 'yyyy-MM'), d);
+    });
+    // always include current month
+    set.set(format(startOfMonth(now), 'yyyy-MM'), startOfMonth(now));
+    return Array.from(set.values()).sort((a, b) => b.getTime() - a.getTime());
+  }, [entries]);
+
+  // Monthly entries (based on cursor)
   const monthEntries = entries.filter((e: any) => {
     const d = new Date(e.started_at);
     return d >= monthStart && d <= monthEnd;
@@ -47,17 +66,19 @@ export function HoursDashboard({ teamMemberId }: Props) {
   const weekMinutes = weekEntries.reduce((s: number, e: any) => s + (e.duration_minutes || 0), 0);
   const remainingHours = capHours - totalHours;
 
-  // Hours by client
+  // Hours by client (for selected month)
   const clientMap: Record<string, { name: string; minutes: number; color: string }> = {};
   monthEntries.forEach((e: any) => {
-    const key = e.client_id;
-    if (!clientMap[key]) clientMap[key] = { name: e.client?.name || 'Unknown', minutes: 0, color: e.client?.color || '#3B82F6' };
+    const key = e.client_id || 'none';
+    if (!clientMap[key]) clientMap[key] = { name: e.client?.name || (e.category && e.category !== 'task' ? (e.category[0].toUpperCase() + e.category.slice(1)) : 'Unassigned'), minutes: 0, color: e.client?.color || '#3B82F6' };
     clientMap[key].minutes += e.duration_minutes || 0;
   });
-  const clientData = Object.values(clientMap).map(c => ({ ...c, hours: +(c.minutes / 60).toFixed(1) }));
+  const clientData = Object.values(clientMap)
+    .map(c => ({ ...c, hours: +(c.minutes / 60).toFixed(1) }))
+    .sort((a, b) => b.minutes - a.minutes);
 
   // Hours by day
-  const days = eachDayOfInterval({ start: monthStart, end: now > monthEnd ? monthEnd : now });
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
   const dayData = days.map(day => {
     const mins = monthEntries
       .filter((e: any) => isSameDay(new Date(e.started_at), day))
@@ -68,13 +89,61 @@ export function HoursDashboard({ teamMemberId }: Props) {
   // Hours by brief
   const briefMap: Record<string, { title: string; minutes: number }> = {};
   monthEntries.forEach((e: any) => {
-    const key = e.brief_id;
-    if (!briefMap[key]) briefMap[key] = { title: e.brief?.title || 'Unknown', minutes: 0 };
+    const key = e.brief_id || `x-${e.id}`;
+    if (!briefMap[key]) briefMap[key] = { title: e.brief?.title || e.description || (e.category ? e.category : 'Untitled'), minutes: 0 };
     briefMap[key].minutes += e.duration_minutes || 0;
   });
   const briefData = Object.entries(briefMap)
     .map(([id, v]) => ({ id, ...v, hours: +(v.minutes / 60).toFixed(1) }))
     .sort((a, b) => b.minutes - a.minutes);
+
+  // Detect duplicates within the selected month (same brief_id + same day)
+  const duplicateGroups = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    monthEntries.forEach((e: any) => {
+      if (!e.brief_id) return; // only merge task entries linked to a brief
+      const key = `${e.brief_id}|${format(new Date(e.started_at), 'yyyy-MM-dd')}`;
+      (groups[key] ||= []).push(e);
+    });
+    return Object.values(groups).filter(g => g.length > 1);
+  }, [monthEntries]);
+  const duplicateCount = duplicateGroups.reduce((s, g) => s + (g.length - 1), 0);
+
+  const mergeDuplicates = useMutation({
+    mutationFn: async () => {
+      let merged = 0;
+      for (const group of duplicateGroups) {
+        // keep the earliest entry, sum minutes into it, concat notes, soft-delete the rest
+        const sorted = [...group].sort((a: any, b: any) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+        const keeper = sorted[0];
+        const extras = sorted.slice(1);
+        const totalMins = sorted.reduce((s: number, e: any) => s + (e.duration_minutes || 0), 0);
+        const notes = sorted.map((e: any) => e.description).filter(Boolean);
+        const mergedNote = notes.length > 0 ? Array.from(new Set(notes)).join(' • ') : keeper.description;
+        const startedAt = new Date(keeper.started_at);
+        const endedAt = new Date(startedAt.getTime() + totalMins * 60000);
+
+        const { error: upErr } = await supabase
+          .from('creative_time_entries')
+          .update({ duration_minutes: totalMins, ended_at: endedAt.toISOString(), description: mergedNote } as any)
+          .eq('id', keeper.id);
+        if (upErr) throw upErr;
+
+        const { error: delErr } = await supabase
+          .from('creative_time_entries')
+          .update({ deleted_at: new Date().toISOString() } as any)
+          .in('id', extras.map((e: any) => e.id));
+        if (delErr) throw delErr;
+        merged += extras.length;
+      }
+      return merged;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ['creative_time_entries'] });
+      toast.success(`Merged ${count} duplicate ${count === 1 ? 'entry' : 'entries'} — originals kept in trash and recoverable`);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
 
   const exportCSV = () => {
     const rows = [['Date', 'Client', 'Brief', 'Duration (min)', 'Description']];
@@ -92,7 +161,7 @@ export function HoursDashboard({ teamMemberId }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `hours-${format(now, 'yyyy-MM')}.csv`;
+    a.download = `hours-${format(cursor, 'yyyy-MM')}.csv`;
     a.click();
   };
 
@@ -102,7 +171,22 @@ export function HoursDashboard({ teamMemberId }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-lg font-semibold">Work Log — {format(now, 'MMMM yyyy')}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">Work Log</h2>
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setCursor(subMonths(cursor, 1))}><ChevronLeft className="h-4 w-4" /></Button>
+          <Select value={format(cursor, 'yyyy-MM')} onValueChange={(v) => {
+            const found = monthOptions.find(d => format(d, 'yyyy-MM') === v);
+            if (found) setCursor(found);
+          }}>
+            <SelectTrigger className="h-8 w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {monthOptions.map(d => (
+                <SelectItem key={format(d, 'yyyy-MM')} value={format(d, 'yyyy-MM')}>{format(d, 'MMMM yyyy')}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setCursor(addMonths(cursor, 1))}><ChevronRight className="h-4 w-4" /></Button>
+        </div>
         <div className="flex items-center gap-2">
           {isOwn && (
             <>
@@ -123,17 +207,50 @@ export function HoursDashboard({ teamMemberId }: Props) {
         </div>
       </div>
 
-      {/* Work log */}
+      {/* Month total + per-client breakdown for invoicing */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-baseline justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{format(cursor, 'MMMM yyyy')} total</p>
+              <p className="text-3xl font-bold">{totalHours.toFixed(1)} <span className="text-base font-normal text-muted-foreground">hrs</span></p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 justify-end">
+              {clientData.length === 0 && <span className="text-xs text-muted-foreground">No entries this month</span>}
+              {clientData.map((c, i) => (
+                <div key={c.name} className="rounded-md border px-2 py-1 text-xs flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                  <span className="font-medium">{c.name}</span>
+                  <span className="text-muted-foreground">{c.hours}h</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {duplicateCount > 0 && isOwn && (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-sm">
+              <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
+                <AlertTriangle className="h-4 w-4" />
+                Found {duplicateCount} duplicate {duplicateCount === 1 ? 'entry' : 'entries'} in {format(cursor, 'MMMM')} (same task, same day).
+              </div>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={mergeDuplicates.isPending} onClick={() => mergeDuplicates.mutate()}>
+                <Merge className="h-3.5 w-3.5" /> Merge duplicates
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Work log list */}
       {isOwn && (
         <Card>
           <CardContent className="p-4 space-y-4">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <h3 className="text-sm font-medium flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-muted-foreground" /> Work Log
+                  <Clock className="h-4 w-4 text-muted-foreground" /> Entries
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Today: {(todayMinutes / 60).toFixed(1)}h · Last 7 days: {(weekMinutes / 60).toFixed(1)}h
+                  Today: {(todayMinutes / 60).toFixed(1)}h · Last 7 days: {(weekMinutes / 60).toFixed(1)}h · Showing {monthEntries.length} entries in {format(cursor, 'MMM yyyy')}
                 </p>
               </div>
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditEntry({ category: 'other', duration_minutes: '', started_at: new Date().toISOString(), description: 'Extra hours needed — ' }); setLogOpen(true); }}>
@@ -143,10 +260,10 @@ export function HoursDashboard({ teamMemberId }: Props) {
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
               <div className="space-y-1.5">
-                {entries.slice(0, 8).map((e: any) => {
+                {monthEntries.slice(0, 30).map((e: any) => {
                   const label = e.brief?.title || (e.category && e.category !== 'task'
                     ? e.category.charAt(0).toUpperCase() + e.category.slice(1)
-                    : 'Untitled');
+                    : (e.description || 'Untitled'));
                   return (
                     <div key={e.id} className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm hover:bg-accent/40 transition-colors">
                       <Badge variant="outline" className="text-[10px] capitalize">{e.category || 'task'}</Badge>
@@ -159,7 +276,7 @@ export function HoursDashboard({ teamMemberId }: Props) {
                     </div>
                   );
                 })}
-                {entries.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No time logged yet</p>}
+                {monthEntries.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No time logged in {format(cursor, 'MMMM yyyy')}</p>}
               </div>
 
               <div className="rounded-lg border p-3 text-sm space-y-2">

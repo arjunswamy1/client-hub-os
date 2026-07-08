@@ -1578,6 +1578,130 @@ export type Database = {
           },
         ]
       }
+      cannaball_calls: {
+        Row: {
+          call_id: string
+          call_start: string
+          caller_city: string | null
+          caller_number: string | null
+          caller_state: string | null
+          campaign_name: string | null
+          client_id: string
+          connected: boolean | null
+          connection_duration_seconds: number | null
+          created_at: string
+          creative_name: string | null
+          did: string | null
+          disposition: string | null
+          duration_seconds: number | null
+          id: string
+          payout: number | null
+          raw_payload: Json | null
+          recording_url: string | null
+        }
+        Insert: {
+          call_id: string
+          call_start: string
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_name?: string | null
+          client_id: string
+          connected?: boolean | null
+          connection_duration_seconds?: number | null
+          created_at?: string
+          creative_name?: string | null
+          did?: string | null
+          disposition?: string | null
+          duration_seconds?: number | null
+          id?: string
+          payout?: number | null
+          raw_payload?: Json | null
+          recording_url?: string | null
+        }
+        Update: {
+          call_id?: string
+          call_start?: string
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_name?: string | null
+          client_id?: string
+          connected?: boolean | null
+          connection_duration_seconds?: number | null
+          created_at?: string
+          creative_name?: string | null
+          did?: string | null
+          disposition?: string | null
+          duration_seconds?: number | null
+          id?: string
+          payout?: number | null
+          raw_payload?: Json | null
+          recording_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cannaball_calls_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cannaball_spend: {
+        Row: {
+          campaign_name: string | null
+          clicks: number | null
+          client_id: string
+          created_at: string
+          creative_name: string | null
+          date: string
+          id: string
+          impressions: number | null
+          platform: string
+          raw: Json | null
+          spend: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_name?: string | null
+          clicks?: number | null
+          client_id: string
+          created_at?: string
+          creative_name?: string | null
+          date: string
+          id?: string
+          impressions?: number | null
+          platform?: string
+          raw?: Json | null
+          spend?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_name?: string | null
+          clicks?: number | null
+          client_id?: string
+          created_at?: string
+          creative_name?: string | null
+          date?: string
+          id?: string
+          impressions?: number | null
+          platform?: string
+          raw?: Json | null
+          spend?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cannaball_spend_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_assignments: {
         Row: {
           assigned_at: string

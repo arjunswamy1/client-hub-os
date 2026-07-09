@@ -640,10 +640,11 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                   <p className="text-sm font-medium">
                     {uploading ? 'Uploading…' : 'Click to upload reference files'}
                   </p>
-                  <p className="text-xs text-muted-foreground">Images, videos, PDFs, docs — anything Malena should see</p>
+                  <p className="text-xs text-muted-foreground">Images, videos, PDFs, zips, docs — anything Malena should see (50 MB max per file; use a Drive link for larger files)</p>
                   <input
                     type="file"
                     multiple
+                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.rar,.7z,.doc,.docx"
                     className="hidden"
                     disabled={uploading}
                     onChange={(e) => { handleFileUpload(e.target.files); e.target.value = ''; }}

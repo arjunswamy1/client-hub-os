@@ -326,7 +326,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                   <input
                     type="file"
                     multiple
-                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.doc,.docx"
+                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.rar,.7z,.doc,.docx"
                     className="hidden"
                     onChange={handleReferenceUpload}
                     disabled={isUploadingRefs}

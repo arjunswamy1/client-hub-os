@@ -113,19 +113,33 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
   const handleReferenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
+    const MAX_BYTES = 50 * 1024 * 1024; // Supabase Storage per-file cap
+    const oversized = Array.from(files).filter(f => f.size > MAX_BYTES);
+    if (oversized.length) {
+      toast.error(
+        `${oversized[0].name} is ${(oversized[0].size / 1024 / 1024).toFixed(1)} MB. Files over 50 MB can't be uploaded directly — please upload the zip to Google Drive / Dropbox and paste the link in the reference URL field instead.`,
+        { duration: 8000 }
+      );
+      e.target.value = '';
+      return;
+    }
     setIsUploadingRefs(true);
     try {
       const clientName = brief.client?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown';
       const briefSlug = brief.title?.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40) || brief.id.slice(0, 8);
       const newRefs: any[] = [];
       for (const file of Array.from(files)) {
-        const filePath = `${clientName}/${briefSlug}/refs/${Date.now()}_${file.name}`;
-        const { error: upErr } = await supabase.storage.from('creative-assets').upload(filePath, file);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filePath = `${clientName}/${briefSlug}/refs/${Date.now()}_${safeName}`;
+        const contentType = file.type || (file.name.toLowerCase().endsWith('.zip') ? 'application/zip' : 'application/octet-stream');
+        const { error: upErr } = await supabase.storage
+          .from('creative-assets')
+          .upload(filePath, file, { contentType, upsert: false });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage.from('creative-assets').getPublicUrl(filePath);
         newRefs.push({
           source: 'upload', url: urlData.publicUrl, drive_url: urlData.publicUrl,
-          file_name: file.name, file_type: file.type, size: file.size, storage_path: filePath,
+          file_name: file.name, file_type: contentType, size: file.size, storage_path: filePath,
         });
       }
       const existing = Array.isArray(brief.reference_assets) ? brief.reference_assets : [];
@@ -326,7 +340,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                   <input
                     type="file"
                     multiple
-                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.doc,.docx"
+                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.rar,.7z,.doc,.docx"
                     className="hidden"
                     onChange={handleReferenceUpload}
                     disabled={isUploadingRefs}
@@ -414,7 +428,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                 <input
                   type="file"
                   multiple
-                  accept="image/*,video/*,.psd,.ai,.fig,.sketch,.pdf"
+                  accept="image/*,video/*,.psd,.ai,.fig,.sketch,.pdf,.zip,.rar,.7z"
                   className="hidden"
                   onChange={handleFileUpload}
                   disabled={isUploading}

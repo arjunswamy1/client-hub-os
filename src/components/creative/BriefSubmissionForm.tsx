@@ -81,18 +81,28 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
 
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const oversized = Array.from(files).filter(f => f.size > MAX_BYTES);
+    if (oversized.length) {
+      toast.error(
+        `${oversized[0].name} is ${(oversized[0].size / 1024 / 1024).toFixed(1)} MB. Files over 50 MB can't be uploaded directly — please share via Google Drive / Dropbox and paste the link in the Reference URLs field above.`,
+        { duration: 8000 }
+      );
+      return;
+    }
     setUploading(true);
     try {
       const newRefs: UploadedReference[] = [];
       for (const file of Array.from(files)) {
         const ext = file.name.split('.').pop();
         const path = `brief-refs/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const contentType = file.type || (ext?.toLowerCase() === 'zip' ? 'application/zip' : 'application/octet-stream');
         const { error } = await supabase.storage.from('creative-assets').upload(path, file, {
-          cacheControl: '3600', upsert: false,
+          cacheControl: '3600', upsert: false, contentType,
         });
         if (error) throw error;
         const { data: pub } = supabase.storage.from('creative-assets').getPublicUrl(path);
-        newRefs.push({ file_name: file.name, url: pub.publicUrl, file_type: file.type, size: file.size });
+        newRefs.push({ file_name: file.name, url: pub.publicUrl, file_type: contentType, size: file.size });
       }
       setUploadedRefs(prev => [...prev, ...newRefs]);
       toast.success(`${newRefs.length} file(s) uploaded`);
@@ -630,10 +640,11 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
                   <p className="text-sm font-medium">
                     {uploading ? 'Uploading…' : 'Click to upload reference files'}
                   </p>
-                  <p className="text-xs text-muted-foreground">Images, videos, PDFs, docs — anything Malena should see</p>
+                  <p className="text-xs text-muted-foreground">Images, videos, PDFs, zips, docs — anything Malena should see (50 MB max per file; use a Drive link for larger files)</p>
                   <input
                     type="file"
                     multiple
+                    accept="image/*,video/*,.pdf,.psd,.ai,.fig,.sketch,.zip,.rar,.7z,.doc,.docx"
                     className="hidden"
                     disabled={uploading}
                     onChange={(e) => { handleFileUpload(e.target.files); e.target.value = ''; }}

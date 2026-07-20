@@ -37,6 +37,7 @@ import AIVideoStudioPage from "./pages/AIVideoStudioPage";
 import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 import ClientDIDsPage from "./pages/ClientDIDsPage";
 import SpendUploadPage from "./pages/SpendUploadPage";
+import RingFuelNumbersPage from "./pages/RingFuelNumbersPage";
 
 const queryClient = new QueryClient();
 

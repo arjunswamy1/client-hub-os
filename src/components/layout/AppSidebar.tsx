@@ -25,6 +25,7 @@ const clientNavItems = [
   { title: 'AI Assistant', url: '/ai', icon: Bot },
   { title: 'Campaign Build', url: '/campaign-build', icon: Rocket },
   { title: 'DIDs', url: '/dids', icon: PhoneCall },
+  { title: 'RingFuel Numbers', url: '/ringfuel-numbers', icon: PhoneCall },
   { title: 'Spend Upload', url: '/spend-upload', icon: Upload },
 ];
 

@@ -3564,6 +3564,72 @@ export type Database = {
           },
         ]
       }
+      ringfuel_numbers: {
+        Row: {
+          campaign_label: string
+          client_id: string
+          created_at: string
+          creative_label: string | null
+          id: string
+          minted_by_id: string | null
+          phone_number: string
+          raw_response: Json | null
+          ringfuel_campaign_id: string
+          session_id: string | null
+          status: string
+          tags: Json | null
+          updated_at: string
+          visitor_id: string | null
+        }
+        Insert: {
+          campaign_label: string
+          client_id: string
+          created_at?: string
+          creative_label?: string | null
+          id?: string
+          minted_by_id?: string | null
+          phone_number: string
+          raw_response?: Json | null
+          ringfuel_campaign_id: string
+          session_id?: string | null
+          status?: string
+          tags?: Json | null
+          updated_at?: string
+          visitor_id?: string | null
+        }
+        Update: {
+          campaign_label?: string
+          client_id?: string
+          created_at?: string
+          creative_label?: string | null
+          id?: string
+          minted_by_id?: string | null
+          phone_number?: string
+          raw_response?: Json | null
+          ringfuel_campaign_id?: string
+          session_id?: string | null
+          status?: string
+          tags?: Json | null
+          updated_at?: string
+          visitor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ringfuel_numbers_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ringfuel_numbers_minted_by_id_fkey"
+            columns: ["minted_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       search_terms: {
         Row: {
           campaign_name: string | null

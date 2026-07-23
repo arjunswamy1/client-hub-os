@@ -87,15 +87,19 @@ export default function RingFuelNumbersPage() {
     });
     if (error) throw error;
     if ((data as any)?.error) throw new Error((data as any).error);
-    return data;
+    return data as { number: any; deduped?: boolean };
   }
 
   async function handleMint() {
     if (!creativeLabel.trim()) { toast.error('Enter a creative label'); return; }
     setMinting(true);
     try {
-      await mintOne(creativeLabel.trim());
-      toast.success(`Minted number for "${creativeLabel}"`);
+      const res = await mintOne(creativeLabel.trim());
+      if (res?.deduped) {
+        toast.warning(`RingFuel returned an existing number — pool may be exhausted`);
+      } else {
+        toast.success(`Minted number for "${creativeLabel}"`);
+      }
       setCreativeLabel('');
       qc.invalidateQueries({ queryKey: ['ringfuel_numbers', client?.id] });
     } catch (e: any) {
@@ -109,17 +113,22 @@ export default function RingFuelNumbersPage() {
     if (!activeCampaign) return;
     setMinting(true);
     let ok = 0;
+    let deduped = 0;
     let fail = 0;
     for (let i = 1; i <= bulkCount; i++) {
       const label = `${activeCampaign.label} — Creative ${i}`;
       try {
-        await mintOne(label);
-        ok++;
+        const res = await mintOne(label);
+        if (res?.deduped) deduped++;
+        else ok++;
       } catch {
         fail++;
       }
     }
-    toast[fail ? 'warning' : 'success'](`Minted ${ok}/${bulkCount}${fail ? ` (${fail} failed)` : ''}`);
+    const parts = [`Minted ${ok}/${bulkCount} unique`];
+    if (deduped) parts.push(`${deduped} duplicate (pool exhausted on RingFuel)`);
+    if (fail) parts.push(`${fail} failed`);
+    toast[fail || deduped ? 'warning' : 'success'](parts.join(' · '));
     qc.invalidateQueries({ queryKey: ['ringfuel_numbers', client?.id] });
     setMinting(false);
   }

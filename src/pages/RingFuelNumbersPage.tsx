@@ -87,15 +87,19 @@ export default function RingFuelNumbersPage() {
     });
     if (error) throw error;
     if ((data as any)?.error) throw new Error((data as any).error);
-    return data;
+    return data as { number: any; deduped?: boolean };
   }
 
   async function handleMint() {
     if (!creativeLabel.trim()) { toast.error('Enter a creative label'); return; }
     setMinting(true);
     try {
-      await mintOne(creativeLabel.trim());
-      toast.success(`Minted number for "${creativeLabel}"`);
+      const res = await mintOne(creativeLabel.trim());
+      if (res?.deduped) {
+        toast.warning(`RingFuel returned an existing number — pool may be exhausted`);
+      } else {
+        toast.success(`Minted number for "${creativeLabel}"`);
+      }
       setCreativeLabel('');
       qc.invalidateQueries({ queryKey: ['ringfuel_numbers', client?.id] });
     } catch (e: any) {

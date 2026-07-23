@@ -113,17 +113,22 @@ export default function RingFuelNumbersPage() {
     if (!activeCampaign) return;
     setMinting(true);
     let ok = 0;
+    let deduped = 0;
     let fail = 0;
     for (let i = 1; i <= bulkCount; i++) {
       const label = `${activeCampaign.label} — Creative ${i}`;
       try {
-        await mintOne(label);
-        ok++;
+        const res = await mintOne(label);
+        if (res?.deduped) deduped++;
+        else ok++;
       } catch {
         fail++;
       }
     }
-    toast[fail ? 'warning' : 'success'](`Minted ${ok}/${bulkCount}${fail ? ` (${fail} failed)` : ''}`);
+    const parts = [`Minted ${ok}/${bulkCount} unique`];
+    if (deduped) parts.push(`${deduped} duplicate (pool exhausted on RingFuel)`);
+    if (fail) parts.push(`${fail} failed`);
+    toast[fail || deduped ? 'warning' : 'success'](parts.join(' · '));
     qc.invalidateQueries({ queryKey: ['ringfuel_numbers', client?.id] });
     setMinting(false);
   }

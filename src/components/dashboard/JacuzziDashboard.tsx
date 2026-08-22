@@ -309,9 +309,29 @@ export default function JacuzziDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-md border border-border p-0.5">
+          {([
+            ["today", "Today (hourly)"],
+            ["all", "All time"],
+          ] as const).map(([v, label]) => (
+            <Button
+              key={v}
+              variant={period === v ? "default" : "ghost"}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setPeriod(v);
+                setTab(v === "today" ? "hourly" : "daily");
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
         <Badge variant="secondary" className="gap-1">
-          <Radio className="h-3 w-3" /> CTV cost-per-lead · {scopeLabel}
+          <Radio className="h-3 w-3" /> {periodLabel} · {scopeLabel}
         </Badge>
+
         <Badge variant="outline">Current payout {money(currentRate)} / call or QR scan</Badge>
         <Badge variant={rokuConn?.status === "active" ? "secondary" : "outline"} className="gap-1">
           <Clock className="h-3 w-3" />

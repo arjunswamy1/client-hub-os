@@ -9,6 +9,7 @@ import FourJsDashboard from '@/components/dashboard/FourJsDashboard';
 import CannaballDashboard from '@/components/dashboard/CannaballDashboard';
 import JacuzziDashboard from '@/components/dashboard/JacuzziDashboard';
 import RRMDashboard from '@/components/dashboard/RRMDashboard';
+import BuyologyDashboard from '@/components/dashboard/BuyologyDashboard';
 import DashboardHighlights from '@/components/dashboard/DashboardHighlights';
 import DateRangePicker from '@/components/dashboard/DateRangePicker';
 import { BookCallButton } from '@/components/portal/BookCallButton';
@@ -49,6 +50,13 @@ function isRRMClient(client: { slug: string; name: string } | null): boolean {
   return client.slug.toLowerCase() === 'rrm' || client.name.toLowerCase().includes('river road');
 }
 
+/** Detect BuyologyIQ client */
+function isBuyologyClient(client: { slug: string; name: string } | null): boolean {
+  if (!client) return false;
+  return client.slug.toLowerCase().includes('buyology') || client.name.toLowerCase().includes('buyology');
+}
+
+
 
 function DashboardContent() {
   const { activeClient } = useClient();
@@ -67,6 +75,7 @@ function DashboardContent() {
   const isCannaball = isCannaballClient(activeClient);
   const isJacuzzi = isJacuzziClient(activeClient);
   const isRRM = isRRMClient(activeClient);
+  const isBuyology = isBuyologyClient(activeClient);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -74,7 +83,7 @@ function DashboardContent() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">{activeClient.name}</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
-            {isRRM ? 'Windows (Meta) & Plumbing (Google) — Moja Call Tracking' : isJacuzzi ? 'Bath Remodel CTV — Cost-per-Lead (Calls + QR Scans)' : isCannaball ? 'Roku CTV — Pay-per-Call Attribution' : isFourJs ? 'Final Expense — Pay-per-Call Attribution' : isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
+            {isBuyology ? 'Meta Ads — Ringba Pay-per-Call Attribution' : isRRM ? 'Windows (Meta) & Plumbing (Google) — Moja Call Tracking' : isJacuzzi ? 'Bath Remodel CTV — Cost-per-Lead (Calls + QR Scans)' : isCannaball ? 'Roku CTV — Pay-per-Call Attribution' : isFourJs ? 'Final Expense — Pay-per-Call Attribution' : isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -83,7 +92,9 @@ function DashboardContent() {
         </div>
       </div>
 
-      {isRRM ? (
+      {isBuyology ? (
+        <BuyologyDashboard />
+      ) : isRRM ? (
         <RRMDashboard />
       ) : isJacuzzi ? (
         <JacuzziDashboard />

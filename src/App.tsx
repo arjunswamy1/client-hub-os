@@ -38,6 +38,7 @@ import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 import ClientDIDsPage from "./pages/ClientDIDsPage";
 import SpendUploadPage from "./pages/SpendUploadPage";
 import RingFuelNumbersPage from "./pages/RingFuelNumbersPage";
+import RokuCallbackPage from "./pages/RokuCallbackPage";
 
 const queryClient = new QueryClient();
 

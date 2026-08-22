@@ -97,9 +97,18 @@ function toIso(v: string): string | null {
   return null;
 }
 
+// Only these campaigns are live for BuyologyIQ — everything else in a Ringba
+// export (Health Sharing, Timeshare Exit, etc.) is filtered out on import.
+const LIVE_CAMPAIGNS = ["walk in tubs", "bathroom remodel"];
+const isLiveCampaign = (name: string) => {
+  const n = name.trim().toLowerCase();
+  return LIVE_CAMPAIGNS.some((c) => n === c || n.includes(c));
+};
+
 type Parsed = {
   rows: any[];
   skipped: number;
+  offCampaign: number;
   missing: string[];
 };
 
@@ -115,6 +124,7 @@ function mapRows(csv: string[][]): Parsed {
 
   const rows: any[] = [];
   let skipped = 0;
+  let offCampaign = 0;
   const seen = new Set<string>();
 
   for (let i = 1; i < csv.length; i++) {
@@ -122,6 +132,10 @@ function mapRows(csv: string[][]): Parsed {
     const get = (f: string) => (idx[f] !== undefined ? (cells[idx[f]] ?? "").trim() : "");
     const iso = toIso(get("call_date"));
     if (!iso) { skipped++; continue; }
+
+    const campaign = get("campaign_name");
+    if (campaign && !isLiveCampaign(campaign)) { offCampaign++; continue; }
+
 
     const duration = toSeconds(get("duration_seconds"));
     const connectedRaw = get("connected");

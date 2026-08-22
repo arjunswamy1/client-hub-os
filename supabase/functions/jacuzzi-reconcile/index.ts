@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
   const [{ data: rates }, { data: numbers }, { data: leads }, { data: calls }] = await Promise.all([
     supabase.from('jacuzzi_payout_rates').select('effective_from, rate')
       .eq('client_id', client_id).order('effective_from', { ascending: true }),
-    supabase.from('ringfuel_numbers').select('phone_number, creative_label, campaign_name, station_code')
+    supabase.from('ringfuel_numbers').select('phone_number, creative_label, campaign_label')
       .eq('client_id', client_id),
     supabase.from('jacuzzi_leads')
       .select('id, transaction_id, transaction_date, lead_type, station_code, attributed_station, toll_free_number, caller_ani, payout_rate')
@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
   const didStation = new Map<string, string>();
   for (const n of numbers || []) {
     const key = last10((n as any).phone_number);
-    const st = (n as any).station_code || stationFrom((n as any).creative_label, (n as any).campaign_name);
+    const st = stationFrom((n as any).creative_label, (n as any).campaign_label);
     if (key && st) didStation.set(key, st);
   }
 

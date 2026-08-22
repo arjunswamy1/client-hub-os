@@ -44,19 +44,44 @@ function KPI({ label, value, sub, icon: Icon, accent }: {
 }
 
 export default function JacuzziDashboard() {
-  const { data: leads = [], isLoading: leadsLoading, refetch: refetchLeads } = useJacuzziLeads();
-  const { data: delivery = [], isLoading: deliveryLoading, refetch: refetchDelivery } = useJacuzziDelivery();
-  const { data: hourly = [] } = useJacuzziHourly();
+  const { data: allLeads = [], isLoading: leadsLoading, refetch: refetchLeads } = useJacuzziLeads();
+  const { data: allDelivery = [], isLoading: deliveryLoading, refetch: refetchDelivery } = useJacuzziDelivery();
+  const { data: allHourly = [], } = useJacuzziHourly();
   const { data: rates = [] } = useJacuzziRates();
   const importLeads = useImportLeads();
 
   const [paste, setPaste] = useState("");
   const [importing, setImporting] = useState(false);
 
+  /** Drill-down: empty station set = blended across every station we're paid on. */
+  const [stationFilter, setStationFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<"all" | "call" | "qr">("all");
+
+  const stationOf = (l: JacuzziLead) => l.attributed_station || l.station_code || "Unknown";
+  const stationActive = (s: string) => stationFilter.length === 0 || stationFilter.includes(s);
+  const toggleStation = (s: string) =>
+    setStationFilter((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  const isBlended = stationFilter.length === 0;
+  const scopeLabel = isBlended ? "Blended — all stations" : stationFilter.join(" + ");
+
+  const leads = useMemo(
+    () => allLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),
+    [allLeads, stationFilter, typeFilter]
+  );
+  const delivery = useMemo(
+    () => allDelivery.filter((d) => stationActive(d.station_code)),
+    [allDelivery, stationFilter]
+  );
+  const hourly = useMemo(
+    () => allHourly.filter((h) => stationActive(h.station_code)),
+    [allHourly, stationFilter]
+  );
+
   const currentRate = useMemo(
     () => rateForDate(rates, format(new Date(), "yyyy-MM-dd")),
     [rates]
   );
+
 
   const totals = useMemo(() => {
     const spend = delivery.reduce((s, d) => s + Number(d.spend || 0), 0);
@@ -135,19 +160,20 @@ export default function JacuzziDashboard() {
 
   const hasHourlySpend = hourlyRows.some((r) => r.spend > 0 || r.impressions > 0);
 
+  /** Always computed across every station so the full picture stays visible while drilled in. */
   const stations = useMemo(() => {
     const map = new Map<string, any>();
     const row = (s: string) => {
       if (!map.has(s)) map.set(s, { station: s, spend: 0, impressions: 0, calls: 0, qr: 0, revenue: 0 });
       return map.get(s);
     };
-    delivery.forEach((d) => {
+    allDelivery.forEach((d) => {
       const r = row(d.station_code);
       r.spend += Number(d.spend || 0);
       r.impressions += Number(d.impressions || 0);
     });
-    leads.forEach((l) => {
-      const r = row(l.attributed_station || l.station_code || "Unknown");
+    allLeads.forEach((l) => {
+      const r = row(stationOf(l));
       if (l.lead_type === "qr") r.qr += 1; else r.calls += 1;
       r.revenue += Number(l.payout_rate || 0);
     });
@@ -157,9 +183,30 @@ export default function JacuzziDashboard() {
         leads: r.calls + r.qr,
         profit: r.revenue - r.spend,
         cpl: r.calls + r.qr > 0 ? safe(r.spend / (r.calls + r.qr)) : 0,
+        cpCall: r.calls > 0 ? safe(r.spend / r.calls) : 0,
+        cpQr: r.qr > 0 ? safe(r.spend / r.qr) : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue || b.spend - a.spend);
-  }, [leads, delivery]);
+  }, [allLeads, allDelivery]);
+
+  /** Blended footer for the station table — the whole-account picture. */
+  const blended = useMemo(() => {
+    const t = stations.reduce(
+      (a, s) => ({
+        spend: a.spend + s.spend, impressions: a.impressions + s.impressions,
+        calls: a.calls + s.calls, qr: a.qr + s.qr, revenue: a.revenue + s.revenue,
+      }),
+      { spend: 0, impressions: 0, calls: 0, qr: 0, revenue: 0 }
+    );
+    const all = t.calls + t.qr;
+    return {
+      ...t, leads: all, profit: t.revenue - t.spend,
+      cpl: all > 0 ? t.spend / all : 0,
+      cpCall: t.calls > 0 ? t.spend / t.calls : 0,
+      cpQr: t.qr > 0 ? t.spend / t.qr : 0,
+    };
+  }, [stations]);
+
 
   const parsed = useMemo(() => (paste.trim() ? parseTmSheet(paste) : []), [paste]);
 
@@ -190,7 +237,7 @@ export default function JacuzziDashboard() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary" className="gap-1">
-          <Radio className="h-3 w-3" /> Roku CT14 · cost-per-lead payout
+          <Radio className="h-3 w-3" /> CTV cost-per-lead · {scopeLabel}
         </Badge>
         <Badge variant="outline">Current payout {money(currentRate)} / call or QR scan</Badge>
         <Button
@@ -200,6 +247,53 @@ export default function JacuzziDashboard() {
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </Button>
       </div>
+
+      {/* Drill-down controls: default view is blended across every station we're paid on. */}
+      <Card className="flex flex-wrap items-center gap-2 p-3">
+        <span className="text-xs font-medium text-muted-foreground">Stations</span>
+        <Button
+          variant={isBlended ? "default" : "outline"} size="sm" className="h-7 text-xs"
+          onClick={() => setStationFilter([])}
+        >
+          Blended
+        </Button>
+        {stations.map((s) => (
+          <Button
+            key={s.station}
+            variant={stationFilter.includes(s.station) ? "default" : "outline"}
+            size="sm" className="h-7 text-xs"
+            onClick={() => toggleStation(s.station)}
+            title={STATION_NOTES[s.station] || ""}
+          >
+            {s.station}
+            <span className="ml-1 opacity-60">{s.leads}</span>
+          </Button>
+        ))}
+        <span className="ml-2 text-xs font-medium text-muted-foreground">Lead type</span>
+        {([
+          ["all", "All"],
+          ["call", "Calls"],
+          ["qr", "QR scans"],
+        ] as const).map(([v, label]) => (
+          <Button
+            key={v}
+            variant={typeFilter === v ? "default" : "outline"}
+            size="sm" className="h-7 text-xs"
+            onClick={() => setTypeFilter(v)}
+          >
+            {label}
+          </Button>
+        ))}
+        {(!isBlended || typeFilter !== "all") && (
+          <Button
+            variant="ghost" size="sm" className="h-7 text-xs"
+            onClick={() => { setStationFilter([]); setTypeFilter("all"); }}
+          >
+            Reset
+          </Button>
+        )}
+      </Card>
+
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KPI label="Media spend" value={money(totals.spend)} sub={`${totals.impressions.toLocaleString()} imps · ${money2(totals.cpm)} CPM`} icon={DollarSign} />
@@ -336,13 +430,19 @@ export default function JacuzziDashboard() {
                     <th className="p-2 text-right">QR</th>
                     <th className="p-2 text-right">Leads</th>
                     <th className="p-2 text-right">Cost / lead</th>
+                    <th className="p-2 text-right">Cost / call</th>
+                    <th className="p-2 text-right">Cost / QR</th>
                     <th className="p-2 text-right">Revenue</th>
                     <th className="p-2 text-right">GP</th>
                   </tr>
                 </thead>
                 <tbody>
                   {stations.map((s) => (
-                    <tr key={s.station} className="border-t border-border">
+                    <tr
+                      key={s.station}
+                      onClick={() => toggleStation(s.station)}
+                      className={`cursor-pointer border-t border-border hover:bg-muted/40 ${stationFilter.includes(s.station) ? "bg-primary/5" : ""}`}
+                    >
                       <td className="p-2 font-medium">{s.station}</td>
                       <td className="p-2 text-xs text-muted-foreground">{STATION_NOTES[s.station] || "—"}</td>
                       <td className="p-2 text-right">{s.impressions.toLocaleString()}</td>
@@ -351,18 +451,39 @@ export default function JacuzziDashboard() {
                       <td className="p-2 text-right">{s.qr || "—"}</td>
                       <td className="p-2 text-right font-medium">{s.leads || "—"}</td>
                       <td className="p-2 text-right">{s.leads ? money2(s.cpl) : "—"}</td>
+                      <td className="p-2 text-right">{s.calls ? money2(s.cpCall) : "—"}</td>
+                      <td className="p-2 text-right">{s.qr ? money2(s.cpQr) : "—"}</td>
                       <td className="p-2 text-right">{money(s.revenue)}</td>
                       <td className={`p-2 text-right ${s.profit >= 0 ? "text-green-600" : "text-red-500"}`}>{money(s.profit)}</td>
                     </tr>
                   ))}
                   {!stations.length && (
-                    <tr><td colSpan={10} className="p-6 text-center text-muted-foreground">No station data in range.</td></tr>
+                    <tr><td colSpan={12} className="p-6 text-center text-muted-foreground">No station data in range.</td></tr>
                   )}
                 </tbody>
+                {!!stations.length && (
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-muted/40 font-medium">
+                      <td className="p-2">Blended</td>
+                      <td className="p-2 text-xs text-muted-foreground">All stations combined</td>
+                      <td className="p-2 text-right">{blended.impressions.toLocaleString()}</td>
+                      <td className="p-2 text-right">{money2(blended.spend)}</td>
+                      <td className="p-2 text-right">{blended.calls}</td>
+                      <td className="p-2 text-right">{blended.qr}</td>
+                      <td className="p-2 text-right">{blended.leads}</td>
+                      <td className="p-2 text-right">{money2(blended.cpl)}</td>
+                      <td className="p-2 text-right">{money2(blended.cpCall)}</td>
+                      <td className="p-2 text-right">{money2(blended.cpQr)}</td>
+                      <td className="p-2 text-right">{money(blended.revenue)}</td>
+                      <td className={`p-2 text-right ${blended.profit >= 0 ? "text-green-600" : "text-red-500"}`}>{money(blended.profit)}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
             <p className="border-t border-border p-3 text-xs text-muted-foreground">
-              QR scans tagged CT13 are re-attributed to CT14 — the CT14 creative carried the wrong QR code.
+              Click any station row to drill the whole dashboard into it (click again to remove). QR scans tagged
+              CT13 are re-attributed to CT14 — the CT14 creative carried the wrong QR code.
             </p>
           </Card>
         </TabsContent>

@@ -457,10 +457,12 @@ export default function JacuzziDashboard() {
         <TabsContent value="hourly" className="space-y-4">
           {!hasHourlySpend && (
             <Card className="border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-              Hourly spend isn't in yet — Roku hourly delivery lands in <code>jacuzzi_hourly_delivery</code> once the
-              hourly report sync is switched on. Lead timing below is live from the recognized-lead sheet.
+              Hourly Roku delivery syncs automatically every 15 minutes (Roku's report has ~8h data latency, so the
+              latest hours fill in as they become available). Hit <strong>Sync Roku hourly</strong> to pull now.
+              {rokuConn?.sync_error ? ` Last sync issue: ${rokuConn.sync_error}` : ""}
             </Card>
           )}
+
           <Card className="p-4">
             <p className="mb-3 text-sm font-medium">Hour-of-day delivery vs leads</p>
             <ResponsiveContainer width="100%" height={300}>

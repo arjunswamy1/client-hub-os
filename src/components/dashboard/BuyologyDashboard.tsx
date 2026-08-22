@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useBuyologyCalls, useBuyologySpend, BuyologyCall, BUYOLOGY_CLIENT_ID } from "@/hooks/useBuyologyData";
 import { useBuyologyLineSpend } from "@/hooks/useBuyologyCreativeAnalysis";
-import { PRODUCT_LINES, ProductLine, classifyName, QUALIFIED_SECONDS } from "@/lib/buyologyProductLines";
+import { PRODUCT_LINES, ProductLine, classifyName, productLineLabel, QUALIFIED_SECONDS } from "@/lib/buyologyProductLines";
 import BuyologyRingbaImport from "./BuyologyRingbaImport";
 import BuyologyCreativeAnalysis from "./BuyologyCreativeAnalysis";
 import MetaDashboard from "./MetaDashboard";

@@ -220,12 +220,23 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
     notes.forEach((n) => body(`• ${n}`, RED));
   }
 
+  // Nothing actionable — say so explicitly rather than shipping a blank page.
+  if (!i.drains.length && !i.wasteTerms.length && !i.zeroCallTerms.length) {
+    heading("No structural waste detected in this range");
+    body(
+      i.ladder.length
+        ? `Every ${i.label} with meaningful spend is clearing ${money2(i.currentCPRC)} per raw call. Widen the date range or wait for more volume before making cuts.`
+        : `No ${i.label}-level spend is synced for this range yet, so there is nothing to rank. Run a platform sync (or widen the date range) and re-export once ${i.label} data lands.`,
+    );
+  }
+
   // ---- Full ladder ------------------------------------------------------
   if (i.ladder.length) {
     doc.addPage();
     y = M;
-    heading(`${i.label.replace(/^./, (c) => c.toUpperCase())} efficiency ladder`);
+    heading(`${cap(i.label)} efficiency ladder`);
     body(`Every ${i.label} with spend in this range, ranked by cost per raw call. Calls are exact UTM matches only.`);
+
     table(
       [i.label.replace(/^./, (c) => c.toUpperCase()), ...(i.showMatch ? ["Match"] : []), "Spend", "Clicks", "Calls", "Cost / raw call", "vs line"],
       i.ladder.map((r) => {

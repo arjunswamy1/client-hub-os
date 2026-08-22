@@ -284,10 +284,14 @@ export default function BuyologyOptimizer({
           <Card key={l} className="p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold">{productLineLabel(l)} — optimization brief</h3>
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  {productLineLabel(l)} — optimization brief
+                  {entry.source === "scheduled" && <Badge variant="secondary" className="text-[10px]">scheduled</Badge>}
+                </h3>
                 <p className="text-[11px] text-muted-foreground">
-                  Generated {new Date(entry.generatedAt).toLocaleString()} · {rangeLabel}
+                  Generated {new Date(entry.generatedAt).toLocaleString()} · {entry.snapshot?.rangeLabel || rangeLabel}
                 </p>
+
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => runFor(l).catch((e) => toast({ title: "Refresh failed", description: String(e.message).slice(0, 200), variant: "destructive" }))}>

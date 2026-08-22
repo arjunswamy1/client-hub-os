@@ -62,6 +62,12 @@ export default function JacuzziDashboard() {
   /** Drill-down: empty station set = blended across every station we're paid on. */
   const [stationFilter, setStationFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "call" | "qr">("all");
+  /** Default view is today (hour-by-hour); "all" opens the full campaign history. */
+  const [period, setPeriod] = useState<"today" | "all">("today");
+  const [tab, setTab] = useState("hourly");
+  const todayKey = format(new Date(), "yyyy-MM-dd");
+  const inPeriod = (d?: string | null) => period === "all" || d === todayKey;
+
 
   /**
    * Roku hourly rows are the freshest signal for the current day, so spend for a

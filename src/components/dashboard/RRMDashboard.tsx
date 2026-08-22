@@ -13,11 +13,15 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import {
   RefreshCw, Phone, DollarSign, TrendingUp, Target, Layers, PhoneCall, Blinds, Wrench,
+  Chrome, Facebook, Plug,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   useMojaCalls, useRRMSpend, serviceLineOf, MojaCall, RRMCampaignRow,
 } from "@/hooks/useRRMData";
+import RRMPlatformPanel from "@/components/dashboard/RRMPlatformPanel";
+import RRMConnections from "@/components/dashboard/RRMConnections";
+
 
 const fmtMoney = (n: number) =>
   n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;

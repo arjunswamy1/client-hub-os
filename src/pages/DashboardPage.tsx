@@ -43,6 +43,12 @@ function isJacuzziClient(client: { slug: string; name: string } | null): boolean
   return client.slug.toLowerCase().includes('jacuzzi') || client.name.toLowerCase().includes('jacuzzi');
 }
 
+/** Detect RRM (River Road Marketing) client */
+function isRRMClient(client: { slug: string; name: string } | null): boolean {
+  if (!client) return false;
+  return client.slug.toLowerCase() === 'rrm' || client.name.toLowerCase().includes('river road');
+}
+
 
 function DashboardContent() {
   const { activeClient } = useClient();

@@ -8,6 +8,9 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+const cap = (s: string) => s.replace(/^./, (c) => c.toUpperCase());
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const money2 = (n: number) =>
@@ -86,7 +89,7 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
   doc.setFillColor(...SLATE);
   doc.rect(0, 0, W, 86, "F");
   doc.setFont("helvetica", "bold").setFontSize(16).setTextColor(255, 255, 255);
-  doc.text(`RRM — ${i.line} optimization plan`, M, 40);
+  doc.text(`RRM — ${cap(i.line)} optimization plan`, M, 40);
   doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(203, 213, 225);
   doc.text(`${i.platformLabel} · ${i.rangeLabel} · Connect Paid Media`, M, 60);
   y = 116;
@@ -123,7 +126,7 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
     body(
       `Each row below takes a meaningful slice of ${i.line} spend at more than 2x the line's ${money2(i.currentCPRC)} cost per raw call` +
         (i.benchmark ? `, while "${i.benchmark.keyword}" delivers calls at ${money2(i.benchmark.cprc)}` : "") +
-        `. Pause the zero-call rows outright; for the rest, cut bids or budget until they clear ${money2(i.currentCPRC)}.`,
+        . Pause the zero-call rows outright; for the rest, cut bids or budget until they clear ${money2(i.currentCPRC)}.`,
     );
     table(
       [i.label.replace(/^./, (c) => c.toUpperCase()), ...(i.showMatch ? ["Match"] : []), "Spend", "Clicks", "Calls", "Cost / raw call", "Recoverable", "Action"],
@@ -143,7 +146,7 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
     );
     if (i.benchmark && i.benchmark.cprc > 0) {
       body(
-        `Reallocating that spend at "${i.benchmark.keyword}"'s ${money2(i.benchmark.cprc)} rate would add roughly ` +
+        `Reallocating that spend at the ${money2(i.benchmark.cprc)} rate of ${i.benchmark.keyword} would add roughly ` +
           `${Math.floor(rec / i.benchmark.cprc)} extra raw calls for the same budget.`,
       );
     }
@@ -152,7 +155,9 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
   // ---- Action 2: negatives ----------------------------------------------
   if (i.wasteTerms.length) {
     const waste = i.wasteTerms.reduce((s, t) => s + t.spend, 0);
-    heading(`Action 2 — Add ${i.wasteTerms.length} negative keywords (${money(waste)} on non-caller intent)`);
+    heading(
+      `Action 2 — Add ${i.wasteTerms.length} negative ${plural(i.wasteTerms.length, "keyword", "keywords")} (${money(waste)} on non-caller intent)`,
+    );
     body(
       "These search terms spent money, produced zero calls, and read as DIY, price-shopping, job-seeking or non-emergency intent. Add them (or their root tokens) as campaign-level negatives.",
     );
@@ -165,7 +170,7 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
 
   // ---- Action 3: high-click, no-call terms ------------------------------
   if (i.zeroCallTerms.length) {
-    heading(`Action 3 — Fix ${i.zeroCallTerms.length} high-click search terms with no calls (${money(i.zeroCallTerms.reduce((s, t) => s + t.spend, 0))} at risk)`);
+    heading(`Action 3 — Fix ${i.zeroCallTerms.length} high-click search ${plural(i.zeroCallTerms.length, "term", "terms")} with no calls (${money(i.zeroCallTerms.reduce((s, t) => s + t.spend, 0))} at risk)`);
     body(
       "Real service intent but the click never turns into a call — usually a landing-page or click-to-call issue rather than a query issue. Confirm the tracking number renders above the fold on mobile for these queries before cutting them.",
     );
@@ -247,7 +252,7 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
     doc.setPage(p);
     doc.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(...MUTED);
     doc.text(
-      `RRM ${i.line} · ${i.rangeLabel} · generated ${new Date().toLocaleString("en-US")}`,
+      `RRM ${cap(i.line)} · ${i.rangeLabel} · generated ${new Date().toLocaleString("en-US")}`,
       M,
       doc.internal.pageSize.getHeight() - 24,
     );

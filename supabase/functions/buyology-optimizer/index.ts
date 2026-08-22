@@ -226,14 +226,15 @@ Return ONLY valid JSON in this exact shape:
       plan = JSON.parse(content.slice(start, end + 1));
     }
 
+    const generatedAt = new Date().toISOString();
+    const source = body.source === "scheduled" ? "scheduled" : "manual";
+    const periodKey = body.periodKey || generatedAt.slice(0, 10);
+
     // Persist for history (best effort — never fail the request on a logging error)
     try {
-      const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-      const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
       const recs = Array.isArray(plan.recommendations) ? plan.recommendations.slice(0, 25) : [];
       if (recs.length) {
-        await supabase.from("ai_optimization_recommendations").insert(
+        await admin.from("ai_optimization_recommendations").insert(
           recs.map((r: any) => ({
             client_id: BUYOLOGY_CLIENT_ID,
             platform: "meta",
@@ -253,9 +254,34 @@ Return ONLY valid JSON in this exact shape:
       console.error("buyology-optimizer: failed to persist recommendations", logErr);
     }
 
-    return new Response(JSON.stringify({ line: body.line, lineLabel: body.lineLabel, plan, generatedAt: new Date().toISOString() }), {
+    // Snapshot the brief itself so briefs can be compared by date.
+    try {
+      if (source === "scheduled") {
+        await admin.from("ai_optimizer_briefs").delete()
+          .eq("client_id", BUYOLOGY_CLIENT_ID).eq("scope", "buyology")
+          .eq("product_line", body.line).eq("period_key", periodKey).eq("source", "scheduled");
+      }
+      await admin.from("ai_optimizer_briefs").insert({
+        client_id: BUYOLOGY_CLIENT_ID,
+        scope: "buyology",
+        product_line: body.line,
+        line_label: body.lineLabel,
+        range_label: body.rangeLabel || "lifetime to date",
+        source,
+        plan,
+        totals: body.totals,
+        attribution_rate: body.attributionRate ?? null,
+        period_key: periodKey,
+        generated_at: generatedAt,
+      });
+    } catch (snapErr) {
+      console.error("buyology-optimizer: failed to snapshot brief", snapErr);
+    }
+
+    return new Response(JSON.stringify({ line: body.line, lineLabel: body.lineLabel, plan, totals: body.totals, generatedAt }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (error) {
     console.error("buyology-optimizer error:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {

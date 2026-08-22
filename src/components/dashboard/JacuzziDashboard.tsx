@@ -19,7 +19,9 @@ import {
 } from "lucide-react";
 import JacuzziReconciliation from "./JacuzziReconciliation";
 import { format, parseISO } from "date-fns";
+import { useDateRange } from "@/contexts/DateRangeContext";
 import { toast } from "sonner";
+
 
 const money = (n: number) =>
   `$${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -62,11 +64,12 @@ export default function JacuzziDashboard() {
   /** Drill-down: empty station set = blended across every station we're paid on. */
   const [stationFilter, setStationFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "call" | "qr">("all");
-  /** Default view is today (hour-by-hour); "all" opens the full campaign history. */
-  const [period, setPeriod] = useState<"today" | "all">("today");
+  const { dateRange, preset } = useDateRange();
   const [tab, setTab] = useState("hourly");
-  const todayKey = format(new Date(), "yyyy-MM-dd");
-  const inPeriod = (d?: string | null) => period === "all" || d === todayKey;
+  const fromKey = format(dateRange.from, "yyyy-MM-dd");
+  const toKey = format(dateRange.to, "yyyy-MM-dd");
+  const inPeriod = (d?: string | null) => !!d && d >= fromKey && d <= toKey;
+
 
 
   /**
@@ -110,12 +113,18 @@ export default function JacuzziDashboard() {
     setStationFilter((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   const isBlended = stationFilter.length === 0;
   const scopeLabel = isBlended ? "Blended — all stations" : stationFilter.join(" + ");
-  const periodLabel = period === "today" ? "Today, hour by hour" : "All time — full campaign";
+  const periodLabel =
+    preset === "lifetime"
+      ? "All time — full campaign"
+      : preset === "today"
+        ? "Today, hour by hour"
+        : `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d")}`;
 
   /** Period scope applies before station/type drill-down so every panel agrees. */
-  const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, period, todayKey]);
-  const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, period, todayKey]);
-  const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, period, todayKey]);
+  const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, fromKey, toKey]);
+  const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, fromKey, toKey]);
+  const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, fromKey, toKey]);
+
 
   const leads = useMemo(
     () => scopedLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),
@@ -309,25 +318,6 @@ export default function JacuzziDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-md border border-border p-0.5">
-          {([
-            ["today", "Today (hourly)"],
-            ["all", "All time"],
-          ] as const).map(([v, label]) => (
-            <Button
-              key={v}
-              variant={period === v ? "default" : "ghost"}
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => {
-                setPeriod(v);
-                setTab(v === "today" ? "hourly" : "daily");
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
         <Badge variant="secondary" className="gap-1">
           <Radio className="h-3 w-3" /> {periodLabel} · {scopeLabel}
         </Badge>

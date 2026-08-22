@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
         .from("platform_connections")
         .update({ metadata: { ...meta, pending_report_uid: null } })
         .eq("id", conn.id);
-      return json({ success: true, debug: true, csv: csv.slice(0, 8000) });
+      return json({ success: true, debug: true, csv: csv });
     }
     const counts = await persist(admin, clientId, parseCsv(csv));
 

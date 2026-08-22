@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import {
   useMojaCalls, useRRMSpend, MojaCall, RRMCampaignRow, RRMLine,
-  RRM_CLIENT_ID, classifyCampaign, callLine, callMetrics, CallMetrics,
+  RRM_CLIENT_ID, classifyCampaign, callLine, callPlatform, callMetrics, CallMetrics,
 } from "@/hooks/useRRMData";
 import { useRRMCallAttribution } from "@/hooks/useRRMDrillDown";
 import RRMPlatformPanel from "@/components/dashboard/RRMPlatformPanel";

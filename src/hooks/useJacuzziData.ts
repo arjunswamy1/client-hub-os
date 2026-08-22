@@ -385,3 +385,54 @@ export function useRunRecon() {
     return data as { success?: boolean; days?: number; matched?: number; unmatched_leads?: number; unmatched_calls?: number; station_mismatches?: number; rate_mismatches?: number; error?: string };
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * Roku breakdowns (geo / DMA / placement / creative)
+ * ------------------------------------------------------------------ */
+
+export interface RokuBreakdownRow {
+  date: string;
+  entity: string;
+  entity_name: string;
+  spend: number;
+  impressions: number;
+}
+
+/** Roku spend broken out by state, metro market, placement and creative. */
+export function useRokuBreakdowns() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["jacuzzi-roku-breakdowns", from, to],
+    refetchInterval: 10 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("roku_daily_metrics")
+        .select("date, entity, entity_name, spend, impressions")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .gte("date", from)
+        .lte("date", to)
+        .limit(20000);
+      if (error) throw error;
+      return (data || []).map((r: any) => ({
+        date: r.date,
+        entity: r.entity,
+        entity_name: r.entity_name ?? "Unknown",
+        spend: Number(r.spend || 0),
+        impressions: Number(r.impressions || 0),
+      })) as RokuBreakdownRow[];
+    },
+  });
+}
+
+/** Pulls fresh geo/placement/creative reports from the Roku Ads API. */
+export function useSyncRokuBreakdowns() {
+  const qc = useQueryClient();
+  return async (days = 90, entities?: string[]) => {
+    const { data, error } = await supabase.functions.invoke("sync-roku-dimensions", {
+      body: { client_id: JACUZZI_CLIENT_ID, days, ...(entities ? { entities } : {}) },
+    });
+    if (error) throw error;
+    await qc.invalidateQueries({ queryKey: ["jacuzzi-roku-breakdowns"] });
+    return data as { success?: boolean; results?: Record<string, number | string>; error?: string };
+  };
+}

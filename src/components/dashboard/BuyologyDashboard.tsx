@@ -4,13 +4,14 @@ import { useBuyologyLineSpend } from "@/hooks/useBuyologyCreativeAnalysis";
 import { PRODUCT_LINES, ProductLine, classifyName, productLineLabel, QUALIFIED_SECONDS } from "@/lib/buyologyProductLines";
 import BuyologyRingbaImport from "./BuyologyRingbaImport";
 import BuyologyCreativeAnalysis from "./BuyologyCreativeAnalysis";
+import BuyologyOptimizer from "./BuyologyOptimizer";
 import MetaDashboard from "./MetaDashboard";
 import MetaConnectionCard from "./MetaConnectionCard";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Phone, PhoneCall, DollarSign, TrendingUp, Target, Clock, Facebook, Upload, BarChart3, Link as LinkIcon, Sparkles } from "lucide-react";
+import { Phone, PhoneCall, DollarSign, TrendingUp, Target, Clock, Facebook, Upload, BarChart3, Link as LinkIcon, Sparkles, Brain } from "lucide-react";
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { format } from "date-fns";
 
@@ -201,6 +202,10 @@ export default function BuyologyDashboard() {
             <Sparkles className="h-3.5 w-3.5" />
             Creative Analysis
           </TabsTrigger>
+          <TabsTrigger value="optimizer" className="gap-1.5 text-xs whitespace-nowrap">
+            <Brain className="h-3.5 w-3.5" />
+            AI Optimizer
+          </TabsTrigger>
           <TabsTrigger value="meta" className="gap-1.5 text-xs whitespace-nowrap">
             <Facebook className="h-3.5 w-3.5" />
             Meta Ads
@@ -269,6 +274,10 @@ export default function BuyologyDashboard() {
 
       <TabsContent value="creatives">
         <BuyologyCreativeAnalysis line={line} />
+      </TabsContent>
+
+      <TabsContent value="optimizer">
+        <BuyologyOptimizer line={line} />
       </TabsContent>
 
       <TabsContent value="meta" className="space-y-4">

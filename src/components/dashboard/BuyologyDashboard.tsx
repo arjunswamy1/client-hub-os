@@ -149,10 +149,15 @@ export default function BuyologyDashboard() {
             <Facebook className="h-3.5 w-3.5" />
             Meta Ads
           </TabsTrigger>
+          <TabsTrigger value="connections" className="gap-1.5 text-xs whitespace-nowrap">
+            <LinkIcon className="h-3.5 w-3.5" />
+            Connections
+          </TabsTrigger>
           <TabsTrigger value="import" className="gap-1.5 text-xs whitespace-nowrap">
             <Upload className="h-3.5 w-3.5" />
             Ringba Import
           </TabsTrigger>
+
         </TabsList>
       </div>
 

@@ -49,6 +49,13 @@ function isRRMClient(client: { slug: string; name: string } | null): boolean {
   return client.slug.toLowerCase() === 'rrm' || client.name.toLowerCase().includes('river road');
 }
 
+/** Detect BuyologyIQ client */
+function isBuyologyClient(client: { slug: string; name: string } | null): boolean {
+  if (!client) return false;
+  return client.slug.toLowerCase().includes('buyology') || client.name.toLowerCase().includes('buyology');
+}
+
+
 
 function DashboardContent() {
   const { activeClient } = useClient();

@@ -273,7 +273,8 @@ export function useRRMCallAttribution(calls: MojaCall[]): RRMAttributionIndex {
     const line = callLine(c);
     const term = normKey(c.utm_term);
     const content = normKey(c.utm_content);
-    const isGoogle = (c.platform || "").toLowerCase() !== "meta";
+    // Channel follows the service line: Plumbing = Google, Windows = Meta.
+    const isGoogle = platformOfLine(line) === "google";
 
     let ref: AdRef | undefined;
     if (ready) {

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { ArrowUpRight, ArrowDownRight, Sparkles, TrendingUp, AlertTriangle, FlaskConical, Link2Off } from "lucide-react";
+import { Sparkles, TrendingUp, AlertTriangle, FlaskConical, Link2Off } from "lucide-react";
 import {
   useBuyologyCreativeAnalysis,
   CreativeRow,

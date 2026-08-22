@@ -1,0 +1,131 @@
+import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { CheckCircle2, AlertTriangle, RefreshCw, Chrome, Facebook, Link as LinkIcon } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { RRM_CLIENT_ID } from "@/hooks/useRRMData";
+import { useRRMConnections } from "@/hooks/useRRMDrillDown";
+
+const PLATFORMS = [
+  {
+    id: "google" as const,
+    label: "Google Ads",
+    icon: Chrome,
+    blurb: "Plumbing campaigns — pulls campaigns, ad groups, keywords and search terms.",
+    initiate: "google-oauth-initiate",
+    sync: "sync-google-ads",
+  },
+  {
+    id: "meta" as const,
+    label: "Meta Ads",
+    icon: Facebook,
+    blurb: "Windows campaigns — pulls campaigns, ad sets and creative-level performance.",
+    initiate: "meta-oauth-initiate",
+    sync: "sync-meta-ads",
+  },
+];
+
+export default function RRMConnections() {
+  const { data: connections = [], refetch } = useRRMConnections();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const connect = async (platform: "google" | "meta", fn: string) => {
+    setBusy(platform);
+    try {
+      const { data, error } = await supabase.functions.invoke(fn, { body: { client_id: RRM_CLIENT_ID } });
+      if (error) throw error;
+      if (!data?.url) throw new Error("No redirect URL returned");
+      window.location.href = data.url;
+    } catch (e: any) {
+      toast.error(`Could not start ${platform} authorization: ${e.message}`);
+      setBusy(null);
+    }
+  };
+
+  const sync = async (platform: string, fn: string) => {
+    setBusy(`sync-${platform}`);
+    try {
+      const { error } = await supabase.functions.invoke(fn, { body: { client_id: RRM_CLIENT_ID, days_back: 90 } });
+      if (error) throw error;
+      toast.success(`${platform === "google" ? "Google" : "Meta"} sync complete`);
+      await refetch();
+    } catch (e: any) {
+      toast.error(e.message || "Sync failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {PLATFORMS.map((p) => {
+        const conn = connections.find((c) => c.platform === p.id);
+        const active = conn?.status === "active";
+        const Icon = p.icon;
+        return (
+          <Card key={p.id} className="p-4">
+            <div className="flex flex-wrap items-start gap-3">
+              <div className="rounded-md bg-accent p-2">
+                <Icon className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium">{p.label}</p>
+                  <Badge variant={active ? "default" : "secondary"} className="text-[10px]">
+                    {active ? (
+                      <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Connected</span>
+                    ) : conn ? conn.status : "Not connected"}
+                  </Badge>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">{p.blurb}</p>
+                {conn && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {conn.account_name || conn.account_id || "Account linked"}
+                    {conn.last_synced_at &&
+                      ` · last sync ${format(new Date(conn.last_synced_at), "MMM d, h:mm a")}`}
+                    {conn.last_sync_records != null && ` · ${conn.last_sync_records} records`}
+                  </p>
+                )}
+                {conn?.sync_error && (
+                  <p className="mt-1 flex items-start gap-1 text-xs text-destructive">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                    {conn.sync_error}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={active ? "outline" : "default"}
+                  className="h-8 gap-1.5 text-xs"
+                  disabled={busy === p.id}
+                  onClick={() => connect(p.id, p.initiate)}
+                >
+                  <LinkIcon className="h-3.5 w-3.5" />
+                  {active ? "Reconnect" : "Connect"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-xs"
+                  disabled={!conn || busy === `sync-${p.id}`}
+                  onClick={() => sync(p.id, p.sync)}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${busy === `sync-${p.id}` ? "animate-spin" : ""}`} />
+                  Sync 90 days
+                </Button>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+      <p className="text-xs text-muted-foreground">
+        Authorize with the account that has access to RRM's Google Ads and Meta ad accounts. After connecting, run a sync
+        to backfill 90 days of campaign, ad group/ad set, keyword, search term and creative data.
+      </p>
+    </div>
+  );
+}

@@ -188,6 +188,43 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
         totalRecords += batch.length;
       }
 
+      // === Ad set level (needed for creative drill-downs) ===
+      try {
+        const adsetInsights = await fetchInsights(
+          accountId, accessToken, since, until, "adset",
+          "campaign_id,campaign_name,adset_id,adset_name,",
+        );
+        if (adsetInsights) {
+          const adsetStatusMap = await fetchEntityStatuses(accountId, accessToken, "adsets");
+          const batch = adsetInsights.map((a: any) => {
+            const m = extractMetrics(a);
+            return {
+              client_id: clientId,
+              platform: "meta",
+              campaign_name: a.campaign_name,
+              platform_campaign_id: a.campaign_id || null,
+              adset_name: a.adset_name || "Unnamed ad set",
+              platform_adset_id: a.adset_id || null,
+              account_id: accountId,
+              status: adsetStatusMap.get(a.adset_id) || "unknown",
+              date: a.date_start,
+              spend: m.spend, revenue: m.revenue,
+              impressions: m.impressions, clicks: m.clicks,
+              conversions: m.conversions,
+              cpc: m.clicks > 0 ? m.spend / m.clicks : null,
+              ctr: m.impressions > 0 ? (m.clicks / m.impressions) * 100 : null,
+              cpa: m.conversions > 0 ? m.spend / m.conversions : null,
+            };
+          });
+          await batchUpsert(supabase, "ad_sets", batch, "client_id,platform,campaign_name,adset_name,date");
+          totalRecords += batch.length;
+        }
+      } catch (err) {
+        console.error("Meta ad set sync error:", err);
+      }
+
+
+
       // === NEW: Ad-level data with creatives ===
       try {
         const adCreativeRecords = await syncAdCreatives(supabase, accountId, accessToken, clientId, since, until);

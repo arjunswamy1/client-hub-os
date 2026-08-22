@@ -28,6 +28,9 @@ export interface MojaCall {
   payout: number;
   disposition: string | null;
   recording_url: string | null;
+  utm_source?: string | null;
+  utm_campaign?: string | null;
+
 }
 
 export interface RRMCampaignRow {

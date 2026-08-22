@@ -13,11 +13,15 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import {
   RefreshCw, Phone, DollarSign, TrendingUp, Target, Layers, PhoneCall, Blinds, Wrench,
+  Chrome, Facebook, Plug,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   useMojaCalls, useRRMSpend, serviceLineOf, MojaCall, RRMCampaignRow,
 } from "@/hooks/useRRMData";
+import RRMPlatformPanel from "@/components/dashboard/RRMPlatformPanel";
+import RRMConnections from "@/components/dashboard/RRMConnections";
+
 
 const fmtMoney = (n: number) =>
   n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -253,7 +257,28 @@ export default function RRMDashboard() {
           <TabsTrigger value="campaigns" className="text-xs">Campaigns</TabsTrigger>
           <TabsTrigger value="buyers" className="text-xs">Buyers</TabsTrigger>
           <TabsTrigger value="calls" className="text-xs">Call log</TabsTrigger>
+          <TabsTrigger value="google" className="gap-1.5 text-xs">
+            <Chrome className="h-3.5 w-3.5" /> Google Ads
+          </TabsTrigger>
+          <TabsTrigger value="meta" className="gap-1.5 text-xs">
+            <Facebook className="h-3.5 w-3.5" /> Meta Ads
+          </TabsTrigger>
+          <TabsTrigger value="connections" className="gap-1.5 text-xs">
+            <Plug className="h-3.5 w-3.5" /> Connections
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="google">
+          <RRMPlatformPanel platform="google" />
+        </TabsContent>
+        <TabsContent value="meta">
+          <RRMPlatformPanel platform="meta" />
+        </TabsContent>
+        <TabsContent value="connections">
+          <RRMConnections />
+        </TabsContent>
+
+
 
         <TabsContent value="trend">
           <Card className="p-4">

@@ -17,6 +17,7 @@ function json(body: unknown, status = 200) {
 
 /** Candidate report dimensions we want to know Roku supports. */
 const CANDIDATES = [
+  "genre_probe_only",
   "genre", "content_genre", "app_genre", "category", "content_category",
   "app_name", "publisher", "channel_name", "content_type",
   "state", "region", "dma", "dma_name", "geo", "country", "zip", "city",
@@ -65,7 +66,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ data: [{ type: "report", attributes }] }),
       });
       const text = await res.text();
-      results[dim] = res.ok ? "accepted" : `${res.status}: ${text.slice(0, 200)}`;
+      results[dim] = res.ok ? "accepted" : `${res.status}: ${text.slice(0, 4000)}`;
     }
 
     return json({ supported: Object.entries(results).filter(([, v]) => v === "accepted").map(([k]) => k), results });

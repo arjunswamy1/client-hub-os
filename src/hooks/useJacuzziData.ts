@@ -436,3 +436,25 @@ export function useSyncRokuBreakdowns() {
     return data as { success?: boolean; results?: Record<string, number | string>; error?: string };
   };
 }
+
+/** RingFuel tracked calls with caller geo — raw call volume by state. */
+export function useJacuzziRingfuelGeo() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["jacuzzi-ringfuel-geo", from, to],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ringfuel_calls")
+        .select("call_start, caller_state, caller_city, connected, duration_seconds")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .gte("call_start", `${from}T00:00:00`)
+        .lte("call_start", `${to}T23:59:59`)
+        .limit(10000);
+      if (error) throw error;
+      return (data || []) as {
+        call_start: string; caller_state: string | null; caller_city: string | null;
+        connected: boolean | null; duration_seconds: number | null;
+      }[];
+    },
+  });
+}

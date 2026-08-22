@@ -15,9 +15,10 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid, BarChart,
 } from "recharts";
 import {
-  RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users, ShieldCheck, Send,
+  RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users, ShieldCheck, Send, MapPin,
 } from "lucide-react";
 import JacuzziReconciliation from "./JacuzziReconciliation";
+import JacuzziGeoPlacement from "./JacuzziGeoPlacement";
 import SlackReportCard from "./SlackReportCard";
 import { format, parseISO } from "date-fns";
 import { useDateRange } from "@/contexts/DateRangeContext";
@@ -412,6 +413,7 @@ export default function JacuzziDashboard() {
             <TabsTrigger value="daily" className="gap-1.5 text-xs">Daily</TabsTrigger>
             <TabsTrigger value="hourly" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" /> Hourly</TabsTrigger>
             <TabsTrigger value="stations" className="gap-1.5 text-xs">Stations</TabsTrigger>
+            <TabsTrigger value="geo" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" /> Geo &amp; placement</TabsTrigger>
             <TabsTrigger value="leads" className="gap-1.5 text-xs">Lead log</TabsTrigger>
             <TabsTrigger value="recon" className="gap-1.5 text-xs"><ShieldCheck className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>
             <TabsTrigger value="import" className="gap-1.5 text-xs"><Upload className="h-3.5 w-3.5" /> Import</TabsTrigger>
@@ -590,6 +592,10 @@ export default function JacuzziDashboard() {
               CT13 are re-attributed to CT14 — the CT14 creative carried the wrong QR code.
             </p>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="geo">
+          <JacuzziGeoPlacement leads={leads} />
         </TabsContent>
 
         <TabsContent value="leads">

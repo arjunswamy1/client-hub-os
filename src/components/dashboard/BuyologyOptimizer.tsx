@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,8 +11,12 @@ import {
   Brain, FileDown, Loader2, TrendingUp, Scissors, FlaskConical, ArrowRightLeft, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { useBuyologyCreativeAnalysis, CreativeRow } from "@/hooks/useBuyologyCreativeAnalysis";
+import { BUYOLOGY_CLIENT_ID } from "@/hooks/useBuyologyData";
 import { ProductLine, productLineLabel, QUALIFIED_SECONDS, PREMIUM_SECONDS } from "@/lib/buyologyProductLines";
 import { buildBuyologyOptimizerPdf, OptimizerPlan } from "@/lib/buyologyOptimizerPdf";
+import BuyologyOptimizerSchedule from "./BuyologyOptimizerSchedule";
+import { OptimizerBrief } from "@/hooks/useOptimizerSchedule";
+
 
 const money = (n: number) => `$${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const money2 = (n: number) => `$${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

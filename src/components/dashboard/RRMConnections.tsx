@@ -104,16 +104,20 @@ export default function RRMConnections() {
     }
   };
 
+  const persistAdAccount = async (conn: RRMConnection, account: RRMAdAccount) => {
+    const { error } = await supabase
+      .from("platform_connections")
+      .update({ selected_ad_account: account as never })
+      .eq("id", conn.id);
+    if (error) throw error;
+  };
+
   const selectAdAccount = async (conn: RRMConnection, accountId: string) => {
     const account = (conn.metadata?.ad_accounts || []).find((a) => (a.id || a.account_id) === accountId);
     if (!account) return;
     setBusy(`account-${conn.platform}`);
     try {
-      const { error } = await supabase
-        .from("platform_connections")
-        .update({ selected_ad_account: account as never })
-        .eq("id", conn.id);
-      if (error) throw error;
+      await persistAdAccount(conn, account);
       toast.success(`Ad account set to ${account.name || accountId}`);
       await refetch();
     } catch (e: any) {
@@ -122,6 +126,22 @@ export default function RRMConnections() {
       setBusy(null);
     }
   };
+
+  // Auto-save a default when there is exactly one ad account and none is stored yet
+  useEffect(() => {
+    connections.forEach((conn) => {
+      const accounts = conn.metadata?.ad_accounts || [];
+      const stored = conn.selected_ad_account?.id || conn.selected_ad_account?.account_id;
+      if (stored || accounts.length !== 1) return;
+      if (autoSaved.current.has(conn.id)) return;
+      autoSaved.current.add(conn.id);
+      persistAdAccount(conn, accounts[0])
+        .then(() => refetch())
+        .catch(() => autoSaved.current.delete(conn.id));
+    });
+  }, [connections, refetch]);
+
+
 
 
 

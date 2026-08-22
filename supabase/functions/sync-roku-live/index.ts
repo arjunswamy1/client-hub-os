@@ -180,7 +180,10 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.warn("metrics/fields failed:", (e as Error).message);
     }
-    if (body.fields_only) return json({ success: true, available_fields: available });
+    if (body.fields_only) {
+      const raw = await apiGet(token, "/developer/metrics/fields").catch((e) => ({ error: (e as Error).message }));
+      return json({ success: true, available_fields: available, raw });
+    }
 
     const wanted = ["impressions", "spend"].filter((f) => !available.length || available.includes(f));
     const fields = (wanted.length ? wanted : ["impressions", "spend"]).join(",");
@@ -193,6 +196,7 @@ Deno.serve(async (req) => {
       return json({ error: "No Roku account uid on this connection — reconnect Roku." }, 400);
     }
 
+    const entityNames = new Map<string, Map<string, string>>();
     const end = new Date();
     const start = new Date(end.getTime() - (days - 1) * 86400000);
     const start_date = ymd(start);
@@ -202,17 +206,48 @@ Deno.serve(async (req) => {
     const perAccount: Record<string, number | string> = {};
     for (const accountUid of accountUids) {
       try {
+        // Synchronous metrics require explicit entity uids, so enumerate first.
+        const names = new Map<string, string>();
+        let uids: string[] = [];
+        if (entity === "account") {
+          uids = [accountUid];
+        } else {
+          for (let offset = 0; offset < 500; offset += 100) {
+            const list = await apiGet(token, "/developer/campaigns", {
+              account_uid: accountUid,
+              limit: "100",
+              offset: String(offset),
+            });
+            const items = list?.data ?? [];
+            for (const c of items) {
+              const uid = c?.uid ?? c?.attributes?.uid;
+              if (!uid) continue;
+              uids.push(uid);
+              names.set(uid, c?.attributes?.name ?? uid);
+            }
+            if (items.length < 100) break;
+          }
+        }
+        if (!uids.length) { perAccount[accountUid] = "no campaigns"; continue; }
+        entityNames.set(accountUid, names);
+
         let cursor: string | undefined;
         let pages = 0;
         do {
           const res = await apiGet(token, "/developer/metrics", {
             account_uid: accountUid,
             entity,
+            entity_uids: uids.slice(0, 200).join(","),
             ...(cursor ? { cursor, limit: "1000" } : {
               start_date, end_date, granularity: "day", fields, limit: "1000",
             }),
           });
-          const rows = flatten(res, accountUid, end_date);
+          const rows = flatten(res, accountUid, end_date).map((r) => ({
+            ...r,
+            entity_name: r.entity_name === "Unknown"
+              ? entityNames.get(accountUid)?.get(r.entity_uid) ?? r.entity_uid
+              : r.entity_name,
+          }));
           flat.push(...rows);
           cursor = res?.meta?.pagination?.has_more ? res?.meta?.pagination?.next_cursor : undefined;
           pages++;

@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
-  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload
+  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload, Tv
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -27,6 +27,7 @@ const clientNavItems = [
   { title: 'DIDs', url: '/dids', icon: PhoneCall },
   { title: 'RingFuel Numbers', url: '/ringfuel-numbers', icon: PhoneCall },
   { title: 'Spend Upload', url: '/spend-upload', icon: Upload },
+  { title: 'Roku Connections', url: '/roku-connections', icon: Tv },
 ];
 
 const bottomItems = [

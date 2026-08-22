@@ -202,7 +202,7 @@ export default function RRMDashboard() {
       platform: string; line: RRMLine; spend: number; impressions: number; clicks: number; conversions: number;
     }>();
     for (const x of rrmSpend) {
-      if (line !== "blended" && x.line !== line) continue;
+      if (x.line !== line) continue;
       const key = x.row.campaign_name || "Unnamed campaign";
       const row = map.get(key) || {
         platform: x.row.platform, line: x.line, spend: 0, impressions: 0, clicks: 0, conversions: 0,

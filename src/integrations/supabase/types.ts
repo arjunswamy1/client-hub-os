@@ -2907,6 +2907,24 @@ export type Database = {
           },
         ]
       }
+      cron_invocation_tokens: {
+        Row: {
+          created_at: string
+          job_name: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          job_name: string
+          token?: string
+        }
+        Update: {
+          created_at?: string
+          job_name?: string
+          token?: string
+        }
+        Relationships: []
+      }
       dashboard_configs: {
         Row: {
           client_id: string

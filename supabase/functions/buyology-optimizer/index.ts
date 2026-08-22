@@ -42,6 +42,10 @@ interface Body {
   unattributedCalls?: number;
   attributionRate?: number;
   notes?: string;
+  /** rebuild the payload server-side from the database (used by scheduled runs) */
+  build?: boolean;
+  source?: "manual" | "scheduled";
+  periodKey?: string;
 }
 
 const round = (n: number, d = 2) => Math.round((Number(n) || 0) * 10 ** d) / 10 ** d;
@@ -49,6 +53,7 @@ const round = (n: number, d = 2) => Math.round((Number(n) || 0) * 10 ** d) / 10 
 function validate(b: any): { ok: true; body: Body } | { ok: false; error: string } {
   if (!b || typeof b !== "object") return { ok: false, error: "Body must be an object" };
   if (typeof b.line !== "string" || !b.line) return { ok: false, error: "line is required" };
+  if (b.build === true) return { ok: true, body: b as Body };
   if (typeof b.lineLabel !== "string" || !b.lineLabel) return { ok: false, error: "lineLabel is required" };
   if (!b.totals || typeof b.totals !== "object") return { ok: false, error: "totals is required" };
   if (!Array.isArray(b.creatives)) return { ok: false, error: "creatives must be an array" };
@@ -67,13 +72,33 @@ Deno.serve(async (req) => {
       });
     }
 
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
     const parsedBody = validate(await req.json().catch(() => null));
     if (!parsedBody.ok) {
       return new Response(JSON.stringify({ error: parsedBody.error }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const body = parsedBody.body;
+    let body = parsedBody.body;
+
+    if (body.build) {
+      if (!["tubs", "bath"].includes(body.line)) {
+        return new Response(JSON.stringify({ error: "line must be 'tubs' or 'bath' when build is true" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const built = await buildBuyologyPayload(admin, BUYOLOGY_CLIENT_ID, body.line as ProductLine);
+      if (!built.hasData) {
+        return new Response(JSON.stringify({ error: `No creative data for ${body.line} — sync Meta spend and import calls first.` }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      body = { ...built.payload, rangeLabel: body.rangeLabel, notes: body.notes, source: body.source, periodKey: body.periodKey };
+    }
+
 
     // Keep the payload tight: the biggest spenders and the biggest call drivers.
     const bySpend = [...body.creatives].sort((a, b) => b.spend - a.spend).slice(0, 40);

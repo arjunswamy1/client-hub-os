@@ -7,6 +7,7 @@ import MetaDashboard from '@/components/dashboard/MetaDashboard';
 import BillyDashboard from '@/components/dashboard/BillyDashboard';
 import FourJsDashboard from '@/components/dashboard/FourJsDashboard';
 import CannaballDashboard from '@/components/dashboard/CannaballDashboard';
+import JacuzziDashboard from '@/components/dashboard/JacuzziDashboard';
 import DashboardHighlights from '@/components/dashboard/DashboardHighlights';
 import DateRangePicker from '@/components/dashboard/DateRangePicker';
 import { BookCallButton } from '@/components/portal/BookCallButton';

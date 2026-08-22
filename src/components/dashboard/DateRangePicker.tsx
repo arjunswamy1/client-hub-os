@@ -7,10 +7,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useDateRange } from "@/contexts/DateRangeContext";
 import type { DateRange as DayPickerRange } from "react-day-picker";
 
+const LIFETIME_START = new Date(2024, 0, 1);
+
 const presets = [
+  { label: "Today", value: "today", days: 1 },
   { label: "7D", value: "7d", days: 7 },
   { label: "14D", value: "14d", days: 14 },
   { label: "30D", value: "30d", days: 30 },
+  { label: "Lifetime", value: "lifetime", days: 0 },
 ];
 
 const DateRangePicker = () => {
@@ -18,11 +22,16 @@ const DateRangePicker = () => {
 
   const handlePreset = (p: typeof presets[0]) => {
     setPreset(p.value);
+    if (p.value === "lifetime") {
+      setDateRange({ from: LIFETIME_START, to: startOfDay(new Date()) });
+      return;
+    }
     setDateRange({
       from: startOfDay(subDays(new Date(), p.days - 1)),
       to: startOfDay(new Date()),
     });
   };
+
 
   const handleCalendarSelect = (range: DayPickerRange | undefined) => {
     if (range?.from && range?.to) {

@@ -190,7 +190,8 @@ Deno.serve(async (req) => {
     }
 
     // Roku exposes spend as integer micros of the account currency.
-    const candidates = ["impressions", "billed_local_micro_spend", "total_video_complete"];
+    const dimField = entity === "account" ? "account_uid" : `${entity}_uid`;
+    const candidates = [dimField, "date", "impressions", "billed_local_micro_spend", "total_video_complete"];
     const wanted = candidates.filter((f) => !available.length || available.includes(f));
     const fields = (wanted.length ? wanted : ["impressions", "billed_local_micro_spend"]).join(",");
 
@@ -260,7 +261,9 @@ Deno.serve(async (req) => {
         } while (cursor && pages < 10);
         perAccount[accountUid] = flat.filter((r) => r.account_uid === accountUid).length;
       } catch (e) {
-        perAccount[accountUid] = `error: ${(e as Error).message}`;
+        const msg = (e as Error).message;
+        // Accounts with no delivery in the window answer with a validation error.
+        perAccount[accountUid] = /No data found/i.test(msg) ? 0 : `error: ${msg}`;
       }
     }
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useClient } from '@/contexts/ClientContext';
 import DashboardPage from './DashboardPage';
@@ -12,22 +12,25 @@ export default function ClientDashboardRoute() {
   const { clientSlug } = useParams<{ clientSlug: string }>();
   const { clients, activeClient, setActiveClient, isLoading } = useClient();
   const navigate = useNavigate();
+  const syncedSlug = useRef<string | null>(null);
 
   const slug = (clientSlug || '').toLowerCase();
   const match = clients.find((c) => c.slug.toLowerCase() === slug);
 
   useEffect(() => {
-    if (match && activeClient?.id !== match.id) {
-      setActiveClient(match);
+    if (!match) return;
+    if (syncedSlug.current !== slug) {
+      // URL is the source of truth on entry / slug change
+      if (activeClient?.id !== match.id) setActiveClient(match);
+      syncedSlug.current = slug;
+      return;
     }
-  }, [match?.id, activeClient?.id]);
-
-  // If the user switches clients from the header while on a slug URL, follow along
-  useEffect(() => {
-    if (match && activeClient && activeClient.id !== match.id) {
+    // Already synced: a client switch from the header should update the URL
+    if (activeClient && activeClient.id !== match.id) {
+      syncedSlug.current = activeClient.slug.toLowerCase();
       navigate(`/${activeClient.slug}`, { replace: true });
     }
-  }, [activeClient?.id]);
+  }, [slug, match?.id, activeClient?.id]);
 
   if (isLoading) {
     return (

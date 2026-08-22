@@ -156,7 +156,32 @@ export default function RRMConnections() {
                   </p>
                 )}
                 {conn?.sync_error && <ErrorHint error={conn.sync_error} platform={p.id} />}
+                {conn && (conn.metadata?.ad_accounts?.length ?? 0) > 0 && (
+                  <div className="mt-2 max-w-sm">
+                    <p className="mb-1 text-xs font-medium">Ad account to report on</p>
+                    <Select
+                      value={conn.selected_ad_account?.id || conn.selected_ad_account?.account_id || undefined}
+                      onValueChange={(v) => selectAdAccount(conn, v)}
+                      disabled={busy === `account-${p.id}`}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Choose the RRM ad account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(conn.metadata?.ad_accounts || []).map((a: RRMAdAccount) => {
+                          const value = a.id || a.account_id || "";
+                          return (
+                            <SelectItem key={value} value={value} className="text-xs">
+                              {a.name || value} {a.account_id ? `(${a.account_id})` : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
+
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"

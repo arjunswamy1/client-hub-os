@@ -300,7 +300,7 @@ Deno.serve(async (req) => {
       .from("platform_connections")
       .update({
         metadata: { ...meta, pending_report_uid: null, hourly_synced_at: new Date().toISOString() },
-        last_sync_at: new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
         sync_error: null,
         status: "active",
       })

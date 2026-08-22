@@ -149,39 +149,22 @@ export default function RRMDashboard() {
     };
   }, [spendRows]);
 
-  const scopedCalls = useMemo(
-    () => (line === "blended" ? calls : calls.filter((c) => callLine(c) === line)),
-    [calls, line],
-  );
+  const scopedCalls = useMemo(() => calls.filter((c) => callLine(c) === line), [calls, line]);
   const scopedSpend = useMemo(
-    () => (line === "blended" ? rrmSpend : rrmSpend.filter((x) => x.line === line)).map((x) => x.row),
+    () => rrmSpend.filter((x) => x.line === line).map((x) => x.row),
     [rrmSpend, line],
   );
-
-  const spendOf = (l: SvcLine) =>
-    rrmSpend
-      .filter((x) => l === "blended" || x.line === l)
-      .reduce((s, x) => s + Number(x.row.spend || 0), 0);
 
   const kpi = useMemo(
     () => callMetrics(scopedCalls, scopedSpend.reduce((s, r) => s + Number(r.spend || 0), 0)),
     [scopedCalls, scopedSpend],
   );
-  const windowsKpi = useMemo(
-    () => callMetrics(calls.filter((c) => callLine(c) === "windows"), spendOf("windows")),
-    [calls, rrmSpend],
-  );
-  const plumbingKpi = useMemo(
-    () => callMetrics(calls.filter((c) => callLine(c) === "plumbing"), spendOf("plumbing")),
-    [calls, rrmSpend],
-  );
-  const blendedKpi = useMemo(() => callMetrics(calls, spendOf("blended")), [calls, rrmSpend]);
 
   const lineCounts = useMemo(() => ({
-    blended: calls.length,
     windows: calls.filter((c) => callLine(c) === "windows").length,
     plumbing: calls.filter((c) => callLine(c) === "plumbing").length,
   }), [calls]);
+
 
   const trend = useMemo(() => {
     const byDate = new Map<string, { spend: number; calls: number; revenue: number }>();

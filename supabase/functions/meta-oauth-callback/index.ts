@@ -108,13 +108,15 @@ Deno.serve(async (req) => {
       a?.id || a?.account_id || null;
 
     // Preserve the previously chosen reporting account across reconnects
-    const { data: existing } = await supabase
+    let existingQuery = supabase
       .from("platform_connections")
       .select("selected_ad_account")
       .eq("user_id", state.user_id)
-      .eq("platform", "meta")
-      .eq("client_id", state.client_id || null)
-      .maybeSingle();
+      .eq("platform", "meta");
+    existingQuery = state.client_id
+      ? existingQuery.eq("client_id", state.client_id)
+      : existingQuery.is("client_id", null);
+    const { data: existing } = await existingQuery.maybeSingle();
 
     const previous = existing?.selected_ad_account as
       | { id?: string; name?: string; account_id?: string }

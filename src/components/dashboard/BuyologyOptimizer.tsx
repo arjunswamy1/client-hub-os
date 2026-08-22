@@ -48,12 +48,18 @@ export default function BuyologyOptimizer({
   rangeLabel?: string;
 }) {
   const { data, isLoading } = useBuyologyCreativeAnalysis();
+  const queryClient = useQueryClient();
   const [notes, setNotes] = useState("");
   const [running, setRunning] = useState(false);
-  const [plans, setPlans] = useState<Record<string, { plan: OptimizerPlan; generatedAt: string }>>({});
+  const [plans, setPlans] = useState<
+    Record<string, { plan: OptimizerPlan; generatedAt: string; snapshot?: any; source?: string }>
+  >({});
 
   /** Which product lines this run covers — "all" fans out to both live campaigns */
   const targets: ProductLine[] = line === "all" ? ["tubs", "bath"] : [line];
+  /** Lines to render: the current filter plus any brief opened from history */
+  const displayLines = [...new Set([...targets, ...(Object.keys(plans) as ProductLine[])])] as ProductLine[];
+
 
   const scoped = useMemo(() => {
     const all = data?.creativeRows || [];

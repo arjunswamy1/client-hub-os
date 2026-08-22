@@ -124,7 +124,46 @@ export function useJacuzziHourly() {
   });
 }
 
+/** Roku connection state for Jacuzzi — powers the hourly sync status/button. */
+export function useRokuHourlyStatus() {
+  return useQuery({
+    queryKey: ["jacuzzi-roku-connection"],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_connections")
+        .select("id, status, last_synced_at, sync_error, metadata")
+        .eq("platform", "roku")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .maybeSingle();
+      if (error) throw error;
+      return data as {
+        id: string; status: string | null; last_synced_at: string | null;
+        sync_error: string | null; metadata: Record<string, any> | null;
+      } | null;
+    },
+  });
+}
+
+/** Kicks the Roku hourly delivery sync (also runs automatically every 15 min). */
+export function useSyncRokuHourly() {
+  const qc = useQueryClient();
+  return async (days = 3) => {
+    const { data, error } = await supabase.functions.invoke("sync-roku-hourly", {
+      body: { client_id: JACUZZI_CLIENT_ID, days },
+    });
+    if (error) throw error;
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["jacuzzi-hourly"] }),
+      qc.invalidateQueries({ queryKey: ["jacuzzi-delivery"] }),
+      qc.invalidateQueries({ queryKey: ["jacuzzi-roku-connection"] }),
+    ]);
+    return data as { success?: boolean; pending?: boolean; status?: string; hourly?: number; daily?: number; error?: string };
+  };
+}
+
 export function useJacuzziRates() {
+
   return useQuery({
     queryKey: ["jacuzzi-rates"],
     queryFn: async () => {

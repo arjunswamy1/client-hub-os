@@ -77,6 +77,7 @@ Deno.serve(async (req) => {
           await supabaseAdmin
             .from("platform_connections")
             .update({
+              status: "error",
               sync_error: error,
               last_sync_records: 0,
             })
@@ -96,6 +97,7 @@ Deno.serve(async (req) => {
       await supabaseAdmin
         .from("platform_connections")
         .update({
+          status: result?.error ? "error" : "active",
           last_synced_at: new Date().toISOString(),
           last_sync_records: result?.records_synced ?? 0,
           sync_error: result?.error || null,

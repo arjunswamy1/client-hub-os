@@ -63,6 +63,7 @@ export default function RokuCallbackPage() {
       if ((data as any)?.error) throw new Error((data as any).error);
       setStatus('done');
       setMessage(`Connected. ${((data as any)?.accounts?.length ?? 0)} Roku ad account(s) available.`);
+      loadConnections();
     } catch (e) {
       setStatus('error');
       setMessage((e as Error).message);

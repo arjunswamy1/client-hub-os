@@ -236,9 +236,17 @@ export default function BuyologyCreativeAnalysis({ line }: { line: ProductLine |
               </TableHeader>
               <TableBody>
                 {rows.map((r: CreativeRow) => (
-                  <TableRow key={r.key} className={!r.matched ? "opacity-70" : undefined}>
+                  <>
+                  <TableRow
+                    key={r.key}
+                    className={`cursor-pointer ${!r.matched ? "opacity-70" : ""}`}
+                    onClick={() => setExpanded(expanded === r.key ? null : r.key)}
+                  >
                     <TableCell className="max-w-[300px]">
                       <div className="flex items-center gap-2">
+                        <ChevronRight
+                          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${expanded === r.key ? "rotate-90" : ""}`}
+                        />
                         {r.thumbnailUrl && (
                           <img
                             src={r.thumbnailUrl}
@@ -276,8 +284,17 @@ export default function BuyologyCreativeAnalysis({ line }: { line: ProductLine |
                       </div>
                     </TableCell>
                   </TableRow>
+                  {expanded === r.key && (
+                    <TableRow key={`${r.key}-calls`} className="hover:bg-transparent">
+                      <TableCell colSpan={9} className="bg-muted/30 p-3">
+                        <CallDrilldown row={r} calls={callsFor(r)} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </>
                 ))}
               </TableBody>
+
             </Table>
           </div>
         )}

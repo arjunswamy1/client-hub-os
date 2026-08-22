@@ -15,8 +15,9 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid, BarChart,
 } from "recharts";
 import {
-  RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users,
+  RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users, ShieldCheck,
 } from "lucide-react";
+import JacuzziReconciliation from "./JacuzziReconciliation";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 
@@ -388,6 +389,7 @@ export default function JacuzziDashboard() {
             <TabsTrigger value="hourly" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" /> Hourly</TabsTrigger>
             <TabsTrigger value="stations" className="gap-1.5 text-xs">Stations</TabsTrigger>
             <TabsTrigger value="leads" className="gap-1.5 text-xs">Lead log</TabsTrigger>
+            <TabsTrigger value="recon" className="gap-1.5 text-xs"><ShieldCheck className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>
             <TabsTrigger value="import" className="gap-1.5 text-xs"><Upload className="h-3.5 w-3.5" /> Import</TabsTrigger>
           </TabsList>
         </div>
@@ -612,6 +614,10 @@ export default function JacuzziDashboard() {
               </table>
             </div>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="recon">
+          <JacuzziReconciliation />
         </TabsContent>
 
         <TabsContent value="import" className="space-y-4">

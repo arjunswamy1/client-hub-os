@@ -103,12 +103,27 @@ function GroupTable({ title, rows }: { title: string; rows: any[] }) {
 }
 
 export default function BuyologyDashboard() {
-  const { data: calls = [], isLoading } = useBuyologyCalls();
+  const { data: allCalls = [], isLoading } = useBuyologyCalls();
   const { data: spendRows = [] } = useBuyologySpend();
+  const { data: lineSpend } = useBuyologyLineSpend();
   const [tab, setTab] = useState("overview");
+  const [line, setLine] = useState<ProductLine | "all">("all");
 
-  const spend = useMemo(() => spendRows.reduce((s, r) => s + Number(r.spend || 0), 0), [spendRows]);
+  const calls = useMemo(
+    () => (line === "all" ? allCalls : allCalls.filter((c) => classifyName(c.campaign_name) === line)),
+    [allCalls, line]
+  );
+
+  const spend = useMemo(() => {
+    if (line === "all") return spendRows.reduce((s, r) => s + Number(r.spend || 0), 0);
+    return lineSpend?.totals[line]?.spend ?? 0;
+  }, [spendRows, lineSpend, line]);
+
   const totals = useMemo(() => agg(calls, spend), [calls, spend]);
+  const qualified = useMemo(
+    () => calls.filter((c) => Number(c.duration_seconds || 0) >= QUALIFIED_SECONDS).length,
+    [calls]
+  );
 
   const daily = useMemo(() => {
     const map = new Map<string, { date: string; calls: number; converted: number; revenue: number; spend: number }>();
@@ -121,14 +136,22 @@ export default function BuyologyDashboard() {
       if (c.converted) row.converted++;
       row.revenue += Number(c.revenue || 0);
     }
-    for (const s of spendRows) {
-      const row = touch(String(s.date).slice(0, 10));
-      row.spend += Number(s.spend || 0);
+    if (line === "all") {
+      for (const s of spendRows) {
+        const row = touch(String(s.date).slice(0, 10));
+        row.spend += Number(s.spend || 0);
+      }
+    } else if (lineSpend) {
+      for (const [key, value] of lineSpend.daily) {
+        const [date, l] = key.split("|");
+        if (l !== line) continue;
+        touch(date).spend += value;
+      }
     }
     return [...map.values()]
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((r) => ({ ...r, label: format(new Date(`${r.date}T12:00:00`), "MMM d") }));
-  }, [calls, spendRows]);
+  }, [calls, spendRows, lineSpend, line]);
 
   const groupBy = (key: "campaign_name" | "target_name") => {
     const map = new Map<string, BuyologyCall[]>();
@@ -143,6 +166,7 @@ export default function BuyologyDashboard() {
 
   const byCampaign = useMemo(() => groupBy("campaign_name"), [calls]);
   const byTarget = useMemo(() => groupBy("target_name"), [calls]);
+
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="space-y-4">

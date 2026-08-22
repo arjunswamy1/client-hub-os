@@ -129,6 +129,7 @@ export function useRRMCreatives(platformAdsetId: string | null) {
         .eq("platform_adset_id", platformAdsetId!);
       if (error) throw error;
       return agg(data || [], (r) => r.ad_name || "Unnamed ad", (r) => ({
+        platformAdId: r.platform_ad_id,
         thumbnailUrl: r.creative_thumbnail_url,
         format: r.creative_type,
         headline: r.headline,
@@ -187,6 +188,8 @@ export interface RRMAttribution {
   adsetCalls: (platformAdsetId?: string | null) => MojaCall[] | null;
   /** Whether any call in range carries keyword/creative UTMs at all */
   hasUtmCoverage: boolean;
+  /** Whether this campaign's calls carry UTMs (false => sub-rows should stay estimated) */
+  campaignHasUtm: (campaignName: string) => boolean;
 }
 
 /** Builds keyword→ad group and ad id/name→ad set maps, then indexes Moja calls onto them. */
@@ -228,6 +231,7 @@ export function useRRMAttribution(platform: "google" | "meta", calls: MojaCall[]
   const byAdId = new Map<string, MojaCall[]>();
   const byAdName = new Map<string, MojaCall[]>();
   const byAdset = new Map<string, MojaCall[]>();
+  const utmCampaigns = new Set<string>();
   let coverage = 0;
 
   const push = (m: Map<string, MojaCall[]>, k: string, c: MojaCall) => {
@@ -242,6 +246,8 @@ export function useRRMAttribution(platform: "google" | "meta", calls: MojaCall[]
     const content = normKey(c.utm_content);
     if (!term && !content) continue;
     coverage++;
+    utmCampaigns.add(normKey(c.campaign_name));
+    utmCampaigns.add(normKey(c.utm_campaign));
 
     if (platform === "google") {
       push(byKeyword, term, c);
@@ -260,6 +266,7 @@ export function useRRMAttribution(platform: "google" | "meta", calls: MojaCall[]
 
   return {
     hasUtmCoverage,
+    campaignHasUtm: (campaignName: string) => utmCampaigns.has(normKey(campaignName)),
     keywordCalls: (keyword) => (hasUtmCoverage ? byKeyword.get(normKey(keyword)) || [] : null),
     creativeCalls: (adId, adName) =>
       hasUtmCoverage ? byAdId.get(normKey(adId)) || byAdName.get(normKey(adName)) || [] : null,

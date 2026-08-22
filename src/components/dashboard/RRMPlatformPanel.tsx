@@ -170,7 +170,11 @@ function KeywordRows({
             <TableCell className="text-right text-xs">{num(kw.impressions)}</TableCell>
             <TableCell className="text-right text-xs">{kw.clicks}</TableCell>
             <TableCell className="text-right text-xs">{kw.conversions}</TableCell>
-            <CallsCell levelSpend={kw.spend} campaign={campaign} exact={attr.keywordCalls(kw.name)} />
+            <CallsCell
+              levelSpend={kw.spend}
+              campaign={campaign}
+              exact={attr.campaignHasUtm(campaign.name) ? attr.keywordCalls(kw.name) : null}
+            />
             <TableCell />
           </TableRow>
           {open === kw.key && (
@@ -222,7 +226,7 @@ function CreativeRows({
           <CallsCell
             levelSpend={ad.spend}
             campaign={campaign}
-            exact={attr.creativeCalls(ad.extra?.platformAdId, ad.name)}
+            exact={attr.campaignHasUtm(campaign.name) ? attr.creativeCalls(ad.extra?.platformAdId, ad.name) : null}
           />
           <TableCell />
         </TableRow>
@@ -262,7 +266,11 @@ function AdSetRows({
             <TableCell className="text-right text-xs">{num(as.impressions)}</TableCell>
             <TableCell className="text-right text-xs">{as.clicks}</TableCell>
             <TableCell className="text-right text-xs">{as.conversions}</TableCell>
-            <CallsCell levelSpend={as.spend} campaign={campaign} exact={attr.adsetCalls(as.platformAdsetId)} />
+            <CallsCell
+              levelSpend={as.spend}
+              campaign={campaign}
+              exact={attr.campaignHasUtm(campaign.name) ? attr.adsetCalls(as.platformAdsetId) : null}
+            />
             <TableCell />
           </TableRow>
           {open === as.key &&

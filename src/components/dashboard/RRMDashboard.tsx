@@ -345,18 +345,27 @@ export default function RRMDashboard() {
         <KPI label="Cost / converted call" value={kpi.converted ? fmtMoney2(kpi.costPerConvertedCall) : "—"} sub={`${fmtDuration(kpi.avgTalk)} avg talk time`} icon={Target} />
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      {/*
+        Tabs are scoped to the active service line — Windows only ever shows the
+        Meta panel, Plumbing only the Google panel. `key` resets the tab when the
+        line changes so the platform view always matches the vertical.
+      */}
+      <Tabs key={line} defaultValue="overview" className="space-y-4">
         <TabsList className="bg-secondary/50">
           <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+          <TabsTrigger value="optimize" className="gap-1.5 text-xs">
+            <Sparkles className="h-3.5 w-3.5" /> Optimize
+          </TabsTrigger>
           <TabsTrigger value="trend" className="text-xs">Trend</TabsTrigger>
           <TabsTrigger value="campaigns" className="text-xs">Campaigns</TabsTrigger>
           <TabsTrigger value="buyers" className="text-xs">Buyers</TabsTrigger>
           <TabsTrigger value="calls" className="text-xs">Call log</TabsTrigger>
-          <TabsTrigger value="google" className="gap-1.5 text-xs">
-            <Chrome className="h-3.5 w-3.5" /> Google · Plumbing
-          </TabsTrigger>
-          <TabsTrigger value="meta" className="gap-1.5 text-xs">
-            <Facebook className="h-3.5 w-3.5" /> Meta · Windows
+          <TabsTrigger value="platform" className="gap-1.5 text-xs">
+            {(() => {
+              const PIcon = LINE_META[line].platformIcon;
+              return <PIcon className="h-3.5 w-3.5" />;
+            })()}
+            {LINE_META[line].platformLabel}
           </TabsTrigger>
           <TabsTrigger value="connections" className="gap-1.5 text-xs">
             <Plug className="h-3.5 w-3.5" /> Connections
@@ -364,27 +373,30 @@ export default function RRMDashboard() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <LineComparison windows={windowsKpi} plumbing={plumbingKpi} blended={blendedKpi} />
+          <LineScorecard line={line} metrics={kpi} />
           <Card className="p-4">
             <h3 className="mb-1 text-sm font-semibold">Call attribution coverage</h3>
             <p className="text-xs text-muted-foreground">
-              {attr.attributedCount} of {attr.totalCount} calls in this range are matched to an exact keyword or creative
-              through Moja's UTMs (Google: utm_term = keyword, Meta: utm_content = ad name). The remaining{" "}
-              {attr.totalCount - attr.attributedCount} are attributed to their service line and spread across campaigns
-              by share of spend, so line totals always reconcile with Moja.
+              {scopedCalls.length - attr.unattributed(line).length} of {scopedCalls.length} {LINE_META[line].label} calls
+              in this range are matched to an exact{" "}
+              {LINE_META[line].platform === "google" ? "keyword (utm_term)" : "creative (utm_content)"} through Moja's
+              UTMs. The remaining {attr.unattributed(line).length} are spread across this line's campaigns by share of
+              spend, so line totals always reconcile with Moja.
             </p>
           </Card>
         </TabsContent>
 
-        <TabsContent value="google">
-          <RRMPlatformPanel platform="google" />
+        <TabsContent value="optimize">
+          <RRMOptimizer line={line} />
         </TabsContent>
-        <TabsContent value="meta">
-          <RRMPlatformPanel platform="meta" />
+
+        <TabsContent value="platform">
+          <RRMPlatformPanel platform={platformOfLine(line)} />
         </TabsContent>
         <TabsContent value="connections">
           <RRMConnections />
         </TabsContent>
+
 
         <TabsContent value="trend">
           <Card className="p-4">

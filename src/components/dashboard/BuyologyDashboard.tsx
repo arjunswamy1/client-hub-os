@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { useBuyologyCalls, useBuyologySpend, BuyologyCall } from "@/hooks/useBuyologyData";
+import { useBuyologyCalls, useBuyologySpend, BuyologyCall, BUYOLOGY_CLIENT_ID } from "@/hooks/useBuyologyData";
 import BuyologyRingbaImport from "./BuyologyRingbaImport";
 import MetaDashboard from "./MetaDashboard";
+import MetaConnectionCard from "./MetaConnectionCard";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Phone, PhoneCall, DollarSign, TrendingUp, Target, Clock, Facebook, Upload, BarChart3 } from "lucide-react";
+import { Phone, PhoneCall, DollarSign, TrendingUp, Target, Clock, Facebook, Upload, BarChart3, Link as LinkIcon } from "lucide-react";
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { format } from "date-fns";
 
@@ -149,10 +150,15 @@ export default function BuyologyDashboard() {
             <Facebook className="h-3.5 w-3.5" />
             Meta Ads
           </TabsTrigger>
+          <TabsTrigger value="connections" className="gap-1.5 text-xs whitespace-nowrap">
+            <LinkIcon className="h-3.5 w-3.5" />
+            Connections
+          </TabsTrigger>
           <TabsTrigger value="import" className="gap-1.5 text-xs whitespace-nowrap">
             <Upload className="h-3.5 w-3.5" />
             Ringba Import
           </TabsTrigger>
+
         </TabsList>
       </div>
 
@@ -207,6 +213,14 @@ export default function BuyologyDashboard() {
 
       <TabsContent value="meta">
         <MetaDashboard />
+      </TabsContent>
+
+      <TabsContent value="connections" className="space-y-3">
+        <MetaConnectionCard clientId={BUYOLOGY_CLIENT_ID} clientLabel="BuyologyIQ" />
+        <p className="text-xs text-muted-foreground">
+          Authorize with the Meta user that has access to BuyologyIQ's ad account, pick the ad
+          account above, then run a 90-day sync to backfill campaign, ad set and creative spend.
+        </p>
       </TabsContent>
 
       <TabsContent value="import">

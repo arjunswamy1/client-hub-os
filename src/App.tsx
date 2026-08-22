@@ -148,6 +148,7 @@ function ProtectedRoutes() {
           {/* Short vanity URLs per client, e.g. /jacuzzi, /4js */}
           <Route path="/:clientSlug" element={<ClientDashboardRoute />} />
           <Route path="*" element={<NotFound />} />
+        </Routes>
       </AppLayout>
     </ClientProvider>
   );

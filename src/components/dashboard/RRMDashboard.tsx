@@ -12,16 +12,17 @@ import {
 import { format } from "date-fns";
 import { toast } from "sonner";
 import {
-  RefreshCw, Phone, DollarSign, TrendingUp, Target, Layers, PhoneCall, Blinds, Wrench,
-  Chrome, Facebook, Plug, Info,
+  RefreshCw, Phone, DollarSign, TrendingUp, Target, PhoneCall, Blinds, Wrench,
+  Chrome, Facebook, Plug, Info, Sparkles,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   useMojaCalls, useRRMSpend, MojaCall, RRMCampaignRow, RRMLine,
-  RRM_CLIENT_ID, classifyCampaign, callLine, callPlatform, callMetrics, CallMetrics,
+  RRM_CLIENT_ID, classifyCampaign, callLine, callPlatform, callMetrics, CallMetrics, platformOfLine,
 } from "@/hooks/useRRMData";
 import { useRRMCallAttribution } from "@/hooks/useRRMDrillDown";
 import RRMPlatformPanel from "@/components/dashboard/RRMPlatformPanel";
+import RRMOptimizer from "@/components/dashboard/RRMOptimizer";
 import RRMConnections from "@/components/dashboard/RRMConnections";
 
 const fmtMoney = (n: number) =>
@@ -30,13 +31,20 @@ const fmtMoney2 = (n: number) => `$${n.toFixed(2)}`;
 const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const fmtDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-type SvcLine = "blended" | RRMLine;
+/** Only vertical-specific views — there is deliberately no blended mode. */
+type SvcLine = RRMLine;
 
-const LINE_META: Record<SvcLine, { label: string; platform: string | null; icon: any; blurb: string }> = {
-  blended: { label: "Blended", platform: null, icon: Layers, blurb: "Windows + Plumbing combined" },
-  windows: { label: "Windows", platform: "meta", icon: Blinds, blurb: "Meta Ads → Moja calls" },
-  plumbing: { label: "Plumbing", platform: "google", icon: Wrench, blurb: "Google Ads → Moja calls" },
+const LINE_META: Record<SvcLine, { label: string; platform: "meta" | "google"; icon: any; blurb: string; platformLabel: string; platformIcon: any }> = {
+  windows: {
+    label: "Windows", platform: "meta", icon: Blinds, blurb: "Meta Ads → Moja calls",
+    platformLabel: "Meta · Windows", platformIcon: Facebook,
+  },
+  plumbing: {
+    label: "Plumbing", platform: "google", icon: Wrench, blurb: "Google Ads → Moja calls",
+    platformLabel: "Google · Plumbing", platformIcon: Chrome,
+  },
 };
+
 
 function KPI({ label, value, sub, icon: Icon, tone }: {
   label: string; value: string; sub?: string; icon: any; tone?: string;

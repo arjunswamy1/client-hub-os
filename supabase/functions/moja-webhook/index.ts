@@ -8,13 +8,17 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 
+/** Moja test fires leave unsubstituted macros like "[CALLER_STATE]" — treat those as empty. */
+const isMacro = (v: unknown) => typeof v === 'string' && /^\[[A-Z0-9_]+\]$/.test(v.trim());
+
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
   for (const k of keys) {
     const v = obj?.[k];
-    if (v !== undefined && v !== null && v !== '') return v as T;
+    if (v !== undefined && v !== null && v !== '' && !isMacro(v)) return v as T;
   }
   return undefined;
 }
+
 
 const toInt = (v: unknown) => (isFinite(Number(v)) ? Math.round(Number(v)) : 0);
 const toNumber = (v: unknown) => (isFinite(Number(v)) ? Number(v) : 0);

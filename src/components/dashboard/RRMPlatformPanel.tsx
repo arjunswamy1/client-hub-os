@@ -50,12 +50,22 @@ interface CampaignAgg {
 
 /** Five call/cost cells shared by every drill level. */
 function CallCells({
-  levelSpend, exact, estimated, estRevenue,
-}: { levelSpend: number; exact: MojaCall[]; estimated: number; estRevenue: number }) {
+  levelSpend, exact, estimated, estRevenue, estConnected, estConnectRate,
+}: {
+  levelSpend: number; exact: MojaCall[]; estimated: number; estRevenue: number;
+  /** Connected calls inside the modelled portion, when the caller knows it. */
+  estConnected?: number;
+  /** Connect rate to apply to the modelled portion when the exact set is empty. */
+  estConnectRate?: number;
+}) {
   const m = callMetrics(exact, levelSpend);
   const raw = m.raw + estimated;
-  // Connected/revenue only scale on the modelled portion when there is one.
-  const connected = m.connected + estimated * (m.raw > 0 ? m.connectRate : 0);
+  const modelledConnected =
+    estConnected != null
+      ? estConnected
+      : estimated * (m.raw > 0 ? m.connectRate : estConnectRate ?? 0);
+  const connected = m.connected + modelledConnected;
+
   const revenue = m.revenue + estRevenue;
   const div = (a: number, b: number) => (b > 0 ? a / b : 0);
   const modelled = estimated > 0.05;

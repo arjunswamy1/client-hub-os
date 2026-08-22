@@ -289,6 +289,10 @@ export default function BuyologyRingbaImport() {
               <span>{parsed.rows.filter((r) => r.converted).length} converted</span>
               <span>${totalRevenue.toLocaleString()} revenue</span>
               {parsed.skipped > 0 && <span>{parsed.skipped} rows skipped</span>}
+              {parsed.offCampaign > 0 && (
+                <span>{parsed.offCampaign} non-live campaign rows excluded</span>
+              )}
+
             </div>
             <div className="overflow-x-auto rounded-md border">
               <Table>

@@ -237,7 +237,7 @@ export default function JacuzziDashboard() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary" className="gap-1">
-          <Radio className="h-3 w-3" /> Roku CT14 · cost-per-lead payout
+          <Radio className="h-3 w-3" /> CTV cost-per-lead · {scopeLabel}
         </Badge>
         <Badge variant="outline">Current payout {money(currentRate)} / call or QR scan</Badge>
         <Button
@@ -247,6 +247,53 @@ export default function JacuzziDashboard() {
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </Button>
       </div>
+
+      {/* Drill-down controls: default view is blended across every station we're paid on. */}
+      <Card className="flex flex-wrap items-center gap-2 p-3">
+        <span className="text-xs font-medium text-muted-foreground">Stations</span>
+        <Button
+          variant={isBlended ? "default" : "outline"} size="sm" className="h-7 text-xs"
+          onClick={() => setStationFilter([])}
+        >
+          Blended
+        </Button>
+        {stations.map((s) => (
+          <Button
+            key={s.station}
+            variant={stationFilter.includes(s.station) ? "default" : "outline"}
+            size="sm" className="h-7 text-xs"
+            onClick={() => toggleStation(s.station)}
+            title={STATION_NOTES[s.station] || ""}
+          >
+            {s.station}
+            <span className="ml-1 opacity-60">{s.leads}</span>
+          </Button>
+        ))}
+        <span className="ml-2 text-xs font-medium text-muted-foreground">Lead type</span>
+        {([
+          ["all", "All"],
+          ["call", "Calls"],
+          ["qr", "QR scans"],
+        ] as const).map(([v, label]) => (
+          <Button
+            key={v}
+            variant={typeFilter === v ? "default" : "outline"}
+            size="sm" className="h-7 text-xs"
+            onClick={() => setTypeFilter(v)}
+          >
+            {label}
+          </Button>
+        ))}
+        {(!isBlended || typeFilter !== "all") && (
+          <Button
+            variant="ghost" size="sm" className="h-7 text-xs"
+            onClick={() => { setStationFilter([]); setTypeFilter("all"); }}
+          >
+            Reset
+          </Button>
+        )}
+      </Card>
+
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KPI label="Media spend" value={money(totals.spend)} sub={`${totals.impressions.toLocaleString()} imps · ${money2(totals.cpm)} CPM`} icon={DollarSign} />

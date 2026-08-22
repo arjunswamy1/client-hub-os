@@ -16,13 +16,7 @@ function json(body: unknown, status = 200) {
 }
 
 /** Candidate report dimensions we want to know Roku supports. */
-const CANDIDATES = [
-  "genre_probe_only",
-  "genre", "content_genre", "app_genre", "category", "content_category",
-  "app_name", "publisher", "channel_name", "content_type",
-  "state", "region", "dma", "dma_name", "geo", "country", "zip", "city",
-  "device_type", "platform", "ad_placement", "placement", "daypart",
-];
+const CANDIDATES = ["genre"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });

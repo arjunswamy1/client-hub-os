@@ -3564,6 +3564,98 @@ export type Database = {
           },
         ]
       }
+      ringfuel_calls: {
+        Row: {
+          buyer_name: string | null
+          call_id: string
+          call_start: string
+          caller_city: string | null
+          caller_number: string | null
+          caller_state: string | null
+          campaign_id: string | null
+          campaign_name: string | null
+          client_id: string
+          connected: boolean
+          connection_duration_seconds: number
+          converted: boolean
+          created_at: string
+          creative_label: string | null
+          did: string | null
+          disposition: string | null
+          duration_seconds: number
+          event_type: string | null
+          id: string
+          payout: number
+          raw_payload: Json | null
+          recording_url: string | null
+          revenue: number
+          target_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          buyer_name?: string | null
+          call_id: string
+          call_start?: string
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_id?: string | null
+          campaign_name?: string | null
+          client_id: string
+          connected?: boolean
+          connection_duration_seconds?: number
+          converted?: boolean
+          created_at?: string
+          creative_label?: string | null
+          did?: string | null
+          disposition?: string | null
+          duration_seconds?: number
+          event_type?: string | null
+          id?: string
+          payout?: number
+          raw_payload?: Json | null
+          recording_url?: string | null
+          revenue?: number
+          target_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          buyer_name?: string | null
+          call_id?: string
+          call_start?: string
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_id?: string | null
+          campaign_name?: string | null
+          client_id?: string
+          connected?: boolean
+          connection_duration_seconds?: number
+          converted?: boolean
+          created_at?: string
+          creative_label?: string | null
+          did?: string | null
+          disposition?: string | null
+          duration_seconds?: number
+          event_type?: string | null
+          id?: string
+          payout?: number
+          raw_payload?: Json | null
+          recording_url?: string | null
+          revenue?: number
+          target_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ringfuel_calls_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ringfuel_numbers: {
         Row: {
           campaign_label: string

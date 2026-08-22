@@ -288,3 +288,100 @@ export function useImportLeads() {
     return payload.length;
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * Daily reconciliation: RingFuel tracked calls vs. recognized leads
+ * ------------------------------------------------------------------ */
+
+export interface ReconDaily {
+  date: string;
+  applied_rate: number;
+  rate_effective_from: string | null;
+  leads_total: number;
+  call_leads: number;
+  qr_leads: number;
+  ringfuel_calls: number;
+  matched_count: number;
+  unmatched_leads: number;
+  unmatched_calls: number;
+  station_mismatches: number;
+  rate_mismatches: number;
+  expected_revenue: number;
+  by_station: Record<string, { leads: number; calls: number; qr: number; matched: number; station_mismatches: number; revenue: number }>;
+  generated_at: string;
+}
+
+export interface ReconMatch {
+  id: string;
+  date: string;
+  status: string;
+  match_method: string | null;
+  transaction_id: string | null;
+  lead_type: string | null;
+  lead_station: string | null;
+  ringfuel_call_id: string | null;
+  ringfuel_did: string | null;
+  ringfuel_station: string | null;
+  caller_number: string | null;
+  station_agrees: boolean | null;
+  lead_payout_rate: number | null;
+  expected_rate: number | null;
+  rate_agrees: boolean | null;
+  notes: string | null;
+}
+
+export function useJacuzziRecon() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["jacuzzi-recon-daily", from, to],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jacuzzi_reconciliation_daily")
+        .select("date, applied_rate, rate_effective_from, leads_total, call_leads, qr_leads, ringfuel_calls, matched_count, unmatched_leads, unmatched_calls, station_mismatches, rate_mismatches, expected_revenue, by_station, generated_at")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .gte("date", from)
+        .lte("date", to)
+        .order("date", { ascending: false });
+      if (error) throw error;
+      return (data || []) as unknown as ReconDaily[];
+    },
+  });
+}
+
+export function useJacuzziReconMatches(onlyExceptions = true) {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["jacuzzi-recon-matches", from, to, onlyExceptions],
+    queryFn: async () => {
+      let q = supabase
+        .from("jacuzzi_reconciliation_matches")
+        .select("id, date, status, match_method, transaction_id, lead_type, lead_station, ringfuel_call_id, ringfuel_did, ringfuel_station, caller_number, station_agrees, lead_payout_rate, expected_rate, rate_agrees, notes")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .gte("date", from)
+        .lte("date", to)
+        .order("date", { ascending: false })
+        .limit(2000);
+      if (onlyExceptions) q = q.neq("status", "matched");
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []) as unknown as ReconMatch[];
+    },
+  });
+}
+
+/** Re-runs reconciliation for the trailing window (also runs daily on its own). */
+export function useRunRecon() {
+  const qc = useQueryClient();
+  return async (days = 30) => {
+    const { data, error } = await supabase.functions.invoke("jacuzzi-reconcile", {
+      body: { client_id: JACUZZI_CLIENT_ID, days },
+    });
+    if (error) throw error;
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["jacuzzi-recon-daily"] }),
+      qc.invalidateQueries({ queryKey: ["jacuzzi-recon-matches"] }),
+    ]);
+    return data as { success?: boolean; days?: number; matched?: number; unmatched_leads?: number; unmatched_calls?: number; station_mismatches?: number; rate_mismatches?: number; error?: string };
+  };
+}

@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { buildBuyologyPayload, ProductLine } from "../_shared/buyology-payload.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

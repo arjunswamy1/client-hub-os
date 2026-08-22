@@ -39,6 +39,7 @@ import ClientDIDsPage from "./pages/ClientDIDsPage";
 import SpendUploadPage from "./pages/SpendUploadPage";
 import RingFuelNumbersPage from "./pages/RingFuelNumbersPage";
 import RokuCallbackPage from "./pages/RokuCallbackPage";
+import RokuConnectionsPage from "./pages/RokuConnectionsPage";
 
 const queryClient = new QueryClient();
 
@@ -136,6 +137,7 @@ function ProtectedRoutes() {
           <Route path="/dids" element={<ClientDIDsPage />} />
           <Route path="/spend-upload" element={<SpendUploadPage />} />
           <Route path="/ringfuel-numbers" element={<RingFuelNumbersPage />} />
+          {isAdmin && <Route path="/roku-connections" element={<RokuConnectionsPage />} />}
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

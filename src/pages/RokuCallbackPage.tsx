@@ -244,7 +244,7 @@ export default function RokuCallbackPage() {
           )}
 
           <div>
-            <Link className="text-sm underline" to="/settings">Back to Settings</Link>
+            <Link className="text-sm underline" to="/roku-connections">Manage Roku connections</Link>
           </div>
         </CardContent>
       </Card>

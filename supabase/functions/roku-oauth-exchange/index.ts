@@ -85,23 +85,37 @@ Deno.serve(async (req) => {
 
     const expiresAt = new Date(Date.now() + (Number(tokens.expires_in) || 86400) * 1000).toISOString();
 
-    const { error: upsertErr } = await admin
+    const record = {
+      client_id: clientId,
+      platform: "roku",
+      status: "active",
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token ?? null,
+      token_expires_at: expiresAt,
+      user_id: userData.user.id,
+      metadata: { accounts, redirect_uri: redirectUri },
+      sync_error: null,
+    };
+
+    // One Roku connection per client: update the existing row instead of inserting a duplicate.
+    const { data: existing, error: findErr } = await admin
       .from("platform_connections")
-      .upsert(
-        {
-          client_id: clientId,
-          platform: "roku",
-          status: "active",
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token ?? null,
-          token_expires_at: expiresAt,
-          user_id: userData.user.id,
-          metadata: { accounts, redirect_uri: redirectUri },
-          sync_error: null,
-        },
-        { onConflict: "user_id,platform,client_id" },
-      );
-    if (upsertErr) throw upsertErr;
+      .select("id")
+      .eq("platform", "roku")
+      .eq("client_id", clientId)
+      .maybeSingle();
+    if (findErr) throw findErr;
+
+    if (existing?.id) {
+      const { error: updErr } = await admin
+        .from("platform_connections")
+        .update(record)
+        .eq("id", existing.id);
+      if (updErr) throw updErr;
+    } else {
+      const { error: insErr } = await admin.from("platform_connections").insert(record);
+      if (insErr) throw insErr;
+    }
 
     return json({ success: true, accounts });
   } catch (e) {

@@ -486,14 +486,15 @@ export default function JacuzziDashboard() {
         <TabsContent value="hourly" className="space-y-4">
           {!hasHourlySpend && (
             <Card className="border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-              Hourly Roku delivery syncs automatically every 15 minutes (Roku's report has ~8h data latency, so the
-              latest hours fill in as they become available). Hit <strong>Sync Roku hourly</strong> to pull now.
+              Hourly Roku delivery syncs automatically every 15 minutes and is shown in Eastern time. Roku closes each
+              hour with roughly a one-hour lag, so the current hour fills in shortly. Hit <strong>Sync Roku hourly</strong> to pull now.
               {rokuConn?.sync_error ? ` Last sync issue: ${rokuConn.sync_error}` : ""}
             </Card>
           )}
 
           <Card className="p-4">
-            <p className="mb-3 text-sm font-medium">Hour-of-day delivery vs leads</p>
+            <p className="mb-1 text-sm font-medium">Hour-of-day delivery vs leads</p>
+            <p className="mb-3 text-xs text-muted-foreground">Hours shown in Eastern time</p>
             <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={hourlyRows}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />

@@ -1,37 +1,58 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+
+const META_REDIRECT_URI = "https://hub.connectpaidmedia.com/meta/callback";
+
+const json = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return json({ error: "Method not allowed" }, 405);
+  }
+
   try {
-    const url = new URL(req.url);
-    const code = url.searchParams.get("code");
-    const stateParam = url.searchParams.get("state");
-    const errorParam = url.searchParams.get("error");
-
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || Deno.env.get("SUPABASE_URL")?.replace(".supabase.co", "") || "";
-    const redirect = (path: string) =>
-      new Response(null, {
-        status: 302,
-        headers: { Location: `${frontendUrl}${path}` },
-      });
-
-    if (errorParam) {
-      return redirect(`/settings?error=${encodeURIComponent(errorParam)}`);
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return json({ error: "You must be signed in to connect Meta Ads" }, 401);
     }
 
-    if (!code || !stateParam) {
-      return redirect("/settings?error=missing_params");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const appId = Deno.env.get("META_APP_ID");
+    const appSecret = Deno.env.get("META_APP_SECRET");
+    if (!supabaseUrl || !anonKey || !serviceRoleKey || !appId || !appSecret) {
+      return json({ error: "Meta connection is not configured" }, 500);
     }
+
+    const authClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: userError } = await authClient.auth.getUser();
+    if (userError || !user) return json({ error: "Your session has expired. Please sign in again." }, 401);
+
+    const body = await req.json();
+    const code = typeof body?.code === "string" ? body.code : "";
+    const stateParam = typeof body?.state === "string" ? body.state : "";
+    const redirectUri = typeof body?.redirect_uri === "string" ? body.redirect_uri : "";
+    if (!code || !stateParam) return json({ error: "Missing authorization details" }, 400);
+    if (redirectUri !== META_REDIRECT_URI) return json({ error: "Invalid Meta redirect URI" }, 400);
 
     let state: { user_id: string; client_id?: string | null };
     try {
       state = JSON.parse(atob(stateParam));
     } catch {
-      return redirect("/settings?error=invalid_state");
+      return json({ error: "Invalid authorization state" }, 400);
     }
-
-    const appId = Deno.env.get("META_APP_ID")!;
-    const appSecret = Deno.env.get("META_APP_SECRET")!;
-    const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/meta-oauth-callback`;
+    if (state.user_id !== user.id) return json({ error: "Authorization state does not match your session" }, 403);
 
     // Exchange code for short-lived token
     const tokenUrl =
@@ -45,7 +66,7 @@ Deno.serve(async (req) => {
     const tokenData = await tokenRes.json();
 
     if (tokenData.error) {
-      return redirect(`/settings?error=${encodeURIComponent(tokenData.error.message)}`);
+      return json({ error: tokenData.error.message || "Meta rejected the authorization code" }, 400);
     }
 
     // Exchange for long-lived token
@@ -75,10 +96,7 @@ Deno.serve(async (req) => {
     const adAccountsData = await adAccountsRes.json();
 
     // Store connection
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const tokenExpiresAt = expiresIn
       ? new Date(Date.now() + expiresIn * 1000).toISOString()
@@ -105,16 +123,12 @@ Deno.serve(async (req) => {
 
     if (upsertError) {
       console.error("Upsert error:", upsertError);
-      return redirect(`/settings?error=db_error`);
+      return json({ error: "Could not save the Meta connection" }, 500);
     }
 
-    const clientParam = state.client_id ? `&client_id=${state.client_id}` : "";
-    return redirect(`/settings?connected=meta${clientParam}`);
+    return json({ success: true, account_name: meData.name || null });
   } catch (err) {
     console.error("Callback error:", err);
-    return new Response(null, {
-      status: 302,
-      headers: { Location: `/settings?error=server_error` },
-    });
+    return json({ error: err instanceof Error ? err.message : "Could not complete Meta authorization" }, 500);
   }
 });

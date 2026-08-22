@@ -1,9 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const META_REDIRECT_URI = "https://hub.connectpaidmedia.com/meta/callback";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -40,7 +38,12 @@ Deno.serve(async (req) => {
     } catch { /* no body */ }
 
     const appId = Deno.env.get("META_APP_ID");
-    const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/meta-oauth-callback`;
+    if (!appId) {
+      return new Response(JSON.stringify({ error: "Meta app is not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const state = btoa(JSON.stringify({ user_id: user.id, client_id: bodyClientId }));
 
@@ -54,7 +57,7 @@ Deno.serve(async (req) => {
     const authUrl =
       `https://www.facebook.com/v21.0/dialog/oauth` +
       `?client_id=${appId}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&redirect_uri=${encodeURIComponent(META_REDIRECT_URI)}` +
       `&state=${encodeURIComponent(state)}` +
       `&scope=${encodeURIComponent(scopes)}` +
       `&response_type=code`;

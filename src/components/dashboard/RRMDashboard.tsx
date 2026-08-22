@@ -123,7 +123,7 @@ export default function RRMDashboard() {
   const { data: calls = [], isLoading, refetch: refetchCalls } = useMojaCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useRRMSpend();
   const attr = useRRMCallAttribution(calls);
-  const [line, setLine] = useState<SvcLine>("blended");
+  const [line, setLine] = useState<SvcLine>("windows");
   const [syncing, setSyncing] = useState(false);
 
   /** Spend rows that genuinely belong to RRM, tagged with their service line. */

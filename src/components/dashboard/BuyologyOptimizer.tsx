@@ -154,7 +154,8 @@ export default function BuyologyOptimizer({
       throw new Error(msg);
     }
     if ((res as any)?.error) throw new Error((res as any).error);
-    setPlans((p) => ({ ...p, [l]: { plan: (res as any).plan, generatedAt: (res as any).generatedAt } }));
+    setPlans((p) => ({ ...p, [l]: { plan: (res as any).plan, generatedAt: (res as any).generatedAt, source: "manual" } }));
+    queryClient.invalidateQueries({ queryKey: ["optimizer-briefs", BUYOLOGY_CLIENT_ID, "buyology"] });
   };
 
   const run = async () => {
@@ -169,27 +170,56 @@ export default function BuyologyOptimizer({
     }
   };
 
+  /** Open a stored brief (from the history table) using the metrics captured at that time */
+  const viewBrief = (brief: OptimizerBrief) => {
+    const t = brief.totals || {};
+    setPlans((p) => ({
+      ...p,
+      [brief.product_line]: {
+        plan: brief.plan,
+        generatedAt: brief.generated_at,
+        source: brief.source,
+        snapshot: {
+          rangeLabel: brief.range_label || rangeLabel,
+          spend: Number(t.meta_spend || 0),
+          calls: Number(t.raw_calls || 0),
+          qualified: Number(t.qualified_calls_60s || 0),
+          converted: Number(t.converted_calls || 0),
+          cpqc: Number(t.cost_per_qualified_call || 0),
+          cpl: Number(t.cost_per_raw_call || 0),
+          qualifiedRate: Number(t.qualified_rate || 0),
+          attributionRate: Number(brief.attribution_rate || 0),
+        },
+      },
+    }));
+  };
+
   const exportPdf = (l: ProductLine) => {
     const entry = plans[l];
+    if (!entry) return;
     const s = scoped[l];
-    if (!entry || !s) return;
+    const totals = entry.snapshot
+      ? entry.snapshot
+      : s && {
+          spend: s.totals.spend,
+          calls: s.totals.calls,
+          qualified: s.totals.qualified,
+          converted: s.totals.converted,
+          cpqc: s.totals.cpqc,
+          cpl: s.totals.cpl,
+          qualifiedRate: s.totals.qualifiedRate,
+          attributionRate: s.totals.attributionRate,
+        };
+    if (!totals) return;
     buildBuyologyOptimizerPdf({
       lineLabel: productLineLabel(l),
-      rangeLabel,
+      rangeLabel: entry.snapshot?.rangeLabel || rangeLabel,
       generatedAt: new Date(entry.generatedAt).toLocaleString(),
-      totals: {
-        spend: s.totals.spend,
-        calls: s.totals.calls,
-        qualified: s.totals.qualified,
-        converted: s.totals.converted,
-        cpqc: s.totals.cpqc,
-        cpl: s.totals.cpl,
-        qualifiedRate: s.totals.qualifiedRate,
-        attributionRate: s.totals.attributionRate,
-      },
+      totals,
       plan: entry.plan,
     });
   };
+
 
   if (isLoading) return <div className="h-64 animate-pulse rounded-lg bg-muted" />;
 

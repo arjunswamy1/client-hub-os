@@ -482,7 +482,8 @@ export default function JacuzziDashboard() {
               </table>
             </div>
             <p className="border-t border-border p-3 text-xs text-muted-foreground">
-              QR scans tagged CT13 are re-attributed to CT14 — the CT14 creative carried the wrong QR code.
+              Click any station row to drill the whole dashboard into it (click again to remove). QR scans tagged
+              CT13 are re-attributed to CT14 — the CT14 creative carried the wrong QR code.
             </p>
           </Card>
         </TabsContent>

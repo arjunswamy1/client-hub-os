@@ -330,7 +330,7 @@ export default function RRMPlatformPanel({ platform }: Props) {
 
     // Exact UTM matches first, then spread the line's unattributed calls across
     // campaigns by spend share so nothing goes missing from the totals.
-    for (const c of list) list.push, (c.exactCalls = attr.campaignCalls(c.name));
+    for (const c of list) c.exactCalls = attr.campaignCalls(c.name);
 
     const byLine = (line: RRMLine) => list.filter((c) => c.line === line);
     for (const line of ["windows", "plumbing"] as RRMLine[]) {

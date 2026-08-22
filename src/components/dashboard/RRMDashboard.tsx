@@ -391,6 +391,7 @@ export default function RRMDashboard() {
                   <TableHead>Caller</TableHead>
                   <TableHead>Line</TableHead>
                   <TableHead>Campaign</TableHead>
+                  <TableHead>Keyword / creative</TableHead>
                   <TableHead>Buyer</TableHead>
                   <TableHead className="text-right">Talk</TableHead>
                   <TableHead>Status</TableHead>
@@ -399,11 +400,11 @@ export default function RRMDashboard() {
               </TableHeader>
               <TableBody>
                 {isLoading && (
-                  <TableRow><TableCell colSpan={8} className="text-center text-sm text-muted-foreground">Loading…</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center text-sm text-muted-foreground">Loading…</TableCell></TableRow>
                 )}
                 {!isLoading && scopedCalls.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
                       No calls yet — once the Moja webhook is saved, calls appear here in real time.
                     </TableCell>
                   </TableRow>
@@ -419,6 +420,18 @@ export default function RRMDashboard() {
                     </TableCell>
                     <TableCell className="text-xs capitalize">{c.service_line}</TableCell>
                     <TableCell className="max-w-[180px] truncate text-xs">{c.campaign_name || "—"}</TableCell>
+                    <TableCell className="max-w-[200px] text-xs">
+                      {c.utm_term || c.utm_content ? (
+                        <div className="min-w-0">
+                          <p className="truncate">{c.utm_term || "—"}</p>
+                          {c.utm_content && (
+                            <p className="truncate text-[10px] text-muted-foreground">{c.utm_content}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs">{c.buyer_name || c.target_name || "—"}</TableCell>
                     <TableCell className="text-right text-xs">{fmtDuration(c.duration_seconds || 0)}</TableCell>
                     <TableCell>

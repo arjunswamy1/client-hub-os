@@ -102,6 +102,16 @@ Deno.serve(async (req) => {
   const publisher_name = pick<string>(call, ['publisher_name', 'publisher']) ?? null;
   const utm_source = pick<string>(tags, ['source', 'utm_source']) ?? pick<string>(call, ['utm_source']) ?? null;
   const utm_campaign = pick<string>(tags, ['campaign', 'utm_campaign']) ?? pick<string>(call, ['utm_campaign']) ?? null;
+  // Google: utm_term = keyword text, utm_content = ad id. Meta: utm_term = ad id, utm_content = ad/creative name.
+  const utm_term =
+    pick<string>(tags, ['term', 'utm_term', 'keyword']) ??
+    pick<string>(call, ['utm_term', 'keyword']) ??
+    null;
+  const utm_content =
+    pick<string>(tags, ['content', 'utm_content', 'creative']) ??
+    pick<string>(call, ['utm_content', 'creative']) ??
+    null;
+
 
   const inferred = classify([campaign_name, publisher_name, utm_campaign, utm_source].filter(Boolean).join(' '));
   const forcedLine = url.searchParams.get('service_line');
@@ -142,7 +152,10 @@ Deno.serve(async (req) => {
     recording_url: pick<string>(call, ['recording_url', 'recording', 'audio_url']) ?? null,
     utm_source,
     utm_campaign,
+    utm_term,
+    utm_content,
     raw_payload: payload,
+
   };
 
   const supabase = createClient(

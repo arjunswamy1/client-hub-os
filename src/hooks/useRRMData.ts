@@ -30,6 +30,8 @@ export interface MojaCall {
   recording_url: string | null;
   utm_source?: string | null;
   utm_campaign?: string | null;
+  utm_term?: string | null;
+  utm_content?: string | null;
 
 }
 

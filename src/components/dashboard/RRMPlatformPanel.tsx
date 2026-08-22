@@ -13,7 +13,8 @@ import {
 import { ChevronRight, ChevronDown, Search, Download, Phone } from "lucide-react";
 import { useMojaCalls, useRRMSpend, MojaCall } from "@/hooks/useRRMData";
 import {
-  useRRMAdSets, useRRMKeywords, useRRMSearchTerms, useRRMCreatives, DrillRow,
+  useRRMAdSets, useRRMKeywords, useRRMSearchTerms, useRRMCreatives, useRRMAttribution,
+  DrillRow, RRMAttribution,
 } from "@/hooks/useRRMDrillDown";
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -42,7 +43,39 @@ function estCalls(levelSpend: number, campaignSpend: number, campaignCalls: numb
   return (levelSpend / campaignSpend) * campaignCalls;
 }
 
-function EstCell({ levelSpend, campaign }: { levelSpend: number; campaign: CampaignAgg }) {
+/**
+ * Calls + cost per call for a sub-campaign row.
+ * When Moja passed UTMs we can attribute exactly (`exact`), otherwise we model by spend share.
+ */
+function CallsCell({
+  levelSpend, campaign, exact,
+}: { levelSpend: number; campaign: CampaignAgg; exact: MojaCall[] | null }) {
+  if (exact) {
+    const n = exact.length;
+    const converted = exact.filter((c) => c.converted).length;
+    const cpc = n > 0 ? levelSpend / n : 0;
+    return (
+      <>
+        <TableCell className="text-right text-xs">
+          {n > 0 ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger className="font-medium">{n}</TooltipTrigger>
+                <TooltipContent className="max-w-[240px] text-xs">
+                  Matched from Moja UTMs — {n} call{n === 1 ? "" : "s"}, {converted} converted. Exact attribution, not
+                  modeled.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            "0"
+          )}
+        </TableCell>
+        <TableCell className="text-right text-xs">{cpc > 0 ? money2(cpc) : "—"}</TableCell>
+      </>
+    );
+  }
+
   const calls = estCalls(levelSpend, campaign.spend, campaign.calls);
   const cpc = calls > 0 ? levelSpend / calls : 0;
   return (
@@ -53,8 +86,8 @@ function EstCell({ levelSpend, campaign }: { levelSpend: number; campaign: Campa
             <Tooltip>
               <TooltipTrigger className="underline decoration-dotted">~{calls.toFixed(1)}</TooltipTrigger>
               <TooltipContent className="max-w-[240px] text-xs">
-                Estimated: this row's share of campaign spend applied to {campaign.calls} tracked calls. Moja does not
-                pass keyword/creative IDs, so sub-campaign calls are modeled, not measured.
+                Estimated: this row's share of campaign spend applied to {campaign.calls} tracked calls. No Moja UTM
+                data on these calls, so the split is modeled.
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -66,6 +99,7 @@ function EstCell({ levelSpend, campaign }: { levelSpend: number; campaign: Campa
     </>
   );
 }
+
 
 function SearchTermRows({
   platformAdsetId, keyword, campaign, colSpan,
@@ -92,7 +126,7 @@ function SearchTermRows({
           <TableCell className="text-right text-xs">{num(st.impressions)}</TableCell>
           <TableCell className="text-right text-xs">{st.clicks}</TableCell>
           <TableCell className="text-right text-xs">{st.conversions}</TableCell>
-          <EstCell levelSpend={st.spend} campaign={campaign} />
+          <CallsCell levelSpend={st.spend} campaign={campaign} exact={null} />
           <TableCell />
         </TableRow>
       ))}
@@ -101,8 +135,8 @@ function SearchTermRows({
 }
 
 function KeywordRows({
-  platformAdsetId, campaign, colSpan,
-}: { platformAdsetId: string; campaign: CampaignAgg; colSpan: number }) {
+  platformAdsetId, campaign, colSpan, attr,
+}: { platformAdsetId: string; campaign: CampaignAgg; colSpan: number; attr: RRMAttribution }) {
   const { data = [], isLoading } = useRRMKeywords(platformAdsetId);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -136,7 +170,11 @@ function KeywordRows({
             <TableCell className="text-right text-xs">{num(kw.impressions)}</TableCell>
             <TableCell className="text-right text-xs">{kw.clicks}</TableCell>
             <TableCell className="text-right text-xs">{kw.conversions}</TableCell>
-            <EstCell levelSpend={kw.spend} campaign={campaign} />
+            <CallsCell
+              levelSpend={kw.spend}
+              campaign={campaign}
+              exact={attr.campaignHasUtm(campaign.name) ? attr.keywordCalls(kw.name) : null}
+            />
             <TableCell />
           </TableRow>
           {open === kw.key && (
@@ -149,8 +187,8 @@ function KeywordRows({
 }
 
 function CreativeRows({
-  platformAdsetId, campaign, colSpan,
-}: { platformAdsetId: string; campaign: CampaignAgg; colSpan: number }) {
+  platformAdsetId, campaign, colSpan, attr,
+}: { platformAdsetId: string; campaign: CampaignAgg; colSpan: number; attr: RRMAttribution }) {
   const { data = [], isLoading } = useRRMCreatives(platformAdsetId);
   if (isLoading) return <TableRow><TableCell colSpan={colSpan}><Skeleton className="h-5" /></TableCell></TableRow>;
   if (!data.length)
@@ -185,7 +223,11 @@ function CreativeRows({
           <TableCell className="text-right text-xs">{num(ad.impressions)}</TableCell>
           <TableCell className="text-right text-xs">{ad.clicks}</TableCell>
           <TableCell className="text-right text-xs">{ad.conversions}</TableCell>
-          <EstCell levelSpend={ad.spend} campaign={campaign} />
+          <CallsCell
+            levelSpend={ad.spend}
+            campaign={campaign}
+            exact={attr.campaignHasUtm(campaign.name) ? attr.creativeCalls(ad.extra?.platformAdId, ad.name) : null}
+          />
           <TableCell />
         </TableRow>
       ))}
@@ -194,8 +236,8 @@ function CreativeRows({
 }
 
 function AdSetRows({
-  campaign, platform, colSpan,
-}: { campaign: CampaignAgg; platform: "google" | "meta"; colSpan: number }) {
+  campaign, platform, colSpan, attr,
+}: { campaign: CampaignAgg; platform: "google" | "meta"; colSpan: number; attr: RRMAttribution }) {
   const { data = [], isLoading } = useRRMAdSets(campaign.name, platform);
   const [open, setOpen] = useState<string | null>(null);
   const label = platform === "google" ? "Ad group" : "Ad set";
@@ -224,15 +266,19 @@ function AdSetRows({
             <TableCell className="text-right text-xs">{num(as.impressions)}</TableCell>
             <TableCell className="text-right text-xs">{as.clicks}</TableCell>
             <TableCell className="text-right text-xs">{as.conversions}</TableCell>
-            <EstCell levelSpend={as.spend} campaign={campaign} />
+            <CallsCell
+              levelSpend={as.spend}
+              campaign={campaign}
+              exact={attr.campaignHasUtm(campaign.name) ? attr.adsetCalls(as.platformAdsetId) : null}
+            />
             <TableCell />
           </TableRow>
           {open === as.key &&
             (as.platformAdsetId ? (
               platform === "google" ? (
-                <KeywordRows platformAdsetId={as.platformAdsetId} campaign={campaign} colSpan={colSpan} />
+                <KeywordRows platformAdsetId={as.platformAdsetId} campaign={campaign} colSpan={colSpan} attr={attr} />
               ) : (
-                <CreativeRows platformAdsetId={as.platformAdsetId} campaign={campaign} colSpan={colSpan} />
+                <CreativeRows platformAdsetId={as.platformAdsetId} campaign={campaign} colSpan={colSpan} attr={attr} />
               )
             ) : (
               <TableRow>
@@ -250,6 +296,7 @@ function AdSetRows({
 export default function RRMPlatformPanel({ platform }: Props) {
   const { data: spendRows = [], isLoading: spendLoading } = useRRMSpend();
   const { data: calls = [], isLoading: callsLoading } = useMojaCalls();
+  const attr = useRRMAttribution(platform, calls);
   const [open, setOpen] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
@@ -396,7 +443,7 @@ export default function RRMPlatformPanel({ platform }: Props) {
                     <TableCell className="text-right text-xs">{c.calls ? money2(c.spend / c.calls) : "—"}</TableCell>
                     <TableCell className="text-right text-xs">{money(c.revenue)}</TableCell>
                   </TableRow>
-                  {open === c.name && <AdSetRows campaign={c} platform={platform} colSpan={colSpan} />}
+                  {open === c.name && <AdSetRows campaign={c} platform={platform} colSpan={colSpan} attr={attr} />}
                 </Fragment>
               ))}
             </TableBody>
@@ -405,9 +452,9 @@ export default function RRMPlatformPanel({ platform }: Props) {
       )}
 
       <p className="mt-3 text-[11px] text-muted-foreground">
-        Campaign-level calls are matched from Moja by campaign name. Below campaign level, calls and cost per call are
-        estimated from each row's share of campaign spend (shown with ~) because Moja does not pass keyword or creative
-        identifiers.
+        Campaign-level calls are matched from Moja by campaign name. Below campaign level, calls are matched exactly
+        from Moja's UTM term/content — {platform === "google" ? "keyword text and ad id" : "ad id and creative name"}.
+        Rows where the call has no UTM data fall back to an estimate from its share of campaign spend (shown with ~).
       </p>
     </Card>
   );

@@ -3522,7 +3522,9 @@ export type Database = {
           tracking_number: string | null
           updated_at: string
           utm_campaign: string | null
+          utm_content: string | null
           utm_source: string | null
+          utm_term: string | null
         }
         Insert: {
           buyer_name?: string | null
@@ -3554,7 +3556,9 @@ export type Database = {
           tracking_number?: string | null
           updated_at?: string
           utm_campaign?: string | null
+          utm_content?: string | null
           utm_source?: string | null
+          utm_term?: string | null
         }
         Update: {
           buyer_name?: string | null
@@ -3586,7 +3590,9 @@ export type Database = {
           tracking_number?: string | null
           updated_at?: string
           utm_campaign?: string | null
+          utm_content?: string | null
           utm_source?: string | null
+          utm_term?: string | null
         }
         Relationships: [
           {

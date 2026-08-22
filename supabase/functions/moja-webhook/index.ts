@@ -152,7 +152,10 @@ Deno.serve(async (req) => {
     recording_url: pick<string>(call, ['recording_url', 'recording', 'audio_url']) ?? null,
     utm_source,
     utm_campaign,
+    utm_term,
+    utm_content,
     raw_payload: payload,
+
   };
 
   const supabase = createClient(

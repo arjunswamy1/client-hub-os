@@ -111,12 +111,18 @@ export default function JacuzziDashboard() {
     setStationFilter((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   const isBlended = stationFilter.length === 0;
   const scopeLabel = isBlended ? "Blended — all stations" : stationFilter.join(" + ");
-  const periodLabel = period === "today" ? "Today, hour by hour" : "All time — full campaign";
+  const periodLabel =
+    preset === "lifetime"
+      ? "All time — full campaign"
+      : preset === "today"
+        ? "Today, hour by hour"
+        : `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d")}`;
 
   /** Period scope applies before station/type drill-down so every panel agrees. */
-  const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, period, todayKey]);
-  const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, period, todayKey]);
-  const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, period, todayKey]);
+  const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, fromKey, toKey]);
+  const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, fromKey, toKey]);
+  const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, fromKey, toKey]);
+
 
   const leads = useMemo(
     () => scopedLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),

@@ -25,9 +25,9 @@ const fmtMoney2 = (n: number) => `$${n.toFixed(2)}`;
 const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const fmtDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-type Line = "blended" | "windows" | "plumbing";
+type SvcLine = "blended" | "windows" | "plumbing";
 
-const LINE_META: Record<Line, { label: string; platform: string | null; icon: any; blurb: string }> = {
+const LINE_META: Record<SvcLine, { label: string; platform: string | null; icon: any; blurb: string }> = {
   blended: { label: "Blended", platform: null, icon: Layers, blurb: "All service lines" },
   windows: { label: "Windows", platform: "meta", icon: Blinds, blurb: "Meta Ads" },
   plumbing: { label: "Plumbing", platform: "google", icon: Wrench, blurb: "Google Ads" },
@@ -75,10 +75,10 @@ function KPI({ label, value, sub, icon: Icon, tone }: {
 export default function RRMDashboard() {
   const { data: calls = [], isLoading, refetch: refetchCalls } = useMojaCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useRRMSpend();
-  const [line, setLine] = useState<Line>("blended");
+  const [line, setLine] = useState<SvcLine>("blended");
   const [syncing, setSyncing] = useState(false);
 
-  const spendLine = (r: RRMCampaignRow): Line => {
+  const spendLine = (r: RRMCampaignRow): SvcLine => {
     const sl = serviceLineOf(r.campaign_name);
     if (sl === "windows" || sl === "plumbing") return sl;
     return r.platform?.toLowerCase() === "meta" ? "windows" : "plumbing";
@@ -196,7 +196,7 @@ export default function RRMDashboard() {
       {/* Service line switcher */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Service line</span>
-        {(Object.keys(LINE_META) as Line[]).map((key) => {
+        {(Object.keys(LINE_META) as SvcLine[]).map((key) => {
           const meta = LINE_META[key];
           const Icon = meta.icon;
           return (

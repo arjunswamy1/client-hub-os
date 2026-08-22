@@ -12,16 +12,17 @@ import {
 import { format } from "date-fns";
 import { toast } from "sonner";
 import {
-  RefreshCw, Phone, DollarSign, TrendingUp, Target, Layers, PhoneCall, Blinds, Wrench,
-  Chrome, Facebook, Plug, Info,
+  RefreshCw, Phone, DollarSign, TrendingUp, Target, PhoneCall, Blinds, Wrench,
+  Chrome, Facebook, Plug, Info, Sparkles,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   useMojaCalls, useRRMSpend, MojaCall, RRMCampaignRow, RRMLine,
-  RRM_CLIENT_ID, classifyCampaign, callLine, callPlatform, callMetrics, CallMetrics,
+  RRM_CLIENT_ID, classifyCampaign, callLine, callPlatform, callMetrics, CallMetrics, platformOfLine,
 } from "@/hooks/useRRMData";
 import { useRRMCallAttribution } from "@/hooks/useRRMDrillDown";
 import RRMPlatformPanel from "@/components/dashboard/RRMPlatformPanel";
+import RRMOptimizer from "@/components/dashboard/RRMOptimizer";
 import RRMConnections from "@/components/dashboard/RRMConnections";
 
 const fmtMoney = (n: number) =>
@@ -30,13 +31,20 @@ const fmtMoney2 = (n: number) => `$${n.toFixed(2)}`;
 const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const fmtDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-type SvcLine = "blended" | RRMLine;
+/** Only vertical-specific views — there is deliberately no blended mode. */
+type SvcLine = RRMLine;
 
-const LINE_META: Record<SvcLine, { label: string; platform: string | null; icon: any; blurb: string }> = {
-  blended: { label: "Blended", platform: null, icon: Layers, blurb: "Windows + Plumbing combined" },
-  windows: { label: "Windows", platform: "meta", icon: Blinds, blurb: "Meta Ads → Moja calls" },
-  plumbing: { label: "Plumbing", platform: "google", icon: Wrench, blurb: "Google Ads → Moja calls" },
+const LINE_META: Record<SvcLine, { label: string; platform: "meta" | "google"; icon: any; blurb: string; platformLabel: string; platformIcon: any }> = {
+  windows: {
+    label: "Windows", platform: "meta", icon: Blinds, blurb: "Meta Ads → Moja calls",
+    platformLabel: "Meta · Windows", platformIcon: Facebook,
+  },
+  plumbing: {
+    label: "Plumbing", platform: "google", icon: Wrench, blurb: "Google Ads → Moja calls",
+    platformLabel: "Google · Plumbing", platformIcon: Chrome,
+  },
 };
+
 
 function KPI({ label, value, sub, icon: Icon, tone }: {
   label: string; value: string; sub?: string; icon: any; tone?: string;
@@ -55,10 +63,10 @@ function KPI({ label, value, sub, icon: Icon, tone }: {
   );
 }
 
-/** Side-by-side Windows vs Plumbing scorecard — the headline view. */
-function LineComparison({
-  windows, plumbing, blended,
-}: { windows: CallMetrics; plumbing: CallMetrics; blended: CallMetrics }) {
+/** Full metric scorecard for the active service line only — no blended column. */
+function LineScorecard({ line, metrics }: { line: SvcLine; metrics: CallMetrics }) {
+  const meta = LINE_META[line];
+  const Icon = meta.icon;
   const rows: { label: string; get: (m: CallMetrics) => string; hint?: string; tone?: (m: CallMetrics) => string }[] = [
     { label: "Media spend", get: (m) => fmtMoney(m.spend) },
     { label: "Raw calls", get: (m) => String(m.raw), hint: "Every call that rang" },
@@ -82,18 +90,14 @@ function LineComparison({
 
   return (
     <Card className="p-4">
-      <h3 className="mb-3 text-sm font-semibold">Windows vs Plumbing</h3>
+      <h3 className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold">
+        <Icon className="h-3.5 w-3.5" /> {meta.platformLabel} performance
+      </h3>
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead className="text-xs">Metric</TableHead>
-            <TableHead className="text-right text-xs">
-              <span className="inline-flex items-center gap-1"><Blinds className="h-3 w-3" /> Windows · Meta</span>
-            </TableHead>
-            <TableHead className="text-right text-xs">
-              <span className="inline-flex items-center gap-1"><Wrench className="h-3 w-3" /> Plumbing · Google</span>
-            </TableHead>
-            <TableHead className="text-right text-xs">Blended</TableHead>
+            <TableHead className="text-right text-xs">{meta.platformLabel}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -103,9 +107,9 @@ function LineComparison({
                 {r.label}
                 {r.hint && <span className="ml-1.5 text-[10px] text-muted-foreground">{r.hint}</span>}
               </TableCell>
-              <TableCell className={`text-right text-xs font-medium ${r.tone?.(windows) || ""}`}>{r.get(windows)}</TableCell>
-              <TableCell className={`text-right text-xs font-medium ${r.tone?.(plumbing) || ""}`}>{r.get(plumbing)}</TableCell>
-              <TableCell className={`text-right text-xs ${r.tone?.(blended) || ""}`}>{r.get(blended)}</TableCell>
+              <TableCell className={`text-right text-xs font-medium ${r.tone?.(metrics) || ""}`}>
+                {r.get(metrics)}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -114,11 +118,12 @@ function LineComparison({
   );
 }
 
+
 export default function RRMDashboard() {
   const { data: calls = [], isLoading, refetch: refetchCalls } = useMojaCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useRRMSpend();
   const attr = useRRMCallAttribution(calls);
-  const [line, setLine] = useState<SvcLine>("blended");
+  const [line, setLine] = useState<SvcLine>("windows");
   const [syncing, setSyncing] = useState(false);
 
   /** Spend rows that genuinely belong to RRM, tagged with their service line. */
@@ -144,39 +149,22 @@ export default function RRMDashboard() {
     };
   }, [spendRows]);
 
-  const scopedCalls = useMemo(
-    () => (line === "blended" ? calls : calls.filter((c) => callLine(c) === line)),
-    [calls, line],
-  );
+  const scopedCalls = useMemo(() => calls.filter((c) => callLine(c) === line), [calls, line]);
   const scopedSpend = useMemo(
-    () => (line === "blended" ? rrmSpend : rrmSpend.filter((x) => x.line === line)).map((x) => x.row),
+    () => rrmSpend.filter((x) => x.line === line).map((x) => x.row),
     [rrmSpend, line],
   );
-
-  const spendOf = (l: SvcLine) =>
-    rrmSpend
-      .filter((x) => l === "blended" || x.line === l)
-      .reduce((s, x) => s + Number(x.row.spend || 0), 0);
 
   const kpi = useMemo(
     () => callMetrics(scopedCalls, scopedSpend.reduce((s, r) => s + Number(r.spend || 0), 0)),
     [scopedCalls, scopedSpend],
   );
-  const windowsKpi = useMemo(
-    () => callMetrics(calls.filter((c) => callLine(c) === "windows"), spendOf("windows")),
-    [calls, rrmSpend],
-  );
-  const plumbingKpi = useMemo(
-    () => callMetrics(calls.filter((c) => callLine(c) === "plumbing"), spendOf("plumbing")),
-    [calls, rrmSpend],
-  );
-  const blendedKpi = useMemo(() => callMetrics(calls, spendOf("blended")), [calls, rrmSpend]);
 
   const lineCounts = useMemo(() => ({
-    blended: calls.length,
     windows: calls.filter((c) => callLine(c) === "windows").length,
     plumbing: calls.filter((c) => callLine(c) === "plumbing").length,
   }), [calls]);
+
 
   const trend = useMemo(() => {
     const byDate = new Map<string, { spend: number; calls: number; revenue: number }>();
@@ -214,7 +202,7 @@ export default function RRMDashboard() {
       platform: string; line: RRMLine; spend: number; impressions: number; clicks: number; conversions: number;
     }>();
     for (const x of rrmSpend) {
-      if (line !== "blended" && x.line !== line) continue;
+      if (x.line !== line) continue;
       const key = x.row.campaign_name || "Unnamed campaign";
       const row = map.get(key) || {
         platform: x.row.platform, line: x.line, spend: 0, impressions: 0, clicks: 0, conversions: 0,
@@ -230,7 +218,7 @@ export default function RRMDashboard() {
       name, ...v, exact: attr.campaignCalls(name),
     }));
 
-    return (["windows", "plumbing"] as RRMLine[])
+    return ([line] as RRMLine[])
       .flatMap((l) => {
         const inLine = list.filter((c) => c.line === l);
         if (!inLine.length) return [];
@@ -357,18 +345,27 @@ export default function RRMDashboard() {
         <KPI label="Cost / converted call" value={kpi.converted ? fmtMoney2(kpi.costPerConvertedCall) : "—"} sub={`${fmtDuration(kpi.avgTalk)} avg talk time`} icon={Target} />
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      {/*
+        Tabs are scoped to the active service line — Windows only ever shows the
+        Meta panel, Plumbing only the Google panel. `key` resets the tab when the
+        line changes so the platform view always matches the vertical.
+      */}
+      <Tabs key={line} defaultValue="overview" className="space-y-4">
         <TabsList className="bg-secondary/50">
           <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+          <TabsTrigger value="optimize" className="gap-1.5 text-xs">
+            <Sparkles className="h-3.5 w-3.5" /> Optimize
+          </TabsTrigger>
           <TabsTrigger value="trend" className="text-xs">Trend</TabsTrigger>
           <TabsTrigger value="campaigns" className="text-xs">Campaigns</TabsTrigger>
           <TabsTrigger value="buyers" className="text-xs">Buyers</TabsTrigger>
           <TabsTrigger value="calls" className="text-xs">Call log</TabsTrigger>
-          <TabsTrigger value="google" className="gap-1.5 text-xs">
-            <Chrome className="h-3.5 w-3.5" /> Google · Plumbing
-          </TabsTrigger>
-          <TabsTrigger value="meta" className="gap-1.5 text-xs">
-            <Facebook className="h-3.5 w-3.5" /> Meta · Windows
+          <TabsTrigger value="platform" className="gap-1.5 text-xs">
+            {(() => {
+              const PIcon = LINE_META[line].platformIcon;
+              return <PIcon className="h-3.5 w-3.5" />;
+            })()}
+            {LINE_META[line].platformLabel}
           </TabsTrigger>
           <TabsTrigger value="connections" className="gap-1.5 text-xs">
             <Plug className="h-3.5 w-3.5" /> Connections
@@ -376,27 +373,30 @@ export default function RRMDashboard() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <LineComparison windows={windowsKpi} plumbing={plumbingKpi} blended={blendedKpi} />
+          <LineScorecard line={line} metrics={kpi} />
           <Card className="p-4">
             <h3 className="mb-1 text-sm font-semibold">Call attribution coverage</h3>
             <p className="text-xs text-muted-foreground">
-              {attr.attributedCount} of {attr.totalCount} calls in this range are matched to an exact keyword or creative
-              through Moja's UTMs (Google: utm_term = keyword, Meta: utm_content = ad name). The remaining{" "}
-              {attr.totalCount - attr.attributedCount} are attributed to their service line and spread across campaigns
-              by share of spend, so line totals always reconcile with Moja.
+              {scopedCalls.length - attr.unattributed(line).length} of {scopedCalls.length} {LINE_META[line].label} calls
+              in this range are matched to an exact{" "}
+              {LINE_META[line].platform === "google" ? "keyword (utm_term)" : "creative (utm_content)"} through Moja's
+              UTMs. The remaining {attr.unattributed(line).length} are spread across this line's campaigns by share of
+              spend, so line totals always reconcile with Moja.
             </p>
           </Card>
         </TabsContent>
 
-        <TabsContent value="google">
-          <RRMPlatformPanel platform="google" />
+        <TabsContent value="optimize">
+          <RRMOptimizer line={line} />
         </TabsContent>
-        <TabsContent value="meta">
-          <RRMPlatformPanel platform="meta" />
+
+        <TabsContent value="platform">
+          <RRMPlatformPanel platform={platformOfLine(line)} />
         </TabsContent>
         <TabsContent value="connections">
           <RRMConnections />
         </TabsContent>
+
 
         <TabsContent value="trend">
           <Card className="p-4">

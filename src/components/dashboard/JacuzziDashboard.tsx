@@ -62,6 +62,12 @@ export default function JacuzziDashboard() {
   /** Drill-down: empty station set = blended across every station we're paid on. */
   const [stationFilter, setStationFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "call" | "qr">("all");
+  /** Default view is today (hour-by-hour); "all" opens the full campaign history. */
+  const [period, setPeriod] = useState<"today" | "all">("today");
+  const [tab, setTab] = useState("hourly");
+  const todayKey = format(new Date(), "yyyy-MM-dd");
+  const inPeriod = (d?: string | null) => period === "all" || d === todayKey;
+
 
   /**
    * Roku hourly rows are the freshest signal for the current day, so spend for a
@@ -104,19 +110,26 @@ export default function JacuzziDashboard() {
     setStationFilter((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   const isBlended = stationFilter.length === 0;
   const scopeLabel = isBlended ? "Blended — all stations" : stationFilter.join(" + ");
+  const periodLabel = period === "today" ? "Today, hour by hour" : "All time — full campaign";
+
+  /** Period scope applies before station/type drill-down so every panel agrees. */
+  const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, period, todayKey]);
+  const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, period, todayKey]);
+  const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, period, todayKey]);
 
   const leads = useMemo(
-    () => allLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),
-    [allLeads, stationFilter, typeFilter]
+    () => scopedLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),
+    [scopedLeads, stationFilter, typeFilter]
   );
   const delivery = useMemo(
-    () => allDelivery.filter((d) => stationActive(d.station_code)),
-    [allDelivery, stationFilter]
+    () => scopedDelivery.filter((d) => stationActive(d.station_code)),
+    [scopedDelivery, stationFilter]
   );
   const hourly = useMemo(
-    () => allHourly.filter((h) => stationActive(h.station_code)),
-    [allHourly, stationFilter]
+    () => scopedHourly.filter((h) => stationActive(h.station_code)),
+    [scopedHourly, stationFilter]
   );
+
 
   const handleSync = async () => {
     setSyncing(true);
@@ -227,12 +240,12 @@ export default function JacuzziDashboard() {
       if (!map.has(s)) map.set(s, { station: s, spend: 0, impressions: 0, calls: 0, qr: 0, revenue: 0 });
       return map.get(s);
     };
-    allDelivery.forEach((d) => {
+    scopedDelivery.forEach((d) => {
       const r = row(d.station_code);
       r.spend += Number(d.spend || 0);
       r.impressions += Number(d.impressions || 0);
     });
-    allLeads.forEach((l) => {
+    scopedLeads.forEach((l) => {
       const r = row(stationOf(l));
       if (l.lead_type === "qr") r.qr += 1; else r.calls += 1;
       r.revenue += Number(l.payout_rate || 0);
@@ -247,7 +260,7 @@ export default function JacuzziDashboard() {
         cpQr: r.qr > 0 ? safe(r.spend / r.qr) : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue || b.spend - a.spend);
-  }, [allLeads, allDelivery]);
+  }, [scopedLeads, scopedDelivery]);
 
   /** Blended footer for the station table — the whole-account picture. */
   const blended = useMemo(() => {
@@ -296,9 +309,29 @@ export default function JacuzziDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-md border border-border p-0.5">
+          {([
+            ["today", "Today (hourly)"],
+            ["all", "All time"],
+          ] as const).map(([v, label]) => (
+            <Button
+              key={v}
+              variant={period === v ? "default" : "ghost"}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setPeriod(v);
+                setTab(v === "today" ? "hourly" : "daily");
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
         <Badge variant="secondary" className="gap-1">
-          <Radio className="h-3 w-3" /> CTV cost-per-lead · {scopeLabel}
+          <Radio className="h-3 w-3" /> {periodLabel} · {scopeLabel}
         </Badge>
+
         <Badge variant="outline">Current payout {money(currentRate)} / call or QR scan</Badge>
         <Badge variant={rokuConn?.status === "active" ? "secondary" : "outline"} className="gap-1">
           <Clock className="h-3 w-3" />
@@ -382,7 +415,7 @@ export default function JacuzziDashboard() {
         <KPI label="Payout vs cost" value={totals.cpl > 0 ? `${(currentRate / totals.cpl).toFixed(2)}x` : "—"} sub={`vs ${money(currentRate)} payout`} icon={TrendingUp} />
       </div>
 
-      <Tabs defaultValue="daily" className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0 scrollbar-none">
           <TabsList className="inline-flex w-auto bg-secondary/50">
             <TabsTrigger value="daily" className="gap-1.5 text-xs">Daily</TabsTrigger>

@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
           metadata: { accounts, redirect_uri: redirectUri },
           sync_error: null,
         },
-        { onConflict: "client_id,platform" },
+        { onConflict: "user_id,platform,client_id" },
       );
     if (upsertErr) throw upsertErr;
 

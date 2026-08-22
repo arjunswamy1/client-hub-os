@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
+import ClientDashboardRoute from "./pages/ClientDashboardRoute";
 import TasksPage from "./pages/TasksPage";
 import AgendasPage from "./pages/AgendasPage";
 import CreativePage from "./pages/CreativePage";
@@ -123,6 +124,7 @@ function ProtectedRoutes() {
             isAccountManager ? <AMHomePage /> : <Navigate to="/dashboard" replace />
           } />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard/:clientSlug" element={<ClientDashboardRoute />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/agendas" element={<AgendasPage />} />
           <Route path="/creative" element={<CreativePage />} />
@@ -143,6 +145,8 @@ function ProtectedRoutes() {
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}
           {isAdmin && <Route path="/admin/costs/:clientId" element={<AdminClientCostsPage />} />}
           <Route path="/client-portal-preview" element={<ClientPortalPage isAdminPreview adminName={user?.email || 'Admin'} />} />
+          {/* Short vanity URLs per client, e.g. /jacuzzi, /4js */}
+          <Route path="/:clientSlug" element={<ClientDashboardRoute />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AppLayout>

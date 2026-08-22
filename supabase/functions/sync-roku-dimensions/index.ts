@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
 
     const token = await ensureToken(admin, conn);
     const meta = (conn.metadata ?? {}) as Record<string, any>;
-    const accountUid = meta.account_uid || conn.account_id || null;
+    const accountUid: string = meta.account_uid || conn.account_id || "default";
 
     const end = new Date();
     const start = new Date(end.getTime() - (days - 1) * 86400000);
@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
       try {
         let uid = pending[bd.entity];
         if (!uid) {
-          uid = await createReport(token, bd.dimension, startAt, endAt, accountUid ?? undefined);
+          uid = await createReport(token, bd.dimension, startAt, endAt, accountUid === "default" ? undefined : accountUid);
           pending[bd.entity] = uid;
           results[bd.entity] = "queued";
           continue;

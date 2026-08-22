@@ -6,6 +6,8 @@ import { useDateRange } from "@/contexts/DateRangeContext";
 export const RRM_CLIENT_ID = "4b2434db-6d47-4653-be34-313976790f9d";
 
 export type ServiceLine = "windows" | "plumbing" | "unassigned";
+/** The two live RRM service lines. */
+export type RRMLine = "windows" | "plumbing";
 
 export interface MojaCall {
   id: string;
@@ -32,7 +34,6 @@ export interface MojaCall {
   utm_campaign?: string | null;
   utm_term?: string | null;
   utm_content?: string | null;
-
 }
 
 export interface RRMCampaignRow {
@@ -94,6 +95,82 @@ export function useRRMSpend() {
 export function serviceLineOf(text: string | null | undefined): ServiceLine {
   const t = (text || "").toLowerCase();
   if (/window|glass|door/.test(t)) return "windows";
-  if (/plumb|drain|sewer|water heater|leak/.test(t)) return "plumbing";
+  if (/plumb|drain|sewer|water heater|water line|pipe|leak/.test(t)) return "plumbing";
   return "unassigned";
+}
+
+/**
+ * Classify an ad-platform campaign into an RRM service line.
+ *
+ * The connected Google account also carries non-RRM campaigns (e.g. the
+ * "CPM_Final Expense_*" builds). Those must be excluded rather than silently
+ * counted as Plumbing spend, otherwise every Plumbing cost metric inflates.
+ */
+export function classifyCampaign(
+  campaignName: string | null | undefined,
+  platform: string | null | undefined,
+): RRMLine | "excluded" {
+  const line = serviceLineOf(campaignName);
+  if (line === "windows" || line === "plumbing") return line;
+  // The Meta ad account is RRM Windows only, so unnamed Meta campaigns belong there.
+  if ((platform || "").toLowerCase() === "meta") return "windows";
+  return "excluded";
+}
+
+/** Which service line a Moja call belongs to (falls back to the source platform). */
+export function callLine(c: MojaCall): RRMLine {
+  const sl = (c.service_line || "").toLowerCase();
+  if (sl === "windows" || sl === "plumbing") return sl;
+  return (c.platform || "").toLowerCase() === "meta" ? "windows" : "plumbing";
+}
+
+export interface CallMetrics {
+  raw: number;
+  connected: number;
+  converted: number;
+  connectRate: number;
+  convRate: number;
+  revenue: number;
+  spend: number;
+  profit: number;
+  roas: number;
+  /** Spend ÷ every call that rang, connected or not */
+  costPerRawCall: number;
+  /** Spend ÷ calls that actually connected to a buyer */
+  costPerConnectedCall: number;
+  /** Spend ÷ converted (billable) calls */
+  costPerConvertedCall: number;
+  /** Buyer payout ÷ raw calls */
+  revenuePerRawCall: number;
+  revenuePerConnectedCall: number;
+  avgTalk: number;
+  margin: number;
+}
+
+/** Single source of truth for every RRM call/cost metric. */
+export function callMetrics(calls: MojaCall[], spend: number): CallMetrics {
+  const raw = calls.length;
+  const connected = calls.filter((c) => c.connected).length;
+  const converted = calls.filter((c) => c.converted).length;
+  const revenue = calls.reduce((s, c) => s + Number(c.revenue || 0), 0);
+  const talk = calls.reduce((s, c) => s + (c.duration_seconds || 0), 0);
+  const div = (a: number, b: number) => (b > 0 ? a / b : 0);
+  return {
+    raw,
+    connected,
+    converted,
+    connectRate: div(connected, raw),
+    convRate: div(converted, raw),
+    revenue,
+    spend,
+    profit: revenue - spend,
+    roas: div(revenue, spend),
+    costPerRawCall: div(spend, raw),
+    costPerConnectedCall: div(spend, connected),
+    costPerConvertedCall: div(spend, converted),
+    revenuePerRawCall: div(revenue, raw),
+    revenuePerConnectedCall: div(revenue, connected),
+    avgTalk: div(talk, connected),
+    margin: div(revenue - spend, revenue),
+  };
 }

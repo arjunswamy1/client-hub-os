@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
-import { RRM_CLIENT_ID, MojaCall } from "@/hooks/useRRMData";
+import { RRM_CLIENT_ID, MojaCall, RRMLine, callLine } from "@/hooks/useRRMData";
 
 function useDateStrings() {
   const { dateRange } = useDateRange();
@@ -180,8 +180,8 @@ export function useRRMConnections() {
 
 /* ============================================================
    Exact call attribution via Moja UTMs
-   Google: utm_term = keyword text, utm_content = ad id
-   Meta:   utm_term = ad id,        utm_content = ad/creative name
+   Google: utm_term = keyword text,        utm_content = criterion/ad id
+   Meta:   utm_term = ad id (unreliable),  utm_content = ad / creative name
    ============================================================ */
 
 export const normKey = (s: string | null | undefined) =>
@@ -191,62 +191,78 @@ export const normKey = (s: string | null | undefined) =>
     .replace(/\s+/g, " ")
     .trim();
 
-export interface RRMAttribution {
-  /** Calls exactly attributed to a Google keyword (null = no UTM coverage) */
-  keywordCalls: (keyword: string) => MojaCall[] | null;
-  /** Calls exactly attributed to a Meta creative by ad id or ad name */
-  creativeCalls: (adId?: string | null, adName?: string | null) => MojaCall[] | null;
-  /** Calls exactly attributed to an ad group / ad set, resolved from keyword & ad maps */
-  adsetCalls: (platformAdsetId?: string | null) => MojaCall[] | null;
-  /** Whether any call in range carries keyword/creative UTMs at all */
-  hasUtmCoverage: boolean;
-  /** Whether this campaign's calls carry UTMs (false => sub-rows should stay estimated) */
-  campaignHasUtm: (campaignName: string) => boolean;
+interface AdRef {
+  campaign: string;
+  adset: string | null;
 }
 
-/** Builds keyword→ad group and ad id/name→ad set maps, then indexes Moja calls onto them. */
-export function useRRMAttribution(platform: "google" | "meta", calls: MojaCall[]): RRMAttribution {
-  const { fromStr, toStr } = useDateStrings();
+export interface RRMAttributionIndex {
+  /** Maps loaded — until then everything reads as unattributed. */
+  ready: boolean;
+  campaignCalls: (campaignName: string) => MojaCall[];
+  adsetCalls: (platformAdsetId?: string | null) => MojaCall[];
+  keywordCalls: (keyword: string) => MojaCall[];
+  creativeCalls: (adId?: string | null, adName?: string | null) => MojaCall[];
+  /** Calls in this line that carried no usable keyword/creative UTM. */
+  unattributed: (line: RRMLine) => MojaCall[];
+  attributedCount: number;
+  totalCount: number;
+}
 
+/**
+ * Indexes Moja calls onto Google keywords and Meta creatives using the UTMs Moja
+ * records, then rolls those exact matches up to ad group / ad set / campaign.
+ *
+ * Moja's own `campaign_name` ("RRM INTERNAL - Plumbing") never equals the ad
+ * platform campaign name, so campaign-level call counts are resolved through the
+ * keyword/creative maps instead of a name match.
+ */
+export function useRRMCallAttribution(calls: MojaCall[]): RRMAttributionIndex {
   const { data: maps } = useQuery({
-    queryKey: ["rrm-attribution-maps", platform, fromStr, toStr],
+    queryKey: ["rrm-attribution-maps"],
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const keywordToAdset = new Map<string, string>();
-      const adIdToAdset = new Map<string, string>();
-      const adNameToAdset = new Map<string, string>();
+      const byKeyword = new Map<string, AdRef>();
+      const byAdName = new Map<string, AdRef>();
+      const byAdId = new Map<string, AdRef>();
 
-      if (platform === "google") {
-        const { data } = await supabase
+      const [kw, ads] = await Promise.all([
+        supabase
           .from("campaign_keywords")
-          .select("keyword, platform_adset_id")
-          .eq("client_id", RRM_CLIENT_ID);
-        for (const r of data || []) {
-          if (r.keyword && r.platform_adset_id) keywordToAdset.set(normKey(r.keyword), r.platform_adset_id);
-        }
-      } else {
-        const { data } = await supabase
+          .select("keyword, platform_adset_id, campaign_name")
+          .eq("client_id", RRM_CLIENT_ID),
+        supabase
           .from("ad_creatives")
-          .select("ad_name, platform_ad_id, platform_adset_id")
+          .select("ad_name, platform_ad_id, platform_adset_id, campaign_name")
           .eq("client_id", RRM_CLIENT_ID)
-          .eq("platform", "meta");
-        for (const r of data || []) {
-          if (!r.platform_adset_id) continue;
-          if (r.platform_ad_id) adIdToAdset.set(normKey(r.platform_ad_id), r.platform_adset_id);
-          if (r.ad_name) adNameToAdset.set(normKey(r.ad_name), r.platform_adset_id);
-        }
+          .eq("platform", "meta"),
+      ]);
+
+      for (const r of kw.data || []) {
+        if (!r.keyword || !r.campaign_name) continue;
+        byKeyword.set(normKey(r.keyword), { campaign: r.campaign_name, adset: r.platform_adset_id ?? null });
       }
-      return { keywordToAdset, adIdToAdset, adNameToAdset };
+      for (const r of ads.data || []) {
+        if (!r.campaign_name) continue;
+        const ref: AdRef = { campaign: r.campaign_name, adset: r.platform_adset_id ?? null };
+        if (r.ad_name) byAdName.set(normKey(r.ad_name), ref);
+        if (r.platform_ad_id) byAdId.set(normKey(r.platform_ad_id), ref);
+      }
+      return { byKeyword, byAdName, byAdId };
     },
   });
 
-  const byKeyword = new Map<string, MojaCall[]>();
-  const byAdId = new Map<string, MojaCall[]>();
-  const byAdName = new Map<string, MojaCall[]>();
-  const byAdset = new Map<string, MojaCall[]>();
-  const utmCampaigns = new Set<string>();
-  let coverage = 0;
+  const ready = !!maps;
 
-  const push = (m: Map<string, MojaCall[]>, k: string, c: MojaCall) => {
+  const callsByKeyword = new Map<string, MojaCall[]>();
+  const callsByAdName = new Map<string, MojaCall[]>();
+  const callsByAdId = new Map<string, MojaCall[]>();
+  const callsByAdset = new Map<string, MojaCall[]>();
+  const callsByCampaign = new Map<string, MojaCall[]>();
+  const loose: Record<RRMLine, MojaCall[]> = { windows: [], plumbing: [] };
+  let attributedCount = 0;
+
+  const push = (m: Map<string, MojaCall[]>, k: string | null | undefined, c: MojaCall) => {
     if (!k) return;
     const arr = m.get(k);
     if (arr) arr.push(c);
@@ -254,37 +270,44 @@ export function useRRMAttribution(platform: "google" | "meta", calls: MojaCall[]
   };
 
   for (const c of calls) {
+    const line = callLine(c);
     const term = normKey(c.utm_term);
     const content = normKey(c.utm_content);
-    if (!term && !content) continue;
-    coverage++;
-    utmCampaigns.add(normKey(c.campaign_name));
-    utmCampaigns.add(normKey(c.utm_campaign));
+    const isGoogle = (c.platform || "").toLowerCase() !== "meta";
 
-    if (platform === "google") {
-      push(byKeyword, term, c);
-      push(byAdId, content, c);
-      const adset = maps?.keywordToAdset.get(term);
-      if (adset) push(byAdset, adset, c);
+    let ref: AdRef | undefined;
+    if (ready) {
+      if (isGoogle) {
+        ref = maps!.byKeyword.get(term);
+        if (ref) push(callsByKeyword, term, c);
+      } else {
+        // Meta ad ids in the landing URL don't always survive the macro, so the
+        // ad name from utm_content is the reliable join.
+        ref = maps!.byAdName.get(content) || maps!.byAdId.get(term);
+        if (maps!.byAdName.has(content)) push(callsByAdName, content, c);
+        if (maps!.byAdId.has(term)) push(callsByAdId, term, c);
+      }
+    }
+
+    if (ref) {
+      attributedCount++;
+      push(callsByCampaign, normKey(ref.campaign), c);
+      if (ref.adset) push(callsByAdset, ref.adset, c);
     } else {
-      push(byAdId, term, c);
-      push(byAdName, content, c);
-      const adset = maps?.adIdToAdset.get(term) || maps?.adNameToAdset.get(content);
-      if (adset) push(byAdset, adset, c);
+      loose[line].push(c);
     }
   }
 
-  const hasUtmCoverage = coverage > 0;
-
   return {
-    hasUtmCoverage,
-    campaignHasUtm: (campaignName: string) => utmCampaigns.has(normKey(campaignName)),
-    keywordCalls: (keyword) => (hasUtmCoverage ? byKeyword.get(normKey(keyword)) || [] : null),
+    ready,
+    attributedCount,
+    totalCount: calls.length,
+    campaignCalls: (name) => callsByCampaign.get(normKey(name)) || [],
+    adsetCalls: (id) => (id ? callsByAdset.get(id) || [] : []),
+    keywordCalls: (keyword) => callsByKeyword.get(normKey(keyword)) || [],
     creativeCalls: (adId, adName) =>
-      hasUtmCoverage ? byAdId.get(normKey(adId)) || byAdName.get(normKey(adName)) || [] : null,
-    adsetCalls: (platformAdsetId) => {
-      if (!hasUtmCoverage || !platformAdsetId) return null;
-      return byAdset.get(platformAdsetId) || [];
-    },
+      callsByAdName.get(normKey(adName)) || callsByAdId.get(normKey(adId)) || [],
+    unattributed: (line) => loose[line],
   };
 }
+

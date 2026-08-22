@@ -139,7 +139,14 @@ export function useRRMCreatives(platformAdsetId: string | null) {
   });
 }
 
+export interface RRMAdAccount {
+  id?: string | null;
+  name?: string | null;
+  account_id?: string | null;
+}
+
 export interface RRMConnection {
+  id: string;
   platform: string;
   status: string;
   account_name: string | null;
@@ -147,6 +154,8 @@ export interface RRMConnection {
   last_synced_at: string | null;
   last_sync_records: number | null;
   sync_error: string | null;
+  selected_ad_account: RRMAdAccount | null;
+  metadata: { ad_accounts?: RRMAdAccount[] } | null;
 }
 
 /** Google + Meta connection health for RRM */
@@ -156,15 +165,18 @@ export function useRRMConnections() {
     queryFn: async (): Promise<RRMConnection[]> => {
       const { data, error } = await supabase
         .from("platform_connections")
-        .select("platform, status, account_name, account_id, last_synced_at, last_sync_records, sync_error")
+        .select(
+          "id, platform, status, account_name, account_id, last_synced_at, last_sync_records, sync_error, selected_ad_account, metadata"
+        )
         .eq("client_id", RRM_CLIENT_ID)
         .in("platform", ["google", "meta"]);
       if (error) throw error;
-      return (data || []) as RRMConnection[];
+      return (data || []) as unknown as RRMConnection[];
     },
     refetchInterval: 60 * 1000,
   });
 }
+
 
 /* ============================================================
    Exact call attribution via Moja UTMs

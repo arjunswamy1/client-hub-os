@@ -66,7 +66,7 @@ function DashboardContent() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">{activeClient.name}</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
-            {isCannaball ? 'Roku CTV — Pay-per-Call Attribution' : isFourJs ? 'Final Expense — Pay-per-Call Attribution' : isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
+            {isJacuzzi ? 'Bath Remodel CTV — Cost-per-Lead (Calls + QR Scans)' : isCannaball ? 'Roku CTV — Pay-per-Call Attribution' : isFourJs ? 'Final Expense — Pay-per-Call Attribution' : isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

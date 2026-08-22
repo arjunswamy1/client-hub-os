@@ -240,12 +240,12 @@ export default function JacuzziDashboard() {
       if (!map.has(s)) map.set(s, { station: s, spend: 0, impressions: 0, calls: 0, qr: 0, revenue: 0 });
       return map.get(s);
     };
-    allDelivery.forEach((d) => {
+    scopedDelivery.forEach((d) => {
       const r = row(d.station_code);
       r.spend += Number(d.spend || 0);
       r.impressions += Number(d.impressions || 0);
     });
-    allLeads.forEach((l) => {
+    scopedLeads.forEach((l) => {
       const r = row(stationOf(l));
       if (l.lead_type === "qr") r.qr += 1; else r.calls += 1;
       r.revenue += Number(l.payout_rate || 0);
@@ -260,7 +260,7 @@ export default function JacuzziDashboard() {
         cpQr: r.qr > 0 ? safe(r.spend / r.qr) : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue || b.spend - a.spend);
-  }, [allLeads, allDelivery]);
+  }, [scopedLeads, scopedDelivery]);
 
   /** Blended footer for the station table — the whole-account picture. */
   const blended = useMemo(() => {

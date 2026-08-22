@@ -18,6 +18,39 @@ export default function RokuCallbackPage() {
 
   const redirectUri = useMemo(() => `${window.location.origin}/roku/callback`, []);
 
+  type RokuConn = {
+    id: string;
+    account_id: string | null;
+    account_name: string | null;
+    status: string | null;
+    token_expires_at: string | null;
+    last_synced_at: string | null;
+    sync_error: string | null;
+    updated_at: string | null;
+    clients?: { name: string } | null;
+  };
+  const [connections, setConnections] = useState<RokuConn[] | null>(null);
+  const [loadingConns, setLoadingConns] = useState(true);
+
+  const loadConnections = async () => {
+    setLoadingConns(true);
+    const { data, error } = await supabase
+      .from('platform_connections')
+      .select('id, account_id, account_name, status, token_expires_at, last_synced_at, sync_error, updated_at, clients(name)')
+      .eq('platform', 'roku')
+      .order('updated_at', { ascending: false });
+    if (error) {
+      setConnections([]);
+    } else {
+      setConnections((data ?? []) as unknown as RokuConn[]);
+    }
+    setLoadingConns(false);
+  };
+
+  useEffect(() => {
+    loadConnections();
+  }, []);
+
   const exchange = async () => {
     if (!code) return;
     setStatus('working');

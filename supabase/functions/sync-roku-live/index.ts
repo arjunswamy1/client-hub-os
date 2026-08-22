@@ -221,7 +221,6 @@ Deno.serve(async (req) => {
     const end_date = ymd(end);
 
     const flat: Flat[] = [];
-    const rawSample: any[] = [];
     const perAccount: Record<string, number | string> = {};
     for (const accountUid of accountUids) {
       try {
@@ -261,7 +260,6 @@ Deno.serve(async (req) => {
               start_date, end_date, granularity: "day", fields, limit: "1000",
             }),
           });
-          if (rawSample.length < 3) rawSample.push(...(res?.data ?? []).slice(0, 3));
           const rows = flatten(res, accountUid, end_date, names).map((r) => ({
             ...r,
             entity_name: r.entity_name === "Unknown"
@@ -281,7 +279,7 @@ Deno.serve(async (req) => {
     }
 
     if (body.dry_run) {
-      return json({ success: true, available_fields: available, per_account: perAccount, sample: flat.slice(0, 4), raw_sample: rawSample });
+      return json({ success: true, available_fields: available, per_account: perAccount, sample: flat.slice(0, 6) });
     }
 
     // 1) Entity-level rows for drill-downs.

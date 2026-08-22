@@ -267,9 +267,47 @@ export default function BuyologyDashboard() {
         <GroupTable title="By buyer / target" rows={byTarget} />
       </TabsContent>
 
-      <TabsContent value="meta">
+      <TabsContent value="creatives">
+        <BuyologyCreativeAnalysis line={line} />
+      </TabsContent>
+
+      <TabsContent value="meta" className="space-y-4">
+        {lineSpend && lineSpend.campaigns.length > 0 && (
+          <Card className="p-5">
+            <h3 className="mb-3 text-sm font-semibold">
+              Meta campaigns by product line{line !== "all" ? " (filtered)" : ""}
+            </h3>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Campaign</TableHead>
+                    <TableHead>Product line</TableHead>
+                    <TableHead className="text-right">Spend</TableHead>
+                    <TableHead className="text-right">Impr.</TableHead>
+                    <TableHead className="text-right">Clicks</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lineSpend.campaigns
+                    .filter((c) => line === "all" || c.line === line)
+                    .map((c) => (
+                      <TableRow key={c.name}>
+                        <TableCell className="max-w-[340px] truncate text-xs font-medium">{c.name}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{productLineLabel(c.line)}</TableCell>
+                        <TableCell className="text-right text-xs">{money(c.spend)}</TableCell>
+                        <TableCell className="text-right text-xs">{c.impressions.toLocaleString()}</TableCell>
+                        <TableCell className="text-right text-xs">{c.clicks.toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        )}
         <MetaDashboard />
       </TabsContent>
+
 
       <TabsContent value="connections" className="space-y-3">
         <MetaConnectionCard clientId={BUYOLOGY_CLIENT_ID} clientLabel="BuyologyIQ" />

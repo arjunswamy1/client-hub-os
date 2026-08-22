@@ -553,7 +553,7 @@ export default function RRMDashboard() {
                   </TableRow>
                 )}
                 {scopedCalls.slice(0, 200).map((c) => {
-                  const isMeta = (c.platform || "").toLowerCase() === "meta";
+                  const isMeta = callPlatform(c) === "meta";
                   const detail = isMeta ? c.utm_content : c.utm_term;
                   return (
                     <TableRow key={c.id}>

@@ -272,9 +272,12 @@ export default function BuyologyOptimizer({
         </div>
       </Card>
 
-      {targets.map((l) => {
+      <BuyologyOptimizerSchedule clientId={BUYOLOGY_CLIENT_ID} onViewBrief={viewBrief} />
+
+      {displayLines.map((l) => {
         const entry = plans[l];
         if (!entry) return null;
+
         const plan = entry.plan;
         const recs = [...(plan.recommendations || [])].sort((a, b) => (a.priority || 99) - (b.priority || 99));
         return (

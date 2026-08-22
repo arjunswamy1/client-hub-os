@@ -430,13 +430,19 @@ export default function JacuzziDashboard() {
                     <th className="p-2 text-right">QR</th>
                     <th className="p-2 text-right">Leads</th>
                     <th className="p-2 text-right">Cost / lead</th>
+                    <th className="p-2 text-right">Cost / call</th>
+                    <th className="p-2 text-right">Cost / QR</th>
                     <th className="p-2 text-right">Revenue</th>
                     <th className="p-2 text-right">GP</th>
                   </tr>
                 </thead>
                 <tbody>
                   {stations.map((s) => (
-                    <tr key={s.station} className="border-t border-border">
+                    <tr
+                      key={s.station}
+                      onClick={() => toggleStation(s.station)}
+                      className={`cursor-pointer border-t border-border hover:bg-muted/40 ${stationFilter.includes(s.station) ? "bg-primary/5" : ""}`}
+                    >
                       <td className="p-2 font-medium">{s.station}</td>
                       <td className="p-2 text-xs text-muted-foreground">{STATION_NOTES[s.station] || "—"}</td>
                       <td className="p-2 text-right">{s.impressions.toLocaleString()}</td>
@@ -445,14 +451,34 @@ export default function JacuzziDashboard() {
                       <td className="p-2 text-right">{s.qr || "—"}</td>
                       <td className="p-2 text-right font-medium">{s.leads || "—"}</td>
                       <td className="p-2 text-right">{s.leads ? money2(s.cpl) : "—"}</td>
+                      <td className="p-2 text-right">{s.calls ? money2(s.cpCall) : "—"}</td>
+                      <td className="p-2 text-right">{s.qr ? money2(s.cpQr) : "—"}</td>
                       <td className="p-2 text-right">{money(s.revenue)}</td>
                       <td className={`p-2 text-right ${s.profit >= 0 ? "text-green-600" : "text-red-500"}`}>{money(s.profit)}</td>
                     </tr>
                   ))}
                   {!stations.length && (
-                    <tr><td colSpan={10} className="p-6 text-center text-muted-foreground">No station data in range.</td></tr>
+                    <tr><td colSpan={12} className="p-6 text-center text-muted-foreground">No station data in range.</td></tr>
                   )}
                 </tbody>
+                {!!stations.length && (
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-muted/40 font-medium">
+                      <td className="p-2">Blended</td>
+                      <td className="p-2 text-xs text-muted-foreground">All stations combined</td>
+                      <td className="p-2 text-right">{blended.impressions.toLocaleString()}</td>
+                      <td className="p-2 text-right">{money2(blended.spend)}</td>
+                      <td className="p-2 text-right">{blended.calls}</td>
+                      <td className="p-2 text-right">{blended.qr}</td>
+                      <td className="p-2 text-right">{blended.leads}</td>
+                      <td className="p-2 text-right">{money2(blended.cpl)}</td>
+                      <td className="p-2 text-right">{money2(blended.cpCall)}</td>
+                      <td className="p-2 text-right">{money2(blended.cpQr)}</td>
+                      <td className="p-2 text-right">{money(blended.revenue)}</td>
+                      <td className={`p-2 text-right ${blended.profit >= 0 ? "text-green-600" : "text-red-500"}`}>{money(blended.profit)}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
             <p className="border-t border-border p-3 text-xs text-muted-foreground">

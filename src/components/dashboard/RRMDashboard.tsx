@@ -253,7 +253,28 @@ export default function RRMDashboard() {
           <TabsTrigger value="campaigns" className="text-xs">Campaigns</TabsTrigger>
           <TabsTrigger value="buyers" className="text-xs">Buyers</TabsTrigger>
           <TabsTrigger value="calls" className="text-xs">Call log</TabsTrigger>
+          <TabsTrigger value="google" className="gap-1.5 text-xs">
+            <Chrome className="h-3.5 w-3.5" /> Google Ads
+          </TabsTrigger>
+          <TabsTrigger value="meta" className="gap-1.5 text-xs">
+            <Facebook className="h-3.5 w-3.5" /> Meta Ads
+          </TabsTrigger>
+          <TabsTrigger value="connections" className="gap-1.5 text-xs">
+            <Plug className="h-3.5 w-3.5" /> Connections
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="google">
+          <RRMPlatformPanel platform="google" />
+        </TabsContent>
+        <TabsContent value="meta">
+          <RRMPlatformPanel platform="meta" />
+        </TabsContent>
+        <TabsContent value="connections">
+          <RRMConnections />
+        </TabsContent>
+
+
 
         <TabsContent value="trend">
           <Card className="p-4">

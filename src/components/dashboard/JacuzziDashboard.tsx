@@ -110,19 +110,26 @@ export default function JacuzziDashboard() {
     setStationFilter((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   const isBlended = stationFilter.length === 0;
   const scopeLabel = isBlended ? "Blended — all stations" : stationFilter.join(" + ");
+  const periodLabel = period === "today" ? "Today, hour by hour" : "All time — full campaign";
+
+  /** Period scope applies before station/type drill-down so every panel agrees. */
+  const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, period, todayKey]);
+  const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, period, todayKey]);
+  const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, period, todayKey]);
 
   const leads = useMemo(
-    () => allLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),
-    [allLeads, stationFilter, typeFilter]
+    () => scopedLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),
+    [scopedLeads, stationFilter, typeFilter]
   );
   const delivery = useMemo(
-    () => allDelivery.filter((d) => stationActive(d.station_code)),
-    [allDelivery, stationFilter]
+    () => scopedDelivery.filter((d) => stationActive(d.station_code)),
+    [scopedDelivery, stationFilter]
   );
   const hourly = useMemo(
-    () => allHourly.filter((h) => stationActive(h.station_code)),
-    [allHourly, stationFilter]
+    () => scopedHourly.filter((h) => stationActive(h.station_code)),
+    [scopedHourly, stationFilter]
   );
+
 
   const handleSync = async () => {
     setSyncing(true);

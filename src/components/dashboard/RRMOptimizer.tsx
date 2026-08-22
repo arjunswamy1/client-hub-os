@@ -485,8 +485,11 @@ export default function RRMOptimizer({ line }: { line: RRMLine }) {
                     <TableCell className="text-xs capitalize">{m.matchType}</TableCell>
                     <TableCell className="text-right text-xs">{money2(m.spend)}</TableCell>
                     <TableCell className="text-right text-xs">{m.clicks.toLocaleString()}</TableCell>
-                    <TableCell className="text-right text-xs">{m.calls ? m.calls.toFixed(1) : "—"}</TableCell>
-                    <TableCell className="text-right text-xs">{m.calls ? money2(m.spend / m.calls) : "no calls"}</TableCell>
+                    <TableCell className="text-right text-xs">{m.calls >= 0.05 ? m.calls.toFixed(1) : "—"}</TableCell>
+                    <TableCell className="text-right text-xs">
+                      {m.calls >= 0.05 ? money2(m.spend / m.calls) : "no calls"}
+                    </TableCell>
+
                   </TableRow>
                 ))}
               </TableBody>

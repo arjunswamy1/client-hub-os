@@ -3630,6 +3630,74 @@ export type Database = {
           },
         ]
       }
+      roku_daily_metrics: {
+        Row: {
+          account_uid: string
+          campaign_name: string | null
+          campaign_uid: string | null
+          clicks: number
+          client_id: string
+          created_at: string
+          date: string
+          entity: string
+          entity_name: string | null
+          entity_uid: string
+          fields: Json
+          id: string
+          impressions: number
+          reach: number
+          spend: number
+          updated_at: string
+          video_completions: number
+        }
+        Insert: {
+          account_uid: string
+          campaign_name?: string | null
+          campaign_uid?: string | null
+          clicks?: number
+          client_id: string
+          created_at?: string
+          date: string
+          entity?: string
+          entity_name?: string | null
+          entity_uid: string
+          fields?: Json
+          id?: string
+          impressions?: number
+          reach?: number
+          spend?: number
+          updated_at?: string
+          video_completions?: number
+        }
+        Update: {
+          account_uid?: string
+          campaign_name?: string | null
+          campaign_uid?: string | null
+          clicks?: number
+          client_id?: string
+          created_at?: string
+          date?: string
+          entity?: string
+          entity_name?: string | null
+          entity_uid?: string
+          fields?: Json
+          id?: string
+          impressions?: number
+          reach?: number
+          spend?: number
+          updated_at?: string
+          video_completions?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roku_daily_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       search_terms: {
         Row: {
           campaign_name: string | null

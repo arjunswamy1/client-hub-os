@@ -3152,6 +3152,154 @@ export type Database = {
           },
         ]
       }
+      jacuzzi_reconciliation_daily: {
+        Row: {
+          applied_rate: number
+          by_station: Json
+          call_leads: number
+          client_id: string
+          created_at: string
+          date: string
+          expected_revenue: number
+          generated_at: string
+          id: string
+          leads_total: number
+          matched_count: number
+          qr_leads: number
+          rate_effective_from: string | null
+          rate_mismatches: number
+          ringfuel_calls: number
+          station_mismatches: number
+          unmatched_calls: number
+          unmatched_leads: number
+          updated_at: string
+        }
+        Insert: {
+          applied_rate?: number
+          by_station?: Json
+          call_leads?: number
+          client_id: string
+          created_at?: string
+          date: string
+          expected_revenue?: number
+          generated_at?: string
+          id?: string
+          leads_total?: number
+          matched_count?: number
+          qr_leads?: number
+          rate_effective_from?: string | null
+          rate_mismatches?: number
+          ringfuel_calls?: number
+          station_mismatches?: number
+          unmatched_calls?: number
+          unmatched_leads?: number
+          updated_at?: string
+        }
+        Update: {
+          applied_rate?: number
+          by_station?: Json
+          call_leads?: number
+          client_id?: string
+          created_at?: string
+          date?: string
+          expected_revenue?: number
+          generated_at?: string
+          id?: string
+          leads_total?: number
+          matched_count?: number
+          qr_leads?: number
+          rate_effective_from?: string | null
+          rate_mismatches?: number
+          ringfuel_calls?: number
+          station_mismatches?: number
+          unmatched_calls?: number
+          unmatched_leads?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jacuzzi_reconciliation_daily_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jacuzzi_reconciliation_matches: {
+        Row: {
+          caller_number: string | null
+          client_id: string
+          created_at: string
+          date: string
+          expected_rate: number | null
+          id: string
+          lead_id: string | null
+          lead_payout_rate: number | null
+          lead_station: string | null
+          lead_type: string | null
+          match_method: string | null
+          notes: string | null
+          rate_agrees: boolean | null
+          ringfuel_call_id: string | null
+          ringfuel_did: string | null
+          ringfuel_station: string | null
+          station_agrees: boolean | null
+          status: string
+          transaction_id: string | null
+        }
+        Insert: {
+          caller_number?: string | null
+          client_id: string
+          created_at?: string
+          date: string
+          expected_rate?: number | null
+          id?: string
+          lead_id?: string | null
+          lead_payout_rate?: number | null
+          lead_station?: string | null
+          lead_type?: string | null
+          match_method?: string | null
+          notes?: string | null
+          rate_agrees?: boolean | null
+          ringfuel_call_id?: string | null
+          ringfuel_did?: string | null
+          ringfuel_station?: string | null
+          station_agrees?: boolean | null
+          status: string
+          transaction_id?: string | null
+        }
+        Update: {
+          caller_number?: string | null
+          client_id?: string
+          created_at?: string
+          date?: string
+          expected_rate?: number | null
+          id?: string
+          lead_id?: string | null
+          lead_payout_rate?: number | null
+          lead_station?: string | null
+          lead_type?: string | null
+          match_method?: string | null
+          notes?: string | null
+          rate_agrees?: boolean | null
+          ringfuel_call_id?: string | null
+          ringfuel_did?: string | null
+          ringfuel_station?: string | null
+          station_agrees?: boolean | null
+          status?: string
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jacuzzi_reconciliation_matches_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_pages: {
         Row: {
           client_id: string

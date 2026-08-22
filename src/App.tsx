@@ -162,6 +162,7 @@ const App = () => (
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route path="/talent-apply" element={<TalentApplyPage />} />
             <Route path="/onboarding/:token" element={<OnboardingPage />} />
+            <Route path="/roku/callback" element={<RokuCallbackPage />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </AuthProvider>

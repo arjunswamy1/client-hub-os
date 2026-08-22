@@ -2135,6 +2135,68 @@ export type Database = {
           },
         ]
       }
+      client_slack_reports: {
+        Row: {
+          client_id: string
+          created_at: string
+          day_of_week: number
+          enabled: boolean
+          id: string
+          last_error: string | null
+          last_period_key: string | null
+          last_sent_at: string | null
+          lease_until: string | null
+          notes: string | null
+          run_hour_utc: number
+          scope: string
+          slack_channel_id: string | null
+          slack_channel_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          day_of_week?: number
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_period_key?: string | null
+          last_sent_at?: string | null
+          lease_until?: string | null
+          notes?: string | null
+          run_hour_utc?: number
+          scope: string
+          slack_channel_id?: string | null
+          slack_channel_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          day_of_week?: number
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_period_key?: string | null
+          last_sent_at?: string | null
+          lease_until?: string | null
+          notes?: string | null
+          run_hour_utc?: number
+          scope?: string
+          slack_channel_id?: string | null
+          slack_channel_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_slack_reports_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_users: {
         Row: {
           client_id: string

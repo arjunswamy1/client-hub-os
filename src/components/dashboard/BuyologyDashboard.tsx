@@ -5,6 +5,7 @@ import { PRODUCT_LINES, ProductLine, classifyName, productLineLabel, QUALIFIED_S
 import BuyologyRingbaImport from "./BuyologyRingbaImport";
 import BuyologyCreativeAnalysis from "./BuyologyCreativeAnalysis";
 import BuyologyOptimizer from "./BuyologyOptimizer";
+import SlackReportCard from "./SlackReportCard";
 import MetaDashboard from "./MetaDashboard";
 import MetaConnectionCard from "./MetaConnectionCard";
 import { Card } from "@/components/ui/card";
@@ -276,9 +277,11 @@ export default function BuyologyDashboard() {
         <BuyologyCreativeAnalysis line={line} />
       </TabsContent>
 
-      <TabsContent value="optimizer">
+      <TabsContent value="optimizer" className="space-y-4">
         <BuyologyOptimizer line={line} />
+        <SlackReportCard clientId={BUYOLOGY_CLIENT_ID} scope="buyology" clientLabel="BuyologyIQ" />
       </TabsContent>
+
 
       <TabsContent value="meta" className="space-y-4">
         {lineSpend && lineSpend.campaigns.length > 0 && (

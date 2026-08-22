@@ -40,14 +40,27 @@ Deno.serve(async (req) => {
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
   const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  // Only the scheduler (or an operator holding the service key) may run the job.
-  const auth = req.headers.get('Authorization') || '';
-  if (auth.replace('Bearer ', '').trim() !== SERVICE_KEY) {
-    return json({ error: 'Unauthorized' }, 401);
-  }
-
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+
+  // Only the scheduler may run the job: pg_cron mints a one-time token row per
+  // invocation and passes it here, where it is validated and consumed.
+  const nonce = req.headers.get('x-cron-nonce') || '';
+  const bearer = (req.headers.get('Authorization') || '').replace('Bearer ', '').trim();
+  let authorized = bearer !== '' && bearer === SERVICE_KEY;
+  if (!authorized && /^[0-9a-f-]{36}$/i.test(nonce)) {
+    const { data: tokenRow } = await supabase
+      .from('cron_invocation_tokens')
+      .delete()
+      .eq('token', nonce)
+      .gt('created_at', new Date(Date.now() - 5 * 60000).toISOString())
+      .select('token')
+      .maybeSingle();
+    authorized = !!tokenRow;
+  }
+  if (!authorized) return json({ error: 'Unauthorized' }, 401);
+
   const now = new Date();
+
 
   const { data: schedules, error } = await supabase
     .from('ai_optimizer_schedules')

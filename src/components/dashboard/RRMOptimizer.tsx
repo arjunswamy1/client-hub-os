@@ -316,6 +316,57 @@ export default function RRMOptimizer({ line }: { line: RRMLine }) {
   const projectedCPRC =
     lineCalls.length > 0 && totalSavings > 0 ? Math.max(0, (lineSpend - totalSavings) / lineCalls.length) : lineCPRC;
 
+  /** Ladder ordering shared by the on-screen table and the PDF. */
+  const ladder = useMemo(
+    () =>
+      [...rows].sort(
+        (a, b) => (a.calls ? a.spend / a.calls : Infinity) - (b.calls ? b.spend / b.calls : Infinity),
+      ),
+    [rows],
+  );
+
+  const rangeLabel = `${format(dateRange.from, "MMM d, yyyy")} – ${format(dateRange.to, "MMM d, yyyy")}`;
+
+  /** Export the same analysis as a shareable PDF for the media buyer. */
+  const exportPdf = () => {
+    const doc = buildOptimizerPdf({
+      line,
+      platformLabel: platform === "google" ? "Google Ads" : "Meta Ads",
+      label,
+      rangeLabel,
+      spend: lineSpend,
+      rawCalls: lineCalls.length,
+      clicksPerCall,
+      currentCPRC: lineCPRC,
+      projectedCPRC,
+      totalSavings,
+      benchmark: benchmark ? { keyword: benchmark.keyword, cprc: benchCPRC } : null,
+      drains: drains.map((d) => ({
+        keyword: d.keyword,
+        matchType: d.matchType,
+        spend: d.spend,
+        clicks: d.clicks,
+        calls: d.calls,
+        cprc: d.cprc,
+        recoverable: d.recoverable,
+      })),
+      wasteTerms: wasteTerms.map((t) => ({ term: t.term, keyword: t.keyword, reason: t.reason, spend: t.spend, clicks: t.clicks })),
+      zeroCallTerms: zeroCallTerms.map((t) => ({ term: t.term, spend: t.spend, clicks: t.clicks })),
+      byMatch,
+      ladder: ladder.map((r) => ({
+        keyword: r.keyword,
+        matchType: r.matchType,
+        spend: r.spend,
+        clicks: r.clicks,
+        calls: r.calls,
+      })),
+      deadHours,
+      untagged,
+      showMatch: platform === "google",
+    });
+    doc.save(`RRM-${line}-optimization-plan-${format(dateRange.from, "yyyy-MM-dd")}-to-${format(dateRange.to, "yyyy-MM-dd")}.pdf`);
+  };
+
   if (isLoading) return <Skeleton className="h-64" />;
 
   return (
@@ -324,12 +375,18 @@ export default function RRMOptimizer({ line }: { line: RRMLine }) {
       <Card className="p-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h3 className="text-sm font-semibold">Cost per raw call — optimization plan</h3>
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="text-sm font-semibold">Cost per raw call — optimization plan</h3>
+              <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={exportPdf}>
+                <FileDown className="h-3.5 w-3.5" /> Export PDF
+              </Button>
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {money(lineSpend)} spend · {lineCalls.length} raw calls · {clicksPerCall ? clicksPerCall.toFixed(1) : "—"}{" "}
               clicks per call. Only raw-call efficiency is scored here; connect and conversion sit with routing and the buyer.
             </p>
           </div>
+
           <div className="flex items-end gap-6">
             <div>
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Current</p>

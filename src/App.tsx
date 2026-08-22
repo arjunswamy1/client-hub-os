@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
+import ClientDashboardRoute from "./pages/ClientDashboardRoute";
 import TasksPage from "./pages/TasksPage";
 import AgendasPage from "./pages/AgendasPage";
 import CreativePage from "./pages/CreativePage";

@@ -48,11 +48,11 @@ export default function JacuzziGeoPlacement({ leads }: Props) {
   const runSync = async () => {
     setSyncing(true);
     try {
-      const res = await sync(90);
+      const res = await sync(14);
       const parts = Object.entries(res?.results ?? {}).map(([k, v]) => `${k}: ${v}`);
       toast.success("Roku breakdown sync", {
         description: parts.length
-          ? `${parts.join(" · ")}. Reports are async — press again in ~1 min to collect finished ones.`
+          ? parts.join(" · ")
           : "Requested.",
       });
       await refetch();
@@ -151,9 +151,8 @@ export default function JacuzziGeoPlacement({ leads }: Props) {
         <Card className="flex items-start gap-2 p-4 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            No Roku breakdown rows yet for this range. Hit "Sync Roku breakdowns" — Roku builds these
-            reports asynchronously, so press it a second time after about a minute to collect them.
-            Lead-side geo below still works from the imported client sheet.
+            No Roku breakdown rows yet for this range. Run "Sync Roku breakdowns" to fetch the latest
+            Roku delivery. Lead-side geo below still works from the imported client sheet.
           </span>
         </Card>
       )}

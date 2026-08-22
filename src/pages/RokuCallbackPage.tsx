@@ -110,6 +110,71 @@ export default function RokuCallbackPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Connection status</CardTitle>
+          <div className="flex items-center gap-2">
+            {!loadingConns && (connections?.length ?? 0) > 0 && (
+              <Badge className="gap-1"><CheckCircle2 className="h-3 w-3" /> Connected</Badge>
+            )}
+            {!loadingConns && (connections?.length ?? 0) === 0 && (
+              <Badge variant="secondary" className="gap-1"><XCircle className="h-3 w-3" /> Not connected</Badge>
+            )}
+            <Button variant="outline" size="sm" onClick={loadConnections} disabled={loadingConns}>
+              <RefreshCw className={`h-3.5 w-3.5 ${loadingConns ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {loadingConns && (
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Checking stored Roku connections…
+            </p>
+          )}
+
+          {!loadingConns && (connections?.length ?? 0) === 0 && (
+            <p className="text-muted-foreground">
+              No Roku connection is stored yet. Open the Roku authorization URL (with{' '}
+              <code>&amp;state=&lt;client id&gt;</code> appended) and approve access — the tokens will be saved here
+              automatically.
+            </p>
+          )}
+
+          {!loadingConns &&
+            (connections ?? []).map((c) => (
+              <div key={c.id} className="rounded-md border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium">{c.clients?.name ?? 'Unassigned client'}</div>
+                  <Badge variant={c.status === 'connected' ? 'default' : 'secondary'}>{c.status ?? 'unknown'}</Badge>
+                </div>
+                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <dt>Ad account</dt>
+                  <dd className="text-foreground">{c.account_name ?? c.account_id ?? '—'}</dd>
+                  <dt>Token expires</dt>
+                  <dd className="text-foreground">
+                    {c.token_expires_at ? new Date(c.token_expires_at).toLocaleString() : '—'}
+                  </dd>
+                  <dt>Last sync</dt>
+                  <dd className="text-foreground">
+                    {c.last_synced_at ? new Date(c.last_synced_at).toLocaleString() : 'Never'}
+                  </dd>
+                  <dt>Updated</dt>
+                  <dd className="text-foreground">
+                    {c.updated_at ? new Date(c.updated_at).toLocaleString() : '—'}
+                  </dd>
+                </dl>
+                {c.sync_error && (
+                  <div className="mt-2 rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive">
+                    {c.sync_error}
+                  </div>
+                )}
+              </div>
+            ))}
+        </CardContent>
+      </Card>
+
+
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Authorization result</CardTitle>
           {status === 'done' && <Badge className="gap-1"><CheckCircle2 className="h-3 w-3" /> Connected</Badge>}
           {status === 'error' && <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Failed</Badge>}

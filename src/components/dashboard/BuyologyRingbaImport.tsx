@@ -154,7 +154,7 @@ function mapRows(csv: string[][]): Parsed {
       client_id: BUYOLOGY_CLIENT_ID,
       call_id: callId,
       call_date: iso,
-      campaign_name: get("campaign_name") || null,
+      campaign_name: campaign || null,
       target_name: get("target_name") || null,
       caller_number: get("caller_number") || null,
       inbound_number: get("inbound_number") || null,
@@ -172,8 +172,14 @@ function mapRows(csv: string[][]): Parsed {
     });
   }
 
-  if (rows.length === 0) throw new Error("No usable rows found — check the call date column format");
-  return { rows, skipped, missing: [] };
+  if (rows.length === 0)
+    throw new Error(
+      offCampaign > 0
+        ? `No live-campaign calls found — ${offCampaign} rows were outside Walk In Tubs / Bathroom Remodel`
+        : "No usable rows found — check the call date column format"
+    );
+  return { rows, skipped, offCampaign, missing: [] };
+
 }
 
 export default function BuyologyRingbaImport() {

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ChevronRight, ChevronDown, Search, Download, Info } from "lucide-react";
 import {
-  useMojaCalls, useRRMSpend, MojaCall, classifyCampaign, callMetrics, RRMLine,
+  useMojaCalls, useRRMSpend, MojaCall, classifyCampaign, callMetrics, RRMLine, platformOfLine,
 } from "@/hooks/useRRMData";
 import {
   useRRMAdSets, useRRMKeywords, useRRMSearchTerms, useRRMCreatives, useRRMCallAttribution,
@@ -46,16 +46,28 @@ interface CampaignAgg {
   costPerRawCall: number;
   costPerConnectedCall: number;
   revenuePerRawCall: number;
+  /** Connect rate of the unattributed calls modelled onto this campaign. */
+  looseConnectRate: number;
 }
 
 /** Five call/cost cells shared by every drill level. */
 function CallCells({
-  levelSpend, exact, estimated, estRevenue,
-}: { levelSpend: number; exact: MojaCall[]; estimated: number; estRevenue: number }) {
+  levelSpend, exact, estimated, estRevenue, estConnected, estConnectRate,
+}: {
+  levelSpend: number; exact: MojaCall[]; estimated: number; estRevenue: number;
+  /** Connected calls inside the modelled portion, when the caller knows it. */
+  estConnected?: number;
+  /** Connect rate to apply to the modelled portion when the exact set is empty. */
+  estConnectRate?: number;
+}) {
   const m = callMetrics(exact, levelSpend);
   const raw = m.raw + estimated;
-  // Connected/revenue only scale on the modelled portion when there is one.
-  const connected = m.connected + estimated * (m.raw > 0 ? m.connectRate : 0);
+  const modelledConnected =
+    estConnected != null
+      ? estConnected
+      : estimated * (m.raw > 0 ? m.connectRate : estConnectRate ?? 0);
+  const connected = m.connected + modelledConnected;
+
   const revenue = m.revenue + estRevenue;
   const div = (a: number, b: number) => (b > 0 ? a / b : 0);
   const modelled = estimated > 0.05;
@@ -122,6 +134,7 @@ function SearchTermRows({
             exact={[]}
             estimated={share(st.spend, campaign) * campaign.raw}
             estRevenue={share(st.spend, campaign) * campaign.revenue}
+            estConnectRate={campaign.looseConnectRate}
           />
         </TableRow>
       ))}
@@ -172,6 +185,7 @@ function KeywordRows({
                 exact={exact}
                 estimated={share(kw.spend, campaign) * campaign.estCalls}
                 estRevenue={0}
+                estConnectRate={campaign.looseConnectRate}
               />
             </TableRow>
             {open === kw.key && (
@@ -226,6 +240,7 @@ function CreativeRows({
             exact={attr.creativeCalls(ad.extra?.platformAdId, ad.name)}
             estimated={share(ad.spend, campaign) * campaign.estCalls}
             estRevenue={0}
+            estConnectRate={campaign.looseConnectRate}
           />
         </TableRow>
       ))}
@@ -269,6 +284,7 @@ function AdSetRows({
               exact={attr.adsetCalls(as.platformAdsetId)}
               estimated={share(as.spend, campaign) * campaign.estCalls}
               estRevenue={0}
+              estConnectRate={campaign.looseConnectRate}
             />
           </TableRow>
           {open === as.key &&
@@ -317,7 +333,7 @@ export default function RRMPlatformPanel({ platform }: Props) {
         ({
           name, line, spend: 0, impressions: 0, clicks: 0, conversions: 0,
           exactCalls: [], estCalls: 0, raw: 0, connected: 0, converted: 0, revenue: 0,
-          costPerRawCall: 0, costPerConnectedCall: 0, revenuePerRawCall: 0,
+          costPerRawCall: 0, costPerConnectedCall: 0, revenuePerRawCall: 0, looseConnectRate: 0,
         } as CampaignAgg);
       cur.spend += Number(r.spend || 0);
       cur.impressions += Number(r.impressions || 0);
@@ -336,14 +352,15 @@ export default function RRMPlatformPanel({ platform }: Props) {
     for (const line of ["windows", "plumbing"] as RRMLine[]) {
       const inLine = byLine(line);
       const lineSpend = inLine.reduce((s, c) => s + c.spend, 0);
-      const loose = attr.unattributed(line).filter(
-        (c) => ((c.platform || "").toLowerCase() === "meta") === (platform === "meta"),
-      );
+      // A line only ever runs on one channel, so its unattributed calls belong
+      // entirely to that channel's panel: Windows → Meta, Plumbing → Google.
+      const loose = platformOfLine(line) === platform ? attr.unattributed(line) : [];
       const looseRevenue = loose.reduce((s, c) => s + Number(c.revenue || 0), 0);
       const looseConnected = loose.filter((c) => c.connected).length;
       for (const c of inLine) {
         const w = lineSpend > 0 ? c.spend / lineSpend : inLine.length ? 1 / inLine.length : 0;
         const m = callMetrics(c.exactCalls, c.spend);
+        c.looseConnectRate = loose.length ? looseConnected / loose.length : 0;
         c.estCalls = loose.length * w;
         c.raw = m.raw + c.estCalls;
         c.connected = m.connected + looseConnected * w;
@@ -491,6 +508,7 @@ export default function RRMPlatformPanel({ platform }: Props) {
                       exact={c.exactCalls}
                       estimated={c.estCalls}
                       estRevenue={c.revenue - c.exactCalls.reduce((s, m) => s + Number(m.revenue || 0), 0)}
+                      estConnected={c.connected - c.exactCalls.filter((m) => m.connected).length}
                     />
                   </TableRow>
                   {open === c.name && (

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
-import { RRM_CLIENT_ID, MojaCall, RRMLine, callLine } from "@/hooks/useRRMData";
+import { RRM_CLIENT_ID, MojaCall, RRMLine, callLine, platformOfLine } from "@/hooks/useRRMData";
 
 function useDateStrings() {
   const { dateRange } = useDateRange();
@@ -273,7 +273,8 @@ export function useRRMCallAttribution(calls: MojaCall[]): RRMAttributionIndex {
     const line = callLine(c);
     const term = normKey(c.utm_term);
     const content = normKey(c.utm_content);
-    const isGoogle = (c.platform || "").toLowerCase() !== "meta";
+    // Channel follows the service line: Plumbing = Google, Windows = Meta.
+    const isGoogle = platformOfLine(line) === "google";
 
     let ref: AdRef | undefined;
     if (ready) {

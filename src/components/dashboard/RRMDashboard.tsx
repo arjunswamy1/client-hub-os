@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import {
   useMojaCalls, useRRMSpend, MojaCall, RRMCampaignRow, RRMLine,
-  RRM_CLIENT_ID, classifyCampaign, callLine, callMetrics, CallMetrics,
+  RRM_CLIENT_ID, classifyCampaign, callLine, callPlatform, callMetrics, CallMetrics,
 } from "@/hooks/useRRMData";
 import { useRRMCallAttribution } from "@/hooks/useRRMDrillDown";
 import RRMPlatformPanel from "@/components/dashboard/RRMPlatformPanel";
@@ -553,7 +553,7 @@ export default function RRMDashboard() {
                   </TableRow>
                 )}
                 {scopedCalls.slice(0, 200).map((c) => {
-                  const isMeta = (c.platform || "").toLowerCase() === "meta";
+                  const isMeta = callPlatform(c) === "meta";
                   const detail = isMeta ? c.utm_content : c.utm_term;
                   return (
                     <TableRow key={c.id}>

@@ -172,25 +172,29 @@ Deno.serve(async (req) => {
     const endAt = end.toISOString().slice(0, 19) + "Z";
 
     const results: Record<string, number | string> = {};
+    // Reports are async and the gateway cuts long invocations, so each call
+    // either kicks off a report or picks up one that finished since last time.
+    const pending: Record<string, string> = { ...(meta.dim_pending ?? {}) };
 
     for (const bd of BREAKDOWNS) {
       if (only && !only.includes(bd.entity)) continue;
       try {
-        const uid = await createReport(token, bd.dimension, startAt, endAt, accountUid ?? undefined);
-        let downloadUrl: string | null = null;
-        let status = "";
-        for (let i = 0; i < 12; i++) {
-          const r = await getReport(token, uid);
-          status = r.status;
-          downloadUrl = r.downloadUrl;
-          if (status === "done" || status === "error") break;
-          await sleep(5000);
+        let uid = pending[bd.entity];
+        if (!uid) {
+          uid = await createReport(token, bd.dimension, startAt, endAt, accountUid ?? undefined);
+          pending[bd.entity] = uid;
+          results[bd.entity] = "queued";
+          continue;
         }
-        if (status !== "done" || !downloadUrl) { results[bd.entity] = `pending (${status || "unknown"})`; continue; }
 
-        const csvRes = await fetch(downloadUrl);
+        const r = await getReport(token, uid);
+        if (r.status === "error") { delete pending[bd.entity]; results[bd.entity] = "report error"; continue; }
+        if (r.status !== "done" || !r.downloadUrl) { results[bd.entity] = `pending (${r.status || "running"})`; continue; }
+
+        const csvRes = await fetch(r.downloadUrl);
         if (!csvRes.ok) throw new Error(`download ${csvRes.status}`);
         const rows = parseCsv(await csvRes.text());
+        delete pending[bd.entity];
         if (!rows.length) { results[bd.entity] = 0; continue; }
 
         const header = rows[0].map((h) => h.trim().toLowerCase());
@@ -201,9 +205,9 @@ Deno.serve(async (req) => {
         if (iDate < 0 || iDim < 0) { results[bd.entity] = `bad header: ${header.join("|")}`; continue; }
 
         const map = new Map<string, any>();
-        for (const r of rows.slice(1)) {
-          const date = normDate(r[iDate] ?? "");
-          const name = (r[iDim] ?? "").trim() || "Unknown";
+        for (const row of rows.slice(1)) {
+          const date = normDate(row[iDate] ?? "");
+          const name = (row[iDim] ?? "").trim() || "Unknown";
           if (!date) continue;
           const key = `${date}|${name}`;
           const cur = map.get(key) ?? {
@@ -216,8 +220,8 @@ Deno.serve(async (req) => {
             spend: 0,
             impressions: 0,
           };
-          cur.impressions += iImp >= 0 ? Math.round(num(r[iImp] ?? "")) : 0;
-          cur.spend += iSpend >= 0 ? num(r[iSpend] ?? "") : 0;
+          cur.impressions += iImp >= 0 ? Math.round(num(row[iImp] ?? "")) : 0;
+          cur.spend += iSpend >= 0 ? num(row[iSpend] ?? "") : 0;
           map.set(key, cur);
         }
         const payload = Array.from(map.values());
@@ -232,6 +236,7 @@ Deno.serve(async (req) => {
         results[bd.entity] = `error: ${(e as Error).message}`;
       }
     }
+
 
     await admin
       .from("platform_connections")

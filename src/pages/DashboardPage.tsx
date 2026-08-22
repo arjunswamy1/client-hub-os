@@ -36,6 +36,13 @@ function isCannaballClient(client: { slug: string; name: string } | null): boole
   return client.slug.toLowerCase() === 'cannaball' || client.name.toLowerCase().includes('cannaball');
 }
 
+/** Detect Jacuzzi client */
+function isJacuzziClient(client: { slug: string; name: string } | null): boolean {
+  if (!client) return false;
+  return client.slug.toLowerCase().includes('jacuzzi') || client.name.toLowerCase().includes('jacuzzi');
+}
+
+
 function DashboardContent() {
   const { activeClient } = useClient();
   const { data: config } = useDashboardConfig();

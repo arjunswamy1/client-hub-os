@@ -188,16 +188,24 @@ Return ONLY valid JSON in this exact shape:
     });
 
     if (aiResponse.status === 429) {
-      return new Response(JSON.stringify({ error: "AI is rate limited — try again in a minute." }), {
+      const retryAfter = aiResponse.headers.get("Retry-After");
+      return new Response(JSON.stringify({ error: "AI is rate limited — try again in a minute.", retryAfter }), {
         status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (aiResponse.status === 402) {
-      return new Response(
-        JSON.stringify({ error: "AI credits are exhausted. Add credits in Lovable (Settings → Plans & credits) to run the optimizer." }),
-        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (aiResponse.status === 402 || aiResponse.status === 403) {
+      let message = aiResponse.status === 402
+        ? "AI credits are exhausted. Add credits in Lovable (Settings → Plans & credits) to run the optimizer."
+        : "Lovable AI is blocked for this workspace (disabled or a credit limit was reached). A workspace admin needs to unblock it.";
+      try {
+        const j = await aiResponse.json();
+        if (j?.error?.message || j?.message) message = j.error?.message || j.message;
+      } catch { /* keep default */ }
+      return new Response(JSON.stringify({ error: message, blocked: true }), {
+        status: aiResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
       return new Response(JSON.stringify({ error: `AI error [${aiResponse.status}]: ${errText.substring(0, 300)}` }), {

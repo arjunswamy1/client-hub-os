@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { CheckCircle2, AlertTriangle, RefreshCw, Chrome, Facebook, Link as LinkIcon, ExternalLink, PlayCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { RRM_CLIENT_ID } from "@/hooks/useRRMData";
-import { useRRMConnections, RRMConnection } from "@/hooks/useRRMDrillDown";
+import { useRRMConnections, RRMConnection, RRMAdAccount } from "@/hooks/useRRMDrillDown";
+
 
 const PLATFORMS = [
   {

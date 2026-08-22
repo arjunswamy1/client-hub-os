@@ -63,10 +63,10 @@ function KPI({ label, value, sub, icon: Icon, tone }: {
   );
 }
 
-/** Side-by-side Windows vs Plumbing scorecard — the headline view. */
-function LineComparison({
-  windows, plumbing, blended,
-}: { windows: CallMetrics; plumbing: CallMetrics; blended: CallMetrics }) {
+/** Full metric scorecard for the active service line only — no blended column. */
+function LineScorecard({ line, metrics }: { line: SvcLine; metrics: CallMetrics }) {
+  const meta = LINE_META[line];
+  const Icon = meta.icon;
   const rows: { label: string; get: (m: CallMetrics) => string; hint?: string; tone?: (m: CallMetrics) => string }[] = [
     { label: "Media spend", get: (m) => fmtMoney(m.spend) },
     { label: "Raw calls", get: (m) => String(m.raw), hint: "Every call that rang" },
@@ -90,18 +90,14 @@ function LineComparison({
 
   return (
     <Card className="p-4">
-      <h3 className="mb-3 text-sm font-semibold">Windows vs Plumbing</h3>
+      <h3 className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold">
+        <Icon className="h-3.5 w-3.5" /> {meta.platformLabel} performance
+      </h3>
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead className="text-xs">Metric</TableHead>
-            <TableHead className="text-right text-xs">
-              <span className="inline-flex items-center gap-1"><Blinds className="h-3 w-3" /> Windows · Meta</span>
-            </TableHead>
-            <TableHead className="text-right text-xs">
-              <span className="inline-flex items-center gap-1"><Wrench className="h-3 w-3" /> Plumbing · Google</span>
-            </TableHead>
-            <TableHead className="text-right text-xs">Blended</TableHead>
+            <TableHead className="text-right text-xs">{meta.platformLabel}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -111,9 +107,9 @@ function LineComparison({
                 {r.label}
                 {r.hint && <span className="ml-1.5 text-[10px] text-muted-foreground">{r.hint}</span>}
               </TableCell>
-              <TableCell className={`text-right text-xs font-medium ${r.tone?.(windows) || ""}`}>{r.get(windows)}</TableCell>
-              <TableCell className={`text-right text-xs font-medium ${r.tone?.(plumbing) || ""}`}>{r.get(plumbing)}</TableCell>
-              <TableCell className={`text-right text-xs ${r.tone?.(blended) || ""}`}>{r.get(blended)}</TableCell>
+              <TableCell className={`text-right text-xs font-medium ${r.tone?.(metrics) || ""}`}>
+                {r.get(metrics)}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -121,6 +117,7 @@ function LineComparison({
     </Card>
   );
 }
+
 
 export default function RRMDashboard() {
   const { data: calls = [], isLoading, refetch: refetchCalls } = useMojaCalls();

@@ -106,6 +106,42 @@ function normHour(v: string): number | null {
   return h >= 0 && h <= 23 ? h : null;
 }
 
+/**
+ * Roku reports hours in its account clock (US/Pacific). The dashboard is read in
+ * Eastern time, so shift each date+hour into America/New_York before storing.
+ */
+const ROKU_REPORT_TZ = "America/Los_Angeles";
+const DISPLAY_TZ = "America/New_York";
+
+function tzParts(tz: string, instant: Date) {
+  const p = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+  }).formatToParts(instant);
+  const get = (t: string) => Number(p.find((x) => x.type === t)?.value ?? 0);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour") % 24 };
+}
+
+/** Wall-clock date+hour in `tz` -> UTC instant. */
+function zonedToUtc(date: string, hour: number, tz: string): Date {
+  const [y, m, d] = date.split("-").map(Number);
+  const guess = Date.UTC(y, m - 1, d, hour);
+  const wall = tzParts(tz, new Date(guess));
+  const asUtc = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour);
+  return new Date(guess - (asUtc - guess));
+}
+
+function toDisplayHour(date: string, hour: number): { date: string; hour: number } {
+  const instant = zonedToUtc(date, hour, ROKU_REPORT_TZ);
+  const p = tzParts(DISPLAY_TZ, instant);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return { date: `${p.year}-${pad(p.month)}-${pad(p.day)}`, hour: p.hour };
+}
+
 function stationFromCampaign(name: string, fallback: string): string {
   const m = (name || "").toUpperCase().match(/CT\s?-?(\d{2})/);
   return m ? `CT${m[1]}` : fallback;
@@ -164,9 +200,10 @@ async function persist(admin: any, clientId: string, rows: string[][]) {
 
   const hourlyMap = new Map<string, any>();
   for (const r of rows.slice(1)) {
-    const date = normDate(r[iDate] ?? "");
-    const hour = normHour(r[iHour] ?? "");
-    if (!date || hour === null) continue;
+    const rawDate = normDate(r[iDate] ?? "");
+    const rawHour = normHour(r[iHour] ?? "");
+    if (!rawDate || rawHour === null) continue;
+    const { date, hour } = toDisplayHour(rawDate, rawHour);
     const station = stationFromCampaign(iCamp >= 0 ? r[iCamp] ?? "" : "", "CT14");
     const key = `${date}|${hour}|${station}`;
     const cur = hourlyMap.get(key) ?? {

@@ -395,7 +395,7 @@ export default function JacuzziDashboard() {
         <KPI label="Payout vs cost" value={totals.cpl > 0 ? `${(currentRate / totals.cpl).toFixed(2)}x` : "—"} sub={`vs ${money(currentRate)} payout`} icon={TrendingUp} />
       </div>
 
-      <Tabs defaultValue="daily" className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0 scrollbar-none">
           <TabsList className="inline-flex w-auto bg-secondary/50">
             <TabsTrigger value="daily" className="gap-1.5 text-xs">Daily</TabsTrigger>

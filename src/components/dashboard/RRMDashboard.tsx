@@ -218,7 +218,7 @@ export default function RRMDashboard() {
       name, ...v, exact: attr.campaignCalls(name),
     }));
 
-    return (["windows", "plumbing"] as RRMLine[])
+    return ([line] as RRMLine[])
       .flatMap((l) => {
         const inLine = list.filter((c) => c.line === l);
         if (!inLine.length) return [];

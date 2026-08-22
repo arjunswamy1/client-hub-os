@@ -1,0 +1,251 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useDateRange } from "@/contexts/DateRangeContext";
+import { format } from "date-fns";
+
+export const JACUZZI_CLIENT_ID = "dc25f274-20f4-4650-b0cc-654073b925f4";
+
+/** Stations we get paid against. CT14 is the live Roku campaign. */
+export const JACUZZI_STATIONS = ["CT14", "CT13", "CT12", "CT16", "CT26"] as const;
+
+export const STATION_NOTES: Record<string, string> = {
+  CT14: "Main Roku campaign",
+  CT13: "Affiliate station (unused) — QR scans re-attributed to CT14",
+  CT12: "Legacy AI Digital flight",
+  CT16: "Bonus calls — residual media",
+  CT26: "Bonus calls — residual media",
+};
+
+export interface JacuzziLead {
+  id: string;
+  transaction_id: string;
+  transaction_date: string;
+  transaction_time: string | null;
+  lead_type: string; // 'call' | 'qr'
+  station_code: string | null;
+  attributed_station: string | null;
+  toll_free_number: string | null;
+  caller_ani: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
+  billing_zip: string | null;
+  call_status: string | null;
+  payout_rate: number;
+  source: string;
+}
+
+export interface JacuzziDelivery {
+  date: string;
+  station_code: string;
+  campaign_name: string | null;
+  impressions: number;
+  spend: number;
+  cpm: number;
+}
+
+export interface JacuzziHourly {
+  date: string;
+  hour: number;
+  station_code: string;
+  impressions: number;
+  spend: number;
+}
+
+export interface JacuzziRate {
+  effective_from: string;
+  rate: number;
+}
+
+function useDates() {
+  const { dateRange } = useDateRange();
+  return {
+    from: format(dateRange.from, "yyyy-MM-dd"),
+    to: format(dateRange.to, "yyyy-MM-dd"),
+  };
+}
+
+export function useJacuzziLeads() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["jacuzzi-leads", from, to],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jacuzzi_leads")
+        .select(
+          "id, transaction_id, transaction_date, transaction_time, lead_type, station_code, attributed_station, toll_free_number, caller_ani, billing_city, billing_state, billing_zip, call_status, payout_rate, source"
+        )
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .gte("transaction_date", from)
+        .lte("transaction_date", to)
+        .order("transaction_date", { ascending: false })
+        .limit(5000);
+      if (error) throw error;
+      return (data || []) as JacuzziLead[];
+    },
+  });
+}
+
+export function useJacuzziDelivery() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["jacuzzi-delivery", from, to],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jacuzzi_delivery")
+        .select("date, station_code, campaign_name, impressions, spend, cpm")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .gte("date", from)
+        .lte("date", to)
+        .order("date", { ascending: true })
+        .limit(5000);
+      if (error) throw error;
+      return (data || []) as JacuzziDelivery[];
+    },
+  });
+}
+
+export function useJacuzziHourly() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["jacuzzi-hourly", from, to],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jacuzzi_hourly_delivery")
+        .select("date, hour, station_code, impressions, spend")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .gte("date", from)
+        .lte("date", to)
+        .order("date", { ascending: true })
+        .limit(10000);
+      if (error) throw error;
+      return (data || []) as JacuzziHourly[];
+    },
+  });
+}
+
+export function useJacuzziRates() {
+  return useQuery({
+    queryKey: ["jacuzzi-rates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jacuzzi_payout_rates")
+        .select("effective_from, rate")
+        .eq("client_id", JACUZZI_CLIENT_ID)
+        .order("effective_from", { ascending: true });
+      if (error) throw error;
+      return (data || []) as JacuzziRate[];
+    },
+  });
+}
+
+/** Payout in effect on a given date (YYYY-MM-DD). */
+export function rateForDate(rates: JacuzziRate[], date: string): number {
+  let rate = 0;
+  for (const r of rates) {
+    if (date >= r.effective_from) rate = Number(r.rate);
+  }
+  return rate;
+}
+
+export interface ParsedLead {
+  transaction_id: string;
+  transaction_date: string;
+  transaction_time: string | null;
+  lead_type: string;
+  station_code: string | null;
+  attributed_station: string | null;
+  toll_free_number: string | null;
+  caller_ani: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
+  billing_zip: string | null;
+  call_status: string | null;
+}
+
+function normDate(v: string): string | null {
+  const s = (v || "").trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (m) {
+    const yr = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${yr}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : format(d, "yyyy-MM-dd");
+}
+
+/**
+ * Parses a pasted copy of the client's TM recognized-lead sheet (tab or comma
+ * separated, header row required). QR rows carry the station in Script Version;
+ * CT13 QR scans are re-attributed to CT14 (wrong QR code on a CT14 creative).
+ */
+export function parseTmSheet(text: string): ParsedLead[] {
+  const lines = text.trim().split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+  const delim = lines[0].includes("\t") ? "\t" : ",";
+  const header = lines[0].split(delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
+  const idx = (name: string) => header.findIndex((h) => h === name);
+  const cols = {
+    tid: idx("transaction id"),
+    date: idx("transaction date"),
+    time: idx("transaction time"),
+    detail: idx("record detail"),
+    status: idx("calls status"),
+    tfn: idx("toll free number"),
+    station: idx("station code"),
+    script: idx("script version"),
+    ani: idx("caller ani"),
+    city: idx("billing city"),
+    state: idx("billing state"),
+    zip: idx("billing zip code"),
+  };
+  const out: ParsedLead[] = [];
+  for (const line of lines.slice(1)) {
+    const c = line.split(delim).map((v) => v.trim().replace(/^"|"$/g, ""));
+    const get = (i: number) => (i >= 0 && c[i] ? c[i] : "");
+    const tid = get(cols.tid);
+    const date = normDate(get(cols.date));
+    if (!tid || !date) continue;
+    const station = get(cols.station).toUpperCase();
+    const script = get(cols.script).toUpperCase();
+    const isQr = get(cols.detail).toUpperCase() === "QR" || station === "QR";
+    const rawStation = isQr ? (script.startsWith("CT") ? script : station) : station;
+    const attributed = isQr && (rawStation === "CT13" || rawStation === "CT14") ? "CT14" : rawStation;
+    const timeRaw = get(cols.time);
+    out.push({
+      transaction_id: tid,
+      transaction_date: date,
+      transaction_time: /\d{1,2}:\d{2}/.test(timeRaw) ? timeRaw.split(" ").pop()!.slice(0, 8) : null,
+      lead_type: isQr ? "qr" : "call",
+      station_code: rawStation || null,
+      attributed_station: attributed || null,
+      toll_free_number: get(cols.tfn) || null,
+      caller_ani: get(cols.ani) || null,
+      billing_city: get(cols.city) || null,
+      billing_state: get(cols.state) || null,
+      billing_zip: get(cols.zip) || null,
+      call_status: get(cols.status) || null,
+    });
+  }
+  return out;
+}
+
+export function useImportLeads() {
+  const qc = useQueryClient();
+  return async (rows: ParsedLead[], rates: JacuzziRate[]) => {
+    const payload = rows.map((r) => ({
+      ...r,
+      client_id: JACUZZI_CLIENT_ID,
+      payout_rate: rateForDate(rates, r.transaction_date),
+      source: "client_sheet",
+    }));
+    const { error } = await supabase
+      .from("jacuzzi_leads")
+      .upsert(payload, { onConflict: "client_id,transaction_id" });
+    if (error) throw error;
+    await qc.invalidateQueries({ queryKey: ["jacuzzi-leads"] });
+    return payload.length;
+  };
+}

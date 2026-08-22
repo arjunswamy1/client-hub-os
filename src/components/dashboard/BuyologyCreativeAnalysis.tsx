@@ -1,13 +1,14 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { Sparkles, TrendingUp, AlertTriangle, FlaskConical, Link2Off } from "lucide-react";
+import { Sparkles, TrendingUp, AlertTriangle, FlaskConical, Link2Off, ChevronRight, PhoneCall } from "lucide-react";
 import {
   useBuyologyCreativeAnalysis,
   CreativeRow,
+  CallWithCreative,
 } from "@/hooks/useBuyologyCreativeAnalysis";
 import {
   ProductLine,
@@ -16,6 +17,7 @@ import {
   QUALIFIED_SECONDS,
   PREMIUM_SECONDS,
 } from "@/lib/buyologyProductLines";
+import { format } from "date-fns";
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const money2 = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -61,9 +63,103 @@ function InsightCard({
   );
 }
 
+function CallDrilldown({ row, calls }: { row: CreativeRow; calls: CallWithCreative[] }) {
+  const [limit, setLimit] = useState(25);
+  if (calls.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No attributed calls for {row.adName} yet — check that <code className="text-[11px]">utm_content</code> is set on this ad.
+      </p>
+    );
+  }
+  const shown = calls.slice(0, limit);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <PhoneCall className="h-3.5 w-3.5 text-primary" />
+        <p className="text-xs font-semibold">
+          {calls.length} call{calls.length === 1 ? "" : "s"} · {row.adName}
+        </p>
+        <span className="text-[11px] text-muted-foreground">
+          {row.qualified} qualified ({QUALIFIED_SECONDS}s+) · {row.premium} premium ({PREMIUM_SECONDS}s+) · {row.converted} converted
+        </span>
+      </div>
+      <div className="overflow-x-auto rounded-md border bg-background">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-[11px]">Date</TableHead>
+              <TableHead className="text-[11px]">Call ID</TableHead>
+              <TableHead className="text-[11px]">Campaign</TableHead>
+              <TableHead className="text-[11px]">Buyer / target</TableHead>
+              <TableHead className="text-[11px]">Caller</TableHead>
+              <TableHead className="text-[11px]">DID</TableHead>
+              <TableHead className="text-right text-[11px]">Talk time</TableHead>
+              <TableHead className="text-[11px]">Outcome</TableHead>
+              <TableHead className="text-right text-[11px]">Revenue</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {shown.map((c) => {
+              const d = Number(c.duration_seconds || 0);
+              return (
+                <TableRow key={c.call_id}>
+                  <TableCell className="whitespace-nowrap text-[11px]">
+                    {format(new Date(c.call_date), "MMM d, h:mm a")}
+                  </TableCell>
+                  <TableCell className="max-w-[160px] truncate font-mono text-[11px] text-muted-foreground">
+                    {c.call_id}
+                  </TableCell>
+                  <TableCell className="max-w-[180px] truncate text-[11px]">{c.campaign_name || "—"}</TableCell>
+                  <TableCell className="max-w-[160px] truncate text-[11px]">{c.target_name || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[11px]">{c.caller_number || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[11px]">{c.inbound_number || "—"}</TableCell>
+                  <TableCell className="text-right text-[11px] font-medium">
+                    <span
+                      className={
+                        d >= PREMIUM_SECONDS ? "text-emerald-600" :
+                        d >= QUALIFIED_SECONDS ? "text-primary" : "text-muted-foreground"
+                      }
+                    >
+                      {dur(d)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="space-x-1 whitespace-nowrap">
+                    {c.converted ? (
+                      <Badge className="text-[10px]">Converted</Badge>
+                    ) : c.connected ? (
+                      <Badge variant="secondary" className="text-[10px]">Connected</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">No connect</Badge>
+                    )}
+                    {d >= PREMIUM_SECONDS ? (
+                      <Badge variant="outline" className="text-[10px]">Premium</Badge>
+                    ) : d >= QUALIFIED_SECONDS ? (
+                      <Badge variant="outline" className="text-[10px]">Qualified</Badge>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right text-[11px]">
+                    {Number(c.revenue || 0) ? money2(Number(c.revenue)) : "—"}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      {calls.length > shown.length && (
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setLimit(limit + 50)}>
+          Show 50 more ({calls.length - shown.length} remaining)
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function BuyologyCreativeAnalysis({ line }: { line: ProductLine | "all" }) {
   const { data, isLoading } = useBuyologyCreativeAnalysis();
   const [sort, setSort] = useState<SortKey>("spend");
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const all = data?.creativeRows || [];
@@ -92,6 +188,14 @@ export default function BuyologyCreativeAnalysis({ line }: { line: ProductLine |
       qualifiedRate: total ? qualified / total : 0,
     };
   }, [rows]);
+
+  const callsFor = (r: CreativeRow) => {
+    const all = data?.calls || [];
+    const list = r.matched
+      ? all.filter((c) => c.creativeKey === r.key)
+      : all.filter((c) => !c.creativeKey && c.line === r.line);
+    return [...list].sort((a, b) => (a.call_date < b.call_date ? 1 : -1));
+  };
 
   /** Optimization context: winners to scale, waste to cut, tests to run */
   const insights = useMemo(() => {
@@ -236,9 +340,16 @@ export default function BuyologyCreativeAnalysis({ line }: { line: ProductLine |
               </TableHeader>
               <TableBody>
                 {rows.map((r: CreativeRow) => (
-                  <TableRow key={r.key} className={!r.matched ? "opacity-70" : undefined}>
+                  <Fragment key={r.key}>
+                  <TableRow
+                    className={`cursor-pointer ${!r.matched ? "opacity-70" : ""}`}
+                    onClick={() => setExpanded(expanded === r.key ? null : r.key)}
+                  >
                     <TableCell className="max-w-[300px]">
                       <div className="flex items-center gap-2">
+                        <ChevronRight
+                          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${expanded === r.key ? "rotate-90" : ""}`}
+                        />
                         {r.thumbnailUrl && (
                           <img
                             src={r.thumbnailUrl}
@@ -276,8 +387,17 @@ export default function BuyologyCreativeAnalysis({ line }: { line: ProductLine |
                       </div>
                     </TableCell>
                   </TableRow>
+                  {expanded === r.key && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={9} className="bg-muted/30 p-3">
+                        <CallDrilldown row={r} calls={callsFor(r)} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </Fragment>
                 ))}
               </TableBody>
+
             </Table>
           </div>
         )}

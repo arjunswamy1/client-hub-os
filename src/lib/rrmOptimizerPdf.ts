@@ -124,10 +124,11 @@ export function buildOptimizerPdf(i: OptimizerPdfInput) {
     const rec = i.drains.reduce((s, d) => s + d.recoverable, 0);
     heading(`Action 1 — Cut or cap ${i.drains.length} ${i.label}${i.drains.length === 1 ? "" : "s"} (${money(rec)} recoverable)`);
     body(
-      `Each row below takes a meaningful slice of ${i.line} spend at more than 2x the line's ${money2(i.currentCPRC)} cost per raw call` +
-        (i.benchmark ? `, while "${i.benchmark.keyword}" delivers calls at ${money2(i.benchmark.cprc)}` : "") +
-        . Pause the zero-call rows outright; for the rest, cut bids or budget until they clear ${money2(i.currentCPRC)}.`,
+      `Each row below takes a meaningful slice of ${cap(i.line)} spend at more than 2x the line's ${money2(i.currentCPRC)} cost per raw call` +
+        (i.benchmark ? `, while ${i.benchmark.keyword} delivers calls at ${money2(i.benchmark.cprc)}` : "") +
+        `. Pause the zero-call rows outright; for the rest, cut bids or budget until they clear ${money2(i.currentCPRC)}.`,
     );
+
     table(
       [i.label.replace(/^./, (c) => c.toUpperCase()), ...(i.showMatch ? ["Match"] : []), "Spend", "Clicks", "Calls", "Cost / raw call", "Recoverable", "Action"],
       i.drains.map((d) => [

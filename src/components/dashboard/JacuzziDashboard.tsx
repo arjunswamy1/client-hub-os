@@ -19,7 +19,9 @@ import {
 } from "lucide-react";
 import JacuzziReconciliation from "./JacuzziReconciliation";
 import { format, parseISO } from "date-fns";
+import { useDateRange } from "@/contexts/DateRangeContext";
 import { toast } from "sonner";
+
 
 const money = (n: number) =>
   `$${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;

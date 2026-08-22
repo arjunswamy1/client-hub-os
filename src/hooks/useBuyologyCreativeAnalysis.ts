@@ -292,12 +292,16 @@ export function useBuyologyLineSpend() {
         other: { spend: 0, impressions: 0, clicks: 0 },
       };
       const campaigns = new Map<string, { name: string; line: ProductLine; spend: number; impressions: number; clicks: number }>();
+      /** `${date}|${line}` -> spend */
+      const daily = new Map<string, number>();
 
       for (const r of data || []) {
         const line = classifyName(r.campaign_name);
         totals[line].spend += Number(r.spend || 0);
         totals[line].impressions += Number(r.impressions || 0);
         totals[line].clicks += Number(r.clicks || 0);
+        const dKey = `${String(r.date).slice(0, 10)}|${line}`;
+        daily.set(dKey, (daily.get(dKey) || 0) + Number(r.spend || 0));
         const c = campaigns.get(r.campaign_name) || {
           name: r.campaign_name, line, spend: 0, impressions: 0, clicks: 0,
         };
@@ -307,7 +311,12 @@ export function useBuyologyLineSpend() {
         campaigns.set(r.campaign_name, c);
       }
 
-      return { totals, campaigns: [...campaigns.values()].sort((a, b) => b.spend - a.spend) };
+      return {
+        totals,
+        daily,
+        campaigns: [...campaigns.values()].sort((a, b) => b.spend - a.spend),
+      };
+
     },
   });
 }

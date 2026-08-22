@@ -7,6 +7,7 @@ import MetaDashboard from '@/components/dashboard/MetaDashboard';
 import BillyDashboard from '@/components/dashboard/BillyDashboard';
 import FourJsDashboard from '@/components/dashboard/FourJsDashboard';
 import CannaballDashboard from '@/components/dashboard/CannaballDashboard';
+import JacuzziDashboard from '@/components/dashboard/JacuzziDashboard';
 import DashboardHighlights from '@/components/dashboard/DashboardHighlights';
 import DateRangePicker from '@/components/dashboard/DateRangePicker';
 import { BookCallButton } from '@/components/portal/BookCallButton';
@@ -35,6 +36,13 @@ function isCannaballClient(client: { slug: string; name: string } | null): boole
   return client.slug.toLowerCase() === 'cannaball' || client.name.toLowerCase().includes('cannaball');
 }
 
+/** Detect Jacuzzi client */
+function isJacuzziClient(client: { slug: string; name: string } | null): boolean {
+  if (!client) return false;
+  return client.slug.toLowerCase().includes('jacuzzi') || client.name.toLowerCase().includes('jacuzzi');
+}
+
+
 function DashboardContent() {
   const { activeClient } = useClient();
   const { data: config } = useDashboardConfig();
@@ -50,6 +58,7 @@ function DashboardContent() {
   const isBilly = isBillyClient(activeClient) || config?.revenue_source === 'ringba';
   const isFourJs = isFourJsClient(activeClient);
   const isCannaball = isCannaballClient(activeClient);
+  const isJacuzzi = isJacuzziClient(activeClient);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -57,7 +66,7 @@ function DashboardContent() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">{activeClient.name}</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
-            {isCannaball ? 'Roku CTV — Pay-per-Call Attribution' : isFourJs ? 'Final Expense — Pay-per-Call Attribution' : isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
+            {isJacuzzi ? 'Bath Remodel CTV — Cost-per-Lead (Calls + QR Scans)' : isCannaball ? 'Roku CTV — Pay-per-Call Attribution' : isFourJs ? 'Final Expense — Pay-per-Call Attribution' : isBilly ? 'Revenue Engine — Lead Generation' : 'Ad performance & analytics'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -66,7 +75,9 @@ function DashboardContent() {
         </div>
       </div>
 
-      {isCannaball ? (
+      {isJacuzzi ? (
+        <JacuzziDashboard />
+      ) : isCannaball ? (
         <CannaballDashboard />
       ) : isFourJs ? (
         <FourJsDashboard />

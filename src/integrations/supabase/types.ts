@@ -2943,6 +2943,215 @@ export type Database = {
         }
         Relationships: []
       }
+      jacuzzi_delivery: {
+        Row: {
+          campaign_name: string | null
+          client_id: string
+          cpm: number
+          created_at: string
+          date: string
+          id: string
+          impressions: number
+          source: string
+          spend: number
+          station_code: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_name?: string | null
+          client_id: string
+          cpm?: number
+          created_at?: string
+          date: string
+          id?: string
+          impressions?: number
+          source?: string
+          spend?: number
+          station_code: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_name?: string | null
+          client_id?: string
+          cpm?: number
+          created_at?: string
+          date?: string
+          id?: string
+          impressions?: number
+          source?: string
+          spend?: number
+          station_code?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jacuzzi_delivery_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jacuzzi_hourly_delivery: {
+        Row: {
+          client_id: string
+          created_at: string
+          date: string
+          hour: number
+          id: string
+          impressions: number
+          source: string
+          spend: number
+          station_code: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          date: string
+          hour: number
+          id?: string
+          impressions?: number
+          source?: string
+          spend?: number
+          station_code?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          date?: string
+          hour?: number
+          id?: string
+          impressions?: number
+          source?: string
+          spend?: number
+          station_code?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jacuzzi_hourly_delivery_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jacuzzi_leads: {
+        Row: {
+          area_code: string | null
+          attributed_station: string | null
+          billing_city: string | null
+          billing_state: string | null
+          billing_zip: string | null
+          call_status: string | null
+          caller_ani: string | null
+          client_id: string
+          created_at: string
+          id: string
+          lead_type: string
+          notes: string | null
+          payout_rate: number
+          raw: Json | null
+          source: string
+          station_code: string | null
+          toll_free_number: string | null
+          transaction_date: string
+          transaction_id: string
+          transaction_time: string | null
+          updated_at: string
+        }
+        Insert: {
+          area_code?: string | null
+          attributed_station?: string | null
+          billing_city?: string | null
+          billing_state?: string | null
+          billing_zip?: string | null
+          call_status?: string | null
+          caller_ani?: string | null
+          client_id: string
+          created_at?: string
+          id?: string
+          lead_type?: string
+          notes?: string | null
+          payout_rate?: number
+          raw?: Json | null
+          source?: string
+          station_code?: string | null
+          toll_free_number?: string | null
+          transaction_date: string
+          transaction_id: string
+          transaction_time?: string | null
+          updated_at?: string
+        }
+        Update: {
+          area_code?: string | null
+          attributed_station?: string | null
+          billing_city?: string | null
+          billing_state?: string | null
+          billing_zip?: string | null
+          call_status?: string | null
+          caller_ani?: string | null
+          client_id?: string
+          created_at?: string
+          id?: string
+          lead_type?: string
+          notes?: string | null
+          payout_rate?: number
+          raw?: Json | null
+          source?: string
+          station_code?: string | null
+          toll_free_number?: string | null
+          transaction_date?: string
+          transaction_id?: string
+          transaction_time?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jacuzzi_leads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jacuzzi_payout_rates: {
+        Row: {
+          client_id: string
+          created_at: string
+          effective_from: string
+          id: string
+          rate: number
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          effective_from: string
+          id?: string
+          rate: number
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          effective_from?: string
+          id?: string
+          rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jacuzzi_payout_rates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_pages: {
         Row: {
           client_id: string

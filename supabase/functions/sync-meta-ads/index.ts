@@ -106,6 +106,21 @@ Deno.serve(async (req) => {
     const result = await syncMetaForUser(supabaseAdmin, conn.user_id, conn.access_token, adAccountsToSync, conn.client_id, daysBack);
     results.push(result);
 
+    // Update connection health
+    if (conn.client_id) {
+      await supabaseAdmin
+        .from("platform_connections")
+        .update({
+          status: result?.error ? "error" : "active",
+          last_synced_at: new Date().toISOString(),
+          last_sync_records: result?.records_synced ?? 0,
+          sync_error: result?.error || null,
+        })
+        .eq("user_id", conn.user_id)
+        .eq("platform", "meta")
+        .eq("client_id", conn.client_id);
+    }
+
     // Log integration usage per client sync
     if (conn.client_id) {
       await logIntegrationCall({

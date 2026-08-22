@@ -428,12 +428,28 @@ export function useRokuBreakdowns() {
 export function useSyncRokuBreakdowns() {
   const qc = useQueryClient();
   return async (days = 90, entities?: string[]) => {
-    const { data, error } = await supabase.functions.invoke("sync-roku-dimensions", {
-      body: { client_id: JACUZZI_CLIENT_ID, days, ...(entities ? { entities } : {}) },
-    });
-    if (error) throw error;
+    const invoke = async () => {
+      const { data, error } = await supabase.functions.invoke("sync-roku-dimensions", {
+        body: { client_id: JACUZZI_CLIENT_ID, days, ...(entities ? { entities } : {}) },
+      });
+      if (error) throw error;
+      return data as { success?: boolean; results?: Record<string, number | string>; error?: string };
+    };
+
+    let data = await invoke();
+    // Roku builds dimension reports asynchronously. Keep collecting completed
+    // reports in the same user action instead of requiring repeated button clicks.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const values = Object.values(data?.results ?? {});
+      const waiting = values.some((value) =>
+        typeof value === "string" && (value === "queued" || value.startsWith("pending")),
+      );
+      if (!waiting) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 10_000));
+      data = await invoke();
+    }
     await qc.invalidateQueries({ queryKey: ["jacuzzi-roku-breakdowns"] });
-    return data as { success?: boolean; results?: Record<string, number | string>; error?: string };
+    return data;
   };
 }
 

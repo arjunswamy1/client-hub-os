@@ -3491,6 +3491,113 @@ export type Database = {
           },
         ]
       }
+      moja_calls: {
+        Row: {
+          buyer_name: string | null
+          call_id: string
+          call_start: string
+          caller_number: string | null
+          caller_state: string | null
+          caller_zip: string | null
+          campaign_id: string | null
+          campaign_name: string | null
+          client_id: string
+          connected: boolean
+          converted: boolean
+          converted_at: string | null
+          created_at: string
+          disposition: string | null
+          duration_seconds: number
+          event_type: string | null
+          id: string
+          inbound_duration_seconds: number
+          payout: number
+          platform: string | null
+          publisher_name: string | null
+          raw_payload: Json | null
+          recording_url: string | null
+          revenue: number
+          service_line: string
+          target_name: string | null
+          tracking_number: string | null
+          updated_at: string
+          utm_campaign: string | null
+          utm_source: string | null
+        }
+        Insert: {
+          buyer_name?: string | null
+          call_id: string
+          call_start?: string
+          caller_number?: string | null
+          caller_state?: string | null
+          caller_zip?: string | null
+          campaign_id?: string | null
+          campaign_name?: string | null
+          client_id: string
+          connected?: boolean
+          converted?: boolean
+          converted_at?: string | null
+          created_at?: string
+          disposition?: string | null
+          duration_seconds?: number
+          event_type?: string | null
+          id?: string
+          inbound_duration_seconds?: number
+          payout?: number
+          platform?: string | null
+          publisher_name?: string | null
+          raw_payload?: Json | null
+          recording_url?: string | null
+          revenue?: number
+          service_line?: string
+          target_name?: string | null
+          tracking_number?: string | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_source?: string | null
+        }
+        Update: {
+          buyer_name?: string | null
+          call_id?: string
+          call_start?: string
+          caller_number?: string | null
+          caller_state?: string | null
+          caller_zip?: string | null
+          campaign_id?: string | null
+          campaign_name?: string | null
+          client_id?: string
+          connected?: boolean
+          converted?: boolean
+          converted_at?: string | null
+          created_at?: string
+          disposition?: string | null
+          duration_seconds?: number
+          event_type?: string | null
+          id?: string
+          inbound_duration_seconds?: number
+          payout?: number
+          platform?: string | null
+          publisher_name?: string | null
+          raw_payload?: Json | null
+          recording_url?: string | null
+          revenue?: number
+          service_line?: string
+          target_name?: string | null
+          tracking_number?: string | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "moja_calls_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           brief_id: string | null

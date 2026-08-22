@@ -10,6 +10,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import AuthPage from "./pages/AuthPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import ClientDashboardRoute from "./pages/ClientDashboardRoute";
 import TasksPage from "./pages/TasksPage";
@@ -163,6 +164,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/demo" element={<DemoPage />} />
             <Route path="/demo/dashboard" element={<DemoDashboardPage />} />
             <Route path="/signup" element={<SignupPage />} />

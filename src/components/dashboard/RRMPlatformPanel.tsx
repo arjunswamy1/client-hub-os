@@ -46,6 +46,8 @@ interface CampaignAgg {
   costPerRawCall: number;
   costPerConnectedCall: number;
   revenuePerRawCall: number;
+  /** Connect rate of the unattributed calls modelled onto this campaign. */
+  looseConnectRate: number;
 }
 
 /** Five call/cost cells shared by every drill level. */
@@ -132,6 +134,7 @@ function SearchTermRows({
             exact={[]}
             estimated={share(st.spend, campaign) * campaign.raw}
             estRevenue={share(st.spend, campaign) * campaign.revenue}
+            estConnectRate={campaign.looseConnectRate}
           />
         </TableRow>
       ))}
@@ -182,6 +185,7 @@ function KeywordRows({
                 exact={exact}
                 estimated={share(kw.spend, campaign) * campaign.estCalls}
                 estRevenue={0}
+                estConnectRate={campaign.looseConnectRate}
               />
             </TableRow>
             {open === kw.key && (
@@ -236,6 +240,7 @@ function CreativeRows({
             exact={attr.creativeCalls(ad.extra?.platformAdId, ad.name)}
             estimated={share(ad.spend, campaign) * campaign.estCalls}
             estRevenue={0}
+            estConnectRate={campaign.looseConnectRate}
           />
         </TableRow>
       ))}
@@ -279,6 +284,7 @@ function AdSetRows({
               exact={attr.adsetCalls(as.platformAdsetId)}
               estimated={share(as.spend, campaign) * campaign.estCalls}
               estRevenue={0}
+              estConnectRate={campaign.looseConnectRate}
             />
           </TableRow>
           {open === as.key &&
@@ -327,7 +333,7 @@ export default function RRMPlatformPanel({ platform }: Props) {
         ({
           name, line, spend: 0, impressions: 0, clicks: 0, conversions: 0,
           exactCalls: [], estCalls: 0, raw: 0, connected: 0, converted: 0, revenue: 0,
-          costPerRawCall: 0, costPerConnectedCall: 0, revenuePerRawCall: 0,
+          costPerRawCall: 0, costPerConnectedCall: 0, revenuePerRawCall: 0, looseConnectRate: 0,
         } as CampaignAgg);
       cur.spend += Number(r.spend || 0);
       cur.impressions += Number(r.impressions || 0);
@@ -354,6 +360,7 @@ export default function RRMPlatformPanel({ platform }: Props) {
       for (const c of inLine) {
         const w = lineSpend > 0 ? c.spend / lineSpend : inLine.length ? 1 / inLine.length : 0;
         const m = callMetrics(c.exactCalls, c.spend);
+        c.looseConnectRate = loose.length ? looseConnected / loose.length : 0;
         c.estCalls = loose.length * w;
         c.raw = m.raw + c.estCalls;
         c.connected = m.connected + looseConnected * w;
@@ -501,6 +508,7 @@ export default function RRMPlatformPanel({ platform }: Props) {
                       exact={c.exactCalls}
                       estimated={c.estCalls}
                       estRevenue={c.revenue - c.exactCalls.reduce((s, m) => s + Number(m.revenue || 0), 0)}
+                      estConnected={c.connected - c.exactCalls.filter((m) => m.connected).length}
                     />
                   </TableRow>
                   {open === c.name && (

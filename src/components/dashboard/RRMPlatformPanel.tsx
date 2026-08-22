@@ -336,9 +336,9 @@ export default function RRMPlatformPanel({ platform }: Props) {
     for (const line of ["windows", "plumbing"] as RRMLine[]) {
       const inLine = byLine(line);
       const lineSpend = inLine.reduce((s, c) => s + c.spend, 0);
-      const loose = attr.unattributed(line).filter(
-        (c) => ((c.platform || "").toLowerCase() === "meta") === (platform === "meta"),
-      );
+      // A line only ever runs on one channel, so its unattributed calls belong
+      // entirely to that channel's panel: Windows → Meta, Plumbing → Google.
+      const loose = platformOfLine(line) === platform ? attr.unattributed(line) : [];
       const looseRevenue = loose.reduce((s, c) => s + Number(c.revenue || 0), 0);
       const looseConnected = loose.filter((c) => c.connected).length;
       for (const c of inLine) {

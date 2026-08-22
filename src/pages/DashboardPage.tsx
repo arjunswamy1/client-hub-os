@@ -75,7 +75,9 @@ function DashboardContent() {
         </div>
       </div>
 
-      {isCannaball ? (
+      {isJacuzzi ? (
+        <JacuzziDashboard />
+      ) : isCannaball ? (
         <CannaballDashboard />
       ) : isFourJs ? (
         <FourJsDashboard />

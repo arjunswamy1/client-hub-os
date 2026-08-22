@@ -1,14 +1,24 @@
 import { useMemo, useState } from "react";
 import { useBuyologyCalls, useBuyologySpend, BuyologyCall, BUYOLOGY_CLIENT_ID } from "@/hooks/useBuyologyData";
+import { useBuyologyLineSpend } from "@/hooks/useBuyologyCreativeAnalysis";
+import { PRODUCT_LINES, ProductLine, classifyName, QUALIFIED_SECONDS } from "@/lib/buyologyProductLines";
 import BuyologyRingbaImport from "./BuyologyRingbaImport";
+import BuyologyCreativeAnalysis from "./BuyologyCreativeAnalysis";
 import MetaDashboard from "./MetaDashboard";
 import MetaConnectionCard from "./MetaConnectionCard";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Phone, PhoneCall, DollarSign, TrendingUp, Target, Clock, Facebook, Upload, BarChart3, Link as LinkIcon } from "lucide-react";
+import { Phone, PhoneCall, DollarSign, TrendingUp, Target, Clock, Facebook, Upload, BarChart3, Link as LinkIcon, Sparkles } from "lucide-react";
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { format } from "date-fns";
+
+const money = (n: number) => (n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
+const money2 = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
+const dur = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
 
 const money = (n: number) => (n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
 const money2 = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

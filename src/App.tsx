@@ -145,8 +145,9 @@ function ProtectedRoutes() {
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}
           {isAdmin && <Route path="/admin/costs/:clientId" element={<AdminClientCostsPage />} />}
           <Route path="/client-portal-preview" element={<ClientPortalPage isAdminPreview adminName={user?.email || 'Admin'} />} />
+          {/* Short vanity URLs per client, e.g. /jacuzzi, /4js */}
+          <Route path="/:clientSlug" element={<ClientDashboardRoute />} />
           <Route path="*" element={<NotFound />} />
-        </Routes>
       </AppLayout>
     </ClientProvider>
   );

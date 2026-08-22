@@ -165,27 +165,40 @@ export default function RRMOptimizer({ line }: { line: RRMLine }) {
     [lineCalls, platform],
   );
 
-  /** Level rows: keywords for Google, creatives for Meta. */
+  /**
+   * Level rows: keywords for Google, creatives for Meta.
+   *
+   * Moja's utm_term only carries the keyword text, not the match type, so calls
+   * are only resolvable at keyword level — variants of the same keyword across
+   * match types are rolled together and the match type is labelled "mixed".
+   */
   const rows: KwRow[] = useMemo(() => {
     if (!data) return [];
     const src = platform === "google" ? data.keywords : data.creatives;
-    const map = new Map<string, KwRow>();
+    const map = new Map<string, KwRow & { matchTypes: Set<string> }>();
     for (const r of src as any[]) {
       const name = platform === "google" ? r.keyword : r.ad_name || "Unnamed ad";
       if (!name) continue;
       const key = normKey(name);
       const cur =
         map.get(key) ||
-        ({ key, keyword: name, matchType: r.match_type ?? null, spend: 0, clicks: 0, calls: 0 } as KwRow);
+        ({ key, keyword: name, matchType: null, matchTypes: new Set<string>(), spend: 0, clicks: 0, calls: 0 } as KwRow & {
+          matchTypes: Set<string>;
+        });
+      if (r.match_type) cur.matchTypes.add(String(r.match_type).toLowerCase());
       cur.spend += Number(r.spend || 0);
       cur.clicks += Number(r.clicks || 0);
       map.set(key, cur);
     }
-    for (const row of map.values()) row.calls = (callsByTag.get(row.key) || []).length;
+    for (const row of map.values()) {
+      row.calls = (callsByTag.get(row.key) || []).length;
+      row.matchType = row.matchTypes.size === 1 ? Array.from(row.matchTypes)[0] : row.matchTypes.size > 1 ? "mixed" : null;
+    }
     return Array.from(map.values())
       .filter((r) => r.spend > 0)
       .sort((a, b) => b.spend - a.spend);
   }, [data, platform, callsByTag]);
+
 
   const terms: TermRow[] = useMemo(() => {
     if (!data || platform !== "google") return [];

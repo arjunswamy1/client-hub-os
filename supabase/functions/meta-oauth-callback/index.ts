@@ -102,6 +102,30 @@ Deno.serve(async (req) => {
       ? new Date(Date.now() + expiresIn * 1000).toISOString()
       : null;
 
+    const adAccounts: Array<{ id?: string; name?: string; account_id?: string }> =
+      adAccountsData.data || [];
+    const keyOf = (a: { id?: string; account_id?: string } | null | undefined) =>
+      a?.id || a?.account_id || null;
+
+    // Preserve the previously chosen reporting account across reconnects
+    const { data: existing } = await supabase
+      .from("platform_connections")
+      .select("selected_ad_account")
+      .eq("user_id", state.user_id)
+      .eq("platform", "meta")
+      .eq("client_id", state.client_id || null)
+      .maybeSingle();
+
+    const previous = existing?.selected_ad_account as
+      | { id?: string; name?: string; account_id?: string }
+      | null;
+    const stillAvailable = previous
+      ? adAccounts.find((a) => keyOf(a) === keyOf(previous))
+      : null;
+
+    const selectedAdAccount =
+      stillAvailable || previous || (adAccounts.length === 1 ? adAccounts[0] : null);
+
     const { error: upsertError } = await supabase
       .from("platform_connections")
       .upsert(
@@ -114,12 +138,14 @@ Deno.serve(async (req) => {
           token_expires_at: tokenExpiresAt,
           client_id: state.client_id || null,
           status: "active",
+          selected_ad_account: selectedAdAccount,
           metadata: {
-            ad_accounts: adAccountsData.data || [],
+            ad_accounts: adAccounts,
           },
         },
         { onConflict: "user_id,platform,client_id" }
       );
+
 
     if (upsertError) {
       console.error("Upsert error:", upsertError);

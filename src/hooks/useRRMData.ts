@@ -174,3 +174,17 @@ export function callMetrics(calls: MojaCall[], spend: number): CallMetrics {
     margin: div(revenue - spend, revenue),
   };
 }
+
+/**
+ * Service line determines the channel: Windows runs on Meta, Plumbing on Google.
+ * Moja does not always stamp a platform on a call, so the line is the source of
+ * truth for which ad channel a call belongs to.
+ */
+export function platformOfLine(line: RRMLine): "meta" | "google" {
+  return line === "windows" ? "meta" : "google";
+}
+
+/** The ad channel a Moja call belongs to, derived from its service line. */
+export function callPlatform(c: MojaCall): "meta" | "google" {
+  return platformOfLine(callLine(c));
+}

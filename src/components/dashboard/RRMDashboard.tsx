@@ -24,6 +24,7 @@ import { useRRMCallAttribution } from "@/hooks/useRRMDrillDown";
 import RRMPlatformPanel from "@/components/dashboard/RRMPlatformPanel";
 import RRMOptimizer from "@/components/dashboard/RRMOptimizer";
 import RRMConnections from "@/components/dashboard/RRMConnections";
+import SlackReportCard from "@/components/dashboard/SlackReportCard";
 
 const fmtMoney = (n: number) =>
   n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -386,8 +387,9 @@ export default function RRMDashboard() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="optimize">
+        <TabsContent value="optimize" className="space-y-4">
           <RRMOptimizer line={line} />
+          <SlackReportCard clientId={RRM_CLIENT_ID} scope="rrm" clientLabel="RRM" />
         </TabsContent>
 
         <TabsContent value="platform">

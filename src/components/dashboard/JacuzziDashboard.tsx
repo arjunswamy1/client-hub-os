@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   useJacuzziLeads, useJacuzziDelivery, useJacuzziHourly, useJacuzziRates,
   rateForDate, parseTmSheet, useImportLeads, STATION_NOTES, JacuzziLead,
-  useRokuHourlyStatus, useSyncRokuHourly,
+  useRokuHourlyStatus, useSyncRokuHourly, JACUZZI_CLIENT_ID,
 } from "@/hooks/useJacuzziData";
 
 import { Card } from "@/components/ui/card";
@@ -15,9 +15,10 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid, BarChart,
 } from "recharts";
 import {
-  RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users, ShieldCheck,
+  RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users, ShieldCheck, Send,
 } from "lucide-react";
 import JacuzziReconciliation from "./JacuzziReconciliation";
+import SlackReportCard from "./SlackReportCard";
 import { format, parseISO } from "date-fns";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { toast } from "sonner";
@@ -414,6 +415,7 @@ export default function JacuzziDashboard() {
             <TabsTrigger value="leads" className="gap-1.5 text-xs">Lead log</TabsTrigger>
             <TabsTrigger value="recon" className="gap-1.5 text-xs"><ShieldCheck className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>
             <TabsTrigger value="import" className="gap-1.5 text-xs"><Upload className="h-3.5 w-3.5" /> Import</TabsTrigger>
+            <TabsTrigger value="slack" className="gap-1.5 text-xs"><Send className="h-3.5 w-3.5" /> Slack brief</TabsTrigger>
           </TabsList>
         </div>
 
@@ -641,6 +643,10 @@ export default function JacuzziDashboard() {
 
         <TabsContent value="recon">
           <JacuzziReconciliation />
+        </TabsContent>
+
+        <TabsContent value="slack">
+          <SlackReportCard clientId={JACUZZI_CLIENT_ID} scope="jacuzzi" clientLabel="Jacuzzi" />
         </TabsContent>
 
         <TabsContent value="import" className="space-y-4">

@@ -624,9 +624,9 @@ export default function RRMOptimizer({ line }: { line: RRMLine }) {
                   </TableCell>
                 </TableRow>
               )}
-              {[...rows]
-                .sort((a, b) => (a.calls ? a.spend / a.calls : Infinity) - (b.calls ? b.spend / b.calls : Infinity))
+              {ladder
                 .map((r) => {
+
                   const cprc = r.calls ? r.spend / r.calls : null;
                   const delta = cprc && lineCPRC ? cprc / lineCPRC - 1 : null;
                   return (

@@ -124,6 +124,7 @@ function ProtectedRoutes() {
             isAccountManager ? <AMHomePage /> : <Navigate to="/dashboard" replace />
           } />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard/:clientSlug" element={<ClientDashboardRoute />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/agendas" element={<AgendasPage />} />
           <Route path="/creative" element={<CreativePage />} />

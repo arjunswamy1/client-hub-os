@@ -103,6 +103,7 @@ interface Flat {
   entity_name: string;
   spend: number;
   impressions: number;
+  video_completions: number;
   fields: Record<string, any>;
 }
 
@@ -122,7 +123,9 @@ function flatten(body: any, accountUid: string, fallbackDate: string): Flat[] {
     const uid = String(
       pick(dims, ["campaign_uid", "entity_uid", "uid", "ad_group_uid", "creative_uid"]) ?? name,
     );
+    const microArr = pick(fields, ["billed_local_micro_spend"]);
     const spendArr = pick(fields, ["spend", "cost", "total_spend"]);
+    const completeArr = pick(fields, ["total_video_complete"]);
     const impArr = pick(fields, ["impressions", "impression"]);
 
     dateList.forEach((date, i) => {
@@ -132,8 +135,9 @@ function flatten(body: any, accountUid: string, fallbackDate: string): Flat[] {
         account_uid: accountUid,
         entity_uid: uid,
         entity_name: name,
-        spend: numAt(spendArr, i),
+        spend: microArr !== undefined ? numAt(microArr, i) / 1_000_000 : numAt(spendArr, i),
         impressions: Math.round(numAt(impArr, i)),
+        video_completions: Math.round(numAt(completeArr, i)),
         fields: Object.fromEntries(
           Object.entries(fields).map(([k, v]) => [k, Array.isArray(v) ? v[i] ?? null : v]),
         ),
@@ -175,7 +179,7 @@ Deno.serve(async (req) => {
       const f = await apiGet(token, "/developer/metrics/fields");
       const raw = f?.data ?? f?.fields ?? [];
       available = (Array.isArray(raw) ? raw : [])
-        .map((x: any) => (typeof x === "string" ? x : x?.name ?? x?.uid ?? x?.attributes?.name))
+        .map((x: any) => (typeof x === "string" ? x : x?.attributes?.field_name ?? x?.name ?? x?.uid))
         .filter(Boolean);
     } catch (e) {
       console.warn("metrics/fields failed:", (e as Error).message);
@@ -185,8 +189,10 @@ Deno.serve(async (req) => {
       return json({ success: true, available_fields: available, raw });
     }
 
-    const wanted = ["impressions", "spend"].filter((f) => !available.length || available.includes(f));
-    const fields = (wanted.length ? wanted : ["impressions", "spend"]).join(",");
+    // Roku exposes spend as integer micros of the account currency.
+    const candidates = ["impressions", "billed_local_micro_spend", "total_video_complete"];
+    const wanted = candidates.filter((f) => !available.length || available.includes(f));
+    const fields = (wanted.length ? wanted : ["impressions", "billed_local_micro_spend"]).join(",");
 
     // Accounts: prefer explicit uid, else every account cached at connect time.
     const accountUids: string[] = body.account_uid
@@ -270,6 +276,7 @@ Deno.serve(async (req) => {
       if (cur) {
         cur.spend += r.spend;
         cur.impressions += r.impressions;
+        cur.video_completions += r.video_completions;
       } else {
         dedupe.set(key, {
           client_id: clientId,
@@ -281,6 +288,7 @@ Deno.serve(async (req) => {
           campaign_name: entity === "campaign" ? r.entity_name : null,
           spend: r.spend,
           impressions: r.impressions,
+          video_completions: r.video_completions,
           fields: r.fields,
         });
       }

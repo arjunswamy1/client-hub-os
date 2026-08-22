@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { CheckCircle2, AlertTriangle, RefreshCw, Chrome, Facebook, Link as LinkIcon } from "lucide-react";
+import { CheckCircle2, AlertTriangle, RefreshCw, Chrome, Facebook, Link as LinkIcon, ExternalLink, PlayCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { RRM_CLIENT_ID } from "@/hooks/useRRMData";
-import { useRRMConnections } from "@/hooks/useRRMDrillDown";
+import { useRRMConnections, RRMConnection } from "@/hooks/useRRMDrillDown";
 
 const PLATFORMS = [
   {
@@ -28,6 +28,49 @@ const PLATFORMS = [
   },
 ];
 
+function ErrorHint({ error, platform }: { error: string; platform: string }) {
+  const lower = error.toLowerCase();
+  if (lower.includes("google ads api has not been used") || lower.includes("disabled") || lower.includes("googleads.googleapis.com")) {
+    const projectMatch = error.match(/project\s+(\d+)/);
+    const projectId = projectMatch?.[1];
+    const enableUrl = projectId
+      ? `https://console.developers.google.com/apis/api/googleads.googleapis.com/overview?project=${projectId}`
+      : "https://console.cloud.google.com/apis/library/googleads.googleapis.com";
+    return (
+      <div className="mt-2 rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
+        <p className="font-medium">Google Ads API is disabled in your Google Cloud project.</p>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+          <li>Click the link below and enable the Google Ads API.</li>
+          <li>Wait 2–3 minutes for the change to propagate.</li>
+          <li>Click <strong>Reconnect</strong> to refresh credentials, then <strong>Test</strong>.</li>
+        </ol>
+        <a
+          href={enableUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 inline-flex items-center gap-1 font-medium underline"
+        >
+          <ExternalLink className="h-3 w-3" />
+          Open Google Cloud console
+        </a>
+      </div>
+    );
+  }
+  if (lower.includes("authorization expired") || lower.includes("invalid_grant") || lower.includes("token")) {
+    return (
+      <p className="mt-1 text-xs text-destructive">
+        Authorization expired or token invalid — click <strong>Reconnect</strong> to refresh credentials.
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1 flex items-start gap-1 text-xs text-destructive">
+      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+      {error}
+    </p>
+  );
+}
+
 export default function RRMConnections() {
   const { data: connections = [], refetch } = useRRMConnections();
   const [busy, setBusy] = useState<string | null>(null);
@@ -45,10 +88,10 @@ export default function RRMConnections() {
     }
   };
 
-  const sync = async (platform: string, fn: string) => {
+  const sync = async (platform: string, fn: string, daysBack: number) => {
     setBusy(`sync-${platform}`);
     try {
-      const { error } = await supabase.functions.invoke(fn, { body: { client_id: RRM_CLIENT_ID, days_back: 90 } });
+      const { error } = await supabase.functions.invoke(fn, { body: { client_id: RRM_CLIENT_ID, days_back: daysBack } });
       if (error) throw error;
       toast.success(`${platform === "google" ? "Google" : "Meta"} sync complete`);
       await refetch();
@@ -89,12 +132,7 @@ export default function RRMConnections() {
                     {conn.last_sync_records != null && ` · ${conn.last_sync_records} records`}
                   </p>
                 )}
-                {conn?.sync_error && (
-                  <p className="mt-1 flex items-start gap-1 text-xs text-destructive">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                    {conn.sync_error}
-                  </p>
-                )}
+                {conn?.sync_error && <ErrorHint error={conn.sync_error} platform={p.id} />}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -112,7 +150,17 @@ export default function RRMConnections() {
                   variant="outline"
                   className="h-8 gap-1.5 text-xs"
                   disabled={!conn || busy === `sync-${p.id}`}
-                  onClick={() => sync(p.id, p.sync)}
+                  onClick={() => sync(p.id, p.sync, 1)}
+                >
+                  <PlayCircle className="h-3.5 w-3.5" />
+                  Test
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-xs"
+                  disabled={!conn || busy === `sync-${p.id}`}
+                  onClick={() => sync(p.id, p.sync, 90)}
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${busy === `sync-${p.id}` ? "animate-spin" : ""}`} />
                   Sync 90 days

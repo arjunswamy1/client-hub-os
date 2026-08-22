@@ -66,6 +66,7 @@ function DashboardContent() {
   const isFourJs = isFourJsClient(activeClient);
   const isCannaball = isCannaballClient(activeClient);
   const isJacuzzi = isJacuzziClient(activeClient);
+  const isRRM = isRRMClient(activeClient);
 
   return (
     <div className="space-y-4 sm:space-y-6">

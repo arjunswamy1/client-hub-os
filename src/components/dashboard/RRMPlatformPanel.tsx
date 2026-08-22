@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ChevronRight, ChevronDown, Search, Download, Info } from "lucide-react";
 import {
-  useMojaCalls, useRRMSpend, MojaCall, classifyCampaign, callMetrics, RRMLine,
+  useMojaCalls, useRRMSpend, MojaCall, classifyCampaign, callMetrics, RRMLine, platformOfLine,
 } from "@/hooks/useRRMData";
 import {
   useRRMAdSets, useRRMKeywords, useRRMSearchTerms, useRRMCreatives, useRRMCallAttribution,

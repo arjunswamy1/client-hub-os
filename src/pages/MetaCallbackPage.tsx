@@ -43,7 +43,21 @@ export default function MetaCallbackPage() {
           },
         });
 
-        if (error) throw error;
+        if (error) {
+          // Surface the function's actual error message instead of "non-2xx status code"
+          let detail = error.message;
+          const ctx = (error as { context?: Response }).context;
+          if (ctx && typeof ctx.text === "function") {
+            try {
+              const raw = await ctx.text();
+              const parsed = JSON.parse(raw);
+              if (parsed?.error) detail = parsed.error;
+            } catch {
+              // keep the original message
+            }
+          }
+          throw new Error(detail);
+        }
         if (data?.error) throw new Error(data.error);
 
         setStatus("done");

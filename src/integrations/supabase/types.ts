@@ -548,6 +548,130 @@ export type Database = {
           },
         ]
       }
+      ai_optimizer_briefs: {
+        Row: {
+          attribution_rate: number | null
+          client_id: string
+          created_at: string
+          generated_at: string
+          id: string
+          line_label: string | null
+          period_key: string
+          plan: Json
+          product_line: string
+          range_label: string | null
+          scope: string
+          source: string
+          totals: Json
+        }
+        Insert: {
+          attribution_rate?: number | null
+          client_id: string
+          created_at?: string
+          generated_at?: string
+          id?: string
+          line_label?: string | null
+          period_key: string
+          plan: Json
+          product_line: string
+          range_label?: string | null
+          scope?: string
+          source?: string
+          totals?: Json
+        }
+        Update: {
+          attribution_rate?: number | null
+          client_id?: string
+          created_at?: string
+          generated_at?: string
+          id?: string
+          line_label?: string | null
+          period_key?: string
+          plan?: Json
+          product_line?: string
+          range_label?: string | null
+          scope?: string
+          source?: string
+          totals?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_optimizer_briefs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_optimizer_schedules: {
+        Row: {
+          cadence: string
+          client_id: string
+          created_at: string
+          enabled: boolean
+          id: string
+          last_error: string | null
+          last_run_at: string | null
+          lease_until: string | null
+          next_run_at: string | null
+          notes: string | null
+          pause_reason: string | null
+          paused_at: string | null
+          product_lines: string[]
+          run_hour_utc: number
+          scope: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cadence?: string
+          client_id: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          lease_until?: string | null
+          next_run_at?: string | null
+          notes?: string | null
+          pause_reason?: string | null
+          paused_at?: string | null
+          product_lines?: string[]
+          run_hour_utc?: number
+          scope?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cadence?: string
+          client_id?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          lease_until?: string | null
+          next_run_at?: string | null
+          notes?: string | null
+          pause_reason?: string | null
+          paused_at?: string | null
+          product_lines?: string[]
+          run_hour_utc?: number
+          scope?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_optimizer_schedules_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_video_audio: {
         Row: {
           audio_type: string
@@ -2782,6 +2906,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cron_invocation_tokens: {
+        Row: {
+          created_at: string
+          job_name: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          job_name: string
+          token?: string
+        }
+        Update: {
+          created_at?: string
+          job_name?: string
+          token?: string
+        }
+        Relationships: []
       }
       dashboard_configs: {
         Row: {

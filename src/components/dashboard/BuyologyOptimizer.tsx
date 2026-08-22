@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,8 +11,12 @@ import {
   Brain, FileDown, Loader2, TrendingUp, Scissors, FlaskConical, ArrowRightLeft, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { useBuyologyCreativeAnalysis, CreativeRow } from "@/hooks/useBuyologyCreativeAnalysis";
+import { BUYOLOGY_CLIENT_ID } from "@/hooks/useBuyologyData";
 import { ProductLine, productLineLabel, QUALIFIED_SECONDS, PREMIUM_SECONDS } from "@/lib/buyologyProductLines";
 import { buildBuyologyOptimizerPdf, OptimizerPlan } from "@/lib/buyologyOptimizerPdf";
+import BuyologyOptimizerSchedule from "./BuyologyOptimizerSchedule";
+import { OptimizerBrief } from "@/hooks/useOptimizerSchedule";
+
 
 const money = (n: number) => `$${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const money2 = (n: number) => `$${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -43,12 +48,18 @@ export default function BuyologyOptimizer({
   rangeLabel?: string;
 }) {
   const { data, isLoading } = useBuyologyCreativeAnalysis();
+  const queryClient = useQueryClient();
   const [notes, setNotes] = useState("");
   const [running, setRunning] = useState(false);
-  const [plans, setPlans] = useState<Record<string, { plan: OptimizerPlan; generatedAt: string }>>({});
+  const [plans, setPlans] = useState<
+    Record<string, { plan: OptimizerPlan; generatedAt: string; snapshot?: any; source?: string }>
+  >({});
 
   /** Which product lines this run covers — "all" fans out to both live campaigns */
   const targets: ProductLine[] = line === "all" ? ["tubs", "bath"] : [line];
+  /** Lines to render: the current filter plus any brief opened from history */
+  const displayLines = [...new Set([...targets, ...(Object.keys(plans) as ProductLine[])])] as ProductLine[];
+
 
   const scoped = useMemo(() => {
     const all = data?.creativeRows || [];
@@ -143,7 +154,8 @@ export default function BuyologyOptimizer({
       throw new Error(msg);
     }
     if ((res as any)?.error) throw new Error((res as any).error);
-    setPlans((p) => ({ ...p, [l]: { plan: (res as any).plan, generatedAt: (res as any).generatedAt } }));
+    setPlans((p) => ({ ...p, [l]: { plan: (res as any).plan, generatedAt: (res as any).generatedAt, source: "manual" } }));
+    queryClient.invalidateQueries({ queryKey: ["optimizer-briefs", BUYOLOGY_CLIENT_ID, "buyology"] });
   };
 
   const run = async () => {
@@ -158,27 +170,56 @@ export default function BuyologyOptimizer({
     }
   };
 
+  /** Open a stored brief (from the history table) using the metrics captured at that time */
+  const viewBrief = (brief: OptimizerBrief) => {
+    const t = brief.totals || {};
+    setPlans((p) => ({
+      ...p,
+      [brief.product_line]: {
+        plan: brief.plan,
+        generatedAt: brief.generated_at,
+        source: brief.source,
+        snapshot: {
+          rangeLabel: brief.range_label || rangeLabel,
+          spend: Number(t.meta_spend || 0),
+          calls: Number(t.raw_calls || 0),
+          qualified: Number(t.qualified_calls_60s || 0),
+          converted: Number(t.converted_calls || 0),
+          cpqc: Number(t.cost_per_qualified_call || 0),
+          cpl: Number(t.cost_per_raw_call || 0),
+          qualifiedRate: Number(t.qualified_rate || 0),
+          attributionRate: Number(brief.attribution_rate || 0),
+        },
+      },
+    }));
+  };
+
   const exportPdf = (l: ProductLine) => {
     const entry = plans[l];
+    if (!entry) return;
     const s = scoped[l];
-    if (!entry || !s) return;
+    const totals = entry.snapshot
+      ? entry.snapshot
+      : s && {
+          spend: s.totals.spend,
+          calls: s.totals.calls,
+          qualified: s.totals.qualified,
+          converted: s.totals.converted,
+          cpqc: s.totals.cpqc,
+          cpl: s.totals.cpl,
+          qualifiedRate: s.totals.qualifiedRate,
+          attributionRate: s.totals.attributionRate,
+        };
+    if (!totals) return;
     buildBuyologyOptimizerPdf({
       lineLabel: productLineLabel(l),
-      rangeLabel,
+      rangeLabel: entry.snapshot?.rangeLabel || rangeLabel,
       generatedAt: new Date(entry.generatedAt).toLocaleString(),
-      totals: {
-        spend: s.totals.spend,
-        calls: s.totals.calls,
-        qualified: s.totals.qualified,
-        converted: s.totals.converted,
-        cpqc: s.totals.cpqc,
-        cpl: s.totals.cpl,
-        qualifiedRate: s.totals.qualifiedRate,
-        attributionRate: s.totals.attributionRate,
-      },
+      totals,
       plan: entry.plan,
     });
   };
+
 
   if (isLoading) return <div className="h-64 animate-pulse rounded-lg bg-muted" />;
 
@@ -231,19 +272,26 @@ export default function BuyologyOptimizer({
         </div>
       </Card>
 
-      {targets.map((l) => {
+      <BuyologyOptimizerSchedule clientId={BUYOLOGY_CLIENT_ID} onViewBrief={viewBrief} />
+
+      {displayLines.map((l) => {
         const entry = plans[l];
         if (!entry) return null;
+
         const plan = entry.plan;
         const recs = [...(plan.recommendations || [])].sort((a, b) => (a.priority || 99) - (b.priority || 99));
         return (
           <Card key={l} className="p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold">{productLineLabel(l)} — optimization brief</h3>
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  {productLineLabel(l)} — optimization brief
+                  {entry.source === "scheduled" && <Badge variant="secondary" className="text-[10px]">scheduled</Badge>}
+                </h3>
                 <p className="text-[11px] text-muted-foreground">
-                  Generated {new Date(entry.generatedAt).toLocaleString()} · {rangeLabel}
+                  Generated {new Date(entry.generatedAt).toLocaleString()} · {entry.snapshot?.rangeLabel || rangeLabel}
                 </p>
+
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => runFor(l).catch((e) => toast({ title: "Refresh failed", description: String(e.message).slice(0, 200), variant: "destructive" }))}>

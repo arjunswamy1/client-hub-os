@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { buildBuyologyPayload, ProductLine } from "../_shared/buyology-payload.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +42,10 @@ interface Body {
   unattributedCalls?: number;
   attributionRate?: number;
   notes?: string;
+  /** rebuild the payload server-side from the database (used by scheduled runs) */
+  build?: boolean;
+  source?: "manual" | "scheduled";
+  periodKey?: string;
 }
 
 const round = (n: number, d = 2) => Math.round((Number(n) || 0) * 10 ** d) / 10 ** d;
@@ -47,6 +53,7 @@ const round = (n: number, d = 2) => Math.round((Number(n) || 0) * 10 ** d) / 10 
 function validate(b: any): { ok: true; body: Body } | { ok: false; error: string } {
   if (!b || typeof b !== "object") return { ok: false, error: "Body must be an object" };
   if (typeof b.line !== "string" || !b.line) return { ok: false, error: "line is required" };
+  if (b.build === true) return { ok: true, body: b as Body };
   if (typeof b.lineLabel !== "string" || !b.lineLabel) return { ok: false, error: "lineLabel is required" };
   if (!b.totals || typeof b.totals !== "object") return { ok: false, error: "totals is required" };
   if (!Array.isArray(b.creatives)) return { ok: false, error: "creatives must be an array" };
@@ -65,13 +72,33 @@ Deno.serve(async (req) => {
       });
     }
 
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
     const parsedBody = validate(await req.json().catch(() => null));
     if (!parsedBody.ok) {
       return new Response(JSON.stringify({ error: parsedBody.error }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const body = parsedBody.body;
+    let body = parsedBody.body;
+
+    if (body.build) {
+      if (!["tubs", "bath"].includes(body.line)) {
+        return new Response(JSON.stringify({ error: "line must be 'tubs' or 'bath' when build is true" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const built = await buildBuyologyPayload(admin, BUYOLOGY_CLIENT_ID, body.line as ProductLine);
+      if (!built.hasData) {
+        return new Response(JSON.stringify({ error: `No creative data for ${body.line} — sync Meta spend and import calls first.` }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      body = { ...built.payload, rangeLabel: body.rangeLabel, notes: body.notes, source: body.source, periodKey: body.periodKey };
+    }
+
 
     // Keep the payload tight: the biggest spenders and the biggest call drivers.
     const bySpend = [...body.creatives].sort((a, b) => b.spend - a.spend).slice(0, 40);
@@ -161,16 +188,24 @@ Return ONLY valid JSON in this exact shape:
     });
 
     if (aiResponse.status === 429) {
-      return new Response(JSON.stringify({ error: "AI is rate limited — try again in a minute." }), {
+      const retryAfter = aiResponse.headers.get("Retry-After");
+      return new Response(JSON.stringify({ error: "AI is rate limited — try again in a minute.", retryAfter }), {
         status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (aiResponse.status === 402) {
-      return new Response(
-        JSON.stringify({ error: "AI credits are exhausted. Add credits in Lovable (Settings → Plans & credits) to run the optimizer." }),
-        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (aiResponse.status === 402 || aiResponse.status === 403) {
+      let message = aiResponse.status === 402
+        ? "AI credits are exhausted. Add credits in Lovable (Settings → Plans & credits) to run the optimizer."
+        : "Lovable AI is blocked for this workspace (disabled or a credit limit was reached). A workspace admin needs to unblock it.";
+      try {
+        const j = await aiResponse.json();
+        if (j?.error?.message || j?.message) message = j.error?.message || j.message;
+      } catch { /* keep default */ }
+      return new Response(JSON.stringify({ error: message, blocked: true }), {
+        status: aiResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
       return new Response(JSON.stringify({ error: `AI error [${aiResponse.status}]: ${errText.substring(0, 300)}` }), {
@@ -199,14 +234,15 @@ Return ONLY valid JSON in this exact shape:
       plan = JSON.parse(content.slice(start, end + 1));
     }
 
+    const generatedAt = new Date().toISOString();
+    const source = body.source === "scheduled" ? "scheduled" : "manual";
+    const periodKey = body.periodKey || generatedAt.slice(0, 10);
+
     // Persist for history (best effort — never fail the request on a logging error)
     try {
-      const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-      const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
       const recs = Array.isArray(plan.recommendations) ? plan.recommendations.slice(0, 25) : [];
       if (recs.length) {
-        await supabase.from("ai_optimization_recommendations").insert(
+        await admin.from("ai_optimization_recommendations").insert(
           recs.map((r: any) => ({
             client_id: BUYOLOGY_CLIENT_ID,
             platform: "meta",
@@ -226,9 +262,34 @@ Return ONLY valid JSON in this exact shape:
       console.error("buyology-optimizer: failed to persist recommendations", logErr);
     }
 
-    return new Response(JSON.stringify({ line: body.line, lineLabel: body.lineLabel, plan, generatedAt: new Date().toISOString() }), {
+    // Snapshot the brief itself so briefs can be compared by date.
+    try {
+      if (source === "scheduled") {
+        await admin.from("ai_optimizer_briefs").delete()
+          .eq("client_id", BUYOLOGY_CLIENT_ID).eq("scope", "buyology")
+          .eq("product_line", body.line).eq("period_key", periodKey).eq("source", "scheduled");
+      }
+      await admin.from("ai_optimizer_briefs").insert({
+        client_id: BUYOLOGY_CLIENT_ID,
+        scope: "buyology",
+        product_line: body.line,
+        line_label: body.lineLabel,
+        range_label: body.rangeLabel || "lifetime to date",
+        source,
+        plan,
+        totals: body.totals,
+        attribution_rate: body.attributionRate ?? null,
+        period_key: periodKey,
+        generated_at: generatedAt,
+      });
+    } catch (snapErr) {
+      console.error("buyology-optimizer: failed to snapshot brief", snapErr);
+    }
+
+    return new Response(JSON.stringify({ line: body.line, lineLabel: body.lineLabel, plan, totals: body.totals, generatedAt }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (error) {
     console.error("buyology-optimizer error:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {

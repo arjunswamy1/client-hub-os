@@ -160,19 +160,20 @@ export default function JacuzziDashboard() {
 
   const hasHourlySpend = hourlyRows.some((r) => r.spend > 0 || r.impressions > 0);
 
+  /** Always computed across every station so the full picture stays visible while drilled in. */
   const stations = useMemo(() => {
     const map = new Map<string, any>();
     const row = (s: string) => {
       if (!map.has(s)) map.set(s, { station: s, spend: 0, impressions: 0, calls: 0, qr: 0, revenue: 0 });
       return map.get(s);
     };
-    delivery.forEach((d) => {
+    allDelivery.forEach((d) => {
       const r = row(d.station_code);
       r.spend += Number(d.spend || 0);
       r.impressions += Number(d.impressions || 0);
     });
-    leads.forEach((l) => {
-      const r = row(l.attributed_station || l.station_code || "Unknown");
+    allLeads.forEach((l) => {
+      const r = row(stationOf(l));
       if (l.lead_type === "qr") r.qr += 1; else r.calls += 1;
       r.revenue += Number(l.payout_rate || 0);
     });
@@ -182,9 +183,30 @@ export default function JacuzziDashboard() {
         leads: r.calls + r.qr,
         profit: r.revenue - r.spend,
         cpl: r.calls + r.qr > 0 ? safe(r.spend / (r.calls + r.qr)) : 0,
+        cpCall: r.calls > 0 ? safe(r.spend / r.calls) : 0,
+        cpQr: r.qr > 0 ? safe(r.spend / r.qr) : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue || b.spend - a.spend);
-  }, [leads, delivery]);
+  }, [allLeads, allDelivery]);
+
+  /** Blended footer for the station table — the whole-account picture. */
+  const blended = useMemo(() => {
+    const t = stations.reduce(
+      (a, s) => ({
+        spend: a.spend + s.spend, impressions: a.impressions + s.impressions,
+        calls: a.calls + s.calls, qr: a.qr + s.qr, revenue: a.revenue + s.revenue,
+      }),
+      { spend: 0, impressions: 0, calls: 0, qr: 0, revenue: 0 }
+    );
+    const all = t.calls + t.qr;
+    return {
+      ...t, leads: all, profit: t.revenue - t.spend,
+      cpl: all > 0 ? t.spend / all : 0,
+      cpCall: t.calls > 0 ? t.spend / t.calls : 0,
+      cpQr: t.qr > 0 ? t.spend / t.qr : 0,
+    };
+  }, [stations]);
+
 
   const parsed = useMemo(() => (paste.trim() ? parseTmSheet(paste) : []), [paste]);
 

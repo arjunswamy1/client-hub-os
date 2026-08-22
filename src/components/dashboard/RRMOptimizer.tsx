@@ -254,20 +254,38 @@ export default function RRMOptimizer({ line }: { line: RRMLine }) {
     [terms],
   );
 
-  /** Match-type efficiency (Google only). */
+  /**
+   * Match-type efficiency (Google only). Spend and clicks come from the raw
+   * keyword rows; a keyword's calls are split across its match types by share of
+   * spend, since Moja cannot tell which variant served the impression.
+   */
   const byMatch = useMemo(() => {
-    if (platform !== "google") return [];
-    const m = new Map<string, { spend: number; calls: number; clicks: number }>();
-    for (const r of rows) {
-      const k = (r.matchType || "unknown").toLowerCase();
-      const cur = m.get(k) || { spend: 0, calls: 0, clicks: 0 };
-      cur.spend += r.spend;
-      cur.calls += r.calls;
-      cur.clicks += r.clicks;
-      m.set(k, cur);
+    if (platform !== "google" || !data) return [];
+    const spendByKw = new Map<string, number>();
+    for (const r of data.keywords as any[]) {
+      if (!r.keyword) continue;
+      const k = normKey(r.keyword);
+      spendByKw.set(k, (spendByKw.get(k) || 0) + Number(r.spend || 0));
     }
-    return Array.from(m.entries()).map(([matchType, v]) => ({ matchType, ...v }));
-  }, [rows, platform]);
+    const m = new Map<string, { spend: number; calls: number; clicks: number }>();
+    for (const r of data.keywords as any[]) {
+      if (!r.keyword) continue;
+      const mt = (r.match_type || "unknown").toLowerCase();
+      const spend = Number(r.spend || 0);
+      const kwKey = normKey(r.keyword);
+      const kwSpend = spendByKw.get(kwKey) || 0;
+      const kwCalls = (callsByTag.get(kwKey) || []).length;
+      const cur = m.get(mt) || { spend: 0, calls: 0, clicks: 0 };
+      cur.spend += spend;
+      cur.clicks += Number(r.clicks || 0);
+      cur.calls += kwSpend > 0 ? kwCalls * (spend / kwSpend) : 0;
+      m.set(mt, cur);
+    }
+    return Array.from(m.entries())
+      .map(([matchType, v]) => ({ matchType, ...v }))
+      .sort((a, b) => b.spend - a.spend);
+  }, [data, platform, callsByTag]);
+
 
   /** Hours where calls land but nobody picks up — raw calls we already pay for and lose. */
   const deadHours = useMemo(() => {

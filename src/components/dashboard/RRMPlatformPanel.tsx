@@ -13,7 +13,8 @@ import {
 import { ChevronRight, ChevronDown, Search, Download, Phone } from "lucide-react";
 import { useMojaCalls, useRRMSpend, MojaCall } from "@/hooks/useRRMData";
 import {
-  useRRMAdSets, useRRMKeywords, useRRMSearchTerms, useRRMCreatives, DrillRow,
+  useRRMAdSets, useRRMKeywords, useRRMSearchTerms, useRRMCreatives, useRRMAttribution,
+  DrillRow, RRMAttribution,
 } from "@/hooks/useRRMDrillDown";
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -42,7 +43,39 @@ function estCalls(levelSpend: number, campaignSpend: number, campaignCalls: numb
   return (levelSpend / campaignSpend) * campaignCalls;
 }
 
-function EstCell({ levelSpend, campaign }: { levelSpend: number; campaign: CampaignAgg }) {
+/**
+ * Calls + cost per call for a sub-campaign row.
+ * When Moja passed UTMs we can attribute exactly (`exact`), otherwise we model by spend share.
+ */
+function CallsCell({
+  levelSpend, campaign, exact,
+}: { levelSpend: number; campaign: CampaignAgg; exact: MojaCall[] | null }) {
+  if (exact) {
+    const n = exact.length;
+    const converted = exact.filter((c) => c.converted).length;
+    const cpc = n > 0 ? levelSpend / n : 0;
+    return (
+      <>
+        <TableCell className="text-right text-xs">
+          {n > 0 ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger className="font-medium">{n}</TooltipTrigger>
+                <TooltipContent className="max-w-[240px] text-xs">
+                  Matched from Moja UTMs — {n} call{n === 1 ? "" : "s"}, {converted} converted. Exact attribution, not
+                  modeled.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            "0"
+          )}
+        </TableCell>
+        <TableCell className="text-right text-xs">{cpc > 0 ? money2(cpc) : "—"}</TableCell>
+      </>
+    );
+  }
+
   const calls = estCalls(levelSpend, campaign.spend, campaign.calls);
   const cpc = calls > 0 ? levelSpend / calls : 0;
   return (
@@ -53,8 +86,8 @@ function EstCell({ levelSpend, campaign }: { levelSpend: number; campaign: Campa
             <Tooltip>
               <TooltipTrigger className="underline decoration-dotted">~{calls.toFixed(1)}</TooltipTrigger>
               <TooltipContent className="max-w-[240px] text-xs">
-                Estimated: this row's share of campaign spend applied to {campaign.calls} tracked calls. Moja does not
-                pass keyword/creative IDs, so sub-campaign calls are modeled, not measured.
+                Estimated: this row's share of campaign spend applied to {campaign.calls} tracked calls. No Moja UTM
+                data on these calls, so the split is modeled.
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -66,6 +99,7 @@ function EstCell({ levelSpend, campaign }: { levelSpend: number; campaign: Campa
     </>
   );
 }
+
 
 function SearchTermRows({
   platformAdsetId, keyword, campaign, colSpan,

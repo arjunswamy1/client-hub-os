@@ -112,7 +112,7 @@ async function createReport(token: string, dimension: string, startAt: string, e
   };
   if (accountUid) attributes.filters = [{ metric: "account_uid", value: accountUid }];
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     const res = await fetch(`${ROKU_API}/developer/reports`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -126,7 +126,7 @@ async function createReport(token: string, dimension: string, startAt: string, e
     }
     if (res.status === 429) {
       const wait = Number(text.match(/Retry after (\d+)/)?.[1] ?? 30);
-      await sleep(Math.min(wait + 2, 65) * 1000);
+      await sleep(Math.min(wait + 2, 20) * 1000);
       continue;
     }
     throw new Error(`Report create failed for ${dimension} (${res.status}): ${text.slice(0, 200)}`);
@@ -240,7 +240,7 @@ Deno.serve(async (req) => {
 
     await admin
       .from("platform_connections")
-      .update({ metadata: { ...meta, dimensions_synced_at: new Date().toISOString() } })
+      .update({ metadata: { ...meta, dim_pending: pending, dimensions_synced_at: new Date().toISOString() } })
       .eq("id", conn.id);
 
     return json({ success: true, range: { startAt, endAt }, results });

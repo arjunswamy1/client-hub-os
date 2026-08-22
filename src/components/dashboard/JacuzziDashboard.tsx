@@ -44,19 +44,44 @@ function KPI({ label, value, sub, icon: Icon, accent }: {
 }
 
 export default function JacuzziDashboard() {
-  const { data: leads = [], isLoading: leadsLoading, refetch: refetchLeads } = useJacuzziLeads();
-  const { data: delivery = [], isLoading: deliveryLoading, refetch: refetchDelivery } = useJacuzziDelivery();
-  const { data: hourly = [] } = useJacuzziHourly();
+  const { data: allLeads = [], isLoading: leadsLoading, refetch: refetchLeads } = useJacuzziLeads();
+  const { data: allDelivery = [], isLoading: deliveryLoading, refetch: refetchDelivery } = useJacuzziDelivery();
+  const { data: allHourly = [], } = useJacuzziHourly();
   const { data: rates = [] } = useJacuzziRates();
   const importLeads = useImportLeads();
 
   const [paste, setPaste] = useState("");
   const [importing, setImporting] = useState(false);
 
+  /** Drill-down: empty station set = blended across every station we're paid on. */
+  const [stationFilter, setStationFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<"all" | "call" | "qr">("all");
+
+  const stationOf = (l: JacuzziLead) => l.attributed_station || l.station_code || "Unknown";
+  const stationActive = (s: string) => stationFilter.length === 0 || stationFilter.includes(s);
+  const toggleStation = (s: string) =>
+    setStationFilter((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  const isBlended = stationFilter.length === 0;
+  const scopeLabel = isBlended ? "Blended — all stations" : stationFilter.join(" + ");
+
+  const leads = useMemo(
+    () => allLeads.filter((l) => stationActive(stationOf(l)) && (typeFilter === "all" || l.lead_type === typeFilter)),
+    [allLeads, stationFilter, typeFilter]
+  );
+  const delivery = useMemo(
+    () => allDelivery.filter((d) => stationActive(d.station_code)),
+    [allDelivery, stationFilter]
+  );
+  const hourly = useMemo(
+    () => allHourly.filter((h) => stationActive(h.station_code)),
+    [allHourly, stationFilter]
+  );
+
   const currentRate = useMemo(
     () => rateForDate(rates, format(new Date(), "yyyy-MM-dd")),
     [rates]
   );
+
 
   const totals = useMemo(() => {
     const spend = delivery.reduce((s, d) => s + Number(d.spend || 0), 0);

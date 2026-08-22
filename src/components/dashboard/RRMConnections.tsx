@@ -104,6 +104,27 @@ export default function RRMConnections() {
     }
   };
 
+  const selectAdAccount = async (conn: RRMConnection, accountId: string) => {
+    const account = (conn.metadata?.ad_accounts || []).find((a) => (a.id || a.account_id) === accountId);
+    if (!account) return;
+    setBusy(`account-${conn.platform}`);
+    try {
+      const { error } = await supabase
+        .from("platform_connections")
+        .update({ selected_ad_account: account as never })
+        .eq("id", conn.id);
+      if (error) throw error;
+      toast.success(`Ad account set to ${account.name || accountId}`);
+      await refetch();
+    } catch (e: any) {
+      toast.error(e.message || "Could not save the ad account");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+
+
   return (
     <div className="space-y-3">
       {PLATFORMS.map((p) => {

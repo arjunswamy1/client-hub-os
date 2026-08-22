@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2, XCircle, Copy } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Copy, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function RokuCallbackPage() {

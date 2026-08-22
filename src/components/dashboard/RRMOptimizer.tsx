@@ -137,8 +137,9 @@ function Rec({
 export default function RRMOptimizer({ line }: { line: RRMLine }) {
   const platform = platformOfLine(line);
   const { dateRange } = useDateRange();
-
+  const { data: calls = [] } = useMojaCalls();
   const { data: spendRows = [] } = useRRMSpend();
+
   const { data, isLoading } = useOptimizerData(line);
 
   const lineCalls = useMemo(() => calls.filter((c) => callLine(c) === line), [calls, line]);

@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
 
     if (upsertError) {
       console.error("Upsert error:", upsertError);
-      return json({ error: "Could not save the Meta connection" }, 500);
+      return json({ error: `Could not save the Meta connection: ${upsertError.message}` }, 500);
     }
 
     return json({ success: true, account_name: meData.name || null });

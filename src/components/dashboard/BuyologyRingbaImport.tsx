@@ -97,9 +97,18 @@ function toIso(v: string): string | null {
   return null;
 }
 
+// Only these campaigns are live for BuyologyIQ — everything else in a Ringba
+// export (Health Sharing, Timeshare Exit, etc.) is filtered out on import.
+const LIVE_CAMPAIGNS = ["walk in tubs", "bathroom remodel"];
+const isLiveCampaign = (name: string) => {
+  const n = name.trim().toLowerCase();
+  return LIVE_CAMPAIGNS.some((c) => n === c || n.includes(c));
+};
+
 type Parsed = {
   rows: any[];
   skipped: number;
+  offCampaign: number;
   missing: string[];
 };
 
@@ -115,6 +124,7 @@ function mapRows(csv: string[][]): Parsed {
 
   const rows: any[] = [];
   let skipped = 0;
+  let offCampaign = 0;
   const seen = new Set<string>();
 
   for (let i = 1; i < csv.length; i++) {
@@ -122,6 +132,10 @@ function mapRows(csv: string[][]): Parsed {
     const get = (f: string) => (idx[f] !== undefined ? (cells[idx[f]] ?? "").trim() : "");
     const iso = toIso(get("call_date"));
     if (!iso) { skipped++; continue; }
+
+    const campaign = get("campaign_name");
+    if (campaign && !isLiveCampaign(campaign)) { offCampaign++; continue; }
+
 
     const duration = toSeconds(get("duration_seconds"));
     const connectedRaw = get("connected");
@@ -140,7 +154,7 @@ function mapRows(csv: string[][]): Parsed {
       client_id: BUYOLOGY_CLIENT_ID,
       call_id: callId,
       call_date: iso,
-      campaign_name: get("campaign_name") || null,
+      campaign_name: campaign || null,
       target_name: get("target_name") || null,
       caller_number: get("caller_number") || null,
       inbound_number: get("inbound_number") || null,
@@ -158,8 +172,14 @@ function mapRows(csv: string[][]): Parsed {
     });
   }
 
-  if (rows.length === 0) throw new Error("No usable rows found — check the call date column format");
-  return { rows, skipped, missing: [] };
+  if (rows.length === 0)
+    throw new Error(
+      offCampaign > 0
+        ? `No live-campaign calls found — ${offCampaign} rows were outside Walk In Tubs / Bathroom Remodel`
+        : "No usable rows found — check the call date column format"
+    );
+  return { rows, skipped, offCampaign, missing: [] };
+
 }
 
 export default function BuyologyRingbaImport() {
@@ -269,6 +289,10 @@ export default function BuyologyRingbaImport() {
               <span>{parsed.rows.filter((r) => r.converted).length} converted</span>
               <span>${totalRevenue.toLocaleString()} revenue</span>
               {parsed.skipped > 0 && <span>{parsed.skipped} rows skipped</span>}
+              {parsed.offCampaign > 0 && (
+                <span>{parsed.offCampaign} non-live campaign rows excluded</span>
+              )}
+
             </div>
             <div className="overflow-x-auto rounded-md border">
               <Table>

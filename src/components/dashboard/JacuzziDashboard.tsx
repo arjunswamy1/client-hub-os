@@ -47,10 +47,13 @@ function KPI({ label, value, sub, icon: Icon, accent }: {
 
 export default function JacuzziDashboard() {
   const { data: allLeads = [], isLoading: leadsLoading, refetch: refetchLeads } = useJacuzziLeads();
-  const { data: allDelivery = [], isLoading: deliveryLoading, refetch: refetchDelivery } = useJacuzziDelivery();
-  const { data: allHourly = [], } = useJacuzziHourly();
+  const { data: rawDelivery = [], isLoading: deliveryLoading, refetch: refetchDelivery } = useJacuzziDelivery();
+  const { data: allHourly = [], refetch: refetchHourly } = useJacuzziHourly();
+  const { data: rokuConn, refetch: refetchConn } = useRokuHourlyStatus();
   const { data: rates = [] } = useJacuzziRates();
   const importLeads = useImportLeads();
+  const syncHourly = useSyncRokuHourly();
+  const [syncing, setSyncing] = useState(false);
 
   const [paste, setPaste] = useState("");
   const [importing, setImporting] = useState(false);
@@ -58,6 +61,41 @@ export default function JacuzziDashboard() {
   /** Drill-down: empty station set = blended across every station we're paid on. */
   const [stationFilter, setStationFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "call" | "qr">("all");
+
+  /**
+   * Roku hourly rows are the freshest signal for the current day, so spend for a
+   * date+station is the greater of the daily row and its hourly roll-up. Hourly
+   * days with no daily row at all are added in.
+   */
+  const allDelivery = useMemo(() => {
+    const hourlyTotals = new Map<string, { impressions: number; spend: number }>();
+    allHourly.forEach((h) => {
+      const key = `${h.date}|${h.station_code}`;
+      const cur = hourlyTotals.get(key) ?? { impressions: 0, spend: 0 };
+      cur.impressions += Number(h.impressions || 0);
+      cur.spend += Number(h.spend || 0);
+      hourlyTotals.set(key, cur);
+    });
+    const merged = rawDelivery.map((d) => {
+      const h = hourlyTotals.get(`${d.date}|${d.station_code}`);
+      if (!h) return d;
+      hourlyTotals.delete(`${d.date}|${d.station_code}`);
+      return {
+        ...d,
+        impressions: Math.max(Number(d.impressions || 0), h.impressions),
+        spend: Math.max(Number(d.spend || 0), h.spend),
+      };
+    });
+    hourlyTotals.forEach((h, key) => {
+      const [date, station_code] = key.split("|");
+      merged.push({
+        date, station_code, campaign_name: null,
+        impressions: h.impressions, spend: h.spend,
+        cpm: h.impressions > 0 ? (h.spend / h.impressions) * 1000 : 0,
+      });
+    });
+    return merged.sort((a, b) => a.date.localeCompare(b.date));
+  }, [rawDelivery, allHourly]);
 
   const stationOf = (l: JacuzziLead) => l.attributed_station || l.station_code || "Unknown";
   const stationActive = (s: string) => stationFilter.length === 0 || stationFilter.includes(s);
@@ -78,6 +116,25 @@ export default function JacuzziDashboard() {
     () => allHourly.filter((h) => stationActive(h.station_code)),
     [allHourly, stationFilter]
   );
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await syncHourly(3);
+      if (res?.error) toast.error(res.error);
+      else if (res?.pending)
+        toast.info("Roku is still generating the hourly report — it'll land automatically within the hour.");
+      else toast.success(`Hourly delivery synced (${res?.hourly ?? 0} hours)`);
+      refetchHourly();
+      refetchDelivery();
+      refetchConn();
+    } catch (e: any) {
+      toast.error(e.message || "Hourly sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
 
   const currentRate = useMemo(
     () => rateForDate(rates, format(new Date(), "yyyy-MM-dd")),

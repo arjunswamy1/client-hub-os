@@ -7,7 +7,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, TrendingDown, ArrowDownRight, CheckCircle2, Ban, Scissors, Clock } from "lucide-react";
+import { AlertTriangle, TrendingDown, ArrowDownRight, CheckCircle2, Ban, Scissors, Clock, FileDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { buildOptimizerPdf } from "@/lib/rrmOptimizerPdf";
+
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import {

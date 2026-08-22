@@ -108,7 +108,12 @@ interface Flat {
 }
 
 /** Flatten Roku's parallel-array field shape into one row per entity+date. */
-function flatten(body: any, accountUid: string, fallbackDate: string): Flat[] {
+function flatten(
+  body: any,
+  accountUid: string,
+  fallbackDate: string,
+  names?: Map<string, string>,
+): Flat[] {
   const out: Flat[] = [];
   for (const row of body?.data ?? []) {
     const dims = (row?.dimensions ?? {}) as Record<string, any>;
@@ -117,11 +122,17 @@ function flatten(body: any, accountUid: string, fallbackDate: string): Flat[] {
     const dateList: string[] = Array.isArray(dates)
       ? dates.map((d: any) => String(d).slice(0, 10))
       : [String(dates ?? fallbackDate).slice(0, 10)];
-    const name = String(
-      pick(dims, ["campaign_name", "name", "entity_name", "ad_group_name", "creative_name"]) ?? "Unknown",
-    );
+    // Roku nests the entity id under dimensions.entity_uids.<entity>_uid.
+    const entityUids = (dims.entity_uids ?? {}) as Record<string, any>;
     const uid = String(
-      pick(dims, ["campaign_uid", "entity_uid", "uid", "ad_group_uid", "creative_uid"]) ?? name,
+      pick(entityUids, ["campaign_uid", "ad_group_uid", "ad_uid", "creative_uid", "account_uid"]) ??
+        pick(dims, ["campaign_uid", "entity_uid", "uid", "ad_group_uid", "creative_uid"]) ??
+        accountUid,
+    );
+    const name = String(
+      names?.get(uid) ??
+        pick(dims, ["campaign_name", "name", "entity_name", "ad_group_name", "creative_name"]) ??
+        uid,
     );
     const microArr = pick(fields, ["billed_local_micro_spend"]);
     const spendArr = pick(fields, ["spend", "cost", "total_spend"]);
@@ -251,7 +262,7 @@ Deno.serve(async (req) => {
             }),
           });
           if (rawSample.length < 3) rawSample.push(...(res?.data ?? []).slice(0, 3));
-          const rows = flatten(res, accountUid, end_date).map((r) => ({
+          const rows = flatten(res, accountUid, end_date, names).map((r) => ({
             ...r,
             entity_name: r.entity_name === "Unknown"
               ? entityNames.get(accountUid)?.get(r.entity_uid) ?? r.entity_uid

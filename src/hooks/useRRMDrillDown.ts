@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
-import { RRM_CLIENT_ID } from "@/hooks/useRRMData";
+import { RRM_CLIENT_ID, MojaCall } from "@/hooks/useRRMData";
 
 function useDateStrings() {
   const { dateRange } = useDateRange();
@@ -163,4 +163,109 @@ export function useRRMConnections() {
     },
     refetchInterval: 60 * 1000,
   });
+}
+
+/* ============================================================
+   Exact call attribution via Moja UTMs
+   Google: utm_term = keyword text, utm_content = ad id
+   Meta:   utm_term = ad id,        utm_content = ad/creative name
+   ============================================================ */
+
+export const normKey = (s: string | null | undefined) =>
+  (s || "")
+    .toLowerCase()
+    .replace(/^[+"[\]]+|[+"[\]]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export interface RRMAttribution {
+  /** Calls exactly attributed to a Google keyword (null = no UTM coverage) */
+  keywordCalls: (keyword: string) => MojaCall[] | null;
+  /** Calls exactly attributed to a Meta creative by ad id or ad name */
+  creativeCalls: (adId?: string | null, adName?: string | null) => MojaCall[] | null;
+  /** Calls exactly attributed to an ad group / ad set, resolved from keyword & ad maps */
+  adsetCalls: (platformAdsetId?: string | null) => MojaCall[] | null;
+  /** Whether any call in range carries keyword/creative UTMs at all */
+  hasUtmCoverage: boolean;
+}
+
+/** Builds keyword→ad group and ad id/name→ad set maps, then indexes Moja calls onto them. */
+export function useRRMAttribution(platform: "google" | "meta", calls: MojaCall[]): RRMAttribution {
+  const { fromStr, toStr } = useDateStrings();
+
+  const { data: maps } = useQuery({
+    queryKey: ["rrm-attribution-maps", platform, fromStr, toStr],
+    queryFn: async () => {
+      const keywordToAdset = new Map<string, string>();
+      const adIdToAdset = new Map<string, string>();
+      const adNameToAdset = new Map<string, string>();
+
+      if (platform === "google") {
+        const { data } = await supabase
+          .from("campaign_keywords")
+          .select("keyword, platform_adset_id")
+          .eq("client_id", RRM_CLIENT_ID);
+        for (const r of data || []) {
+          if (r.keyword && r.platform_adset_id) keywordToAdset.set(normKey(r.keyword), r.platform_adset_id);
+        }
+      } else {
+        const { data } = await supabase
+          .from("ad_creatives")
+          .select("ad_name, platform_ad_id, platform_adset_id")
+          .eq("client_id", RRM_CLIENT_ID)
+          .eq("platform", "meta");
+        for (const r of data || []) {
+          if (!r.platform_adset_id) continue;
+          if (r.platform_ad_id) adIdToAdset.set(normKey(r.platform_ad_id), r.platform_adset_id);
+          if (r.ad_name) adNameToAdset.set(normKey(r.ad_name), r.platform_adset_id);
+        }
+      }
+      return { keywordToAdset, adIdToAdset, adNameToAdset };
+    },
+  });
+
+  const byKeyword = new Map<string, MojaCall[]>();
+  const byAdId = new Map<string, MojaCall[]>();
+  const byAdName = new Map<string, MojaCall[]>();
+  const byAdset = new Map<string, MojaCall[]>();
+  let coverage = 0;
+
+  const push = (m: Map<string, MojaCall[]>, k: string, c: MojaCall) => {
+    if (!k) return;
+    const arr = m.get(k);
+    if (arr) arr.push(c);
+    else m.set(k, [c]);
+  };
+
+  for (const c of calls) {
+    const term = normKey(c.utm_term);
+    const content = normKey(c.utm_content);
+    if (!term && !content) continue;
+    coverage++;
+
+    if (platform === "google") {
+      push(byKeyword, term, c);
+      push(byAdId, content, c);
+      const adset = maps?.keywordToAdset.get(term);
+      if (adset) push(byAdset, adset, c);
+    } else {
+      push(byAdId, term, c);
+      push(byAdName, content, c);
+      const adset = maps?.adIdToAdset.get(term) || maps?.adNameToAdset.get(content);
+      if (adset) push(byAdset, adset, c);
+    }
+  }
+
+  const hasUtmCoverage = coverage > 0;
+
+  return {
+    hasUtmCoverage,
+    keywordCalls: (keyword) => (hasUtmCoverage ? byKeyword.get(normKey(keyword)) || [] : null),
+    creativeCalls: (adId, adName) =>
+      hasUtmCoverage ? byAdId.get(normKey(adId)) || byAdName.get(normKey(adName)) || [] : null,
+    adsetCalls: (platformAdsetId) => {
+      if (!hasUtmCoverage || !platformAdsetId) return null;
+      return byAdset.get(platformAdsetId) || [];
+    },
+  };
 }

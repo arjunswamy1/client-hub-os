@@ -299,12 +299,28 @@ export default function JacuzziDashboard() {
           <Radio className="h-3 w-3" /> CTV cost-per-lead · {scopeLabel}
         </Badge>
         <Badge variant="outline">Current payout {money(currentRate)} / call or QR scan</Badge>
+        <Badge variant={rokuConn?.status === "active" ? "secondary" : "outline"} className="gap-1">
+          <Clock className="h-3 w-3" />
+          {rokuConn
+            ? rokuConn.last_synced_at
+              ? `Roku hourly synced ${format(new Date(rokuConn.last_synced_at), "MMM d h:mm a")}`
+              : "Roku hourly sync pending"
+            : "Roku not connected"}
+        </Badge>
         <Button
           variant="outline" size="sm" className="ml-auto h-8 gap-1.5 text-xs"
-          onClick={() => { refetchLeads(); refetchDelivery(); toast.success("Refreshed"); }}
+          onClick={handleSync} disabled={syncing || !rokuConn}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Syncing…" : "Sync Roku hourly"}
+        </Button>
+        <Button
+          variant="outline" size="sm" className="h-8 gap-1.5 text-xs"
+          onClick={() => { refetchLeads(); refetchDelivery(); refetchHourly(); toast.success("Refreshed"); }}
         >
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </Button>
+
       </div>
 
       {/* Drill-down controls: default view is blended across every station we're paid on. */}

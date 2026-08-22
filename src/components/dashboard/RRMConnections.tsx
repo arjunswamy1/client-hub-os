@@ -76,6 +76,8 @@ function ErrorHint({ error, platform }: { error: string; platform: string }) {
 export default function RRMConnections() {
   const { data: connections = [], refetch } = useRRMConnections();
   const [busy, setBusy] = useState<string | null>(null);
+  const autoSaved = useRef<Set<string>>(new Set());
+
 
   const connect = async (platform: "google" | "meta", fn: string) => {
     setBusy(platform);

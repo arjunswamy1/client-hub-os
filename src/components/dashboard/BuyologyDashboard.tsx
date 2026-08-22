@@ -20,10 +20,6 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const dur = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 
-const money = (n: number) => (n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
-const money2 = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
-const dur = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 function agg(calls: BuyologyCall[], spend: number) {
   const total = calls.length;

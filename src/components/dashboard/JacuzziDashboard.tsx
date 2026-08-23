@@ -18,6 +18,7 @@ import {
   RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users, ShieldCheck, Send, MapPin,
 } from "lucide-react";
 import JacuzziReconciliation from "./JacuzziReconciliation";
+import JacuzziHourlyAudit from "./JacuzziHourlyAudit";
 import JacuzziGeoPlacement from "./JacuzziGeoPlacement";
 import SlackReportCard from "./SlackReportCard";
 import { format, parseISO } from "date-fns";
@@ -126,6 +127,11 @@ export default function JacuzziDashboard() {
   const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, fromKey, toKey]);
   const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, fromKey, toKey]);
   const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, fromKey, toKey]);
+  /** Unmerged daily rows — the hourly-vs-daily audit needs both sides untouched. */
+  const rawDailyInPeriod = useMemo(
+    () => rawDelivery.filter((d) => inPeriod(d.date) && stationActive(d.station_code)),
+    [rawDelivery, fromKey, toKey, stationFilter]
+  );
 
 
   const leads = useMemo(
@@ -521,7 +527,10 @@ export default function JacuzziDashboard() {
               </BarChart>
             </ResponsiveContainer>
           </Card>
+
+          <JacuzziHourlyAudit dailyRows={rawDailyInPeriod} hourlyRows={hourly} />
         </TabsContent>
+
 
         <TabsContent value="stations">
           <Card className="overflow-hidden">

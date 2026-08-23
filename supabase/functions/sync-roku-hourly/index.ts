@@ -96,51 +96,20 @@ function normDate(v: string): string | null {
   return `${yr}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
 }
 
-/** Roku hour dimension is 1-24; we store 0-23. */
+/**
+ * Roku's hour dimension is 0-23 in the ad account's own clock, which for this
+ * account is Eastern — the same clock the campaign daypart is set in. Store it
+ * as-is; no shifting.
+ */
 function normHour(v: string): number | null {
   const m = (v || "").match(/\d+/);
   if (!m) return null;
   const h = Number(m[0]);
   if (!isFinite(h)) return null;
-  if (h >= 1 && h <= 24) return h === 24 ? 0 : h - 1;
+  if (h === 24) return 0;
   return h >= 0 && h <= 23 ? h : null;
 }
 
-/**
- * Roku reports hours in its account clock (US/Pacific). The dashboard is read in
- * Eastern time, so shift each date+hour into America/New_York before storing.
- */
-const ROKU_REPORT_TZ = "America/Los_Angeles";
-const DISPLAY_TZ = "America/New_York";
-
-function tzParts(tz: string, instant: Date) {
-  const p = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-  }).formatToParts(instant);
-  const get = (t: string) => Number(p.find((x) => x.type === t)?.value ?? 0);
-  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour") % 24 };
-}
-
-/** Wall-clock date+hour in `tz` -> UTC instant. */
-function zonedToUtc(date: string, hour: number, tz: string): Date {
-  const [y, m, d] = date.split("-").map(Number);
-  const guess = Date.UTC(y, m - 1, d, hour);
-  const wall = tzParts(tz, new Date(guess));
-  const asUtc = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour);
-  return new Date(guess - (asUtc - guess));
-}
-
-function toDisplayHour(date: string, hour: number): { date: string; hour: number } {
-  const instant = zonedToUtc(date, hour, ROKU_REPORT_TZ);
-  const p = tzParts(DISPLAY_TZ, instant);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return { date: `${p.year}-${pad(p.month)}-${pad(p.day)}`, hour: p.hour };
-}
 
 function stationFromCampaign(name: string, fallback: string): string {
   const m = (name || "").toUpperCase().match(/CT\s?-?(\d{2})/);

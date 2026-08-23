@@ -127,6 +127,11 @@ export default function JacuzziDashboard() {
   const scopedLeads = useMemo(() => allLeads.filter((l) => inPeriod(l.transaction_date)), [allLeads, fromKey, toKey]);
   const scopedDelivery = useMemo(() => allDelivery.filter((d) => inPeriod(d.date)), [allDelivery, fromKey, toKey]);
   const scopedHourly = useMemo(() => allHourly.filter((h) => inPeriod(h.date)), [allHourly, fromKey, toKey]);
+  /** Unmerged daily rows — the hourly-vs-daily audit needs both sides untouched. */
+  const rawDailyInPeriod = useMemo(
+    () => rawDelivery.filter((d) => inPeriod(d.date) && stationActive(d.station_code)),
+    [rawDelivery, fromKey, toKey, stationFilter]
+  );
 
 
   const leads = useMemo(

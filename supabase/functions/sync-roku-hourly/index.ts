@@ -299,13 +299,6 @@ Deno.serve(async (req) => {
     const csvRes = await fetch(downloadUrl);
     if (!csvRes.ok) throw new Error(`Report download failed (${csvRes.status})`);
     const csv = await csvRes.text();
-    if (body.debug) {
-      await admin
-        .from("platform_connections")
-        .update({ metadata: { ...meta, pending_report_uid: null } })
-        .eq("id", conn.id);
-      return json({ success: true, debug: true, csv: csv });
-    }
     const counts = await persist(admin, clientId, parseCsv(csv));
 
     await admin

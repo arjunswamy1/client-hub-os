@@ -527,7 +527,10 @@ export default function JacuzziDashboard() {
               </BarChart>
             </ResponsiveContainer>
           </Card>
+
+          <JacuzziHourlyAudit dailyRows={rawDailyInPeriod} hourlyRows={hourly} />
         </TabsContent>
+
 
         <TabsContent value="stations">
           <Card className="overflow-hidden">

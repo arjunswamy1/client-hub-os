@@ -169,10 +169,9 @@ async function persist(admin: any, clientId: string, rows: string[][]) {
 
   const hourlyMap = new Map<string, any>();
   for (const r of rows.slice(1)) {
-    const rawDate = normDate(r[iDate] ?? "");
-    const rawHour = normHour(r[iHour] ?? "");
-    if (!rawDate || rawHour === null) continue;
-    const { date, hour } = toDisplayHour(rawDate, rawHour);
+    const date = normDate(r[iDate] ?? "");
+    const hour = normHour(r[iHour] ?? "");
+    if (!date || hour === null) continue;
     const station = stationFromCampaign(iCamp >= 0 ? r[iCamp] ?? "" : "", "CT14");
     const key = `${date}|${hour}|${station}`;
     const cur = hourlyMap.get(key) ?? {

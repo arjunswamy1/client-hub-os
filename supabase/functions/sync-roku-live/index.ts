@@ -333,12 +333,17 @@ Deno.serve(async (req) => {
       const dates = Array.from(new Set(metricRows.map((r) => r.date)));
       const { data: existing } = await admin
         .from("jacuzzi_delivery")
-        .select("date, station_code, source")
+        .select("date, station_code, source, spend")
         .eq("client_id", clientId)
         .in("date", dates);
+      // Only real client-sheet numbers win over the API — zero-spend placeholder
+      // rows must not block the Roku roll-up.
       const sheetKeys = new Set(
-        (existing ?? []).filter((e: any) => e.source === "sheet").map((e: any) => `${e.date}|${e.station_code}`),
+        (existing ?? [])
+          .filter((e: any) => String(e.source ?? "").startsWith("sheet") && Number(e.spend) > 0)
+          .map((e: any) => `${e.date}|${e.station_code}`),
       );
+
       const dailyRows = Array.from(dailyMap.entries())
         .filter(([k]) => !sheetKeys.has(k))
         .map(([, v]) => ({ ...v, cpm: v.impressions > 0 ? (v.spend / v.impressions) * 1000 : 0 }));

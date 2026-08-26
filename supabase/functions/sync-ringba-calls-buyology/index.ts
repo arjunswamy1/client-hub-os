@@ -121,6 +121,19 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Debug helper: ?probe=columns returns the raw column catalog so tag column
+    // names can be confirmed without shipping a throwaway function.
+    if (new URL(req.url).searchParams.get("probe") === "columns") {
+      const colRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs/columns`, {
+        headers: { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" },
+      });
+      const body = await colRes.text();
+      return new Response(body, {
+        status: colRes.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let daysBack = 7;
     if (req.method === "POST") {
       try {

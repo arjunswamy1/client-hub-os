@@ -340,6 +340,9 @@ Deno.serve(async (req) => {
       calls_synced: totalUpserted,
       calls_with_tags: taggedCalls,
       tag_columns_requested: useValueColumns,
+      columns_requested: requestColumns.length,
+      columns_dropped: droppedColumns,
+
       campaigns_in_response: [...campaignsSeen].slice(0, 40),
       campaigns_kept: [...campaignsKept],
       api_calls: apiCalls,

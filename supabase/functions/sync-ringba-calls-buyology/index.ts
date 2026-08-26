@@ -37,7 +37,7 @@ function parseRingbaDate(dt: any): string {
  * the dashboard joins creatives on (`tag:User:utm_content` etc.). */
 const VALUE_COLUMNS = [
   "inboundCallId", "callDt", "campaignName", "targetName", "buyer",
-  "inboundPhoneNumber", "callerNumber", "callLengthInSeconds", "connectedCallLengthInSeconds",
+  "inboundPhoneNumber", "callLengthInSeconds", "connectedCallLengthInSeconds",
   "hasConnected", "hasConverted", "conversionAmount", "payoutAmount", "totalCost",
   "publisherName", "callerStateProvince", "callerCity", "endCallSource", "recordingUrl",
   "tag:User:utm_content", "tag:User:utm_source", "tag:User:utm_medium",
@@ -128,21 +128,6 @@ Deno.serve(async (req) => {
     if (!RINGBA_ACCOUNT_ID) throw new Error("RINGBA_ACCOUNT_ID_BUYOLOGY is not configured");
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    // Debug helper: ?probe=columns returns the raw column catalog so tag column
-    // names can be confirmed without shipping a throwaway function.
-    const probe = new URL(req.url).searchParams.get("probe");
-    if (probe) {
-      const path = probe === "columns" ? "calllogs/columns" : probe;
-      const colRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/${path}`, {
-        headers: { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" },
-      });
-      const body = await colRes.text();
-      return new Response(body, {
-        status: colRes.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     let daysBack = 7;
     if (req.method === "POST") {

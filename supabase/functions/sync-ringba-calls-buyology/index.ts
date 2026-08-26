@@ -147,9 +147,9 @@ Deno.serve(async (req) => {
 
     const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
 
-    // Ringba rejects the whole request if any requested column is unknown, and the
-    // available columns (especially user tags) differ per account — so discover them.
-    let requestColumns: string[] = [];
+    // Ringba rejects the whole request (422) if ANY requested column is unknown, and
+    // the available columns/tags differ per account — so resolve the list up front.
+    let requestColumns: string[] = [...VALUE_COLUMNS];
     try {
       const colRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs/columns`, {
         headers: { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" },
@@ -163,21 +163,41 @@ Deno.serve(async (req) => {
             const id = typeof c === "string" ? c : (c?.id || c?.name);
             if (id) ids.add(String(id));
           }
-        } else if (raw && typeof raw === "object") {
-          for (const k of Object.keys(raw)) ids.add(k);
         }
-        requestColumns = VALUE_COLUMNS.filter((c) => ids.has(c));
-        // Pull in every user tag column the account exposes (utm_content etc.).
-        for (const id of ids) if (id.startsWith("tag:")) requestColumns.push(id);
-        requestColumns = [...new Set(requestColumns)];
-        console.log(`Ringba columns: ${ids.size} available, requesting ${requestColumns.length}`);
-      } else {
-        console.warn(`Column discovery failed [${colRes.status}] — falling back to default columns`);
+        if (ids.size > 0) {
+          requestColumns = VALUE_COLUMNS.filter((c) => c.startsWith("tag:") || ids.has(c));
+        }
       }
     } catch (e) {
       console.warn(`Column discovery error: ${e instanceof Error ? e.message : e}`);
     }
+
+    // Tag catalog: caller number / geo live on tags, not plain columns.
+    try {
+      const tagRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/tags`, {
+        headers: { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" },
+      });
+      if (tagRes.ok) {
+        const tags = await tagRes.json();
+        if (Array.isArray(tags)) {
+          for (const t of tags) {
+            const type = t?.tagType, name = t?.tagName;
+            if (!type || !name) continue;
+            if (["InboundNumber", "Geo", "User"].includes(String(type))) {
+              requestColumns.push(`tag:${type}:${name}`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Tag discovery error: ${e instanceof Error ? e.message : e}`);
+    }
+    requestColumns = [...new Set(requestColumns)];
+    console.log(`Requesting ${requestColumns.length} Ringba columns`);
+
     let useValueColumns = requestColumns.length > 0;
+    let droppedColumns: string[] = [];
+
     const endDate = new Date();
     const startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - daysBack);

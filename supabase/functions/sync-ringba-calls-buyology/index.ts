@@ -260,16 +260,25 @@ Deno.serve(async (req) => {
         if (!res.ok) {
           const text = await res.text();
           console.error(`Ringba [${res.status}]: ${text.substring(0, 400)}`);
-          // Unknown column names -> retry the same page without valueColumns.
           if ((res.status === 400 || res.status === 422) && useValueColumns) {
+            // "Unknown value column X" -> drop just X and retry the same page.
+            const bad = text.match(/Unknown value column ([^"',}\s]+)/)?.[1];
+            if (bad && requestColumns.includes(bad)) {
+              requestColumns = requestColumns.filter((c) => c !== bad);
+              droppedColumns.push(bad);
+              console.warn(`Dropping unsupported column ${bad}`);
+              if (requestColumns.length === 0) useValueColumns = false;
+              continue;
+            }
             useValueColumns = false;
-            console.warn("Retrying without valueColumns (tag columns rejected)");
+            console.warn("Retrying without valueColumns (columns rejected)");
             continue;
           }
           httpErrors++;
           if (res.status >= 500 && httpErrors < 3) { await sleep(3_000); continue; }
           break;
         }
+
 
         const data = await res.json();
         const records: any[] = data?.report?.records || [];

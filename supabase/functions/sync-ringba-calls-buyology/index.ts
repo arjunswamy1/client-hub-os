@@ -123,8 +123,10 @@ Deno.serve(async (req) => {
 
     // Debug helper: ?probe=columns returns the raw column catalog so tag column
     // names can be confirmed without shipping a throwaway function.
-    if (new URL(req.url).searchParams.get("probe") === "columns") {
-      const colRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs/columns`, {
+    const probe = new URL(req.url).searchParams.get("probe");
+    if (probe) {
+      const path = probe === "columns" ? "calllogs/columns" : probe;
+      const colRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/${path}`, {
         headers: { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" },
       });
       const body = await colRes.text();

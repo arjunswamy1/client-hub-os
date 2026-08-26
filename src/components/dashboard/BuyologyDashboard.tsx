@@ -8,6 +8,7 @@ import BuyologyOptimizer from "./BuyologyOptimizer";
 import SlackReportCard from "./SlackReportCard";
 import MetaDashboard from "./MetaDashboard";
 import MetaConnectionCard from "./MetaConnectionCard";
+import BuyologyRingbaSyncCard from "./BuyologyRingbaSyncCard";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -322,6 +323,7 @@ export default function BuyologyDashboard() {
 
 
       <TabsContent value="connections" className="space-y-3">
+        <BuyologyRingbaSyncCard />
         <MetaConnectionCard clientId={BUYOLOGY_CLIENT_ID} clientLabel="BuyologyIQ" />
         <p className="text-xs text-muted-foreground">
           Authorize with the Meta user that has access to BuyologyIQ's ad account, pick the ad

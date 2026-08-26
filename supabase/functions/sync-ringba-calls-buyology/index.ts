@@ -74,7 +74,14 @@ function collectTags(call: Record<string, any>): Record<string, string> {
 }
 
 function mapCallToRow(call: any) {
-  const callId = call.inboundCallId || call.callId || `${call.callDt}-${call.callerId || call.callerNumber || "unknown"}`;
+  // Caller ID / geo only come back as tags on this account.
+  const callerNumber = call["tag:InboundNumber:Number"] || call["tag:InboundNumber:NumberE164"] ||
+    call["tag:InboundNumber:Number-NoPlus"] || call.callerId || call.callerNumber || null;
+  const state = call["tag:Geo:SubDivisionCode"] || call["tag:Geo:SubDivision"] ||
+    call["tag:InboundNumber:State"] || call.callerStateProvince || call.callerState || null;
+  const city = call["tag:Geo:City"] || call.callerCity || null;
+
+  const callId = call.inboundCallId || call.callId || `${call.callDt}-${callerNumber || "unknown"}`;
   const duration = Number(call.callLengthInSeconds || call.connectedCallLengthInSeconds || 0);
   const connected = call.hasConnected ?? (duration > 0 && !call.wasBlocked);
   const converted = !!(connected && call.hasConverted);
@@ -87,8 +94,8 @@ function mapCallToRow(call: any) {
     call_date: parseRingbaDate(call.callDt),
     campaign_name: call.campaignName || null,
     target_name: call.targetName || call.buyer || null,
-    caller_number: call.callerId || call.callerNumber || null,
-    inbound_number: call.inboundPhoneNumber || null,
+    caller_number: callerNumber,
+    inbound_number: call.inboundPhoneNumber || call["tag:DialedNumber:Number"] || null,
     duration_seconds: duration,
     connected: !!connected,
     converted,
@@ -97,8 +104,8 @@ function mapCallToRow(call: any) {
     metadata: {
       source: "ringba_api",
       publisher: call.publisherName || null,
-      state: call.callerStateProvince || call.callerState || null,
-      city: call.callerCity || null,
+      state,
+      city,
       disposition: call.endCallSource || null,
       recording_url: call.recordingUrl || null,
       connected_seconds: Number(call.connectedCallLengthInSeconds || 0),
@@ -107,6 +114,7 @@ function mapCallToRow(call: any) {
     },
   };
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });

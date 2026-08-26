@@ -37,7 +37,7 @@ function parseRingbaDate(dt: any): string {
  * the dashboard joins creatives on (`tag:User:utm_content` etc.). */
 const VALUE_COLUMNS = [
   "inboundCallId", "callDt", "campaignName", "targetName", "buyer",
-  "inboundPhoneNumber", "callerId", "callLengthInSeconds", "connectedCallLengthInSeconds",
+  "inboundPhoneNumber", "callerNumber", "callLengthInSeconds", "connectedCallLengthInSeconds",
   "hasConnected", "hasConverted", "conversionAmount", "payoutAmount", "totalCost",
   "publisherName", "callerStateProvince", "callerCity", "endCallSource", "recordingUrl",
   "tag:User:utm_content", "tag:User:utm_source", "tag:User:utm_medium",
@@ -131,6 +131,38 @@ Deno.serve(async (req) => {
     daysBack = Math.min(Math.max(daysBack, 1), 120);
 
     const ringbaUrl = `https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`;
+
+    // Ringba rejects the whole request if any requested column is unknown, and the
+    // available columns (especially user tags) differ per account — so discover them.
+    let requestColumns: string[] = [];
+    try {
+      const colRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs/columns`, {
+        headers: { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" },
+      });
+      if (colRes.ok) {
+        const colJson = await colRes.json();
+        const raw = colJson?.columns ?? colJson?.report?.columns ?? colJson;
+        const ids = new Set<string>();
+        if (Array.isArray(raw)) {
+          for (const c of raw) {
+            const id = typeof c === "string" ? c : (c?.id || c?.name);
+            if (id) ids.add(String(id));
+          }
+        } else if (raw && typeof raw === "object") {
+          for (const k of Object.keys(raw)) ids.add(k);
+        }
+        requestColumns = VALUE_COLUMNS.filter((c) => ids.has(c));
+        // Pull in every user tag column the account exposes (utm_content etc.).
+        for (const id of ids) if (id.startsWith("tag:")) requestColumns.push(id);
+        requestColumns = [...new Set(requestColumns)];
+        console.log(`Ringba columns: ${ids.size} available, requesting ${requestColumns.length}`);
+      } else {
+        console.warn(`Column discovery failed [${colRes.status}] — falling back to default columns`);
+      }
+    } catch (e) {
+      console.warn(`Column discovery error: ${e instanceof Error ? e.message : e}`);
+    }
+    let useValueColumns = requestColumns.length > 0;
     const endDate = new Date();
     const startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - daysBack);
@@ -149,7 +181,6 @@ Deno.serve(async (req) => {
 
     let totalFetched = 0, totalFiltered = 0, totalUpserted = 0, apiCalls = 0, httpErrors = 0;
     let taggedCalls = 0;
-    let useValueColumns = true;
     const campaignsSeen = new Set<string>();
     const campaignsKept = new Set<string>();
     const startTime = Date.now();
@@ -168,7 +199,7 @@ Deno.serve(async (req) => {
           size: pageSize,
           offset,
         };
-        if (useValueColumns) payload.valueColumns = VALUE_COLUMNS.map((c) => ({ column: c }));
+        if (useValueColumns) payload.valueColumns = requestColumns.map((c) => ({ column: c }));
 
         let res: Response;
         try {
@@ -195,7 +226,7 @@ Deno.serve(async (req) => {
           const text = await res.text();
           console.error(`Ringba [${res.status}]: ${text.substring(0, 400)}`);
           // Unknown column names -> retry the same page without valueColumns.
-          if (res.status === 400 && useValueColumns) {
+          if ((res.status === 400 || res.status === 422) && useValueColumns) {
             useValueColumns = false;
             console.warn("Retrying without valueColumns (tag columns rejected)");
             continue;

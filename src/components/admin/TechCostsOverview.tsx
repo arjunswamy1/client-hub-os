@@ -6,8 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Sparkles, Zap, HardDrive, Mail, DollarSign } from 'lucide-react';
-import { useTechUsageDaily, useClientsBasic } from '@/hooks/useTechCosts';
+import { ArrowRight, Sparkles, Zap, HardDrive, Mail, DollarSign, Boxes } from 'lucide-react';
+import { useTechUsageDaily, useClientsBasic, useCreditAllocations } from '@/hooks/useTechCosts';
+import { CreditAllocations } from './CreditAllocations';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts';
@@ -39,6 +40,7 @@ export function TechCostsOverview() {
   const [endDate, setEndDate] = useState(today());
   const { data: rows = [], isLoading } = useTechUsageDaily(startDate, endDate);
   const { data: clients = [] } = useClientsBasic();
+  const { data: allocations = [] } = useCreditAllocations(startDate, endDate);
 
   const clientMap = useMemo(() => {
     const m = new Map<string, { name: string; color: string | null }>();
@@ -47,21 +49,25 @@ export function TechCostsOverview() {
   }, [clients]);
 
   const totals = useMemo(() => {
-    const out = { all: 0, ai: 0, integration: 0, storage: 0, email: 0 };
+    const out = { all: 0, ai: 0, integration: 0, storage: 0, email: 0, credits: 0 };
     rows.forEach((r) => {
       out.all += Number(r.total_cost_usd);
       out[r.category as keyof typeof out] = (out[r.category as keyof typeof out] || 0) + Number(r.total_cost_usd);
     });
+    allocations.forEach((a) => {
+      out.all += Number(a.cost_usd);
+      out.credits += Number(a.cost_usd);
+    });
     return out;
-  }, [rows]);
+  }, [rows, allocations]);
 
   const byClient = useMemo(() => {
-    const m = new Map<string, { client_id: string | null; total: number; ai: number; integration: number; storage: number; email: number; events: number }>();
+    const m = new Map<string, { client_id: string | null; total: number; ai: number; integration: number; storage: number; email: number; credits: number; events: number }>();
     rows.forEach((r) => {
       const key = r.client_id ?? 'system';
       let b = m.get(key);
       if (!b) {
-        b = { client_id: r.client_id, total: 0, ai: 0, integration: 0, storage: 0, email: 0, events: 0 };
+        b = { client_id: r.client_id, total: 0, ai: 0, integration: 0, storage: 0, email: 0, credits: 0, events: 0 };
         m.set(key, b);
       }
       b.total += Number(r.total_cost_usd);
@@ -69,8 +75,18 @@ export function TechCostsOverview() {
       const cat = r.category as 'ai' | 'integration' | 'storage' | 'email';
       b[cat] = (b[cat] || 0) + Number(r.total_cost_usd);
     });
+    allocations.forEach((a) => {
+      const key = a.client_id ?? 'system';
+      let b = m.get(key);
+      if (!b) {
+        b = { client_id: a.client_id, total: 0, ai: 0, integration: 0, storage: 0, email: 0, credits: 0, events: 0 };
+        m.set(key, b);
+      }
+      b.credits += Number(a.cost_usd);
+      b.total += Number(a.cost_usd);
+    });
     return Array.from(m.values()).sort((a, b) => b.total - a.total);
-  }, [rows]);
+  }, [rows, allocations]);
 
   const chartData = useMemo(() => {
     // Group by date, then by client
@@ -115,12 +131,13 @@ export function TechCostsOverview() {
       </Card>
 
       {/* KPIs */}
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
         <KpiCard label="Total" value={fmtBig(totals.all)} icon={DollarSign} color="hsl(var(--primary))" />
         <KpiCard label="AI" value={fmtBig(totals.ai)} icon={Sparkles} color={CATEGORY_COLORS.ai} />
         <KpiCard label="Integrations" value={fmtBig(totals.integration)} icon={Zap} color={CATEGORY_COLORS.integration} />
         <KpiCard label="Storage" value={fmtBig(totals.storage)} icon={HardDrive} color={CATEGORY_COLORS.storage} />
         <KpiCard label="Email" value={fmtBig(totals.email)} icon={Mail} color={CATEGORY_COLORS.email} />
+        <KpiCard label="Lovable credits" value={fmtBig(totals.credits)} icon={Boxes} color="hsl(0 72% 51%)" />
       </div>
 
       {/* Chart */}
@@ -160,6 +177,7 @@ export function TechCostsOverview() {
                 <TableHead className="text-right">Integrations</TableHead>
                 <TableHead className="text-right">Storage</TableHead>
                 <TableHead className="text-right">Email</TableHead>
+                <TableHead className="text-right">Credits</TableHead>
                 <TableHead className="text-right">Events</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead></TableHead>
@@ -167,7 +185,7 @@ export function TechCostsOverview() {
             </TableHeader>
             <TableBody>
               {byClient.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">No data</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-24 text-center text-sm text-muted-foreground">No data</TableCell></TableRow>
               ) : byClient.map((b) => {
                 const name = b.client_id ? (clientMap.get(b.client_id)?.name ?? 'Unknown') : 'System (unattributed)';
                 return (
@@ -180,6 +198,7 @@ export function TechCostsOverview() {
                     <TableCell className="text-right font-mono text-xs">{fmt(b.integration)}</TableCell>
                     <TableCell className="text-right font-mono text-xs">{fmt(b.storage)}</TableCell>
                     <TableCell className="text-right font-mono text-xs">{fmt(b.email)}</TableCell>
+                    <TableCell className="text-right font-mono text-xs">{fmt(b.credits)}</TableCell>
                     <TableCell className="text-right font-mono text-xs text-muted-foreground">{b.events.toLocaleString()}</TableCell>
                     <TableCell className="text-right font-mono text-sm font-semibold">{fmtBig(b.total)}</TableCell>
                     <TableCell>
@@ -198,6 +217,9 @@ export function TechCostsOverview() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Lovable credit pass-through */}
+      <CreditAllocations startDate={startDate} endDate={endDate} />
     </div>
   );
 }

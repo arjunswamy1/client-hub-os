@@ -5460,6 +5460,85 @@ export type Database = {
         }
         Relationships: []
       }
+      tech_credit_allocations: {
+        Row: {
+          client_id: string | null
+          cost_usd: number
+          created_at: string
+          credits: number
+          date: string
+          id: string
+          note: string | null
+          project_name: string
+          updated_at: string
+        }
+        Insert: {
+          client_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          credits?: number
+          date?: string
+          id?: string
+          note?: string | null
+          project_name: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          credits?: number
+          date?: string
+          id?: string
+          note?: string | null
+          project_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tech_credit_allocations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tech_external_projects: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          project_name: string
+          updated_at: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          project_name: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          project_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tech_external_projects_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tech_pricing: {
         Row: {
           created_at: string

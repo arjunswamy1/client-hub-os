@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
     client_id: CANNABALL_CLIENT_ID,
     call_id,
     caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani']) ?? null,
-    did: pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis']) ?? null,
+    did: didDigits || rawDid,
     caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state']) ?? null,
     caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city']) ?? null,
     call_start: toIso(pick(payload, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at'])),

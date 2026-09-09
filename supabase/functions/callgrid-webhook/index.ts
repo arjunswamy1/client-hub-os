@@ -91,11 +91,14 @@ Deno.serve(async (req) => {
     connectedRaw === true || connectedRaw === 'true' || connectedRaw === 1 || connectedRaw === '1' ||
     connection_duration_seconds > 0;
 
-  const row = {
+  const rawDid = pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did']) ?? null;
+  const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
+
+  const row: Record<string, unknown> = {
     client_id: CANNABALL_CLIENT_ID,
     call_id,
     caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani']) ?? null,
-    did: pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis']) ?? null,
+    did: didDigits || rawDid,
     caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state']) ?? null,
     caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city']) ?? null,
     call_start: toIso(pick(payload, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at'])),
@@ -114,6 +117,23 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+
+  // Fill creative/campaign from the DID assignment grid when CallGrid doesn't send them
+  if (didDigits && (!row.creative_name || !row.campaign_name)) {
+    const { data: dids } = await supabase
+      .from('client_dids')
+      .select('did, did_formatted, creative_name, campaign_name')
+      .eq('client_id', CANNABALL_CLIENT_ID);
+    const match = (dids || []).find((d: any) => {
+      const a = String(d.did || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      const b = String(d.did_formatted || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      return a === didDigits || b === didDigits;
+    });
+    if (match) {
+      row.creative_name = row.creative_name || match.creative_name || null;
+      row.campaign_name = row.campaign_name || match.campaign_name || null;
+    }
+  }
 
   const { error } = await supabase
     .from('cannaball_calls')

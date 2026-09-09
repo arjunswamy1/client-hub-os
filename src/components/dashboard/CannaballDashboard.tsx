@@ -3,7 +3,8 @@ import { useCannaballCalls, useCannaballSpend, CannaballCall, CANNABALL_CLIENT_I
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload } from "lucide-react";
+import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload, Plug } from "lucide-react";
+import CannaballCallGridSetup from "./CannaballCallGridSetup";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -175,7 +176,12 @@ export default function CannaballDashboard() {
           <TabsTrigger value="creative" className="gap-1.5 text-xs"><Layers className="h-3.5 w-3.5" />Creative</TabsTrigger>
           <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
           <TabsTrigger value="calls" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Call Log</TabsTrigger>
+          <TabsTrigger value="setup" className="gap-1.5 text-xs"><Plug className="h-3.5 w-3.5" />CallGrid Setup</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="setup">
+          <CannaballCallGridSetup />
+        </TabsContent>
 
         <TabsContent value="creative">
           <Card className="overflow-hidden">

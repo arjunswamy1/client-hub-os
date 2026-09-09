@@ -91,7 +91,10 @@ Deno.serve(async (req) => {
     connectedRaw === true || connectedRaw === 'true' || connectedRaw === 1 || connectedRaw === '1' ||
     connection_duration_seconds > 0;
 
-  const row = {
+  const rawDid = pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did']) ?? null;
+  const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
+
+  const row: Record<string, unknown> = {
     client_id: CANNABALL_CLIENT_ID,
     call_id,
     caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani']) ?? null,

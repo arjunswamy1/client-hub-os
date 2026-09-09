@@ -3,7 +3,8 @@ import { useCannaballCalls, useCannaballSpend, CannaballCall, CANNABALL_CLIENT_I
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload } from "lucide-react";
+import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload, Plug } from "lucide-react";
+import CannaballCallGridSetup from "./CannaballCallGridSetup";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,

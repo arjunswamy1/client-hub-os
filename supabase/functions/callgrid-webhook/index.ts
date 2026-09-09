@@ -118,6 +118,23 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
+  // Fill creative/campaign from the DID assignment grid when CallGrid doesn't send them
+  if (didDigits && (!row.creative_name || !row.campaign_name)) {
+    const { data: dids } = await supabase
+      .from('client_dids')
+      .select('did, did_formatted, creative_name, campaign_name')
+      .eq('client_id', CANNABALL_CLIENT_ID);
+    const match = (dids || []).find((d: any) => {
+      const a = String(d.did || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      const b = String(d.did_formatted || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      return a === didDigits || b === didDigits;
+    });
+    if (match) {
+      row.creative_name = row.creative_name || match.creative_name || null;
+      row.campaign_name = row.campaign_name || match.campaign_name || null;
+    }
+  }
+
   const { error } = await supabase
     .from('cannaball_calls')
     .upsert(row, { onConflict: 'client_id,call_id' });

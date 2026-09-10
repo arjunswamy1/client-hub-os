@@ -42,7 +42,6 @@ async function getAuthHeaders(
       "x-api-key": apiKey,
       "x-timestamp": timestamp,
       "x-signature": signatureB64,
-      "Content-Type": "application/json",
     },
     canonicalRequest,
   };

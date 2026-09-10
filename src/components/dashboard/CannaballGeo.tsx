@@ -100,13 +100,19 @@ export default function CannaballGeo({ calls, channel }: Props) {
       return cur;
     };
 
-    if (!universalOnly) {
+    if (useRoku) {
       rows.filter((r) => r.entity === "state").forEach((r) => {
         const c = get(toCode(r.entity_name));
         c.spend += r.spend;
         c.impressions += r.impressions;
       });
     }
+    uaBy("state").forEach((r) => {
+      const c = get(toCode(r.entity_name));
+      c.spend += r.spend;
+      c.impressions += r.impressions;
+    });
+
     geoCalls.forEach((call) => {
       const c = get(toCode(call.caller_state));
       c.calls += 1;

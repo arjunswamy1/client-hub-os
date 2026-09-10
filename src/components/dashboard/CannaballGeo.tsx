@@ -416,7 +416,10 @@ export default function CannaballGeo({ calls, channel }: Props) {
                     <th className="p-2 text-left">ZIP</th>
                     <th className="p-2 text-left">City</th>
                     <th className="p-2 text-left">State</th>
+                    <th className="p-2 text-right">Spend</th>
+                    <th className="p-2 text-right">Impressions</th>
                     <th className="p-2 text-right">Calls</th>
+                    <th className="p-2 text-right">Cost / call</th>
                     <th className="p-2 text-right">Connected</th>
                     <th className="p-2 text-right">Connect %</th>
                     <th className="p-2 text-right">Avg talk</th>
@@ -429,24 +432,30 @@ export default function CannaballGeo({ calls, channel }: Props) {
                       <td className="p-2 font-medium">{z.zip}</td>
                       <td className="p-2">{z.city}</td>
                       <td className="p-2">{z.state}</td>
-                      <td className="p-2 text-right">{z.calls}</td>
+                      <td className="p-2 text-right">{z.spend > 0 ? money2(z.spend) : "—"}</td>
+                      <td className="p-2 text-right">{z.impressions ? z.impressions.toLocaleString() : "—"}</td>
+                      <td className="p-2 text-right">{z.calls || "—"}</td>
+                      <td className="p-2 text-right">{z.cpCall > 0 ? money2(z.cpCall) : "—"}</td>
                       <td className="p-2 text-right">{z.connected || "—"}</td>
-                      <td className="p-2 text-right">{`${(z.connectRate * 100).toFixed(0)}%`}</td>
+                      <td className="p-2 text-right">{z.calls ? `${(z.connectRate * 100).toFixed(0)}%` : "—"}</td>
                       <td className="p-2 text-right">{z.avgTalk > 0 ? `${Math.round(z.avgTalk)}s` : "—"}</td>
                       <td className="p-2 text-right">{z.revenue > 0 ? money2(z.revenue) : "—"}</td>
                     </tr>
                   ))}
                   {!zips.list.length && (
-                    <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No ZIP codes on calls in range.</td></tr>
+                    <tr><td colSpan={11} className="p-6 text-center text-muted-foreground">No ZIP rows in range.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </Card>
           <p className="text-xs text-muted-foreground">
-            {zips.withZip} of {geoCalls.length} calls in range carry a caller ZIP. Roku reports spend by
-            state, metro and placement only, so ZIP rows show call quality rather than cost.
+            {zips.withZip} of {geoCalls.length} calls in range carry a caller ZIP.{" "}
+            {zips.hasZipSpend
+              ? "ZIP spend comes from Universal Ads; Roku does not report below metro level."
+              : "Universal Ads supplies ZIP-level spend — sync above to fill the spend columns."}
           </p>
+
         </TabsContent>
 
         <TabsContent value="placement">

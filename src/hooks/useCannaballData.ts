@@ -26,6 +26,7 @@ export interface CannaballCall {
   payout: number;
   campaign_name: string | null;
   creative_name: string | null;
+  platform: string | null;
   disposition: string | null;
   recording_url: string | null;
 }

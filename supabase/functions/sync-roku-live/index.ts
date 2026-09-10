@@ -357,6 +357,37 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 3) Cannaball spend roll-up by campaign so their dashboard shows Roku spend.
+    let cannaballWritten = 0;
+    if (clientId === CANNABALL_CLIENT_ID && entity === "campaign" && metricRows.length) {
+      const spendMap = new Map<string, any>();
+      for (const r of metricRows) {
+        const campaign = r.entity_name || r.entity_uid;
+        const key = `${r.date}|${campaign}`;
+        const cur = spendMap.get(key) ?? {
+          client_id: clientId,
+          date: r.date,
+          platform: "roku",
+          campaign_name: campaign,
+          creative_name: null,
+          spend: 0,
+          impressions: 0,
+          clicks: 0,
+        };
+        cur.spend += Number(r.spend);
+        cur.impressions += r.impressions;
+        spendMap.set(key, cur);
+      }
+      const spendRows = Array.from(spendMap.values());
+      if (spendRows.length) {
+        const { error } = await admin
+          .from("cannaball_spend")
+          .upsert(spendRows, { onConflict: "client_id,date,platform,campaign_name,creative_name" });
+        if (error) throw error;
+        cannaballWritten = spendRows.length;
+      }
+    }
+
     await admin
       .from("platform_connections")
       .update({

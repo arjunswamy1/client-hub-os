@@ -107,30 +107,41 @@ export default function CannaballGeo({ calls, channel }: Props) {
       .sort((a, b) => b.spend - a.spend || b.calls - a.calls);
   }, [rows, geoCalls, universalOnly]);
 
-  /** Metro-market spend, with calls matched when the caller city is named in the DMA. */
+  /** Metro-market spend, with calls matched on caller city + state within the DMA name. */
   const dmas = useMemo(() => {
-    const map = new Map<string, { name: string; spend: number; impressions: number; calls: number; connected: number }>();
+    const map = new Map<string, { name: string; spend: number; impressions: number; calls: number; connected: number; revenue: number }>();
     rows.filter((r) => r.entity === "dma").forEach((r) => {
-      const cur = map.get(r.entity_name) ?? { name: r.entity_name, spend: 0, impressions: 0, calls: 0, connected: 0 };
+      const cur = map.get(r.entity_name) ?? { name: r.entity_name, spend: 0, impressions: 0, calls: 0, connected: 0, revenue: 0 };
       cur.spend += r.spend;
       cur.impressions += r.impressions;
       map.set(r.entity_name, cur);
     });
 
-    // City -> DMA best-effort match (Roku names DMAs after their anchor cities).
-    const cityIndex = Array.from(map.values()).map((d) => ({
-      key: d.name,
-      cities: d.name.toLowerCase().split(/[-,/&]| and /).map((s) => s.trim()).filter(Boolean),
-    }));
+    // Roku names DMAs after their anchor cities and appends state codes: "Raleigh-Durham (Fayetteville) NC".
+    const cityIndex = Array.from(map.values()).map((d) => {
+      const stateCodes = (d.name.match(/\b[A-Z]{2}\b/g) ?? []).map((s) => s.toUpperCase());
+      const cities = d.name
+        .replace(/\b[A-Z]{2}\b/g, " ")
+        .toLowerCase()
+        .split(/[-,/&()]| and /)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return { key: d.name, cities, stateCodes };
+    });
+
     let matched = 0;
     geoCalls.forEach((call) => {
       const city = (call.caller_city || "").trim().toLowerCase();
       if (!city) return;
-      const hit = cityIndex.find((d) => d.cities.some((c) => c === city));
+      const state = toCode(call.caller_state);
+      const hit =
+        cityIndex.find((d) => d.cities.includes(city) && d.stateCodes.includes(state)) ??
+        cityIndex.find((d) => d.cities.includes(city));
       if (!hit) return;
       const row = map.get(hit.key)!;
       row.calls += 1;
       if (call.connected) row.connected += 1;
+      row.revenue += Number(call.payout || 0);
       matched += 1;
     });
 
@@ -145,6 +156,35 @@ export default function CannaballGeo({ calls, channel }: Props) {
       .sort((a, b) => b.spend - a.spend);
     return { list, matched };
   }, [rows, geoCalls]);
+
+  /** ZIP-level call performance straight from CallGrid (no spend is reported per ZIP). */
+  const zips = useMemo(() => {
+    const map = new Map<string, {
+      zip: string; state: string; city: string; calls: number; connected: number; revenue: number; talk: number;
+    }>();
+    geoCalls.forEach((call) => {
+      const zip = (call.caller_zip || "").trim().slice(0, 5);
+      if (!zip) return;
+      const cur = map.get(zip) ?? {
+        zip, state: toCode(call.caller_state), city: call.caller_city || "—",
+        calls: 0, connected: 0, revenue: 0, talk: 0,
+      };
+      cur.calls += 1;
+      if (call.connected) cur.connected += 1;
+      cur.revenue += Number(call.payout || 0);
+      cur.talk += Number(call.connection_duration_seconds || 0);
+      map.set(zip, cur);
+    });
+    const list = Array.from(map.values())
+      .map((r) => ({
+        ...r,
+        connectRate: r.calls > 0 ? r.connected / r.calls : 0,
+        avgTalk: r.connected > 0 ? r.talk / r.connected : 0,
+      }))
+      .sort((a, b) => b.calls - a.calls || b.revenue - a.revenue);
+    const withZip = geoCalls.filter((c) => (c.caller_zip || "").trim()).length;
+    return { list, withZip };
+  }, [geoCalls]);
 
   const placements = useMemo(() => {
     const map = new Map<string, { name: string; spend: number; impressions: number }>();
@@ -210,6 +250,7 @@ export default function CannaballGeo({ calls, channel }: Props) {
         <TabsList className="inline-flex w-auto bg-secondary/50">
           <TabsTrigger value="states" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" /> States</TabsTrigger>
           <TabsTrigger value="dmas" className="gap-1.5 text-xs"><Building2 className="h-3.5 w-3.5" /> DMA / metro</TabsTrigger>
+          <TabsTrigger value="zips" className="text-xs">ZIP codes</TabsTrigger>
           <TabsTrigger value="placement" className="text-xs">Placement</TabsTrigger>
         </TabsList>
 
@@ -318,6 +359,48 @@ export default function CannaballGeo({ calls, channel }: Props) {
           <p className="text-xs text-muted-foreground">
             Calls are matched to a metro by the caller's city ({dmas.matched} of {geoCalls.length} calls
             matched), so DMA cost per call is directional — state-level numbers are exact.
+          </p>
+        </TabsContent>
+
+        <TabsContent value="zips" className="space-y-2">
+          <Card className="overflow-hidden">
+            <div className="max-h-[560px] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="p-2 text-left">ZIP</th>
+                    <th className="p-2 text-left">City</th>
+                    <th className="p-2 text-left">State</th>
+                    <th className="p-2 text-right">Calls</th>
+                    <th className="p-2 text-right">Connected</th>
+                    <th className="p-2 text-right">Connect %</th>
+                    <th className="p-2 text-right">Avg talk</th>
+                    <th className="p-2 text-right">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {zips.list.map((z) => (
+                    <tr key={z.zip} className="border-t border-border">
+                      <td className="p-2 font-medium">{z.zip}</td>
+                      <td className="p-2">{z.city}</td>
+                      <td className="p-2">{z.state}</td>
+                      <td className="p-2 text-right">{z.calls}</td>
+                      <td className="p-2 text-right">{z.connected || "—"}</td>
+                      <td className="p-2 text-right">{`${(z.connectRate * 100).toFixed(0)}%`}</td>
+                      <td className="p-2 text-right">{z.avgTalk > 0 ? `${Math.round(z.avgTalk)}s` : "—"}</td>
+                      <td className="p-2 text-right">{z.revenue > 0 ? money2(z.revenue) : "—"}</td>
+                    </tr>
+                  ))}
+                  {!zips.list.length && (
+                    <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No ZIP codes on calls in range.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <p className="text-xs text-muted-foreground">
+            {zips.withZip} of {geoCalls.length} calls in range carry a caller ZIP. Roku reports spend by
+            state, metro and placement only, so ZIP rows show call quality rather than cost.
           </p>
         </TabsContent>
 

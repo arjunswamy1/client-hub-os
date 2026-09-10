@@ -1706,9 +1706,11 @@ export type Database = {
         Row: {
           call_id: string
           call_start: string
+          caller_area_code: string | null
           caller_city: string | null
           caller_number: string | null
           caller_state: string | null
+          caller_zip: string | null
           campaign_name: string | null
           client_id: string
           connected: boolean | null
@@ -1727,9 +1729,11 @@ export type Database = {
         Insert: {
           call_id: string
           call_start: string
+          caller_area_code?: string | null
           caller_city?: string | null
           caller_number?: string | null
           caller_state?: string | null
+          caller_zip?: string | null
           campaign_name?: string | null
           client_id: string
           connected?: boolean | null
@@ -1748,9 +1752,11 @@ export type Database = {
         Update: {
           call_id?: string
           call_start?: string
+          caller_area_code?: string | null
           caller_city?: string | null
           caller_number?: string | null
           caller_state?: string | null
+          caller_zip?: string | null
           campaign_name?: string | null
           client_id?: string
           connected?: boolean | null

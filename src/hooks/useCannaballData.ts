@@ -118,6 +118,59 @@ export function useCannaballBreakdowns() {
   });
 }
 
+export interface UniversalGeoRow {
+  date: string;
+  entity: "state" | "dma" | "zip_code";
+  entity_name: string;
+  campaign_name: string | null;
+  creative_name: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+}
+
+/** Universal Ads state/DMA/ZIP spend rows for Cannaball. */
+export function useCannaballUniversalGeo() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["cannaball-universal-geo", from, to],
+    refetchInterval: 10 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("universal_ads_geo_metrics" as any)
+        .select("date, entity, entity_name, campaign_name, creative_name, spend, impressions, clicks")
+        .eq("client_id", CANNABALL_CLIENT_ID)
+        .gte("date", from)
+        .lte("date", to)
+        .limit(20000);
+      if (error) throw error;
+      return ((data || []) as any[]).map((r) => ({
+        date: r.date,
+        entity: r.entity,
+        entity_name: r.entity_name ?? "Unknown",
+        campaign_name: r.campaign_name ?? null,
+        creative_name: r.creative_name ?? null,
+        spend: Number(r.spend || 0),
+        impressions: Number(r.impressions || 0),
+        clicks: Number(r.clicks || 0),
+      })) as UniversalGeoRow[];
+    },
+  });
+}
+
+/** Requests fresh state/DMA/ZIP reports from the Universal Ads API. */
+export function useSyncCannaballUniversalGeo() {
+  const qc = useQueryClient();
+  return async (days = 45) => {
+    const { data, error } = await supabase.functions.invoke("sync-universal-ads-geo", {
+      body: { client_id: CANNABALL_CLIENT_ID, days },
+    });
+    if (error) throw error;
+    await qc.invalidateQueries({ queryKey: ["cannaball-universal-geo"] });
+    return data as { success?: boolean; results?: Record<string, number | string>; error?: string };
+  };
+}
+
 /** Requests fresh state/metro/placement reports from the Roku Ads API. */
 export function useSyncCannaballBreakdowns() {
   const qc = useQueryClient();

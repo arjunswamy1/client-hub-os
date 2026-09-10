@@ -42,6 +42,7 @@ import SpendUploadPage from "./pages/SpendUploadPage";
 import RingFuelNumbersPage from "./pages/RingFuelNumbersPage";
 import RokuCallbackPage from "./pages/RokuCallbackPage";
 import RokuConnectionsPage from "./pages/RokuConnectionsPage";
+import UniversalAdsCallbackPage from "./pages/UniversalAdsCallbackPage";
 import MetaCallbackPage from "./pages/MetaCallbackPage";
 
 const queryClient = new QueryClient();
@@ -173,6 +174,7 @@ const App = () => (
             <Route path="/talent-apply" element={<TalentApplyPage />} />
             <Route path="/onboarding/:token" element={<OnboardingPage />} />
             <Route path="/roku/callback" element={<RokuCallbackPage />} />
+            <Route path="/universal-ads/callback" element={<UniversalAdsCallbackPage />} />
             <Route path="/meta/callback" element={<MetaCallbackPage />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>

@@ -206,6 +206,30 @@ export default function CannaballCallGridSetup() {
 
       <Card className="p-4 space-y-3">
         <div>
+          <h3 className="text-sm font-medium flex items-center gap-2">
+            <RefreshCw className="h-4 w-4 text-emerald-500" />
+            Direct CallGrid sync
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Calls are pulled straight from CallGrid every 15 minutes using the saved API key. Use the buttons
+            below to refresh right now or reload a longer history. Repeat runs never create duplicates.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={!!syncing} className="gap-1.5" onClick={() => runSync(2)}>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing === 2 ? "animate-spin" : ""}`} />
+            {syncing === 2 ? "Syncing…" : "Sync recent calls"}
+          </Button>
+          <Button size="sm" variant="outline" disabled={!!syncing} className="gap-1.5" onClick={() => runSync(45)}>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing === 45 ? "animate-spin" : ""}`} />
+            {syncing === 45 ? "Syncing…" : "Reload last 45 days"}
+          </Button>
+        </div>
+      </Card>
+
+
+      <Card className="p-4 space-y-3">
+        <div>
           <h3 className="text-sm font-medium">Backfill past calls</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             Export the full call history from CallGrid as CSV and upload it here. Repeat uploads won't create

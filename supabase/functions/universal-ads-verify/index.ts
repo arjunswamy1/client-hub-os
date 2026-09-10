@@ -61,7 +61,7 @@ async function signedFetch(
   const url = new URL(`${BASE_URL}${endpoint}`);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
   const bodyStr = body ? JSON.stringify(body) : "";
-  const headers = await getAuthHeaders(
+  const { headers, canonicalRequest } = await getAuthHeaders(
     apiKey,
     privateKeyPem,
     method,
@@ -79,7 +79,8 @@ async function signedFetch(
   try { parsed = JSON.parse(text); } catch { /* ignore */ }
   if (res.status >= 400) {
     console.error(`Universal Ads ${method} ${endpoint} failed [${res.status}]: ${text}`);
-    console.error("Request headers:", JSON.stringify(headers));
+    console.error("Canonical request (redacted key):", canonicalRequest.replace(apiKey, "REDACTED"));
+    console.error("Signature:", headers["x-signature"]);
   }
   return { status: res.status, text, parsed };
 }

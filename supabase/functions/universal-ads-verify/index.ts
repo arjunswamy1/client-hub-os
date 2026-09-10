@@ -13,9 +13,10 @@ function json(body: unknown, status = 200) {
 
 function pemToArrayBuffer(pem: string): ArrayBuffer {
   const base64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\s/g, "");
+    .replace(/-----BEGIN (?:EC )?PRIVATE KEY-----/gi, "")
+    .replace(/-----END (?:EC )?PRIVATE KEY-----/gi, "")
+    .replace(/[^A-Za-z0-9+/=]/g, "");
+  if (!base64) throw new Error("Private key appears empty after stripping PEM headers");
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -24,13 +25,22 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
 
 async function importEcdsaPrivateKey(pem: string): Promise<CryptoKey> {
   const keyData = pemToArrayBuffer(pem);
-  return await crypto.subtle.importKey(
-    "pkcs8",
-    keyData,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"]
-  );
+  const curves = ["P-256", "P-384", "P-521"];
+  let lastErr: Error | undefined;
+  for (const namedCurve of curves) {
+    try {
+      return await crypto.subtle.importKey(
+        "pkcs8",
+        keyData,
+        { name: "ECDSA", namedCurve },
+        false,
+        ["sign"]
+      );
+    } catch (e) {
+      lastErr = e as Error;
+    }
+  }
+  throw new Error(`Could not import ECDSA private key: ${lastErr?.message}`);
 }
 
 async function getAuthHeaders(

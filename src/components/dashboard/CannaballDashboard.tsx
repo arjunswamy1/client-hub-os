@@ -292,6 +292,7 @@ export default function CannaballDashboard() {
                     <th className="px-3 py-2 font-medium">Caller</th>
                     <th className="px-3 py-2 font-medium">State</th>
                     <th className="px-3 py-2 font-medium">Creative</th>
+                    <th className="px-3 py-2 font-medium">Channel</th>
                     <th className="px-3 py-2 font-medium text-right">Duration</th>
                     <th className="px-3 py-2 font-medium text-right">Conn.</th>
                     <th className="px-3 py-2 font-medium text-right">Payout</th>
@@ -299,9 +300,9 @@ export default function CannaballDashboard() {
                 </thead>
                 <tbody>
                   {callsLoading ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
                   ) : calls.length === 0 ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">No calls yet. Configure the CallGrid webhook to start receiving calls.</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No calls yet. Configure the CallGrid webhook to start receiving calls.</td></tr>
                   ) : calls.slice(0, 500).map((c) => (
                     <tr key={c.id} className="border-t hover:bg-muted/30">
                       <td className="px-3 py-1.5 whitespace-nowrap">{format(new Date(c.call_start), "MMM d, HH:mm")}</td>
@@ -309,6 +310,7 @@ export default function CannaballDashboard() {
                       <td className="px-3 py-1.5 font-mono text-xs">{c.caller_number || "—"}</td>
                       <td className="px-3 py-1.5">{c.caller_state || "—"}</td>
                       <td className="px-3 py-1.5">{c.creative_name || "—"}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{channelLabel(c.platform)}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtDuration(c.duration_seconds)}</td>
                       <td className="px-3 py-1.5 text-right">{c.connected ? "✓" : "—"}</td>
                       <td className="px-3 py-1.5 text-right">{c.payout > 0 ? fmtMoney(c.payout) : "—"}</td>

@@ -76,8 +76,6 @@ async function signedFetch(
   try { parsed = JSON.parse(text); } catch { /* ignore */ }
   if (res.status >= 400) {
     console.error(`Universal Ads ${method} ${endpoint} failed [${res.status}]: ${text}`);
-    console.error("Canonical request (redacted key):", canonicalRequest.replace(apiKey, "REDACTED"));
-    console.error("Signature:", headers["x-signature"]);
   }
   return { status: res.status, text, parsed };
 }

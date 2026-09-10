@@ -27,6 +27,32 @@ export default function CannaballUniversalAdsSetup() {
   const [adaccountId, setAdaccountId] = useState("");
   const [testResult, setTestResult] = useState<any>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
+
+  const handleSync = async (days: number) => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-universal-ads", {
+        body: { client_id: CANNABALL_CLIENT_ID, adaccount_id: adaccountId.trim() || undefined, days },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        const code = data?.details?.error_code;
+        if (code === "INVALID_ADVERTISER_AUTHORIZATION") {
+          throw new Error("Universal Ads hasn't granted our app access to this ad account yet. Ask Cannaball to authorize the app on their account.");
+        }
+        throw new Error(data.error);
+      }
+      setSyncResult(data);
+      toast.success(`Imported ${data.rows_written} spend rows`);
+    } catch (e: any) {
+      toast.error(e.message || "Spend sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const fetchConnection = async () => {
     setLoading(true);
@@ -142,7 +168,27 @@ export default function CannaballUniversalAdsSetup() {
             <Button size="sm" variant="outline" onClick={handleSave} disabled={saving || !adaccountId.trim()}>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save connection"}
             </Button>
+            <Button size="sm" variant="outline" onClick={() => handleSync(7)} disabled={syncing || !adaccountId.trim()} className="gap-1.5">
+              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Sync last 7 days
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleSync(45)} disabled={syncing || !adaccountId.trim()}>
+              Backfill 45 days
+            </Button>
           </div>
+
+          {syncResult && (
+            <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
+              <p className="font-medium">Last spend sync</p>
+              <p>
+                {syncResult.rows_written} day/creative rows · ${Number(syncResult.total_spend || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} spend ·{" "}
+                {Number(syncResult.total_impressions || 0).toLocaleString()} impressions
+              </p>
+              <p className="text-muted-foreground">
+                {syncResult.range?.start} → {syncResult.range?.end} ({syncResult.level} level)
+              </p>
+            </div>
+          )}
 
           {connection && (
             <div className="rounded-md border bg-muted/40 p-3 space-y-1">

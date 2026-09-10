@@ -1720,6 +1720,7 @@ export type Database = {
           duration_seconds: number | null
           id: string
           payout: number | null
+          platform: string | null
           raw_payload: Json | null
           recording_url: string | null
         }
@@ -1740,6 +1741,7 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           payout?: number | null
+          platform?: string | null
           raw_payload?: Json | null
           recording_url?: string | null
         }
@@ -1760,6 +1762,7 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           payout?: number | null
+          platform?: string | null
           raw_payload?: Json | null
           recording_url?: string | null
         }
@@ -1957,6 +1960,59 @@ export type Database = {
             columns: ["did_id"]
             isOneToOne: false
             referencedRelation: "client_dids"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_did_periods: {
+        Row: {
+          campaign_name: string | null
+          client_id: string
+          created_at: string
+          creative_name: string
+          did: string
+          did_formatted: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          notes: string | null
+          platform: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_name?: string | null
+          client_id: string
+          created_at?: string
+          creative_name: string
+          did: string
+          did_formatted?: string | null
+          effective_from: string
+          effective_to?: string | null
+          id?: string
+          notes?: string | null
+          platform?: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_name?: string | null
+          client_id?: string
+          created_at?: string
+          creative_name?: string
+          did?: string
+          did_formatted?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          notes?: string | null
+          platform?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_did_periods_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]

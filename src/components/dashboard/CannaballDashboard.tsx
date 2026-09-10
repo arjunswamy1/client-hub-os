@@ -7,6 +7,8 @@ import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, Fi
 import CannaballCallGridSetup from "./CannaballCallGridSetup";
 import CannaballUniversalAdsSetup from "./CannaballUniversalAdsSetup";
 import CannaballRokuSetup from "./CannaballRokuSetup";
+import CannaballDidTracker from "./CannaballDidTracker";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -16,6 +18,8 @@ import { toast } from "sonner";
 
 const fmtMoney = (n: number) => n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+const channelLabel = (p?: string | null) =>
+  p === "universal_ads" ? "Universal Ads" : p === "roku" ? "Roku" : "—";
 const fmtDuration = (s: number) => {
   if (!s) return "0:00";
   const m = Math.floor(s / 60); const r = s % 60;
@@ -57,9 +61,19 @@ function KPI({ label, value, sub, icon: Icon, accent }: any) {
 }
 
 export default function CannaballDashboard() {
-  const { data: calls = [], isLoading: callsLoading, dataUpdatedAt, refetch: refetchCalls } = useCannaballCalls();
-  const { data: spendRows = [], refetch: refetchSpend } = useCannaballSpend();
+  const { data: allCalls = [], isLoading: callsLoading, dataUpdatedAt, refetch: refetchCalls } = useCannaballCalls();
+  const { data: allSpend = [], refetch: refetchSpend } = useCannaballSpend();
   const [uploading, setUploading] = useState(false);
+  const [channel, setChannel] = useState<"all" | "roku" | "universal_ads">("all");
+
+  const calls = useMemo(
+    () => (channel === "all" ? allCalls : allCalls.filter((c) => c.platform === channel)),
+    [allCalls, channel],
+  );
+  const spendRows = useMemo(
+    () => (channel === "all" ? allSpend : allSpend.filter((s) => s.platform === channel)),
+    [allSpend, channel],
+  );
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + Number(r.spend || 0), 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);
@@ -67,12 +81,15 @@ export default function CannaballDashboard() {
   const byCreative = useMemo(() => {
     const map = new Map<string, CannaballCall[]>();
     for (const c of calls) {
-      const key = c.creative_name || "Unmapped";
+      const key = `${c.creative_name || "Unmapped"}|${c.platform || ""}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(c);
     }
     return Array.from(map.entries())
-      .map(([creative, items]) => ({ creative, ...aggregate(items, 0) }))
+      .map(([key, items]) => {
+        const [creative, platform] = key.split("|");
+        return { key, creative, platform: channelLabel(platform), ...aggregate(items, 0) };
+      })
       .sort((a, b) => b.connected - a.connected);
   }, [calls]);
 
@@ -143,7 +160,18 @@ export default function CannaballDashboard() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Last synced: {lastSync}</p>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={channel}
+            onValueChange={(v) => v && setChannel(v as typeof channel)}
+            className="rounded-md border bg-background p-0.5"
+          >
+            <ToggleGroupItem value="all" className="px-3 text-xs">All</ToggleGroupItem>
+            <ToggleGroupItem value="roku" className="px-3 text-xs">Roku</ToggleGroupItem>
+            <ToggleGroupItem value="universal_ads" className="px-3 text-xs">Universal Ads</ToggleGroupItem>
+          </ToggleGroup>
           <label>
             <input
               type="file"
@@ -181,6 +209,7 @@ export default function CannaballDashboard() {
           <TabsTrigger value="roku" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Roku</TabsTrigger>
           <TabsTrigger value="setup" className="gap-1.5 text-xs"><Plug className="h-3.5 w-3.5" />CallGrid Setup</TabsTrigger>
           <TabsTrigger value="universal-ads" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Universal Ads</TabsTrigger>
+          <TabsTrigger value="dids" className="gap-1.5 text-xs"><Phone className="h-3.5 w-3.5" />Number History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="roku">
@@ -195,12 +224,17 @@ export default function CannaballDashboard() {
           <CannaballUniversalAdsSetup />
         </TabsContent>
 
+        <TabsContent value="dids">
+          <CannaballDidTracker />
+        </TabsContent>
+
         <TabsContent value="creative">
           <Card className="overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr className="text-left">
                   <th className="px-3 py-2 font-medium">Creative</th>
+                  <th className="px-3 py-2 font-medium">Channel</th>
                   <th className="px-3 py-2 font-medium text-right">Calls</th>
                   <th className="px-3 py-2 font-medium text-right">Connected</th>
                   <th className="px-3 py-2 font-medium text-right">Connect %</th>
@@ -210,10 +244,11 @@ export default function CannaballDashboard() {
               </thead>
               <tbody>
                 {byCreative.length === 0 ? (
-                  <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No calls yet. CallGrid will populate this once the webhook is configured.</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">No calls yet. CallGrid will populate this once the webhook is configured.</td></tr>
                 ) : byCreative.map((r) => (
-                  <tr key={r.creative} className="border-t">
+                  <tr key={r.key} className="border-t">
                     <td className="px-3 py-2 font-medium">{r.creative}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{r.platform}</td>
                     <td className="px-3 py-2 text-right">{r.calls}</td>
                     <td className="px-3 py-2 text-right">{r.connected}</td>
                     <td className="px-3 py-2 text-right">{fmtPct(r.connectRate)}</td>
@@ -257,6 +292,7 @@ export default function CannaballDashboard() {
                     <th className="px-3 py-2 font-medium">Caller</th>
                     <th className="px-3 py-2 font-medium">State</th>
                     <th className="px-3 py-2 font-medium">Creative</th>
+                    <th className="px-3 py-2 font-medium">Channel</th>
                     <th className="px-3 py-2 font-medium text-right">Duration</th>
                     <th className="px-3 py-2 font-medium text-right">Conn.</th>
                     <th className="px-3 py-2 font-medium text-right">Payout</th>
@@ -264,9 +300,9 @@ export default function CannaballDashboard() {
                 </thead>
                 <tbody>
                   {callsLoading ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
                   ) : calls.length === 0 ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">No calls yet. Configure the CallGrid webhook to start receiving calls.</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No calls yet. Configure the CallGrid webhook to start receiving calls.</td></tr>
                   ) : calls.slice(0, 500).map((c) => (
                     <tr key={c.id} className="border-t hover:bg-muted/30">
                       <td className="px-3 py-1.5 whitespace-nowrap">{format(new Date(c.call_start), "MMM d, HH:mm")}</td>
@@ -274,6 +310,7 @@ export default function CannaballDashboard() {
                       <td className="px-3 py-1.5 font-mono text-xs">{c.caller_number || "—"}</td>
                       <td className="px-3 py-1.5">{c.caller_state || "—"}</td>
                       <td className="px-3 py-1.5">{c.creative_name || "—"}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{channelLabel(c.platform)}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtDuration(c.duration_seconds)}</td>
                       <td className="px-3 py-1.5 text-right">{c.connected ? "✓" : "—"}</td>
                       <td className="px-3 py-1.5 text-right">{c.payout > 0 ? fmtMoney(c.payout) : "—"}</td>

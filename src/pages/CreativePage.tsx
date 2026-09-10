@@ -152,8 +152,8 @@ export default function CreativePage() {
                 <TabsTrigger value="kanban">Kanban</TabsTrigger>
                 <TabsTrigger value="brief-trafficking">Brief Trafficking</TabsTrigger>
                 <TabsTrigger value="ad-trafficking">Ad Trafficking</TabsTrigger>
-                {isAdmin && <TabsTrigger value="planner">Designer Planner</TabsTrigger>}
-                {isAdmin && <TabsTrigger value="hours">Designer Hours</TabsTrigger>}
+                {canManageDesigners && <TabsTrigger value="planner">Designer Planner</TabsTrigger>}
+                {canManageDesigners && <TabsTrigger value="hours">Designer Hours</TabsTrigger>}
               </TabsList>
               <Button size="sm" onClick={() => setIsCreateOpen(true)}>
                 <Plus className="mr-1 h-4 w-4" /> New Brief

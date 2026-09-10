@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
               : connectedRaw === true || connectedRaw === 1 || String(connectedRaw) === "1" ||
                 String(connectedRaw).toLowerCase() === "true",
           payout:
-            Number(String(pick(c, ["CallRevenue", "revenue", "CallPayout", "payout", "amount"]) ?? 0).replace(/[^0-9.-]/g, "")) || 0,
+            Number(String(pick(c, ["RevenueAmount", "CallRevenue", "revenue", "CallPayout", "payout", "amount"]) ?? 0).replace(/[^0-9.-]/g, "")) || 0,
           disposition: pick(c, ["CallStatus", "callStatus", "disposition", "status", "result"]) ?? null,
           campaign_name:
             match?.campaign_name ?? pick(c, ["CampaignName", "VendorName", "campaignName", "campaign"]) ?? null,

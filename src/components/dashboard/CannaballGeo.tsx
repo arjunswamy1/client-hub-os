@@ -44,11 +44,17 @@ interface Props {
 
 export default function CannaballGeo({ calls, channel }: Props) {
   const { data: rows = [], isLoading, refetch } = useCannaballBreakdowns();
+  const { data: uaRows = [], refetch: refetchUa } = useCannaballUniversalGeo();
   const sync = useSyncCannaballBreakdowns();
+  const syncUniversal = useSyncCannaballUniversalGeo();
   const [syncing, setSyncing] = useState(false);
 
   const universalOnly = channel === "universal_ads";
-  /** Roku spend can only be attributed to Roku calls. */
+  const useRoku = channel !== "universal_ads";
+  const useUniversal = channel !== "roku";
+  const uaScoped = useMemo(() => (useUniversal ? uaRows : []), [uaRows, useUniversal]);
+  const uaBy = (entity: string) => uaScoped.filter((r) => r.entity === entity);
+  /** Spend can only be attributed to calls on the same channel. */
   const geoCalls = useMemo(
     () => (channel === "all" ? calls : calls.filter((c) => c.platform === channel)),
     [calls, channel],
@@ -57,16 +63,28 @@ export default function CannaballGeo({ calls, channel }: Props) {
   const runSync = async () => {
     setSyncing(true);
     try {
-      const res = await sync(45);
-      const parts = Object.entries(res?.results ?? {}).map(([k, v]) => `${k}: ${v}`);
-      toast.success("Roku geo sync", { description: parts.length ? parts.join(" · ") : "Requested." });
-      await refetch();
+      const parts: string[] = [];
+      if (useRoku) {
+        const res = await sync(45);
+        parts.push(...Object.entries(res?.results ?? {}).map(([k, v]) => `Roku ${k}: ${v}`));
+      }
+      if (useUniversal) {
+        try {
+          const ua = await syncUniversal(45);
+          parts.push(...Object.entries(ua?.results ?? {}).map(([k, v]) => `Universal ${k}: ${v}`));
+        } catch (e) {
+          parts.push(`Universal: ${(e as Error).message}`);
+        }
+      }
+      toast.success("Geo sync", { description: parts.length ? parts.join(" · ") : "Requested." });
+      await Promise.all([refetch(), refetchUa()]);
     } catch (e) {
       toast.error("Sync failed", { description: (e as Error).message });
     } finally {
       setSyncing(false);
     }
   };
+
 
   /** State-level spend from Roku joined to calls by caller state. */
   const states = useMemo(() => {

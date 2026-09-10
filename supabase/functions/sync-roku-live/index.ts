@@ -12,6 +12,7 @@ const corsHeaders = {
 
 const ROKU_API = "https://api.ads.roku.com/v1";
 const JACUZZI_CLIENT_ID = "dc25f274-20f4-4650-b0cc-654073b925f4";
+const CANNABALL_CLIENT_ID = "a1dabea1-5518-4c7f-a29d-23739cb52f9b";
 /** Roku caps the synchronous metrics window at 7 days per call. */
 const MAX_WINDOW_DAYS = 7;
 
@@ -356,6 +357,37 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 3) Cannaball spend roll-up by campaign so their dashboard shows Roku spend.
+    let cannaballWritten = 0;
+    if (clientId === CANNABALL_CLIENT_ID && entity === "campaign" && metricRows.length) {
+      const spendMap = new Map<string, any>();
+      for (const r of metricRows) {
+        const campaign = r.entity_name || r.entity_uid;
+        const key = `${r.date}|${campaign}`;
+        const cur = spendMap.get(key) ?? {
+          client_id: clientId,
+          date: r.date,
+          platform: "roku",
+          campaign_name: campaign,
+          creative_name: null,
+          spend: 0,
+          impressions: 0,
+          clicks: 0,
+        };
+        cur.spend += Number(r.spend);
+        cur.impressions += r.impressions;
+        spendMap.set(key, cur);
+      }
+      const spendRows = Array.from(spendMap.values());
+      if (spendRows.length) {
+        const { error } = await admin
+          .from("cannaball_spend")
+          .upsert(spendRows, { onConflict: "client_id,date,platform,campaign_name,creative_name" });
+        if (error) throw error;
+        cannaballWritten = spendRows.length;
+      }
+    }
+
     await admin
       .from("platform_connections")
       .update({
@@ -373,6 +405,7 @@ Deno.serve(async (req) => {
       per_account: perAccount,
       metric_rows: metricRows.length,
       daily_rows: dailyWritten,
+      cannaball_spend_rows: cannaballWritten,
       synced_at: new Date().toISOString(),
     });
   } catch (e) {

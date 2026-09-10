@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload, Plug, Tv } from "lucide-react";
 import CannaballCallGridSetup from "./CannaballCallGridSetup";
 import CannaballUniversalAdsSetup from "./CannaballUniversalAdsSetup";
+import CannaballRokuSetup from "./CannaballRokuSetup";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -177,9 +178,14 @@ export default function CannaballDashboard() {
           <TabsTrigger value="creative" className="gap-1.5 text-xs"><Layers className="h-3.5 w-3.5" />Creative</TabsTrigger>
           <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
           <TabsTrigger value="calls" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Call Log</TabsTrigger>
+          <TabsTrigger value="roku" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Roku</TabsTrigger>
           <TabsTrigger value="setup" className="gap-1.5 text-xs"><Plug className="h-3.5 w-3.5" />CallGrid Setup</TabsTrigger>
           <TabsTrigger value="universal-ads" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Universal Ads</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="roku">
+          <CannaballRokuSetup />
+        </TabsContent>
 
         <TabsContent value="setup">
           <CannaballCallGridSetup />

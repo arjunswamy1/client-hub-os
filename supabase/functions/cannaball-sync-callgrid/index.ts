@@ -94,6 +94,15 @@ Deno.serve(async (req) => {
       fetched += items.length;
 
       for (const c of items) {
+        // Only import the Internal FE CTV Static campaign — ignore any other CallGrid campaigns
+        const srcCampaign = String(
+          pick(c, ["CampaignName", "campaignName", "campaign", "VendorName"]) ?? "",
+        ).toUpperCase();
+        if (srcCampaign && !(srcCampaign.includes("FE CTV") && srcCampaign.includes("STATIC")) &&
+            !srcCampaign.includes("INTERNAL CTV")) {
+          continue;
+        }
+
         const startRaw = pick(c, [
           "UTCISODate", "UTCDate", "createdAt", "callStart", "callDate", "startTime",
         ]);

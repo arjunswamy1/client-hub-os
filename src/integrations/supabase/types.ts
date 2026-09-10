@@ -6111,6 +6111,112 @@ export type Database = {
           },
         ]
       }
+      universal_ads_geo_metrics: {
+        Row: {
+          campaign_name: string | null
+          clicks: number
+          client_id: string
+          created_at: string
+          creative_name: string | null
+          date: string
+          entity: string
+          entity_name: string
+          id: string
+          impressions: number
+          raw: Json | null
+          spend: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_name?: string | null
+          clicks?: number
+          client_id: string
+          created_at?: string
+          creative_name?: string | null
+          date: string
+          entity: string
+          entity_name?: string
+          id?: string
+          impressions?: number
+          raw?: Json | null
+          spend?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_name?: string | null
+          clicks?: number
+          client_id?: string
+          created_at?: string
+          creative_name?: string | null
+          date?: string
+          entity?: string
+          entity_name?: string
+          id?: string
+          impressions?: number
+          raw?: Json | null
+          spend?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "universal_ads_geo_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      universal_ads_report_jobs: {
+        Row: {
+          client_id: string
+          created_at: string
+          dimension: string
+          end_date: string
+          id: string
+          last_error: string | null
+          rows_written: number
+          scheduled_report_id: string
+          start_date: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          dimension: string
+          end_date: string
+          id?: string
+          last_error?: string | null
+          rows_written?: number
+          scheduled_report_id: string
+          start_date: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          dimension?: string
+          end_date?: string
+          id?: string
+          last_error?: string | null
+          rows_written?: number
+          scheduled_report_id?: string
+          start_date?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "universal_ads_report_jobs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

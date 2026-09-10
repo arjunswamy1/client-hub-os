@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2, XCircle, Copy } from 'lucide-react';
+import { CheckCircle2, XCircle, Copy, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function UniversalAdsCallbackPage() {
@@ -13,42 +12,46 @@ export default function UniversalAdsCallbackPage() {
   const state = params.get('state') ?? '';
   const oauthError = params.get('error');
 
-  const [status, setStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
-  const [message, setMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<'idle' | 'done' | 'error'>('idle');
 
   const redirectUri = useMemo(() => `${window.location.origin}/universal-ads/callback`, []);
 
-  const exchange = async () => {
-    if (!code) return;
-    setStatus('working');
-    setMessage(null);
-    try {
-      const { data, error } = await supabase.functions.invoke('roku-oauth-exchange', {
-        body: { code, client_id: state, redirect_uri: redirectUri },
-      });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
-      setStatus('done');
-      setMessage(`Connected. ${((data as any)?.accounts?.length ?? 0)} ad account(s) available.`);
-    } catch (e) {
-      setStatus('error');
-      setMessage((e as Error).message);
-    }
-  };
-
   useEffect(() => {
-    if (code && state) exchange();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, state]);
+    if (oauthError) {
+      setStatus('error');
+    } else if (code) {
+      setStatus('done');
+    }
+  }, [code, oauthError]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Universal Ads authorization</h1>
         <p className="text-sm text-muted-foreground">
-          This page receives the authorization code from Universal Ads.
+          This page receives the redirect from Universal Ads if their portal requests a callback URL.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Info className="h-4 w-4" /> How the connection works</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p>
+            Universal Ads authenticates with an <strong>API key + private key signature</strong> on every request, not a traditional OAuth flow.
+            The app credentials are already saved in this project.
+          </p>
+          <p className="text-muted-foreground">
+            To finish connecting Cannaball, go to the Cannaball dashboard → <strong>Universal Ads</strong> tab and enter the Cannaball ad account ID.
+          </p>
+          <div>
+            <Link to="/dashboard/cannaball">
+              <Button size="sm">Open Cannaball dashboard</Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -69,7 +72,7 @@ export default function UniversalAdsCallbackPage() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Give this exact value as the redirect URL when registering the app.
+            Give this exact value as the redirect URL in the Universal Ads developer portal if requested.
           </p>
         </CardContent>
       </Card>
@@ -77,8 +80,8 @@ export default function UniversalAdsCallbackPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Authorization result</CardTitle>
-          {status === 'done' && <Badge className="gap-1"><CheckCircle2 className="h-3 w-3" /> Connected</Badge>}
-          {status === 'error' && <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Failed</Badge>}
+          {status === 'done' && <Badge className="gap-1"><CheckCircle2 className="h-3 w-3" /> Redirect received</Badge>}
+          {status === 'error' && <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Error</Badge>}
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {oauthError && (
@@ -89,8 +92,7 @@ export default function UniversalAdsCallbackPage() {
 
           {!code && !oauthError && (
             <p className="text-muted-foreground">
-              No authorization code yet. Approve access from the Universal Ads app and you will land back here
-              automatically.
+              No authorization code yet. If you just approved access in the Universal Ads portal, the code should appear in the URL above.
             </p>
           )}
 
@@ -112,39 +114,13 @@ export default function UniversalAdsCallbackPage() {
                   </Button>
                 </div>
               </div>
-
-              {!state && (
+              {state && (
                 <p className="text-muted-foreground">
-                  No client was passed in <code>state</code>, so this code was not saved automatically. Copy it and
-                  finish the connection from the connections page.
+                  State passed: <code>{state}</code>. You can ignore this — finish the connection from the Cannaball dashboard.
                 </p>
               )}
-
-              {status === 'working' && (
-                <p className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Exchanging the code for access tokens…
-                </p>
-              )}
-
-              {message && (
-                <div
-                  className={
-                    status === 'error'
-                      ? 'rounded-md border border-destructive/50 bg-destructive/10 p-3 text-destructive'
-                      : 'rounded-md border bg-muted p-3'
-                  }
-                >
-                  {message}
-                </div>
-              )}
-
-              {status === 'error' && <Button size="sm" onClick={exchange}>Retry exchange</Button>}
             </>
           )}
-
-          <div>
-            <Link className="text-sm underline" to="/roku-connections">Manage connections</Link>
-          </div>
         </CardContent>
       </Card>
     </div>

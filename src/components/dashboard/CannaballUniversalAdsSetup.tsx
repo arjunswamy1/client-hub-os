@@ -27,6 +27,32 @@ export default function CannaballUniversalAdsSetup() {
   const [adaccountId, setAdaccountId] = useState("");
   const [testResult, setTestResult] = useState<any>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
+
+  const handleSync = async (days: number) => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-universal-ads", {
+        body: { client_id: CANNABALL_CLIENT_ID, adaccount_id: adaccountId.trim() || undefined, days },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        const code = data?.details?.error_code;
+        if (code === "INVALID_ADVERTISER_AUTHORIZATION") {
+          throw new Error("Universal Ads hasn't granted our app access to this ad account yet. Ask Cannaball to authorize the app on their account.");
+        }
+        throw new Error(data.error);
+      }
+      setSyncResult(data);
+      toast.success(`Imported ${data.rows_written} spend rows`);
+    } catch (e: any) {
+      toast.error(e.message || "Spend sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const fetchConnection = async () => {
     setLoading(true);

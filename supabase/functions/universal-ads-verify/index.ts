@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { KJUR, KEYUTIL, hextob64 } from "npm:jsrsasign@11.0";
 
 const BASE_URL = "https://api.universalads.com/v1";
 
@@ -14,26 +11,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const base64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\s/g, "");
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
-async function importEcdsaPrivateKey(pem: string): Promise<CryptoKey> {
-  const keyData = pemToArrayBuffer(pem);
-  return await crypto.subtle.importKey(
-    "pkcs8",
-    keyData,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"]
-  );
+function signCanonicalRequest(privateKeyPem: string, canonicalRequest: string): string {
+  const key = KEYUTIL.getKey(privateKeyPem);
+  const sig = new KJUR.crypto.Signature({ alg: "SHA256withECDSA" });
+  sig.init(key);
+  sig.updateString(canonicalRequest);
+  const hexSig = sig.sign();
+  // jsrsasign ECDSA signature is DER-encoded; base64 encode it.
+  return hextob64(hexSig);
 }
 
 async function getAuthHeaders(
@@ -47,23 +32,18 @@ async function getAuthHeaders(
   const timestamp = String(Math.floor(Date.now() / 1000));
   const canonicalHeaders = `x-api-key:${apiKey}\nx-timestamp:${timestamp}`;
   const signedHeaders = "x-api-key;x-timestamp";
-  const canonicalRequest = `${method}\n${path}\n${query}\n${canonicalHeaders}\n${body}\n${signedHeaders}`;
+  // Universal Ads backend expects lowercase HTTP method in the canonical request.
+  const canonicalRequest = `${method.toUpperCase()}\n${path}\n${query}\n${canonicalHeaders}\n${body}\n${signedHeaders}`;
 
-  const encoder = new TextEncoder();
-  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(canonicalRequest));
-  const privateKey = await importEcdsaPrivateKey(privateKeyPem);
-  const signature = await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    privateKey,
-    digest
-  );
-  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  const signatureB64 = signCanonicalRequest(privateKeyPem, canonicalRequest);
 
   return {
-    "x-api-key": apiKey,
-    "x-timestamp": timestamp,
-    "x-signature": signatureB64,
-    "Content-Type": "application/json",
+    headers: {
+      "x-api-key": apiKey,
+      "x-timestamp": timestamp,
+      "x-signature": signatureB64,
+    },
+    canonicalRequest,
   };
 }
 
@@ -78,7 +58,7 @@ async function signedFetch(
   const url = new URL(`${BASE_URL}${endpoint}`);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
   const bodyStr = body ? JSON.stringify(body) : "";
-  const headers = await getAuthHeaders(
+  const { headers, canonicalRequest } = await getAuthHeaders(
     apiKey,
     privateKeyPem,
     method,
@@ -94,6 +74,9 @@ async function signedFetch(
   const text = await res.text();
   let parsed: unknown = null;
   try { parsed = JSON.parse(text); } catch { /* ignore */ }
+  if (res.status >= 400) {
+    console.error(`Universal Ads ${method} ${endpoint} failed [${res.status}]: ${text}`);
+  }
   return { status: res.status, text, parsed };
 }
 
@@ -125,7 +108,7 @@ Deno.serve(async (req) => {
     const adaccountId = typeof body.adaccount_id === "string" ? body.adaccount_id : "";
 
     if (action === "list_adaccounts") {
-      const { status, parsed, text } = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/adaccounts");
+      const { status, parsed, text } = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/adaccounts");
       if (status >= 400) {
         return json({ error: "Failed to list ad accounts", status, details: parsed || text }, status);
       }
@@ -138,7 +121,7 @@ Deno.serve(async (req) => {
         API_KEY,
         PRIVATE_KEY,
         "GET",
-        "/campaigns",
+        "/campaign",
         { adaccount_id: adaccountId, limit: "1" }
       );
       if (status >= 400) {
@@ -147,14 +130,12 @@ Deno.serve(async (req) => {
       return json({ success: true, adaccount_id: adaccountId, campaigns: (parsed as any)?.data ?? parsed });
     }
 
-    // Default verify: call /me and list organizations
-    const me = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me");
-    const orgs = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/organizations");
-    const adaccounts = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/adaccounts");
+    // Default verify: call /me/adaccounts and /me/organizations
+    const orgs = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/organizations");
+    const adaccounts = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/adaccounts");
 
     return json({
       success: true,
-      me: me.status < 400 ? me.parsed : { error: me.text, status: me.status },
       organizations: orgs.status < 400 ? orgs.parsed : { error: orgs.text, status: orgs.status },
       adaccounts: adaccounts.status < 400 ? adaccounts.parsed : { error: adaccounts.text, status: adaccounts.status },
     });

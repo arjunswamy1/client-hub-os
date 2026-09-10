@@ -34,15 +34,7 @@ async function getAuthHeaders(
   const signedHeaders = "x-api-key;x-timestamp";
   const canonicalRequest = `${method}\n${path}\n${query}\n${canonicalHeaders}\n${body}\n${signedHeaders}`;
 
-  const encoder = new TextEncoder();
-  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(canonicalRequest));
-  const privateKey = await importEcdsaPrivateKey(privateKeyPem);
-  const signature = await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    privateKey,
-    digest
-  );
-  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  const signatureB64 = signCanonicalRequest(privateKeyPem, canonicalRequest);
 
   return {
     "x-api-key": apiKey,

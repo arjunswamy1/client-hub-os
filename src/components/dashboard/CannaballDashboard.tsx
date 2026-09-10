@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload, Plug, Tv } from "lucide-react";
 import CannaballCallGridSetup from "./CannaballCallGridSetup";
 import CannaballUniversalAdsSetup from "./CannaballUniversalAdsSetup";
+import CannaballRokuSetup from "./CannaballRokuSetup";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,

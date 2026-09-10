@@ -40,6 +40,8 @@ function toSeconds(v: string): number {
 
 export default function CannaballCallGridSetup() {
   const [uploading, setUploading] = useState(false);
+  const [syncing, setSyncing] = useState<number | null>(null);
+
 
   const { data: status, refetch } = useQuery({
     queryKey: ["cannaball-callgrid-status"],

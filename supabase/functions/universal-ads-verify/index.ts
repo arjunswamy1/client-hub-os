@@ -74,6 +74,10 @@ async function signedFetch(
   const text = await res.text();
   let parsed: unknown = null;
   try { parsed = JSON.parse(text); } catch { /* ignore */ }
+  if (res.status >= 400) {
+    console.error(`Universal Ads ${method} ${endpoint} failed [${res.status}]: ${text}`);
+    console.error("Request headers:", JSON.stringify(headers));
+  }
   return { status: res.status, text, parsed };
 }
 

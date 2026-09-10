@@ -42,8 +42,6 @@ async function getAuthHeaders(
       "x-api-key": apiKey,
       "x-timestamp": timestamp,
       "x-signature": signatureB64,
-      "x-sdk-version": "0.1.0",
-      "x-sdk-source": "universal-ads-typescript",
       "Content-Type": "application/json",
     },
     canonicalRequest,

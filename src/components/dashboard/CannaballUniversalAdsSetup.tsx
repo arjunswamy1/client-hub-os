@@ -142,7 +142,27 @@ export default function CannaballUniversalAdsSetup() {
             <Button size="sm" variant="outline" onClick={handleSave} disabled={saving || !adaccountId.trim()}>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save connection"}
             </Button>
+            <Button size="sm" variant="outline" onClick={() => handleSync(7)} disabled={syncing || !adaccountId.trim()} className="gap-1.5">
+              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Sync last 7 days
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleSync(45)} disabled={syncing || !adaccountId.trim()}>
+              Backfill 45 days
+            </Button>
           </div>
+
+          {syncResult && (
+            <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
+              <p className="font-medium">Last spend sync</p>
+              <p>
+                {syncResult.rows_written} day/creative rows · ${Number(syncResult.total_spend || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} spend ·{" "}
+                {Number(syncResult.total_impressions || 0).toLocaleString()} impressions
+              </p>
+              <p className="text-muted-foreground">
+                {syncResult.range?.start} → {syncResult.range?.end} ({syncResult.level} level)
+              </p>
+            </div>
+          )}
 
           {connection && (
             <div className="rounded-md border bg-muted/40 p-3 space-y-1">

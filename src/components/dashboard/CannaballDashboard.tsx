@@ -214,6 +214,10 @@ export default function CannaballDashboard() {
           <TabsTrigger value="dids" className="gap-1.5 text-xs"><Phone className="h-3.5 w-3.5" />Number History</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="geo">
+          <CannaballGeo calls={calls} channel={channel} />
+        </TabsContent>
+
         <TabsContent value="roku">
           <CannaballRokuSetup />
         </TabsContent>

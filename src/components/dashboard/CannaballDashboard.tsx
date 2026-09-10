@@ -205,6 +205,7 @@ export default function CannaballDashboard() {
       <Tabs defaultValue="creative" className="space-y-3">
         <TabsList>
           <TabsTrigger value="creative" className="gap-1.5 text-xs"><Layers className="h-3.5 w-3.5" />Creative</TabsTrigger>
+          <TabsTrigger value="geo" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" />Geo</TabsTrigger>
           <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
           <TabsTrigger value="calls" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Call Log</TabsTrigger>
           <TabsTrigger value="roku" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Roku</TabsTrigger>

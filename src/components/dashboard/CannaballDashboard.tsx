@@ -59,9 +59,19 @@ function KPI({ label, value, sub, icon: Icon, accent }: any) {
 }
 
 export default function CannaballDashboard() {
-  const { data: calls = [], isLoading: callsLoading, dataUpdatedAt, refetch: refetchCalls } = useCannaballCalls();
-  const { data: spendRows = [], refetch: refetchSpend } = useCannaballSpend();
+  const { data: allCalls = [], isLoading: callsLoading, dataUpdatedAt, refetch: refetchCalls } = useCannaballCalls();
+  const { data: allSpend = [], refetch: refetchSpend } = useCannaballSpend();
   const [uploading, setUploading] = useState(false);
+  const [channel, setChannel] = useState<"all" | "roku" | "universal_ads">("all");
+
+  const calls = useMemo(
+    () => (channel === "all" ? allCalls : allCalls.filter((c) => c.platform === channel)),
+    [allCalls, channel],
+  );
+  const spendRows = useMemo(
+    () => (channel === "all" ? allSpend : allSpend.filter((s) => s.platform === channel)),
+    [allSpend, channel],
+  );
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + Number(r.spend || 0), 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);

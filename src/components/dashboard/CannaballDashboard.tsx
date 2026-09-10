@@ -158,7 +158,18 @@ export default function CannaballDashboard() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Last synced: {lastSync}</p>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={channel}
+            onValueChange={(v) => v && setChannel(v as typeof channel)}
+            className="rounded-md border bg-background p-0.5"
+          >
+            <ToggleGroupItem value="all" className="px-3 text-xs">All</ToggleGroupItem>
+            <ToggleGroupItem value="roku" className="px-3 text-xs">Roku</ToggleGroupItem>
+            <ToggleGroupItem value="universal_ads" className="px-3 text-xs">Universal Ads</ToggleGroupItem>
+          </ToggleGroup>
           <label>
             <input
               type="file"

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-
+import { KJUR, KEYUTIL, b64utob64, hextob64 } from "npm:jsrsasign@11.0";
 
 const BASE_URL = "https://api.universalads.com/v1";
 
@@ -11,36 +11,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const base64 = pem
-    .replace(/-----BEGIN (?:EC )?PRIVATE KEY-----/gi, "")
-    .replace(/-----END (?:EC )?PRIVATE KEY-----/gi, "")
-    .replace(/[^A-Za-z0-9+/=]/g, "");
-  if (!base64) throw new Error("Private key appears empty after stripping PEM headers");
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
-async function importEcdsaPrivateKey(pem: string): Promise<CryptoKey> {
-  const keyData = pemToArrayBuffer(pem);
-  const curves = ["P-256", "P-384", "P-521"];
-  let lastErr: Error | undefined;
-  for (const namedCurve of curves) {
-    try {
-      return await crypto.subtle.importKey(
-        "pkcs8",
-        keyData,
-        { name: "ECDSA", namedCurve },
-        false,
-        ["sign"]
-      );
-    } catch (e) {
-      lastErr = e as Error;
-    }
-  }
-  throw new Error(`Could not import ECDSA private key: ${lastErr?.message}`);
+function signCanonicalRequest(privateKeyPem: string, canonicalRequest: string): string {
+  const key = KEYUTIL.getKey(privateKeyPem);
+  const sig = new KJUR.crypto.Signature({ alg: "SHA256withECDSA" });
+  sig.init(key);
+  sig.updateString(canonicalRequest);
+  const hexSig = sig.sign();
+  // jsrsasign ECDSA signature is DER-encoded; base64 encode it.
+  return hextob64(hexSig);
 }
 
 async function getAuthHeaders(

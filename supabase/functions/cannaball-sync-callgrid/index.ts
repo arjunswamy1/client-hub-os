@@ -95,28 +95,28 @@ Deno.serve(async (req) => {
 
       for (const c of items) {
         const startRaw = pick(c, [
-          "callStart", "callDate", "startTime", "createdAt", "dateTime", "date",
+          "UTCISODate", "UTCDate", "createdAt", "callStart", "callDate", "startTime",
         ]);
         const start = new Date(String(startRaw));
         if (isNaN(start.getTime())) continue;
 
-        const did = digits(pick(c, ["sourceNumber", "did", "trackingNumber", "to", "dnis"]));
+        const did = digits(pick(c, ["SourceNumber", "sourceNumber", "did", "trackingNumber", "to", "dnis"]));
         const dateStr = start.toISOString().slice(0, 10);
         const match = did ? resolve(did, dateStr) : undefined;
         if (!match) unmapped++;
 
         const talk = Number(
-          pick(c, ["durationFromConnect", "connectionDuration", "talkTime", "duration"]) ?? 0,
+          pick(c, ["CallDurationFromConnect", "durationFromConnect", "connectionDuration", "talkTime", "callDuration", "CallDuration"]) ?? 0,
         ) || 0;
-        const callId = String(pick(c, ["callId", "id", "uuid"]) ?? `${did}-${start.getTime()}`);
+        const callId = String(pick(c, ["CallId", "callId", "id", "uuid"]) ?? `${did}-${start.getTime()}`);
         if (seen.has(callId)) continue;
         seen.add(callId);
 
-        const connectedRaw = pick(c, ["connected", "isConnected"]);
+        const connectedRaw = pick(c, ["CallConnected", "connected", "isConnected"]);
         rows.push({
           client_id: CANNABALL_CLIENT_ID,
           call_id: callId,
-          caller_number: pick(c, ["callerId", "caller", "callerNumber", "from", "ani"]) ?? null,
+          caller_number: pick(c, ["CallerId", "InboundNumber", "callerId", "caller", "callerNumber", "from", "ani"]) ?? null,
           did: did || null,
           call_start: start.toISOString(),
           duration_seconds: talk,
@@ -127,13 +127,13 @@ Deno.serve(async (req) => {
               : connectedRaw === true || connectedRaw === 1 || String(connectedRaw) === "1" ||
                 String(connectedRaw).toLowerCase() === "true",
           payout:
-            Number(String(pick(c, ["revenue", "payout", "amount"]) ?? 0).replace(/[^0-9.-]/g, "")) || 0,
-          disposition: pick(c, ["callStatus", "disposition", "status", "result"]) ?? null,
+            Number(String(pick(c, ["CallRevenue", "revenue", "CallPayout", "payout", "amount"]) ?? 0).replace(/[^0-9.-]/g, "")) || 0,
+          disposition: pick(c, ["CallStatus", "callStatus", "disposition", "status", "result"]) ?? null,
           campaign_name:
-            match?.campaign_name ?? pick(c, ["vendorName", "campaignName", "campaign"]) ?? null,
+            match?.campaign_name ?? pick(c, ["CampaignName", "VendorName", "campaignName", "campaign"]) ?? null,
           creative_name: match?.creative_name ?? null,
           platform: match?.platform ?? null,
-          recording_url: pick(c, ["recordingUrl", "recording"]) ?? null,
+          recording_url: pick(c, ["callRecordingUrl", "recordingUrl", "recording"]) ?? null,
           raw_payload: c,
         });
       }

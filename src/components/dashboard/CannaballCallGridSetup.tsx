@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Upload, PhoneIncoming, CheckCircle2, AlertCircle } from "lucide-react";
+import { Copy, Upload, PhoneIncoming, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { CANNABALL_CLIENT_ID } from "@/hooks/useCannaballData";
 import { useQuery } from "@tanstack/react-query";
@@ -40,6 +40,8 @@ function toSeconds(v: string): number {
 
 export default function CannaballCallGridSetup() {
   const [uploading, setUploading] = useState(false);
+  const [syncing, setSyncing] = useState<number | null>(null);
+
 
   const { data: status, refetch } = useQuery({
     queryKey: ["cannaball-callgrid-status"],
@@ -146,7 +148,25 @@ export default function CannaballCallGridSetup() {
     }
   };
 
+  const runSync = async (days: number) => {
+    setSyncing(days);
+    try {
+      const { data, error } = await supabase.functions.invoke("cannaball-sync-callgrid", {
+        body: { days },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(`Synced ${(data as any)?.synced ?? 0} calls from CallGrid`);
+      await refetch();
+    } catch (e: any) {
+      toast.error(e.message || "Sync failed");
+    } finally {
+      setSyncing(null);
+    }
+  };
+
   const receiving = !!status?.lastCall;
+
 
   return (
     <div className="space-y-4">
@@ -203,6 +223,30 @@ export default function CannaballCallGridSetup() {
           </p>
         </div>
       </Card>
+
+      <Card className="p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-medium flex items-center gap-2">
+            <RefreshCw className="h-4 w-4 text-emerald-500" />
+            Direct CallGrid sync
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Calls are pulled straight from CallGrid every 15 minutes using the saved API key. Use the buttons
+            below to refresh right now or reload a longer history. Repeat runs never create duplicates.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={!!syncing} className="gap-1.5" onClick={() => runSync(2)}>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing === 2 ? "animate-spin" : ""}`} />
+            {syncing === 2 ? "Syncing…" : "Sync recent calls"}
+          </Button>
+          <Button size="sm" variant="outline" disabled={!!syncing} className="gap-1.5" onClick={() => runSync(45)}>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing === 45 ? "animate-spin" : ""}`} />
+            {syncing === 45 ? "Syncing…" : "Reload last 45 days"}
+          </Button>
+        </div>
+      </Card>
+
 
       <Card className="p-4 space-y-3">
         <div>

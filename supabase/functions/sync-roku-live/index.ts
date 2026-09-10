@@ -405,6 +405,7 @@ Deno.serve(async (req) => {
       per_account: perAccount,
       metric_rows: metricRows.length,
       daily_rows: dailyWritten,
+      cannaball_spend_rows: cannaballWritten,
       synced_at: new Date().toISOString(),
     });
   } catch (e) {

@@ -65,7 +65,8 @@ function TraffickingClientPicker({ clients, selected, onSelect }: {
 }
 
 export default function CreativePage() {
-  const { isDesigner, isAdmin } = useAuth();
+  const { isDesigner, isAdmin, isAccountManager } = useAuth();
+  const canManageDesigners = isAdmin || isAccountManager;
   const { clients } = useClient();
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { updateStatus } = useBriefMutations();
@@ -151,8 +152,8 @@ export default function CreativePage() {
                 <TabsTrigger value="kanban">Kanban</TabsTrigger>
                 <TabsTrigger value="brief-trafficking">Brief Trafficking</TabsTrigger>
                 <TabsTrigger value="ad-trafficking">Ad Trafficking</TabsTrigger>
-                {isAdmin && <TabsTrigger value="planner">Designer Planner</TabsTrigger>}
-                {isAdmin && <TabsTrigger value="hours">Designer Hours</TabsTrigger>}
+                {canManageDesigners && <TabsTrigger value="planner">Designer Planner</TabsTrigger>}
+                {canManageDesigners && <TabsTrigger value="hours">Designer Hours</TabsTrigger>}
               </TabsList>
               <Button size="sm" onClick={() => setIsCreateOpen(true)}>
                 <Plus className="mr-1 h-4 w-4" /> New Brief
@@ -215,13 +216,13 @@ export default function CreativePage() {
             </div>
           </TabsContent>
 
-          {isAdmin && (
+          {canManageDesigners && (
             <TabsContent value="planner" className="mt-4">
               <DesignerWorkspace onBriefClick={setSelectedId} view="planner" isAdminView />
             </TabsContent>
           )}
 
-          {isAdmin && (
+          {canManageDesigners && (
             <TabsContent value="hours" className="mt-4">
               <HoursDashboard />
             </TabsContent>

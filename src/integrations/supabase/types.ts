@@ -6249,6 +6249,7 @@ export type Database = {
         Args: { check_client_id: string; check_user_id: string }
         Returns: boolean
       }
+      is_account_manager: { Args: { check_user_id: string }; Returns: boolean }
       is_admin: { Args: { check_user_id: string }; Returns: boolean }
       move_to_dlq: {
         Args: {

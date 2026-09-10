@@ -207,6 +207,7 @@ export default function CannaballDashboard() {
           <TabsTrigger value="roku" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Roku</TabsTrigger>
           <TabsTrigger value="setup" className="gap-1.5 text-xs"><Plug className="h-3.5 w-3.5" />CallGrid Setup</TabsTrigger>
           <TabsTrigger value="universal-ads" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Universal Ads</TabsTrigger>
+          <TabsTrigger value="dids" className="gap-1.5 text-xs"><Phone className="h-3.5 w-3.5" />Number History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="roku">

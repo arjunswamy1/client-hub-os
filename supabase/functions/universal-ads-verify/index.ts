@@ -33,7 +33,7 @@ async function getAuthHeaders(
   const canonicalHeaders = `x-api-key:${apiKey}\nx-timestamp:${timestamp}`;
   const signedHeaders = "x-api-key;x-timestamp";
   // Universal Ads backend expects lowercase HTTP method in the canonical request.
-  const canonicalRequest = `${method.toLowerCase()}\n${path}\n${query}\n${canonicalHeaders}\n${body}\n${signedHeaders}`;
+  const canonicalRequest = `${method.toUpperCase()}\n${path}\n${query}\n${canonicalHeaders}\n${body}\n${signedHeaders}`;
 
   const signatureB64 = signCanonicalRequest(privateKeyPem, canonicalRequest);
 

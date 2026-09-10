@@ -12,6 +12,7 @@ const corsHeaders = {
 
 const ROKU_API = "https://api.ads.roku.com/v1";
 const JACUZZI_CLIENT_ID = "dc25f274-20f4-4650-b0cc-654073b925f4";
+const CANNABALL_CLIENT_ID = "a1dabea1-5518-4c7f-a29d-23739cb52f9b";
 /** Roku caps the synchronous metrics window at 7 days per call. */
 const MAX_WINDOW_DAYS = 7;
 

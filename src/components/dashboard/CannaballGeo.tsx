@@ -250,6 +250,7 @@ export default function CannaballGeo({ calls, channel }: Props) {
         <TabsList className="inline-flex w-auto bg-secondary/50">
           <TabsTrigger value="states" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" /> States</TabsTrigger>
           <TabsTrigger value="dmas" className="gap-1.5 text-xs"><Building2 className="h-3.5 w-3.5" /> DMA / metro</TabsTrigger>
+          <TabsTrigger value="zips" className="text-xs">ZIP codes</TabsTrigger>
           <TabsTrigger value="placement" className="text-xs">Placement</TabsTrigger>
         </TabsList>
 
@@ -358,6 +359,48 @@ export default function CannaballGeo({ calls, channel }: Props) {
           <p className="text-xs text-muted-foreground">
             Calls are matched to a metro by the caller's city ({dmas.matched} of {geoCalls.length} calls
             matched), so DMA cost per call is directional — state-level numbers are exact.
+          </p>
+        </TabsContent>
+
+        <TabsContent value="zips" className="space-y-2">
+          <Card className="overflow-hidden">
+            <div className="max-h-[560px] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="p-2 text-left">ZIP</th>
+                    <th className="p-2 text-left">City</th>
+                    <th className="p-2 text-left">State</th>
+                    <th className="p-2 text-right">Calls</th>
+                    <th className="p-2 text-right">Connected</th>
+                    <th className="p-2 text-right">Connect %</th>
+                    <th className="p-2 text-right">Avg talk</th>
+                    <th className="p-2 text-right">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {zips.list.map((z) => (
+                    <tr key={z.zip} className="border-t border-border">
+                      <td className="p-2 font-medium">{z.zip}</td>
+                      <td className="p-2">{z.city}</td>
+                      <td className="p-2">{z.state}</td>
+                      <td className="p-2 text-right">{z.calls}</td>
+                      <td className="p-2 text-right">{z.connected || "—"}</td>
+                      <td className="p-2 text-right">{`${(z.connectRate * 100).toFixed(0)}%`}</td>
+                      <td className="p-2 text-right">{z.avgTalk > 0 ? `${Math.round(z.avgTalk)}s` : "—"}</td>
+                      <td className="p-2 text-right">{z.revenue > 0 ? money2(z.revenue) : "—"}</td>
+                    </tr>
+                  ))}
+                  {!zips.list.length && (
+                    <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No ZIP codes on calls in range.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <p className="text-xs text-muted-foreground">
+            {zips.withZip} of {geoCalls.length} calls in range carry a caller ZIP. Roku reports spend by
+            state, metro and placement only, so ZIP rows show call quality rather than cost.
           </p>
         </TabsContent>
 

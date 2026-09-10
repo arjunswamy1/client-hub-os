@@ -18,6 +18,8 @@ import { toast } from "sonner";
 
 const fmtMoney = (n: number) => n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+const channelLabel = (p?: string | null) =>
+  p === "universal_ads" ? "Universal Ads" : p === "roku" ? "Roku" : "—";
 const fmtDuration = (s: number) => {
   if (!s) return "0:00";
   const m = Math.floor(s / 60); const r = s % 60;

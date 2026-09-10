@@ -3,7 +3,8 @@ import { useCannaballCalls, useCannaballSpend, CannaballCall, CANNABALL_CLIENT_I
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload, Plug, Tv } from "lucide-react";
+import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Upload, Plug, Tv, MapPin } from "lucide-react";
+import CannaballGeo from "./CannaballGeo";
 import CannaballCallGridSetup from "./CannaballCallGridSetup";
 import CannaballUniversalAdsSetup from "./CannaballUniversalAdsSetup";
 import CannaballRokuSetup from "./CannaballRokuSetup";

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Upload, PhoneIncoming, CheckCircle2, AlertCircle } from "lucide-react";
+import { Copy, Upload, PhoneIncoming, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { CANNABALL_CLIENT_ID } from "@/hooks/useCannaballData";
 import { useQuery } from "@tanstack/react-query";

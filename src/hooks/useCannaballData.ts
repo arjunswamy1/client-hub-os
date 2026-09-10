@@ -20,6 +20,8 @@ export interface CannaballCall {
   caller_number: string | null;
   caller_state: string | null;
   caller_city: string | null;
+  caller_zip: string | null;
+  caller_area_code: string | null;
   call_start: string;
   duration_seconds: number;
   connected: boolean;
@@ -50,7 +52,7 @@ export function useCannaballCalls() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cannaball_calls" as any)
-        .select("id, call_id, did, caller_number, caller_state, caller_city, call_start, duration_seconds, connected, connection_duration_seconds, payout, campaign_name, creative_name, platform, disposition, recording_url")
+        .select("id, call_id, did, caller_number, caller_state, caller_city, caller_zip, caller_area_code, call_start, duration_seconds, connected, connection_duration_seconds, payout, campaign_name, creative_name, platform, disposition, recording_url")
         .eq("client_id", CANNABALL_CLIENT_ID)
         .gte("call_start", `${from}T00:00:00Z`)
         .lte("call_start", `${to}T23:59:59Z`)

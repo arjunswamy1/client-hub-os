@@ -148,7 +148,25 @@ export default function CannaballCallGridSetup() {
     }
   };
 
+  const runSync = async (days: number) => {
+    setSyncing(days);
+    try {
+      const { data, error } = await supabase.functions.invoke("cannaball-sync-callgrid", {
+        body: { days },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(`Synced ${(data as any)?.synced ?? 0} calls from CallGrid`);
+      await refetch();
+    } catch (e: any) {
+      toast.error(e.message || "Sync failed");
+    } finally {
+      setSyncing(null);
+    }
+  };
+
   const receiving = !!status?.lastCall;
+
 
   return (
     <div className="space-y-4">

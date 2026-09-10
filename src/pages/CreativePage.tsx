@@ -216,13 +216,13 @@ export default function CreativePage() {
             </div>
           </TabsContent>
 
-          {isAdmin && (
+          {canManageDesigners && (
             <TabsContent value="planner" className="mt-4">
               <DesignerWorkspace onBriefClick={setSelectedId} view="planner" isAdminView />
             </TabsContent>
           )}
 
-          {isAdmin && (
+          {canManageDesigners && (
             <TabsContent value="hours" className="mt-4">
               <HoursDashboard />
             </TabsContent>

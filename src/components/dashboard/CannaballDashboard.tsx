@@ -222,12 +222,17 @@ export default function CannaballDashboard() {
           <CannaballUniversalAdsSetup />
         </TabsContent>
 
+        <TabsContent value="dids">
+          <CannaballDidTracker />
+        </TabsContent>
+
         <TabsContent value="creative">
           <Card className="overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr className="text-left">
                   <th className="px-3 py-2 font-medium">Creative</th>
+                  <th className="px-3 py-2 font-medium">Channel</th>
                   <th className="px-3 py-2 font-medium text-right">Calls</th>
                   <th className="px-3 py-2 font-medium text-right">Connected</th>
                   <th className="px-3 py-2 font-medium text-right">Connect %</th>
@@ -237,10 +242,11 @@ export default function CannaballDashboard() {
               </thead>
               <tbody>
                 {byCreative.length === 0 ? (
-                  <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No calls yet. CallGrid will populate this once the webhook is configured.</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">No calls yet. CallGrid will populate this once the webhook is configured.</td></tr>
                 ) : byCreative.map((r) => (
-                  <tr key={r.creative} className="border-t">
+                  <tr key={r.key} className="border-t">
                     <td className="px-3 py-2 font-medium">{r.creative}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{r.platform}</td>
                     <td className="px-3 py-2 text-right">{r.calls}</td>
                     <td className="px-3 py-2 text-right">{r.connected}</td>
                     <td className="px-3 py-2 text-right">{fmtPct(r.connectRate)}</td>

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-import { KJUR, KEYUTIL, b64utob64, hextob64 } from "npm:jsrsasign@11.0";
+import { KJUR, KEYUTIL, hextob64 } from "npm:jsrsasign@11.0";
 
 const BASE_URL = "https://api.universalads.com/v1";
 

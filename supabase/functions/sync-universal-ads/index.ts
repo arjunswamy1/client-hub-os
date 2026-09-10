@@ -57,25 +57,44 @@ Deno.serve(async (req) => {
       : new Date(end.getTime() - (days - 1) * 86400000);
 
     // Ad-level daily report (falls back to campaign level if ad level is unavailable).
-    const query = {
+    const PAGE = 20; // Universal Ads caps report page size at 20 rows.
+    const baseQuery = {
       adaccount_id: adaccountId,
       start_date: `${ymd(start)}T00:00:00`,
       end_date: `${ymd(end)}T23:59:59`,
       date_aggregation: "DAY",
-      limit: "10000",
     };
 
+    const fetchPage = (endpoint: string, offset: number) =>
+      uaFetch(API_KEY, PRIVATE_KEY, "GET", endpoint, {
+        ...baseQuery,
+        limit: String(PAGE),
+        offset: String(offset),
+      });
+
     let level = "ad";
-    let res = await uaFetch(API_KEY, PRIVATE_KEY, "GET", "/report/ad", query);
-    if (res.status >= 400) {
+    let endpoint = "/report/ad";
+    let first = await fetchPage(endpoint, 0);
+    if (first.status >= 400) {
       level = "campaign";
-      res = await uaFetch(API_KEY, PRIVATE_KEY, "GET", "/report/campaign", query);
+      endpoint = "/report/campaign";
+      first = await fetchPage(endpoint, 0);
     }
-    if (res.status >= 400) {
-      return json({ error: "Universal Ads report failed", status: res.status, details: res.parsed ?? res.text }, res.status);
+    if (first.status >= 400) {
+      return json({ error: "Universal Ads report failed", status: first.status, details: first.parsed ?? first.text }, first.status);
     }
 
-    const rows: any[] = res.parsed?.data ?? res.parsed?.rows ?? (Array.isArray(res.parsed) ? res.parsed : []);
+    const extract = (parsed: any): any[] =>
+      parsed?.data ?? parsed?.rows ?? (Array.isArray(parsed) ? parsed : []);
+
+    const rows: any[] = extract(first.parsed);
+    for (let offset = PAGE; offset < 20000; offset += PAGE) {
+      const page = await fetchPage(endpoint, offset);
+      if (page.status >= 400) break;
+      const pageRows = extract(page.parsed);
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE) break;
+    }
 
     const upserts = rows.map((r) => {
       const dateRaw = pickStr(r, ["date", "day", "report_date", "start_date", "datetime", "timestamp"]) ?? ymd(end);

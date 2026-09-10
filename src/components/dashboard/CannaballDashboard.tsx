@@ -79,12 +79,15 @@ export default function CannaballDashboard() {
   const byCreative = useMemo(() => {
     const map = new Map<string, CannaballCall[]>();
     for (const c of calls) {
-      const key = c.creative_name || "Unmapped";
+      const key = `${c.creative_name || "Unmapped"}|${c.platform || ""}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(c);
     }
     return Array.from(map.entries())
-      .map(([creative, items]) => ({ creative, ...aggregate(items, 0) }))
+      .map(([key, items]) => {
+        const [creative, platform] = key.split("|");
+        return { key, creative, platform: channelLabel(platform), ...aggregate(items, 0) };
+      })
       .sort((a, b) => b.connected - a.connected);
   }, [calls]);
 

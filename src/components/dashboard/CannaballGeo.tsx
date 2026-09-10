@@ -130,17 +130,20 @@ export default function CannaballGeo({ calls, channel }: Props) {
         profit: r.revenue - r.spend,
       }))
       .sort((a, b) => b.spend - a.spend || b.calls - a.calls);
-  }, [rows, geoCalls, universalOnly]);
+  }, [rows, uaScoped, geoCalls, useRoku]);
 
   /** Metro-market spend, with calls matched on caller city + state within the DMA name. */
   const dmas = useMemo(() => {
     const map = new Map<string, { name: string; spend: number; impressions: number; calls: number; connected: number; revenue: number }>();
-    rows.filter((r) => r.entity === "dma").forEach((r) => {
-      const cur = map.get(r.entity_name) ?? { name: r.entity_name, spend: 0, impressions: 0, calls: 0, connected: 0, revenue: 0 };
-      cur.spend += r.spend;
-      cur.impressions += r.impressions;
-      map.set(r.entity_name, cur);
-    });
+    const addSpend = (name: string, spend: number, impressions: number) => {
+      const cur = map.get(name) ?? { name, spend: 0, impressions: 0, calls: 0, connected: 0, revenue: 0 };
+      cur.spend += spend;
+      cur.impressions += impressions;
+      map.set(name, cur);
+    };
+    if (useRoku) rows.filter((r) => r.entity === "dma").forEach((r) => addSpend(r.entity_name, r.spend, r.impressions));
+    uaBy("dma").forEach((r) => addSpend(r.entity_name, r.spend, r.impressions));
+
 
     // Roku names DMAs after their anchor cities and appends state codes: "Raleigh-Durham (Fayetteville) NC".
     const cityIndex = Array.from(map.values()).map((d) => {

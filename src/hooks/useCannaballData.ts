@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { format } from "date-fns";
@@ -19,6 +19,7 @@ export interface CannaballCall {
   did: string | null;
   caller_number: string | null;
   caller_state: string | null;
+  caller_city: string | null;
   call_start: string;
   duration_seconds: number;
   connected: boolean;

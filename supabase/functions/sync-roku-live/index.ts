@@ -216,10 +216,13 @@ Deno.serve(async (req) => {
     }
 
     const entityNames = new Map<string, Map<string, string>>();
-    const end = new Date();
+    const end = body.end_date && /^\d{4}-\d{2}-\d{2}$/.test(String(body.end_date))
+      ? new Date(`${body.end_date}T12:00:00Z`)
+      : new Date();
     const start = new Date(end.getTime() - (days - 1) * 86400000);
     const start_date = ymd(start);
     const end_date = ymd(end);
+
 
     const flat: Flat[] = [];
     const perAccount: Record<string, number | string> = {};

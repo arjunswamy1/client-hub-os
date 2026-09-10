@@ -183,36 +183,52 @@ export default function CannaballGeo({ calls, channel }: Props) {
       }))
       .sort((a, b) => b.spend - a.spend);
     return { list, matched };
-  }, [rows, geoCalls]);
+  }, [rows, uaScoped, geoCalls, useRoku]);
 
-  /** ZIP-level call performance straight from CallGrid (no spend is reported per ZIP). */
+  /** ZIP-level performance: Universal reports spend per ZIP, CallGrid supplies the calls. */
   const zips = useMemo(() => {
     const map = new Map<string, {
-      zip: string; state: string; city: string; calls: number; connected: number; revenue: number; talk: number;
+      zip: string; state: string; city: string; calls: number; connected: number;
+      revenue: number; talk: number; spend: number; impressions: number;
     }>();
+    const get = (zip: string) => {
+      const cur = map.get(zip) ?? {
+        zip, state: "—", city: "—", calls: 0, connected: 0, revenue: 0, talk: 0, spend: 0, impressions: 0,
+      };
+      map.set(zip, cur);
+      return cur;
+    };
+    uaBy("zip_code").forEach((r) => {
+      const zip = (r.entity_name || "").trim().slice(0, 5);
+      if (!zip || zip === "Unkno") return;
+      const cur = get(zip);
+      cur.spend += r.spend;
+      cur.impressions += r.impressions;
+    });
     geoCalls.forEach((call) => {
       const zip = (call.caller_zip || "").trim().slice(0, 5);
       if (!zip) return;
-      const cur = map.get(zip) ?? {
-        zip, state: toCode(call.caller_state), city: call.caller_city || "—",
-        calls: 0, connected: 0, revenue: 0, talk: 0,
-      };
+      const cur = get(zip);
+      if (cur.state === "—") cur.state = toCode(call.caller_state);
+      if (cur.city === "—") cur.city = call.caller_city || "—";
       cur.calls += 1;
       if (call.connected) cur.connected += 1;
       cur.revenue += Number(call.payout || 0);
       cur.talk += Number(call.connection_duration_seconds || 0);
-      map.set(zip, cur);
     });
     const list = Array.from(map.values())
       .map((r) => ({
         ...r,
         connectRate: r.calls > 0 ? r.connected / r.calls : 0,
         avgTalk: r.connected > 0 ? r.talk / r.connected : 0,
+        cpCall: r.calls > 0 ? r.spend / r.calls : 0,
       }))
-      .sort((a, b) => b.calls - a.calls || b.revenue - a.revenue);
+      .sort((a, b) => b.spend - a.spend || b.calls - a.calls || b.revenue - a.revenue);
     const withZip = geoCalls.filter((c) => (c.caller_zip || "").trim()).length;
-    return { list, withZip };
-  }, [geoCalls]);
+    const hasZipSpend = list.some((r) => r.spend > 0);
+    return { list, withZip, hasZipSpend };
+  }, [geoCalls, uaScoped]);
+
 
   const placements = useMemo(() => {
     const map = new Map<string, { name: string; spend: number; impressions: number }>();

@@ -13,6 +13,9 @@ function json(body: unknown, status = 200) {
 
 function signCanonicalRequest(privateKeyPem: string, canonicalRequest: string): string {
   const key = KEYUTIL.getKey(privateKeyPem);
+  // Log key type for debugging (do not log the key itself).
+  console.error("Private key PEM header:", privateKeyPem.split("\n")[0]);
+  console.error("Key curve:", (key as any).curveName || (key as any).getShortNISTPCCurveName?.() || "unknown");
   const sig = new KJUR.crypto.Signature({ alg: "SHA256withECDSA" });
   sig.init(key);
   sig.updateString(canonicalRequest);

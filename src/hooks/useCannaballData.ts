@@ -49,7 +49,7 @@ export function useCannaballCalls() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cannaball_calls" as any)
-        .select("id, call_id, did, caller_number, caller_state, call_start, duration_seconds, connected, connection_duration_seconds, payout, campaign_name, creative_name, disposition, recording_url")
+        .select("id, call_id, did, caller_number, caller_state, call_start, duration_seconds, connected, connection_duration_seconds, payout, campaign_name, creative_name, platform, disposition, recording_url")
         .eq("client_id", CANNABALL_CLIENT_ID)
         .gte("call_start", `${from}T00:00:00Z`)
         .lte("call_start", `${to}T23:59:59Z`)

@@ -178,9 +178,14 @@ export default function CannaballDashboard() {
           <TabsTrigger value="creative" className="gap-1.5 text-xs"><Layers className="h-3.5 w-3.5" />Creative</TabsTrigger>
           <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
           <TabsTrigger value="calls" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Call Log</TabsTrigger>
+          <TabsTrigger value="roku" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Roku</TabsTrigger>
           <TabsTrigger value="setup" className="gap-1.5 text-xs"><Plug className="h-3.5 w-3.5" />CallGrid Setup</TabsTrigger>
           <TabsTrigger value="universal-ads" className="gap-1.5 text-xs"><Tv className="h-3.5 w-3.5" />Universal Ads</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="roku">
+          <CannaballRokuSetup />
+        </TabsContent>
 
         <TabsContent value="setup">
           <CannaballCallGridSetup />

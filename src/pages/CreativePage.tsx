@@ -65,7 +65,8 @@ function TraffickingClientPicker({ clients, selected, onSelect }: {
 }
 
 export default function CreativePage() {
-  const { isDesigner, isAdmin } = useAuth();
+  const { isDesigner, isAdmin, isAccountManager } = useAuth();
+  const canManageDesigners = isAdmin || isAccountManager;
   const { clients } = useClient();
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { updateStatus } = useBriefMutations();

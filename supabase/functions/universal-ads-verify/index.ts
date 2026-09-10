@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     const adaccountId = typeof body.adaccount_id === "string" ? body.adaccount_id : "";
 
     if (action === "list_adaccounts") {
-      const { status, parsed, text } = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/adaccounts");
+      const { status, parsed, text } = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/adaccounts");
       if (status >= 400) {
         return json({ error: "Failed to list ad accounts", status, details: parsed || text }, status);
       }
@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
         API_KEY,
         PRIVATE_KEY,
         "GET",
-        "/campaigns",
+        "/campaign",
         { adaccount_id: adaccountId, limit: "1" }
       );
       if (status >= 400) {
@@ -124,14 +124,12 @@ Deno.serve(async (req) => {
       return json({ success: true, adaccount_id: adaccountId, campaigns: (parsed as any)?.data ?? parsed });
     }
 
-    // Default verify: call /me and list organizations
-    const me = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me");
-    const orgs = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/organizations");
-    const adaccounts = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/adaccounts");
+    // Default verify: call /me/adaccounts and /me/organizations
+    const orgs = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/organizations");
+    const adaccounts = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/adaccounts");
 
     return json({
       success: true,
-      me: me.status < 400 ? me.parsed : { error: me.text, status: me.status },
       organizations: orgs.status < 400 ? orgs.parsed : { error: orgs.text, status: orgs.status },
       adaccounts: adaccounts.status < 400 ? adaccounts.parsed : { error: adaccounts.text, status: adaccounts.status },
     });

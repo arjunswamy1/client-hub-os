@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const API_KEY = Deno.env.get("UNIVERSAL_ADS_APP_ID") || Deno.env.get("UNIVERSAL_ADS_APP_KEY");
+    const API_KEY = Deno.env.get("UNIVERSAL_ADS_APP_KEY");
     const PRIVATE_KEY = Deno.env.get("UNIVERSAL_ADS_PRIVATE_KEY");
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);

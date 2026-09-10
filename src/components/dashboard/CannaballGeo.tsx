@@ -7,6 +7,7 @@ import { RefreshCw, MapPin, Building2, Info } from "lucide-react";
 import { toast } from "sonner";
 import {
   CannaballCall, useCannaballBreakdowns, useSyncCannaballBreakdowns,
+  useCannaballUniversalGeo, useSyncCannaballUniversalGeo,
 } from "@/hooks/useCannaballData";
 
 const money = (n: number) => `$${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -43,11 +44,17 @@ interface Props {
 
 export default function CannaballGeo({ calls, channel }: Props) {
   const { data: rows = [], isLoading, refetch } = useCannaballBreakdowns();
+  const { data: uaRows = [], refetch: refetchUa } = useCannaballUniversalGeo();
   const sync = useSyncCannaballBreakdowns();
+  const syncUniversal = useSyncCannaballUniversalGeo();
   const [syncing, setSyncing] = useState(false);
 
   const universalOnly = channel === "universal_ads";
-  /** Roku spend can only be attributed to Roku calls. */
+  const useRoku = channel !== "universal_ads";
+  const useUniversal = channel !== "roku";
+  const uaScoped = useMemo(() => (useUniversal ? uaRows : []), [uaRows, useUniversal]);
+  const uaBy = (entity: string) => uaScoped.filter((r) => r.entity === entity);
+  /** Spend can only be attributed to calls on the same channel. */
   const geoCalls = useMemo(
     () => (channel === "all" ? calls : calls.filter((c) => c.platform === channel)),
     [calls, channel],
@@ -56,16 +63,28 @@ export default function CannaballGeo({ calls, channel }: Props) {
   const runSync = async () => {
     setSyncing(true);
     try {
-      const res = await sync(45);
-      const parts = Object.entries(res?.results ?? {}).map(([k, v]) => `${k}: ${v}`);
-      toast.success("Roku geo sync", { description: parts.length ? parts.join(" · ") : "Requested." });
-      await refetch();
+      const parts: string[] = [];
+      if (useRoku) {
+        const res = await sync(45);
+        parts.push(...Object.entries(res?.results ?? {}).map(([k, v]) => `Roku ${k}: ${v}`));
+      }
+      if (useUniversal) {
+        try {
+          const ua = await syncUniversal(45);
+          parts.push(...Object.entries(ua?.results ?? {}).map(([k, v]) => `Universal ${k}: ${v}`));
+        } catch (e) {
+          parts.push(`Universal: ${(e as Error).message}`);
+        }
+      }
+      toast.success("Geo sync", { description: parts.length ? parts.join(" · ") : "Requested." });
+      await Promise.all([refetch(), refetchUa()]);
     } catch (e) {
       toast.error("Sync failed", { description: (e as Error).message });
     } finally {
       setSyncing(false);
     }
   };
+
 
   /** State-level spend from Roku joined to calls by caller state. */
   const states = useMemo(() => {
@@ -81,13 +100,19 @@ export default function CannaballGeo({ calls, channel }: Props) {
       return cur;
     };
 
-    if (!universalOnly) {
+    if (useRoku) {
       rows.filter((r) => r.entity === "state").forEach((r) => {
         const c = get(toCode(r.entity_name));
         c.spend += r.spend;
         c.impressions += r.impressions;
       });
     }
+    uaBy("state").forEach((r) => {
+      const c = get(toCode(r.entity_name));
+      c.spend += r.spend;
+      c.impressions += r.impressions;
+    });
+
     geoCalls.forEach((call) => {
       const c = get(toCode(call.caller_state));
       c.calls += 1;
@@ -105,17 +130,20 @@ export default function CannaballGeo({ calls, channel }: Props) {
         profit: r.revenue - r.spend,
       }))
       .sort((a, b) => b.spend - a.spend || b.calls - a.calls);
-  }, [rows, geoCalls, universalOnly]);
+  }, [rows, uaScoped, geoCalls, useRoku]);
 
   /** Metro-market spend, with calls matched on caller city + state within the DMA name. */
   const dmas = useMemo(() => {
     const map = new Map<string, { name: string; spend: number; impressions: number; calls: number; connected: number; revenue: number }>();
-    rows.filter((r) => r.entity === "dma").forEach((r) => {
-      const cur = map.get(r.entity_name) ?? { name: r.entity_name, spend: 0, impressions: 0, calls: 0, connected: 0, revenue: 0 };
-      cur.spend += r.spend;
-      cur.impressions += r.impressions;
-      map.set(r.entity_name, cur);
-    });
+    const addSpend = (name: string, spend: number, impressions: number) => {
+      const cur = map.get(name) ?? { name, spend: 0, impressions: 0, calls: 0, connected: 0, revenue: 0 };
+      cur.spend += spend;
+      cur.impressions += impressions;
+      map.set(name, cur);
+    };
+    if (useRoku) rows.filter((r) => r.entity === "dma").forEach((r) => addSpend(r.entity_name, r.spend, r.impressions));
+    uaBy("dma").forEach((r) => addSpend(r.entity_name, r.spend, r.impressions));
+
 
     // Roku names DMAs after their anchor cities and appends state codes: "Raleigh-Durham (Fayetteville) NC".
     const cityIndex = Array.from(map.values()).map((d) => {
@@ -155,36 +183,52 @@ export default function CannaballGeo({ calls, channel }: Props) {
       }))
       .sort((a, b) => b.spend - a.spend);
     return { list, matched };
-  }, [rows, geoCalls]);
+  }, [rows, uaScoped, geoCalls, useRoku]);
 
-  /** ZIP-level call performance straight from CallGrid (no spend is reported per ZIP). */
+  /** ZIP-level performance: Universal reports spend per ZIP, CallGrid supplies the calls. */
   const zips = useMemo(() => {
     const map = new Map<string, {
-      zip: string; state: string; city: string; calls: number; connected: number; revenue: number; talk: number;
+      zip: string; state: string; city: string; calls: number; connected: number;
+      revenue: number; talk: number; spend: number; impressions: number;
     }>();
+    const get = (zip: string) => {
+      const cur = map.get(zip) ?? {
+        zip, state: "—", city: "—", calls: 0, connected: 0, revenue: 0, talk: 0, spend: 0, impressions: 0,
+      };
+      map.set(zip, cur);
+      return cur;
+    };
+    uaBy("zip_code").forEach((r) => {
+      const zip = (r.entity_name || "").trim().slice(0, 5);
+      if (!zip || zip === "Unkno") return;
+      const cur = get(zip);
+      cur.spend += r.spend;
+      cur.impressions += r.impressions;
+    });
     geoCalls.forEach((call) => {
       const zip = (call.caller_zip || "").trim().slice(0, 5);
       if (!zip) return;
-      const cur = map.get(zip) ?? {
-        zip, state: toCode(call.caller_state), city: call.caller_city || "—",
-        calls: 0, connected: 0, revenue: 0, talk: 0,
-      };
+      const cur = get(zip);
+      if (cur.state === "—") cur.state = toCode(call.caller_state);
+      if (cur.city === "—") cur.city = call.caller_city || "—";
       cur.calls += 1;
       if (call.connected) cur.connected += 1;
       cur.revenue += Number(call.payout || 0);
       cur.talk += Number(call.connection_duration_seconds || 0);
-      map.set(zip, cur);
     });
     const list = Array.from(map.values())
       .map((r) => ({
         ...r,
         connectRate: r.calls > 0 ? r.connected / r.calls : 0,
         avgTalk: r.connected > 0 ? r.talk / r.connected : 0,
+        cpCall: r.calls > 0 ? r.spend / r.calls : 0,
       }))
-      .sort((a, b) => b.calls - a.calls || b.revenue - a.revenue);
+      .sort((a, b) => b.spend - a.spend || b.calls - a.calls || b.revenue - a.revenue);
     const withZip = geoCalls.filter((c) => (c.caller_zip || "").trim()).length;
-    return { list, withZip };
-  }, [geoCalls]);
+    const hasZipSpend = list.some((r) => r.spend > 0);
+    return { list, withZip, hasZipSpend };
+  }, [geoCalls, uaScoped]);
+
 
   const placements = useMemo(() => {
     const map = new Map<string, { name: string; spend: number; impressions: number }>();
@@ -216,25 +260,26 @@ export default function CannaballGeo({ calls, channel }: Props) {
         <div className="min-w-0">
           <p className="text-sm font-medium">Geo performance</p>
           <p className="text-xs text-muted-foreground">
-            Roku delivery by state, metro market (DMA) and placement, joined to CallGrid calls by
-            caller location. Universal Ads geo joins in once its API access is approved.
+            Delivery by state, metro market (DMA), ZIP and placement, joined to CallGrid calls by
+            caller location. Roku reports state, DMA and placement; Universal Ads adds ZIP-level spend.
           </p>
         </div>
         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={runSync} disabled={syncing}>
           <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Syncing…" : "Sync Roku geo"}
+          {syncing ? "Syncing…" : useRoku && useUniversal ? "Sync geo reports" : universalOnly ? "Sync Universal geo" : "Sync Roku geo"}
         </Button>
       </Card>
 
-      {universalOnly && (
+      {universalOnly && !uaScoped.length && (
         <Card className="flex items-start gap-2 p-4 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Universal Ads spend by geo is not available yet — the app is pending access. Call counts by
-            state below are live from CallGrid for Universal Ads numbers.
+            No Universal Ads geo rows in this range yet. Run "Sync Universal geo" — Universal builds
+            these reports asynchronously, so it can take a minute. Call counts below are live from CallGrid.
           </span>
         </Card>
       )}
+
 
       {!isLoading && !rows.length && !universalOnly && (
         <Card className="flex items-start gap-2 p-4 text-xs text-muted-foreground">
@@ -371,7 +416,10 @@ export default function CannaballGeo({ calls, channel }: Props) {
                     <th className="p-2 text-left">ZIP</th>
                     <th className="p-2 text-left">City</th>
                     <th className="p-2 text-left">State</th>
+                    <th className="p-2 text-right">Spend</th>
+                    <th className="p-2 text-right">Impressions</th>
                     <th className="p-2 text-right">Calls</th>
+                    <th className="p-2 text-right">Cost / call</th>
                     <th className="p-2 text-right">Connected</th>
                     <th className="p-2 text-right">Connect %</th>
                     <th className="p-2 text-right">Avg talk</th>
@@ -384,24 +432,30 @@ export default function CannaballGeo({ calls, channel }: Props) {
                       <td className="p-2 font-medium">{z.zip}</td>
                       <td className="p-2">{z.city}</td>
                       <td className="p-2">{z.state}</td>
-                      <td className="p-2 text-right">{z.calls}</td>
+                      <td className="p-2 text-right">{z.spend > 0 ? money2(z.spend) : "—"}</td>
+                      <td className="p-2 text-right">{z.impressions ? z.impressions.toLocaleString() : "—"}</td>
+                      <td className="p-2 text-right">{z.calls || "—"}</td>
+                      <td className="p-2 text-right">{z.cpCall > 0 ? money2(z.cpCall) : "—"}</td>
                       <td className="p-2 text-right">{z.connected || "—"}</td>
-                      <td className="p-2 text-right">{`${(z.connectRate * 100).toFixed(0)}%`}</td>
+                      <td className="p-2 text-right">{z.calls ? `${(z.connectRate * 100).toFixed(0)}%` : "—"}</td>
                       <td className="p-2 text-right">{z.avgTalk > 0 ? `${Math.round(z.avgTalk)}s` : "—"}</td>
                       <td className="p-2 text-right">{z.revenue > 0 ? money2(z.revenue) : "—"}</td>
                     </tr>
                   ))}
                   {!zips.list.length && (
-                    <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No ZIP codes on calls in range.</td></tr>
+                    <tr><td colSpan={11} className="p-6 text-center text-muted-foreground">No ZIP rows in range.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </Card>
           <p className="text-xs text-muted-foreground">
-            {zips.withZip} of {geoCalls.length} calls in range carry a caller ZIP. Roku reports spend by
-            state, metro and placement only, so ZIP rows show call quality rather than cost.
+            {zips.withZip} of {geoCalls.length} calls in range carry a caller ZIP.{" "}
+            {zips.hasZipSpend
+              ? "ZIP spend comes from Universal Ads; Roku does not report below metro level."
+              : "Universal Ads supplies ZIP-level spend — sync above to fill the spend columns."}
           </p>
+
         </TabsContent>
 
         <TabsContent value="placement">

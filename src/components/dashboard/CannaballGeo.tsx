@@ -260,25 +260,26 @@ export default function CannaballGeo({ calls, channel }: Props) {
         <div className="min-w-0">
           <p className="text-sm font-medium">Geo performance</p>
           <p className="text-xs text-muted-foreground">
-            Roku delivery by state, metro market (DMA) and placement, joined to CallGrid calls by
-            caller location. Universal Ads geo joins in once its API access is approved.
+            Delivery by state, metro market (DMA), ZIP and placement, joined to CallGrid calls by
+            caller location. Roku reports state, DMA and placement; Universal Ads adds ZIP-level spend.
           </p>
         </div>
         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={runSync} disabled={syncing}>
           <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Syncing…" : "Sync Roku geo"}
+          {syncing ? "Syncing…" : useRoku && useUniversal ? "Sync geo reports" : universalOnly ? "Sync Universal geo" : "Sync Roku geo"}
         </Button>
       </Card>
 
-      {universalOnly && (
+      {universalOnly && !uaScoped.length && (
         <Card className="flex items-start gap-2 p-4 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Universal Ads spend by geo is not available yet — the app is pending access. Call counts by
-            state below are live from CallGrid for Universal Ads numbers.
+            No Universal Ads geo rows in this range yet. Run "Sync Universal geo" — Universal builds
+            these reports asynchronously, so it can take a minute. Call counts below are live from CallGrid.
           </span>
         </Card>
       )}
+
 
       {!isLoading && !rows.length && !universalOnly && (
         <Card className="flex items-start gap-2 p-4 text-xs text-muted-foreground">

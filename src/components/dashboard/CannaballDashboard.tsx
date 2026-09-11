@@ -7,6 +7,8 @@ import { RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, Fi
 import CannaballGeo from "./CannaballGeo";
 import CannaballCallGridSetup from "./CannaballCallGridSetup";
 import CannaballUniversalAdsSetup from "./CannaballUniversalAdsSetup";
+import CannaballUniversalBacklog from "./CannaballUniversalBacklog";
+
 import CannaballRokuSetup from "./CannaballRokuSetup";
 import CannaballDidTracker from "./CannaballDidTracker";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -227,8 +229,12 @@ export default function CannaballDashboard() {
         </TabsContent>
 
         <TabsContent value="universal-ads">
-          <CannaballUniversalAdsSetup />
+          <div className="space-y-4">
+            <CannaballUniversalAdsSetup />
+            <CannaballUniversalBacklog />
+          </div>
         </TabsContent>
+
 
         <TabsContent value="dids">
           <CannaballDidTracker />

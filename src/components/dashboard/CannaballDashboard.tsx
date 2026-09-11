@@ -227,8 +227,12 @@ export default function CannaballDashboard() {
         </TabsContent>
 
         <TabsContent value="universal-ads">
-          <CannaballUniversalAdsSetup />
+          <div className="space-y-4">
+            <CannaballUniversalAdsSetup />
+            <CannaballUniversalBacklog />
+          </div>
         </TabsContent>
+
 
         <TabsContent value="dids">
           <CannaballDidTracker />

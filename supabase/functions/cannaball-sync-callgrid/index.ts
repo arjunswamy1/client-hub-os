@@ -139,8 +139,14 @@ Deno.serve(async (req) => {
               ? talk > 0
               : connectedRaw === true || connectedRaw === 1 || String(connectedRaw) === "1" ||
                 String(connectedRaw).toLowerCase() === "true",
-          payout:
-            Number(String(pick(c, ["RevenueAmount", "CallRevenue", "revenue", "CallPayout", "payout", "amount"]) ?? 0).replace(/[^0-9.-]/g, "")) || 0,
+          // CallGrid only bills a call once its connect duration reaches RevenueDuration.
+          payout: (() => {
+            const amount =
+              Number(String(pick(c, ["RevenueAmount", "CallRevenue", "revenue", "CallPayout", "payout", "amount"]) ?? 0).replace(/[^0-9.-]/g, "")) || 0;
+            const required = Number(pick(c, ["RevenueDuration"]) ?? 0) || 0;
+            const connectSecs = Number(pick(c, ["CallDurationFromConnect", "durationFromConnect"]) ?? 0) || 0;
+            return connectSecs >= required ? amount : 0;
+          })(),
           disposition: pick(c, ["CallStatus", "callStatus", "disposition", "status", "result"]) ?? null,
           campaign_name:
             match?.campaign_name ?? pick(c, ["CampaignName", "VendorName", "campaignName", "campaign"]) ?? null,

@@ -3680,6 +3680,431 @@ export type Database = {
         }
         Relationships: []
       }
+      media_brain_change_log: {
+        Row: {
+          change_date: string
+          change_description: string
+          client_id: string
+          created_at: string | null
+          created_by_id: string | null
+          entity_level: string | null
+          entity_name: string | null
+          entity_ref: string | null
+          expected_result: string
+          id: string
+          is_changepoint: boolean
+          outcome: string | null
+          review_date: string
+          reviewed_at: string | null
+          why: string
+        }
+        Insert: {
+          change_date?: string
+          change_description: string
+          client_id: string
+          created_at?: string | null
+          created_by_id?: string | null
+          entity_level?: string | null
+          entity_name?: string | null
+          entity_ref?: string | null
+          expected_result: string
+          id?: string
+          is_changepoint?: boolean
+          outcome?: string | null
+          review_date: string
+          reviewed_at?: string | null
+          why: string
+        }
+        Update: {
+          change_date?: string
+          change_description?: string
+          client_id?: string
+          created_at?: string | null
+          created_by_id?: string | null
+          entity_level?: string | null
+          entity_name?: string | null
+          entity_ref?: string | null
+          expected_result?: string
+          id?: string
+          is_changepoint?: boolean
+          outcome?: string | null
+          review_date?: string
+          reviewed_at?: string | null
+          why?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_change_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_brain_dispositions: {
+        Row: {
+          awaiting_evidence: string | null
+          client_id: string
+          confidence_state: string | null
+          created_at: string | null
+          decided_at: string | null
+          decided_by_id: string | null
+          entity_level: string
+          entity_name: string | null
+          entity_ref: string
+          evidence: Json | null
+          id: string
+          instance_id: string | null
+          reason: string | null
+          review_date: string | null
+          review_id: string | null
+          status: string
+          verdict: string
+        }
+        Insert: {
+          awaiting_evidence?: string | null
+          client_id: string
+          confidence_state?: string | null
+          created_at?: string | null
+          decided_at?: string | null
+          decided_by_id?: string | null
+          entity_level: string
+          entity_name?: string | null
+          entity_ref: string
+          evidence?: Json | null
+          id?: string
+          instance_id?: string | null
+          reason?: string | null
+          review_date?: string | null
+          review_id?: string | null
+          status?: string
+          verdict: string
+        }
+        Update: {
+          awaiting_evidence?: string | null
+          client_id?: string
+          confidence_state?: string | null
+          created_at?: string | null
+          decided_at?: string | null
+          decided_by_id?: string | null
+          entity_level?: string
+          entity_name?: string | null
+          entity_ref?: string
+          evidence?: Json | null
+          id?: string
+          instance_id?: string | null
+          reason?: string | null
+          review_date?: string | null
+          review_id?: string | null
+          status?: string
+          verdict?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_dispositions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "media_brain_dispositions_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "media_brain_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "media_brain_dispositions_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "media_brain_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_brain_economics: {
+        Row: {
+          ad_account_ids: string[] | null
+          avg_bid: number | null
+          bid_ceiling: number | null
+          bid_floor: number | null
+          billable_filters: Json | null
+          billable_min_duration_seconds: number | null
+          buyer_hours: Json | null
+          campaign_state: string | null
+          client_id: string
+          created_at: string | null
+          daily_budget: number | null
+          duration_max_seconds: number | null
+          duration_min_seconds: number | null
+          existing_structure_notes: string | null
+          expected_cost_per_billable_call: number | null
+          expected_cost_per_call: number | null
+          funnel_cta: string | null
+          funnel_type: string | null
+          has_ivr: boolean | null
+          id: string
+          known_problems: string | null
+          last_reviewed_at: string | null
+          payout: number | null
+          payout_mode: string
+          platforms: string[] | null
+          reporting_cadence: string | null
+          reporting_format: string | null
+          routing_mode: string
+          steps_to_live_person: number | null
+          tracking_platform: string | null
+          unknown_fields: string[] | null
+          updated_at: string | null
+          vertical: string | null
+        }
+        Insert: {
+          ad_account_ids?: string[] | null
+          avg_bid?: number | null
+          bid_ceiling?: number | null
+          bid_floor?: number | null
+          billable_filters?: Json | null
+          billable_min_duration_seconds?: number | null
+          buyer_hours?: Json | null
+          campaign_state?: string | null
+          client_id: string
+          created_at?: string | null
+          daily_budget?: number | null
+          duration_max_seconds?: number | null
+          duration_min_seconds?: number | null
+          existing_structure_notes?: string | null
+          expected_cost_per_billable_call?: number | null
+          expected_cost_per_call?: number | null
+          funnel_cta?: string | null
+          funnel_type?: string | null
+          has_ivr?: boolean | null
+          id?: string
+          known_problems?: string | null
+          last_reviewed_at?: string | null
+          payout?: number | null
+          payout_mode: string
+          platforms?: string[] | null
+          reporting_cadence?: string | null
+          reporting_format?: string | null
+          routing_mode?: string
+          steps_to_live_person?: number | null
+          tracking_platform?: string | null
+          unknown_fields?: string[] | null
+          updated_at?: string | null
+          vertical?: string | null
+        }
+        Update: {
+          ad_account_ids?: string[] | null
+          avg_bid?: number | null
+          bid_ceiling?: number | null
+          bid_floor?: number | null
+          billable_filters?: Json | null
+          billable_min_duration_seconds?: number | null
+          buyer_hours?: Json | null
+          campaign_state?: string | null
+          client_id?: string
+          created_at?: string | null
+          daily_budget?: number | null
+          duration_max_seconds?: number | null
+          duration_min_seconds?: number | null
+          existing_structure_notes?: string | null
+          expected_cost_per_billable_call?: number | null
+          expected_cost_per_call?: number | null
+          funnel_cta?: string | null
+          funnel_type?: string | null
+          has_ivr?: boolean | null
+          id?: string
+          known_problems?: string | null
+          last_reviewed_at?: string | null
+          payout?: number | null
+          payout_mode?: string
+          platforms?: string[] | null
+          reporting_cadence?: string | null
+          reporting_format?: string | null
+          routing_mode?: string
+          steps_to_live_person?: number | null
+          tracking_platform?: string | null
+          unknown_fields?: string[] | null
+          updated_at?: string | null
+          vertical?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_economics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_brain_instances: {
+        Row: {
+          actionable_gap: number
+          allowable_cost_per_call: number | null
+          baseline_rpc: number | null
+          client_id: string
+          computed_at: string | null
+          cost_per_angle: number | null
+          created_at: string | null
+          cut_cadence: string | null
+          economics_id: string | null
+          expected_billable_calls_per_week: number | null
+          flags: Json | null
+          id: string
+          is_stale: boolean | null
+          kill_threshold: number | null
+          lifecycle_stage: string | null
+          max_angles: number | null
+          min_calls: number | null
+          min_margin: number
+          naming_convention: Json | null
+          scale_cadence: string | null
+          target_margin: number
+          test_budget_pct: number | null
+          updated_at: string | null
+          volume_tier: string | null
+        }
+        Insert: {
+          actionable_gap?: number
+          allowable_cost_per_call?: number | null
+          baseline_rpc?: number | null
+          client_id: string
+          computed_at?: string | null
+          cost_per_angle?: number | null
+          created_at?: string | null
+          cut_cadence?: string | null
+          economics_id?: string | null
+          expected_billable_calls_per_week?: number | null
+          flags?: Json | null
+          id?: string
+          is_stale?: boolean | null
+          kill_threshold?: number | null
+          lifecycle_stage?: string | null
+          max_angles?: number | null
+          min_calls?: number | null
+          min_margin?: number
+          naming_convention?: Json | null
+          scale_cadence?: string | null
+          target_margin?: number
+          test_budget_pct?: number | null
+          updated_at?: string | null
+          volume_tier?: string | null
+        }
+        Update: {
+          actionable_gap?: number
+          allowable_cost_per_call?: number | null
+          baseline_rpc?: number | null
+          client_id?: string
+          computed_at?: string | null
+          cost_per_angle?: number | null
+          created_at?: string | null
+          cut_cadence?: string | null
+          economics_id?: string | null
+          expected_billable_calls_per_week?: number | null
+          flags?: Json | null
+          id?: string
+          is_stale?: boolean | null
+          kill_threshold?: number | null
+          lifecycle_stage?: string | null
+          max_angles?: number | null
+          min_calls?: number | null
+          min_margin?: number
+          naming_convention?: Json | null
+          scale_cadence?: string | null
+          target_margin?: number
+          test_budget_pct?: number | null
+          updated_at?: string | null
+          volume_tier?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_instances_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "media_brain_instances_economics_id_fkey"
+            columns: ["economics_id"]
+            isOneToOne: false
+            referencedRelation: "media_brain_economics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_brain_reviews: {
+        Row: {
+          breakers: Json | null
+          cadence: string
+          client_id: string
+          created_at: string | null
+          created_by_id: string | null
+          diagnostics: Json | null
+          id: string
+          instance_id: string | null
+          pull_error: string | null
+          pull_ok: boolean
+          status: string
+          timezone: string
+          totals: Json | null
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          breakers?: Json | null
+          cadence: string
+          client_id: string
+          created_at?: string | null
+          created_by_id?: string | null
+          diagnostics?: Json | null
+          id?: string
+          instance_id?: string | null
+          pull_error?: string | null
+          pull_ok?: boolean
+          status?: string
+          timezone: string
+          totals?: Json | null
+          window_end: string
+          window_start: string
+        }
+        Update: {
+          breakers?: Json | null
+          cadence?: string
+          client_id?: string
+          created_at?: string | null
+          created_by_id?: string | null
+          diagnostics?: Json | null
+          id?: string
+          instance_id?: string | null
+          pull_error?: string | null
+          pull_ok?: boolean
+          status?: string
+          timezone?: string
+          totals?: Json | null
+          window_end?: string
+          window_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_reviews_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "media_brain_reviews_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "media_brain_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_push_log: {
         Row: {
           action: string

@@ -243,7 +243,9 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
     row.revenue += call.payout_amount;
     // Zeros are included deliberately: a no-bid is real data under RTB.
     row.payouts.push(call.payout_amount);
+    if (typeof call.duration_seconds === 'number') row.durations.push(call.duration_seconds);
     row.call_ids.push(call.call_id);
+
     rows.set(key, row);
   }
 

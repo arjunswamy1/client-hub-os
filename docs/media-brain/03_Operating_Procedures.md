@@ -55,7 +55,7 @@ On `ad_id`. Any Meta spend that doesn't join to call data is a tracking flag, no
 
 ### Naming dependency
 
-Grouping by angle, audience, and creative iteration depends on parsing structure out of Meta entity names. Read the account's actual convention once and record the parsing rule in the client's Instance file. Where names carry no structure, the dashboard reports at ad level only and says so rather than invent groupings.
+Grouping by angle, audience, and creative iteration depends on parsing structure out of Meta entity names. Read the account's actual convention once and record the parsing rule in the client's Instance file. Where names carry no structure, the dashboard reports at ad level only and says so rather than inventing groupings.
 
 ## 3. Daily
 

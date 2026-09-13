@@ -191,7 +191,7 @@ export default function MediaBrainDailyPage() {
 
       {data && !data.ok && (
         <Notice tone="danger" title="The pull failed">
-          {data.error}
+          {(data as { error?: string }).error}
           <p className="mt-2">
             An empty result means the pull failed, not that there were zero calls — and zero billable calls is a kill
             trigger. Nothing below is shown until the pull succeeds.

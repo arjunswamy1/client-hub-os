@@ -44,6 +44,7 @@ import RokuCallbackPage from "./pages/RokuCallbackPage";
 import RokuConnectionsPage from "./pages/RokuConnectionsPage";
 import UniversalAdsCallbackPage from "./pages/UniversalAdsCallbackPage";
 import MetaCallbackPage from "./pages/MetaCallbackPage";
+import MediaBrainIntakePage from "./pages/MediaBrainIntakePage";
 
 const queryClient = new QueryClient();
 
@@ -143,6 +144,9 @@ function ProtectedRoutes() {
           <Route path="/spend-upload" element={<SpendUploadPage />} />
           <Route path="/ringfuel-numbers" element={<RingFuelNumbersPage />} />
           {isAdmin && <Route path="/roku-connections" element={<RokuConnectionsPage />} />}
+          {(isAdmin || isAccountManager) && (
+            <Route path="/media-brain/:clientId/intake" element={<MediaBrainIntakePage />} />
+          )}
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

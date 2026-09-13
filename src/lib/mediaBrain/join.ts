@@ -115,8 +115,10 @@ function emptyRow(base: Partial<JoinedEntityRow> & { level: JoinLevel; entity_re
     billable_calls: 0,
     revenue: 0,
     payouts: [],
+    durations: [],
     call_ids: [],
     ...base,
+
   };
 }
 

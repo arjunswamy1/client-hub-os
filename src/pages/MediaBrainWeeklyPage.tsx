@@ -393,7 +393,7 @@ export default function MediaBrainWeeklyPage() {
           )}
           {pull.data && !pull.data.ok && (
             <Notice tone="danger" title="The pull failed — this is not a zero">
-              {pull.data.error}
+              {(pull.data as { error?: string }).error}
               <p className="mt-2">An empty result means the pull failed. Zero billable calls is a kill trigger, so it is never inferred from a failure.</p>
               <div className="mt-3">
                 <Button size="sm" variant="outline" onClick={() => pull.refetch()}>

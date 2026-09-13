@@ -289,6 +289,8 @@ function decorate(
     billableRate: engine.billableRate(r.billable_calls, r.connected_calls),
     confidenceState: engine.confidenceState(r.billable_calls, minCallsValue, r.spend, kill),
     marginBand: engine.marginBand(engine.marginPct(r.revenue, r.spend)),
+    medianDurationSeconds: engine.median(r.durations),
+
     payoutDistribution: payoutMode === 'rtb' ? engine.payoutDistribution(r.payouts) : null,
   };
 }

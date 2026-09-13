@@ -401,6 +401,19 @@ function nearestRank(sorted: number[], p: number): number | null {
 }
 
 /**
+ * Median of a set of values by nearest rank. Null on an empty set — never 0.
+ * Used for median call duration and, under RTB, for judging by the median
+ * rather than the mean (§5, §10).
+ * @see docs/media-brain/01_Decision_Engine.md §5, §10
+ */
+export function median(values: Num[] | null | undefined): number | null {
+  const clean = (values ?? []).filter(ok);
+  if (clean.length === 0) return null;
+  return nearestRank([...clean].sort((a, b) => a - b), 0.5);
+}
+
+
+/**
  * Payout distribution for RTB. **Zeros are INCLUDED** in the array and in every
  * denominator — no-bid losses must stay visible. Judge by the median, not the
  * mean: nine calls at $20 and one at $200 average $38 while nine out of ten

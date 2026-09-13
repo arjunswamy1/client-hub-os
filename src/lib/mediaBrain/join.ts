@@ -72,7 +72,10 @@ export interface JoinedEntityRow {
   revenue: number;
   /** Payouts of every call, zeros INCLUDED — needed for the RTB median. */
   payouts: number[];
+  /** Call durations in seconds, nulls dropped — needed for median duration. */
+  durations: number[];
   call_ids: string[];
+
 }
 
 export interface JoinInput {

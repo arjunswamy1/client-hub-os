@@ -150,6 +150,13 @@ function ProtectedRoutes() {
           {(isAdmin || isAccountManager) && (
             <Route path="/media-brain/:clientId/intake" element={<MediaBrainIntakePage />} />
           )}
+          {(isAdmin || isAccountManager) && (
+            <Route path="/media-brain/:clientId/daily" element={<MediaBrainDailyPage />} />
+          )}
+          {(isAdmin || isAccountManager) && (
+            <Route path="/media-brain/:clientId/weekly" element={<MediaBrainWeeklyPage />} />
+          )}
+
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

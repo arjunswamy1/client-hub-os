@@ -45,6 +45,9 @@ import RokuConnectionsPage from "./pages/RokuConnectionsPage";
 import UniversalAdsCallbackPage from "./pages/UniversalAdsCallbackPage";
 import MetaCallbackPage from "./pages/MetaCallbackPage";
 import MediaBrainIntakePage from "./pages/MediaBrainIntakePage";
+import MediaBrainDailyPage from "./pages/MediaBrainDailyPage";
+import MediaBrainWeeklyPage from "./pages/MediaBrainWeeklyPage";
+
 
 const queryClient = new QueryClient();
 

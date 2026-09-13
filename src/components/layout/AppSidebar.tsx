@@ -90,7 +90,37 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Media Brain — admins and assigned account managers only */}
+        {(isAdmin || isAccountManager) && activeClient?.id && (
+          <SidebarGroup>
+            {!collapsed && <SidebarGroupLabel>Media Brain</SidebarGroupLabel>}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {[
+                  { title: 'Intake', url: `/media-brain/${activeClient.id}/intake`, icon: ClipboardList },
+                  { title: 'Daily', url: `/media-brain/${activeClient.id}/daily`, icon: Gauge },
+                  { title: 'Weekly Review', url: `/media-brain/${activeClient.id}/weekly`, icon: CalendarCheck },
+                ].map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild size="sm">
+                      <NavLink
+                        to={item.url}
+                        className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
+
 
       <SidebarFooter className="px-2 pb-3">
         <SidebarMenu>

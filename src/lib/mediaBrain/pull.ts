@@ -50,8 +50,11 @@ export interface PullRow extends JoinedEntityRow {
   billableRate: number | null;
   confidenceState: ConfidenceState;
   marginBand: engine.MarginBandResult | null;
+  /** Median call duration in seconds. Null when no durations came back. */
+  medianDurationSeconds: number | null;
   /** RTB only — zeros included. Null under static. */
   payoutDistribution: engine.PayoutDistributionResult | null;
+
 }
 
 export interface PullWindowArgs {
@@ -286,6 +289,8 @@ function decorate(
     billableRate: engine.billableRate(r.billable_calls, r.connected_calls),
     confidenceState: engine.confidenceState(r.billable_calls, minCallsValue, r.spend, kill),
     marginBand: engine.marginBand(engine.marginPct(r.revenue, r.spend)),
+    medianDurationSeconds: engine.median(r.durations),
+
     payoutDistribution: payoutMode === 'rtb' ? engine.payoutDistribution(r.payouts) : null,
   };
 }

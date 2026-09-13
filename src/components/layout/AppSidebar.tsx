@@ -1,17 +1,19 @@
 import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
-  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload, Tv
+  Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload, Tv,
+  ClipboardList, Gauge, CalendarCheck
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarFooter,
   SidebarHeader, useSidebar,
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { ClientSwitcher } from '@/components/layout/ClientSwitcher';
+
 
 const clientNavItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
@@ -39,7 +41,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const location = useLocation();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAccountManager } = useAuth();
   const { activeClient } = useClient();
 
   return (
@@ -90,7 +92,37 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Media Brain — admins and assigned account managers only */}
+        {(isAdmin || isAccountManager) && activeClient?.id && (
+          <SidebarGroup>
+            {!collapsed && <SidebarGroupLabel>Media Brain</SidebarGroupLabel>}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {[
+                  { title: 'Intake', url: `/media-brain/${activeClient.id}/intake`, icon: ClipboardList },
+                  { title: 'Daily', url: `/media-brain/${activeClient.id}/daily`, icon: Gauge },
+                  { title: 'Weekly Review', url: `/media-brain/${activeClient.id}/weekly`, icon: CalendarCheck },
+                ].map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild size="sm">
+                      <NavLink
+                        to={item.url}
+                        className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
+
 
       <SidebarFooter className="px-2 pb-3">
         <SidebarMenu>

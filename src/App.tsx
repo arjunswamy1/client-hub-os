@@ -45,6 +45,9 @@ import RokuConnectionsPage from "./pages/RokuConnectionsPage";
 import UniversalAdsCallbackPage from "./pages/UniversalAdsCallbackPage";
 import MetaCallbackPage from "./pages/MetaCallbackPage";
 import MediaBrainIntakePage from "./pages/MediaBrainIntakePage";
+import MediaBrainDailyPage from "./pages/MediaBrainDailyPage";
+import MediaBrainWeeklyPage from "./pages/MediaBrainWeeklyPage";
+
 
 const queryClient = new QueryClient();
 
@@ -147,6 +150,13 @@ function ProtectedRoutes() {
           {(isAdmin || isAccountManager) && (
             <Route path="/media-brain/:clientId/intake" element={<MediaBrainIntakePage />} />
           )}
+          {(isAdmin || isAccountManager) && (
+            <Route path="/media-brain/:clientId/daily" element={<MediaBrainDailyPage />} />
+          )}
+          {(isAdmin || isAccountManager) && (
+            <Route path="/media-brain/:clientId/weekly" element={<MediaBrainWeeklyPage />} />
+          )}
+
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

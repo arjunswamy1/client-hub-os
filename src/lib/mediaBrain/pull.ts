@@ -559,6 +559,10 @@ export function computeWindow({
     excludedPublisherCalls: publisherSplit.excludedCalls,
     excludedByPublisher: publisherSplit.excludedByPublisher,
     publisherNote: publisherSplit.note,
+    publisherScoping: scopingGate,
+    publisherScopingRecheck: scopingRecheck,
+    dedicatedCampaignContradiction: scopingContradiction,
+    platformSplit: engine.platformSplit(calls),
     attributedPublishers: (economics.attributed_publishers ?? []).filter(
       (p): p is string => typeof p === 'string' && p.trim().length > 0,
     ),

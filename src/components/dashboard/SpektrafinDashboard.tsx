@@ -21,12 +21,14 @@ const fmtDuration = (s: number) => {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/** RingFuel reports payout per call, so revenue is the sum of payouts and a paid call is payout > 0. */
+/** Spektrafin payout terms (client-confirmed 2026-09-14): $16 per raw call — every call pays. */
+export const SPEKTRAFIN_PAYOUT_PER_RAW_CALL = 16;
+
 function aggregate(calls: SpektrafinCall[], spend: number) {
   const total = calls.length;
   const connected = calls.filter((c) => c.connected === true).length;
-  const paid = calls.filter((c) => Number(c.payout || 0) > 0).length;
-  const revenue = calls.reduce((s, c) => s + Number(c.payout || 0), 0);
+  const paid = total; // every raw call pays $16
+  const revenue = total * SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
   const duration = calls.reduce((s, c) => s + (c.connection_duration_seconds || c.duration_seconds || 0), 0);
   const rpc = total ? revenue / total : 0;
   const costPerCall = total ? spend / total : 0;
@@ -102,8 +104,8 @@ export default function SpektrafinDashboard() {
       const d = c.call_start.slice(0, 10);
       const r = row(d);
       r.calls += 1;
-      if (Number(c.payout || 0) > 0) r.paid += 1;
-      r.revenue += Number(c.payout || 0);
+      r.paid += 1; // every raw call pays
+      r.revenue += SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
       byDate.set(d, r);
     }
     for (const s of spendRows) {

@@ -64,7 +64,7 @@ const COMPUTED_ECO: VerticalEconomics = {
 };
 
 function enginePlatform(over: Partial<CanonicalCall>) {
-  return over.platform ?? platformFromUtmSource(over.utm_source ?? null);
+  return over.platform ?? engine.platformFromUtmSource(over.utm_source ?? null);
 }
 
 function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall {

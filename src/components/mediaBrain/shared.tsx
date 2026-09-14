@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as engine from "@/lib/mediaBrain/engine";
-import type { PullRow } from "@/lib/mediaBrain/pull";
+import type { PullRow, PullThresholds } from "@/lib/mediaBrain/pull";
 import type { ConfidenceState, PayoutMode } from "@/lib/mediaBrain/engine";
 
 /* ------------------------------------------------------------------ *

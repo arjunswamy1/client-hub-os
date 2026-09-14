@@ -127,12 +127,8 @@ export default function MediaBrainDailyPage() {
   }
 
   const anyFired = breakers.some((b) => b.fired);
-  const adsetRows = data?.ok
-    ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls)
-    : [];
-  const adRows = data?.ok
-    ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls)
-    : [];
+  const adsetRows = data?.ok ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds) : [];
+  const adRows = data?.ok ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds) : [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">

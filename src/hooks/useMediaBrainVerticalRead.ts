@@ -16,6 +16,7 @@ import {
   assignCallToVertical,
   verticalRead,
   type VerticalDefinition,
+  type VerticalEconomics,
   type VerticalReadResult,
 } from '@/lib/mediaBrain/verticalRead';
 
@@ -24,6 +25,8 @@ export interface VerticalValidation {
   label: string;
   revenueSource: engine.RevenueSource;
   payoutConfirmed: boolean | null;
+  /** True when the duration threshold is declared UNKNOWN — assumed, not stated. */
+  durationThresholdUnknown: boolean;
   result: engine.BillableAgreementResult;
 }
 
@@ -46,6 +49,7 @@ interface EconomicsRow {
   revenue_source: string | null;
   min_payout_threshold: number | null;
   billable_filters: Record<string, unknown> | null;
+  unknown_fields: string[] | null;
 }
 
 export function useMediaBrainVerticalRead(
@@ -108,14 +112,15 @@ export function useMediaBrainVerticalRead(
       }
 
       const clientRow = economicsRows.find((r) => !r.vertical_id) ?? null;
-      const clientDefault: engine.RevenueEconomics = {
+      const clientDefault: VerticalEconomics = {
         revenue_source: clientRow?.revenue_source ?? 'platform',
         payout: clientRow?.payout ?? null,
         min_payout_threshold: clientRow?.min_payout_threshold ?? null,
         billable_min_duration_seconds: clientRow?.billable_min_duration_seconds ?? null,
+        unknown_fields: clientRow?.unknown_fields ?? null,
       };
 
-      const byVertical: Record<string, engine.RevenueEconomics & { payout_confirmed?: boolean | null }> = {};
+      const byVertical: Record<string, VerticalEconomics> = {};
       for (const row of economicsRows) {
         if (!row.vertical_id) continue;
         const filters = (row.billable_filters ?? {}) as Record<string, unknown>;
@@ -124,6 +129,7 @@ export function useMediaBrainVerticalRead(
           payout: row.payout,
           min_payout_threshold: row.min_payout_threshold,
           billable_min_duration_seconds: row.billable_min_duration_seconds,
+          unknown_fields: row.unknown_fields ?? null,
           payout_confirmed:
             typeof filters.payout_confirmed === 'boolean' ? (filters.payout_confirmed as boolean) : null,
         };
@@ -155,7 +161,8 @@ export function useMediaBrainVerticalRead(
           vertical_id: v.vertical_id,
           label: v.label ?? v.vertical_id,
           revenueSource: engine.revenueSourceOf(eco),
-          payoutConfirmed: (eco as { payout_confirmed?: boolean | null }).payout_confirmed ?? null,
+          payoutConfirmed: eco.payout_confirmed ?? null,
+          durationThresholdUnknown: engine.isUnknownField(eco.unknown_fields, 'billable_min_duration_seconds'),
           result: engine.validateBillableDefinition(
             eco,
             bucketCalls.map((c) => ({ duration_seconds: c.duration_seconds, payout_amount: c.payout_amount })),

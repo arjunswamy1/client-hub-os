@@ -298,3 +298,79 @@ describe('intake validation (3a)', () => {
     expect(result.disagreementPct).toBeNull();
   });
 });
+
+describe('UNKNOWN duration threshold on a computed vertical', () => {
+  // 100 calls: 40 reach 300s, another 30 reach 120s, the rest are short. At a
+  // low threshold the vertical is hugely profitable; at a high one it loses money.
+  const calls: CanonicalCall[] = [
+    ...Array.from({ length: 40 }, (_, i) =>
+      call({ call_id: `long-${i}`, campaign_name: 'Walk In tubs', duration_seconds: 320, payout_amount: 0 }),
+    ),
+    ...Array.from({ length: 30 }, (_, i) =>
+      call({ call_id: `mid-${i}`, campaign_name: 'Walk In tubs', duration_seconds: 130, payout_amount: 0 }),
+    ),
+    ...Array.from({ length: 30 }, (_, i) =>
+      call({ call_id: `short-${i}`, campaign_name: 'Walk In tubs', duration_seconds: 20, payout_amount: 0 }),
+    ),
+  ];
+  const metaAds: MetaAdRow[] = [
+    {
+      platform_ad_id: 'ad-tub',
+      ad_name: 'WalkinTub_Static',
+      campaign_name: 'Tubs',
+      platform_campaign_id: 'c1',
+      spend: 4000,
+    } as unknown as MetaAdRow,
+  ];
+
+  const read = verticalRead({
+    calls,
+    metaAds,
+    verticals: VERTICALS,
+    economics: {
+      byVertical: {
+        'walk-in-tubs': { ...COMPUTED_ECO, unknown_fields: ['billable_min_duration_seconds'] },
+      },
+      clientDefault: PLATFORM_ECO,
+    },
+    thresholds: { minCalls: 25, minMargin: 0.1, targetMargin: 0.2, killThreshold: 160 },
+  });
+  const row = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
+
+  it('exposes no point-estimate revenue, RPC or margin', () => {
+    expect(row.revenue).toBeNull();
+    expect(row.rpc).toBeNull();
+    expect(row.marginPerCall).toBeNull();
+    expect(row.marginPct).toBeNull();
+    expect(row.profit).toBeNull();
+    // The billable count is itself decided by the unknown threshold.
+    expect(row.billableCalls).toBeNull();
+    expect(row.costPerBillableCall).toBeNull();
+  });
+
+  it('still reports the figures that are measured', () => {
+    expect(row.calls).toBe(100);
+    expect(row.spend).toBe(4000);
+    expect(row.costPerCall).toBe(40);
+  });
+
+  it('names what the UNKNOWN blocks', () => {
+    expect(row.durationThresholdUnknown).toBe(true);
+    expect(row.blockedFigures).toContain('revenue');
+    expect(row.blockedFigures).toContain('margin %');
+  });
+
+  it('publishes a sensitivity band instead, and flags a band that crosses zero as verdict-blocking', () => {
+    const band = row.sensitivity!;
+    expect(band).toBeTruthy();
+    // 30s → 70 billable × $80 = $5,600 revenue against $4,000 spend: profit.
+    expect(band.points.find((p) => p.thresholdSeconds === 30)!.revenue).toBe(5600);
+    // 300s → 40 billable × $80 = $3,200: a loss.
+    expect(band.points.find((p) => p.thresholdSeconds === 300)!.revenue).toBe(3200);
+    expect(band.marginPctLow!).toBeLessThan(0);
+    expect(band.marginPctHigh!).toBeGreaterThan(0);
+    expect(band.crossesZero).toBe(true);
+    expect(band.verdictBlocking).toBe(true);
+    expect(band.note).toMatch(/crosses zero/i);
+  });
+});

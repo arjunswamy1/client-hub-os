@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Notice, ConfidenceBadge, fmtMoney, fmtNum, fmtPct } from "@/components/mediaBrain/shared";
 import { useMediaBrainVerticalRead } from "@/hooks/useMediaBrainVerticalRead";
 import type { VerticalReadRow } from "@/lib/mediaBrain/verticalRead";
+import { SensitivityBandTable } from "@/components/mediaBrain/SensitivityBand";
 import { Info } from "lucide-react";
 
 interface Props {
@@ -104,9 +105,21 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
                   <td className="py-2 pr-3 text-right">{fmtMoney(row.spend)}</td>
                   <td className="py-2 pr-3 text-right">{fmtNum(row.calls)}</td>
                   <td className="py-2 pr-3 text-right">{fmtNum(row.paidCalls)}</td>
-                  <td className="py-2 pr-3 text-right">{fmtNum(row.billableCalls)}</td>
                   <td className="py-2 pr-3 text-right">
-                    {row.revenue === null ? <span className="text-muted-foreground">unavailable</span> : fmtMoney(row.revenue)}
+                    {row.billableCalls === null ? (
+                      <span className="text-muted-foreground">threshold unknown</span>
+                    ) : (
+                      fmtNum(row.billableCalls)
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-right">
+                    {row.durationThresholdUnknown && row.revenue === null ? (
+                      <span className="text-muted-foreground">see band below</span>
+                    ) : row.revenue === null ? (
+                      <span className="text-muted-foreground">unavailable</span>
+                    ) : (
+                      fmtMoney(row.revenue)
+                    )}
                   </td>
                   <td className="py-2 pr-3">
                     <SourceBadge row={row} />
@@ -143,6 +156,26 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
             ) : null,
           )}
         </div>
+
+        {rows.some((r) => r.sensitivity) && (
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Sensitivity band — shown instead of revenue, not beside it
+            </p>
+            {rows
+              .filter((r) => r.sensitivity)
+              .map((r) => (
+                <SensitivityBandTable
+                  key={`${r.vertical_id}-band`}
+                  label={r.label}
+                  spend={r.spend}
+                  calls={r.calls}
+                  band={r.sensitivity!}
+                  blockedFigures={r.blockedFigures}
+                />
+              ))}
+          </div>
+        )}
 
         {rows.some((r) => r.flags.length > 0) && (
           <Notice tone="warn" title="Named caveats on these numbers">
@@ -185,6 +218,7 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
                 <Badge variant="outline">{v.revenueSource}</Badge>
                 {v.result.blocks && <Badge variant="destructive">disagreement above 10%</Badge>}
                 {v.payoutConfirmed === false && <Badge variant="outline">payout observed, unconfirmed</Badge>}
+                {v.durationThresholdUnknown && <Badge variant="outline">duration threshold UNKNOWN</Badge>}
               </div>
               <p className="mt-1 text-muted-foreground">{v.result.note}</p>
             </div>

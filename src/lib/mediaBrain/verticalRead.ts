@@ -30,7 +30,7 @@
 
 import type { CanonicalCall } from './adapter';
 import * as engine from './engine';
-import type { ConfidenceState, RevenueEconomics, ResolvedRevenue } from './engine';
+import type { ConfidenceState, RevenueEconomics, ResolvedRevenue, SensitivityBand } from './engine';
 import type { MetaAdRow } from './join';
 
 /** The vertical definition this read groups on. Sourced from `client_verticals`. */
@@ -45,10 +45,17 @@ export interface VerticalDefinition {
   ringba_exact_match?: boolean | null;
 }
 
+/** Economics plus its provenance: was the payout confirmed, what is UNKNOWN. */
+export type VerticalEconomics = RevenueEconomics & {
+  payout_confirmed?: boolean | null;
+  /** Field names declared UNKNOWN — assumed, not stated. @see engine.isUnknownField */
+  unknown_fields?: string[] | null;
+};
+
 /** Per-vertical economics, keyed by `vertical_id`. Falls back to the client default. */
 export interface VerticalEconomicsMap {
-  byVertical: Record<string, RevenueEconomics & { payout_confirmed?: boolean | null }>;
-  clientDefault: RevenueEconomics;
+  byVertical: Record<string, VerticalEconomics>;
+  clientDefault: VerticalEconomics;
 }
 
 export interface VerticalReadThresholds {
@@ -64,7 +71,8 @@ export interface VerticalReadRow {
   spend: number;
   calls: number;
   paidCalls: number;
-  billableCalls: number;
+  /** Null when the billable duration threshold is UNKNOWN — it decides this count. */
+  billableCalls: number | null;
   revenue: number | null;
   revenueSource: engine.RevenueSource | 'unclassified';
   revenueNote: string;
@@ -77,10 +85,20 @@ export interface VerticalReadRow {
   confidence: ConfidenceState;
   /** Kept explicit so the UI never renders a verdict at this level. */
   adLevelDecisionEligible: false;
+  /** True when `billable_min_duration_seconds` is declared UNKNOWN. */
+  durationThresholdUnknown: boolean;
+  /** What that UNKNOWN blocks, named. Empty when nothing is blocked. */
+  blockedFigures: string[];
+  /**
+   * Renders INSTEAD of revenue and margin when the threshold is UNKNOWN on a
+   * `computed` vertical. Never alongside a point estimate.
+   */
+  sensitivity: SensitivityBand | null;
   /** Named data caveats — unconfirmed payouts, zero-payout campaigns, and so on. */
   flags: string[];
   resolution: ResolvedRevenue | null;
 }
+
 
 export interface VerticalReadResult {
   rows: VerticalReadRow[];
@@ -211,9 +229,13 @@ function emptyRow(vertical_id: string, label: string): VerticalReadRow {
     profit: null,
     confidence: 'insufficient',
     adLevelDecisionEligible: false,
+    durationThresholdUnknown: false,
+    blockedFigures: [],
+    sensitivity: null,
     flags: [],
     resolution: null,
   };
+
 }
 
 export interface VerticalReadInput {
@@ -288,12 +310,13 @@ export function verticalRead({
     const revenue = resolved.revenue;
     row.rpc = revenue === null ? null : engine.rpc(revenue, row.calls);
     row.costPerCall = engine.costPerCall(spend, row.calls);
-    row.costPerBillableCall = engine.costPerBillableCall(spend, row.billableCalls);
+    row.costPerBillableCall = engine.costPerBillableCall(spend, resolved.billableCalls);
     row.marginPerCall = revenue === null ? null : engine.marginPerCall(revenue, spend, row.calls);
     row.profit = revenue === null ? null : engine.profit(revenue, spend);
     row.marginPct = revenue === null ? null : engine.marginPct(revenue, spend);
     row.confidence = engine.confidenceState(
-      row.billableCalls,
+      resolved.billableCalls,
+
       resolved.billableCalls,
       thresholds.minCalls,
       spend,
@@ -316,7 +339,33 @@ export function verticalRead({
         `${resolved.subThresholdPayoutCalls} calls carry a non-zero payout below the revenue threshold; excluded as telco cost recorded in the payout field.`,
       );
     }
+
+    // §1 — UNKNOWN discipline. The billable duration threshold is a contract
+    // term; on a `computed` vertical it IS the revenue, so an assumed threshold
+    // must never be presented as a measurement. Suppress every figure it
+    // decides and publish the band instead.
+    const durationUnknown = engine.isUnknownField(eco.unknown_fields, 'billable_min_duration_seconds');
+    if (durationUnknown) {
+      row.durationThresholdUnknown = true;
+      row.blockedFigures = engine.blockedByUnknownDuration(resolved.source);
+      row.sensitivity = engine.revenueSensitivity(eco, bucket.map(toRevenueRow), spend);
+      row.billableCalls = null;
+      row.costPerBillableCall = null;
+      if (resolved.source === 'computed') {
+        row.revenue = null;
+        row.rpc = null;
+        row.marginPerCall = null;
+        row.marginPct = null;
+        row.profit = null;
+        row.confidence = 'insufficient';
+      }
+      row.revenueNote = row.sensitivity.note;
+      row.flags.push(
+        `UNKNOWN: billable_min_duration_seconds is assumed, not stated. It blocks ${row.blockedFigures.join(', ')}.`,
+      );
+    }
     return row;
+
   });
 
   const unclassified = emptyRow('unclassified', 'Unclassified');
@@ -330,9 +379,10 @@ export function verticalRead({
   unclassified.revenueNote =
     'These calls and this spend matched no vertical pattern. They are reported here rather than assigned to a vertical by default — a defaulted assignment would move real money onto the wrong product.';
   unclassified.costPerCall = engine.costPerCall(unclassifiedSpend, unclassified.calls);
-  unclassified.costPerBillableCall = engine.costPerBillableCall(unclassifiedSpend, unclassified.billableCalls);
+  unclassified.costPerBillableCall = engine.costPerBillableCall(unclassifiedSpend, unclassifiedResolved.billableCalls);
   unclassified.confidence = engine.confidenceState(
-    unclassified.billableCalls,
+    unclassifiedResolved.billableCalls,
+
     unclassifiedResolved.billableCalls,
     thresholds.minCalls,
     unclassifiedSpend,

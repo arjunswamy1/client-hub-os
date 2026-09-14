@@ -397,3 +397,90 @@ Full suite **43/43 pass** (was 41), typecheck clean. No Bathroom Remodel figure 
 row was not written, its `unknown_fields` still carry both
 `billable_min_duration_seconds` and `payout`, and its billable-denominated figures remain
 suppressed.
+
+---
+
+## 2026-09-14 — governing conversion events written in, and a corrected reconciliation
+
+AJ named the governing conversion event for both pilot clients. Instance records now exist
+where before there were none, which is why the governing-event mechanism had been reporting
+UNKNOWN: it worked, and had nothing to read.
+
+- **BuyologyIQ** → `offsite_conversion.fb_pixel_custom.RingbaConversion` — 37 events, $2,710
+  in the 30 days to 2026-09-14.
+- **River Road / RRM** → `offsite_conversion.fb_pixel_lead` — 490 events in the same window
+  in our data (AJ quoted 502; the difference is window roll), $0 reported value.
+
+Both records carry the provenance: confirmed by AJ Swamy, 2026-09-14.
+
+### Correction to an earlier figure in this report
+
+An earlier entry recorded Meta's conversions for BuyologyIQ as **139** against our 79
+CPM-attributed calls, and read the gap as Meta overclaiming. **That figure was the ungoverned
+`conversions` column on the ad tables — several event names at once — not the governing event.**
+It was the wrong number and the wrong direction.
+
+With the governing event the reconciliation inverts:
+
+| Vertical | Meta `RingbaConversion` | Our CPM-attributed calls | Direction |
+|---|---|---|---|
+| Walk-In Tubs | 26 | 80 | Meta reports **fewer** |
+| Bathroom Remodel | 9 | 41 | Meta reports **fewer** |
+| Mixed-campaign, unclassified | 2 | — | — |
+| **Total** | **37** | **121** | Meta reports **fewer** |
+
+Meta reporting fewer conversions than we attribute calls is the **expected** shape for an
+offline upload: match rates run well short of 100%, so the platform count is a floor, not a
+census. It is the opposite of an overclaim, and it is stated rather than reconciled away.
+
+### Fragmentation check — it can now run for BuyologyIQ
+
+Counted on the governing event `offsite_conversion.fb_pixel_custom.RingbaConversion`, never on
+billable calls, against the learning-phase floor of **50 per ad set per week**:
+
+| Vertical | Events / 30d | Events / wk | Ad sets with spend | Per ad set / wk | Verdict |
+|---|---|---|---|---|---|
+| Walk-In Tubs | 26 | 5.9 | 8 | **0.73** | fails the floor by ~68× |
+| Bathroom Remodel | 9 | 2.0 | 5 | **0.41** | fails the floor by ~122× |
+| Account (both) | 37 | 8.4 | 14 | **0.60** | fails |
+
+Neither structure can exit learning phase on this event at this volume. This is a calculation,
+not an ad-set count to obey: the honest reading is that the account does not have the event
+volume to support 13 ad sets, and consolidation is the only structural lever that changes it.
+
+**For River Road the check stays blocked** — expected events per week and the ad-set
+denominator are both UNKNOWN on its instance record, and billable calls are never substituted.
+
+### Evidence bearing on the open billable-definition question — recorded, not answered
+
+Several event names in **both** accounts encode duration thresholds:
+`offsite_lead_add_20_s_calls`, `click_to_call_native_20s_call_connect`,
+`click_to_call_native_60s_call_connect`. Someone has already defined 20-second and 60-second
+call conversions in these ad accounts. That is real evidence that a duration line was drawn
+somewhere by someone — and it is **20s or 60s, not the 90s on record**. It is not an answer:
+an event defined in an ad account is an optimisation choice, not the buyer's billable term, and
+nothing here says which duration the buyer pays on. It stands as a question for AJ and the
+buyer, and Bathroom Remodel's billable definition remains UNKNOWN.
+
+### What the instances hold
+
+**BuyologyIQ** — thresholds derived from the confirmed Walk-In Tubs economics only ($80 at
+≥90s, `computed`, confirmed by AJ Swamy 2026-09-14), target margin 20%, floor 10%, gap 0.57.
+UNKNOWN and what each blocks: the Bathroom Remodel payout (its revenue, RPC, margin per call,
+margin %, allowable cost and kill threshold), the Bathroom Remodel billable definition (its
+billable count, cost per billable call, billable rate), buyer hours (reading connection rate as
+media rather than coverage), funnel structure and IVR steps (the downstream diagnostic step).
+
+**River Road** — the conversion event, and nothing else. Payout, billable duration threshold,
+which duration governs, expected weekly events, the ad-set denominator and ad-side UTM capture
+are all UNKNOWN with their blocked outputs named. Every payout-derived threshold is deliberately
+NULL: this client has no confirmed economics, and a record full of default-derived numbers would
+read as authority it does not have.
+
+### Code change
+
+Media Brain no longer reads the ungoverned `conversions` column anywhere. The field is gone from
+`MetaAdRow`, replaced by a `GovernedConversions` input on `verticalRead` carrying the instance's
+event and per-ad counts from `media_brain_platform_conversions`. With no event the column reads
+UNKNOWN and names what it blocks, and the reconciliation notice refuses to run rather than
+publishing a number. Suite 94 → 97.

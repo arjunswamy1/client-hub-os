@@ -84,6 +84,36 @@ export interface PullWindowArgs {
   timezone: string;
 }
 
+/** The economics fields a computation reads. Sourced from `media_brain_economics`. */
+export interface ComputeEconomics {
+  payout_mode: string | null;
+  tracking_platform: string | null;
+  payout: number | null;
+  avg_bid: number | null;
+  billable_min_duration_seconds: number | null;
+}
+
+/** The instance thresholds a computation reads. Sourced from `media_brain_instances`. */
+export interface ComputeInstance {
+  actionable_gap: number | null;
+  min_calls: number | null;
+  min_margin: number | null;
+  target_margin: number | null;
+  kill_threshold: number | null;
+  allowable_cost_per_call: number | null;
+}
+
+export interface ComputeWindowArgs {
+  /** RAW call rows, exactly as the tracking table returns them. Mapped here. */
+  calls: Record<string, unknown>[];
+  metaAds: MetaAdRow[];
+  didMappings: DidMapping[];
+  verticals: VerticalRow[];
+  instance: ComputeInstance;
+  economics: ComputeEconomics;
+  window: { start: string; end: string; timezone: string };
+}
+
 export interface PullWindowSuccess {
   ok: true;
   window: { start: string; end: string; timezone: string };
@@ -135,6 +165,12 @@ export type PullWindowResult = PullWindowSuccess | PullWindowFailure;
  * The single pull used by every cadence.
  * @see docs/media-brain/03_Operating_Procedures.md §2
  */
+/**
+ * The single pull used by every cadence. This function does the FETCHING and the
+ * failure checks only; every computed column comes from `computeWindow`, which
+ * is pure and is what the tests exercise.
+ * @see docs/media-brain/03_Operating_Procedures.md §2
+ */
 export async function pullWindow({ clientId, start, end, timezone }: PullWindowArgs): Promise<PullWindowResult> {
   if (!clientId) return { ok: false, error: 'No client selected — a pull needs an explicit client.' };
   if (!start || !end) return { ok: false, error: 'Date range not stated. Confirm start, end and timezone before pulling.' };
@@ -161,11 +197,9 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
   if (instError) return { ok: false, error: `Instance lookup failed: ${instError.message}` };
   if (!instance) return { ok: false, error: 'No current Instance record for this client. Re-run intake — operating on stale or absent thresholds is not permitted.' };
 
-  const payoutMode = (economics.payout_mode ?? 'static') as PayoutMode;
   const trackingPlatform = economics.tracking_platform as TrackingPlatform;
   const table = CALL_TABLES[trackingPlatform];
-  const mapper = getAdapter(trackingPlatform);
-  if (!table || !mapper) {
+  if (!table || !getAdapter(trackingPlatform)) {
     return { ok: false, error: `No call-data mapping for tracking platform "${trackingPlatform}". The field has no source — it is named as missing, not substituted.` };
   }
 
@@ -191,8 +225,40 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
     if (res.error) return { ok: false, error: `${label} query failed: ${res.error.message}` };
   }
 
-  const rawCalls = (callsRes.data ?? []) as Record<string, unknown>[];
-  const metaAds = (adsRes.data ?? []) as unknown as MetaAdRow[];
+  return computeWindow({
+    calls: (callsRes.data ?? []) as Record<string, unknown>[],
+    metaAds: (adsRes.data ?? []) as unknown as MetaAdRow[],
+    didMappings: [
+      ...((periodsRes.data ?? []) as DidMapping[]),
+      ...((didsRes.data ?? []) as DidMapping[]),
+    ],
+    verticals: (verticalsRes.data ?? []) as VerticalRow[],
+    instance: instance as unknown as ComputeInstance,
+    economics: economics as unknown as ComputeEconomics,
+    window: { start, end, timezone },
+  });
+}
+
+/**
+ * The pure half of the pull: adapter mapping, the join, every computed column,
+ * every threshold check and every breaker. No Supabase, no network, no clock.
+ * Same rules as `pullWindow` — an empty pull is a FAILURE, not a zero (§6).
+ */
+export function computeWindow({
+  calls: rawCalls,
+  metaAds,
+  didMappings,
+  verticals,
+  instance,
+  economics,
+  window: { start, end, timezone },
+}: ComputeWindowArgs): PullWindowResult {
+  const payoutMode = (economics.payout_mode ?? 'static') as PayoutMode;
+  const trackingPlatform = economics.tracking_platform as TrackingPlatform;
+  const mapper = getAdapter(trackingPlatform);
+  if (!mapper) {
+    return { ok: false, error: `No call-data mapping for tracking platform "${trackingPlatform}". The field has no source — it is named as missing, not substituted.` };
+  }
 
   // §6: zero rows is a failure, not a zero. Never an empty success.
   if (rawCalls.length === 0 && metaAds.length === 0) {
@@ -221,16 +287,11 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
     billableMinDurationSeconds: economics.billable_min_duration_seconds ?? null,
   });
 
-  const didMappings: DidMapping[] = [
-    ...((periodsRes.data ?? []) as DidMapping[]),
-    ...((didsRes.data ?? []) as DidMapping[]),
-  ];
-
   const join = joinCallsToMeta({
     calls,
     didMappings,
     metaAds,
-    verticals: (verticalsRes.data ?? []) as VerticalRow[],
+    verticals,
     window: { start, end },
   });
 
@@ -239,8 +300,8 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
    * instance value is a stop, not a default (§1: a command run without an
    * Instance record stops).
    * -------------------------------------------------------------- */
-  const actionableGap = instance.actionable_gap as number | null;
-  const storedMinCalls = instance.min_calls as number | null;
+  const actionableGap = instance.actionable_gap;
+  const storedMinCalls = instance.min_calls;
   if (storedMinCalls === null && actionableGap === null) {
     return {
       ok: false,
@@ -248,8 +309,8 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
         'The Instance record carries neither min_calls nor an actionable gap, so no confidence bar can be set. The framework does not fall back on a default here — re-run intake.',
     };
   }
-  const minMargin = instance.min_margin as number | null;
-  const targetMargin = instance.target_margin as number | null;
+  const minMargin = instance.min_margin;
+  const targetMargin = instance.target_margin;
   if (minMargin === null || targetMargin === null) {
     return {
       ok: false,
@@ -259,10 +320,10 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
   }
   const minCallsValue = storedMinCalls ?? engine.minCalls(actionableGap, payoutMode);
 
-  const storedKill = instance.kill_threshold as number | null;
+  const storedKill = instance.kill_threshold;
   const recomputedKill = engine.killThreshold(payoutMode, economics.payout, economics.avg_bid);
   const kill = storedKill;
-  const allowable = instance.allowable_cost_per_call as number | null;
+  const allowable = instance.allowable_cost_per_call;
 
   const economicsDrift =
     storedKill !== null &&

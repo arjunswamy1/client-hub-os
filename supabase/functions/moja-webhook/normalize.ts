@@ -275,7 +275,12 @@ export function normalizeDelivery(
   const tags = (shape === 'nested' ? payload.call?.tags ?? payload.tags : payload.tags) ?? {};
   // Anything unmapped becomes a custom tag, and custom tags are then a first-class source
   // for the click IDs and UTMs — whichever mechanism Moja ends up using, it lands.
-  const custom_tags = collectCustomTags(call, tags, payload);
+  const nestedTagBags = ['custom_tags', 'custom', 'custom_fields', 'extra', 'variables'].map((k) => {
+    const a = (call as Record<string, unknown>)?.[k];
+    const b = (payload as Record<string, unknown>)?.[k];
+    return [a, b];
+  }).flat();
+  const custom_tags = collectCustomTags(call, tags, payload, ...nestedTagBags);
   const src = [call, tags, payload, custom_tags];
 
   const fields = fieldNames(payload);

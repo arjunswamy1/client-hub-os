@@ -86,6 +86,45 @@ Deno.serve(async (req) => {
     });
   }
 
+  // ── DIAGNOSTIC (read-only) ────────────────────────────────────────────────
+  // Which conversion events does this account actually record? Reports the full
+  // action_type menu with values so no allowlist is guessed. Never writes.
+  if (diagnoseActions) {
+    const days = bodyDaysBack || 30;
+    const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const until = new Date().toISOString().slice(0, 10);
+    const out: any[] = [];
+    for (const conn of validConnections) {
+      const syncAccounts = (conn.metadata as any)?.sync_ad_accounts;
+      const sel = conn.selected_ad_account as any;
+      const accts = (Array.isArray(syncAccounts) && syncAccounts.length > 0)
+        ? syncAccounts
+        : (sel?.id ? [sel] : ((conn.metadata as any)?.ad_accounts || []).slice(0, 1));
+      for (const acct of accts) {
+        const url = `https://graph.facebook.com/v21.0/${acct.id}/insights?fields=spend,clicks,actions,action_values,conversions,conversion_values&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&access_token=${conn.access_token}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        const row = json?.data?.[0] || {};
+        out.push({
+          client_id: conn.client_id,
+          ad_account: acct.id,
+          ad_account_name: acct.name ?? null,
+          window: { since, until },
+          spend: row.spend ?? null,
+          clicks: row.clicks ?? null,
+          actions: row.actions ?? null,
+          action_values: row.action_values ?? null,
+          conversions_field: row.conversions ?? null,
+          conversion_values_field: row.conversion_values ?? null,
+          error: json?.error ?? null,
+        });
+      }
+    }
+    return new Response(JSON.stringify({ diagnostic: true, wrote_nothing: true, accounts: out }, null, 2), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const results = [];
   for (const conn of validConnections) {
     const syncAccounts = (conn.metadata as any)?.sync_ad_accounts;

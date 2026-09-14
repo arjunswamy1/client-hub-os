@@ -30,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import * as engine from "@/lib/mediaBrain/engine";
+import * as decisions from "@/lib/mediaBrain/decisions";
 import { pullWindow, type PullWindowResult, type PullWindowSuccess } from "@/lib/mediaBrain/pull";
 import {
   ConfidenceBadge,
@@ -139,49 +140,41 @@ export default function MediaBrainWeeklyPage() {
 
   const [dispositions, setDispositions] = useState<Record<string, DispositionState>>({});
 
+  /**
+   * Every threshold a decision reads, in one object. The rules themselves live
+   * in `decisions.ts` — this page renders their output and keeps no second copy.
+   */
+  const ctx = useMemo<decisions.DecisionContext | null>(
+    () =>
+      data
+        ? {
+            payoutMode: data.payoutMode,
+            targetMargin: data.thresholds.targetMargin,
+            minMargin: data.thresholds.minMargin,
+            minCalls: data.thresholds.minCalls,
+            killThreshold: data.thresholds.killThreshold,
+            allowableCostPerCall: data.thresholds.allowableCostPerCall,
+          }
+        : null,
+    [data],
+  );
+
+  /** Peers of an ad inside its own ad set, for the group-comparison rules. */
+  const peersOf = useCallback(
+    (r: GroupedRow) =>
+      adRows.filter((p) => (p.platform_adset_id ?? p.adset_name) === (r.platform_adset_id ?? r.adset_name)),
+    [adRows],
+  );
+
   const suggestions = useMemo(() => {
     const out: Record<string, { verdict: Verdict; reason: string }> = {};
-    if (!data || !instance) return out;
-    const target = Number(instance.target_margin);
-    const groupBest = (r: GroupedRow) => {
-      const peers = adRows.filter((p) => (p.platform_adset_id ?? p.adset_name) === (r.platform_adset_id ?? r.adset_name));
-      return Math.max(...peers.map((p) => p.marginPerCall ?? -Infinity));
-    };
+    if (!ctx) return out;
     for (const { level, row } of entities) {
-      const key = `${level}:${row.groupKey}`;
-      if (row.confidenceState === "decisive_zero") {
-        out[key] = {
-          verdict: "cut",
-          reason: `Spend of ${fmtMoney(row.spend)} is past the kill threshold of ${fmtMoney(data.thresholds.killThreshold)} at zero billable calls. This fires regardless of sample size.`,
-        };
-      } else if (row.confidenceState === "insufficient") {
-        out[key] = {
-          verdict: "hold",
-          reason: `Only ${fmtNum(row.billable_calls)} billable calls against a required ${fmtNum(data.thresholds.minCalls)} — no confident verdict is available yet.`,
-        };
-      } else if ((row.marginPerCall ?? 0) <= 0) {
-        out[key] = {
-          verdict: "cut",
-          reason: `Margin per call ${fmtMoney(row.marginPerCall)} is at or below breakeven on a sufficient sample${
-            rtb ? " — check that both mean and median fail before cutting under RTB." : "."
-          }`,
-        };
-      } else if (level === "ad" && (row.marginPerCall ?? 0) < groupBest(row) && (row.marginPct ?? 0) < target) {
-        out[key] = {
-          verdict: "cut",
-          reason: `Last on margin per call in its group (${fmtMoney(row.marginPerCall)}) while another angle clears target margin.`,
-        };
-      } else if ((row.marginPct ?? 0) >= target) {
-        out[key] = { verdict: "keep", reason: `Margin ${fmtPct(row.marginPct)} is at or above the ${fmtPct(target)} target.` };
-      } else {
-        out[key] = {
-          verdict: "hold",
-          reason: `Margin ${fmtPct(row.marginPct)} clears the floor but is below target — keep spend level, do not expand.`,
-        };
-      }
+      const s = decisions.suggestVerdict(row, ctx, { level, peers: peersOf(row) });
+      out[`${level}:${row.groupKey}`] = { verdict: s.verdict as Verdict, reason: s.reason };
     }
     return out;
-  }, [data, instance, entities, adRows, rtb]);
+  }, [ctx, entities, peersOf]);
 
   /**
    * §6.4 — nothing carries forward unstated. A missing disposition, a missing
@@ -368,11 +361,16 @@ export default function MediaBrainWeeklyPage() {
     : engine.fragmentationCheck(expectedMetaEvents, activeAdSets ? Number(activeAdSets) : null);
   /** The billable definition is a different event; say so rather than implying they agree. */
   const billableDiffersFromMetaEvent = !!metaEvent && !/billable/i.test(metaEvent);
-  const marginalResult = engine.marginalReturn(
-    marginal.baseSpend === "" ? null : Number(marginal.baseSpend),
-    marginal.baseRevenue === "" ? null : Number(marginal.baseRevenue),
-    marginal.newSpend === "" ? null : Number(marginal.newSpend),
-    marginal.newRevenue === "" ? null : Number(marginal.newRevenue),
+  const marginalResult = ctx && decisions.marginalVerdict(
+    {
+      spend: marginal.baseSpend === "" ? null : Number(marginal.baseSpend),
+      revenue: marginal.baseRevenue === "" ? null : Number(marginal.baseRevenue),
+    },
+    {
+      spend: marginal.newSpend === "" ? null : Number(marginal.newSpend),
+      revenue: marginal.newRevenue === "" ? null : Number(marginal.newRevenue),
+    },
+    ctx,
   );
 
   return (
@@ -677,19 +675,14 @@ export default function MediaBrainWeeklyPage() {
               </TableHeader>
               <TableBody>
                 {adRows.map((r) => {
-                  const target = Number(instance!.target_margin);
-                  const peers = adRows.filter((p) => (p.platform_adset_id ?? p.adset_name) === (r.platform_adset_id ?? r.adset_name));
-                  const best = Math.max(...peers.map((p) => p.marginPerCall ?? -Infinity));
-                  const g1 = (r.marginPct ?? -1) >= target;
-                  const g2 = (r.marginPerCall ?? -Infinity) >= best && peers.length > 0;
-                  const g3 = data.thresholds.minCalls !== null && r.billable_calls >= data.thresholds.minCalls;
-                  const pass = g1 && g2 && g3;
+                  const gates = decisions.graduationGates(r, { level: "ad", peers: peersOf(r) }, ctx!);
+                  const { g1, g2, g3, passes: pass } = gates;
                   return (
                     <TableRow key={r.groupKey} className={rowClass(r.confidenceState)}>
                       <TableCell className="max-w-[18rem] truncate font-medium">{r.entity_name}</TableCell>
-                      <TableCell><Gate ok={g1} detail={`${fmtPct(r.marginPct)} vs target ${fmtPct(target)}`} /></TableCell>
-                      <TableCell><Gate ok={g2} detail={`${fmtMoney(r.marginPerCall)} vs best ${fmtMoney(Number.isFinite(best) ? best : null)}`} /></TableCell>
-                      <TableCell><Gate ok={g3} detail={`${fmtNum(r.billable_calls)} of ${fmtNum(data.thresholds.minCalls)}`} /></TableCell>
+                      <TableCell><Gate ok={g1} detail={gates.detail.margin} /></TableCell>
+                      <TableCell><Gate ok={g2} detail={gates.detail.groupLeader} /></TableCell>
+                      <TableCell><Gate ok={g3} detail={gates.detail.volume} /></TableCell>
                       <TableCell>
                         {pass ? (
                           <label className="flex items-center gap-2 text-sm">
@@ -700,7 +693,12 @@ export default function MediaBrainWeeklyPage() {
                             Move to ABO
                           </label>
                         ) : (
-                          <span className="text-xs text-muted-foreground">Not offered — gate failed</span>
+                          <span className="text-xs text-muted-foreground">
+                            Not offered — failed gate{gates.failed.length > 1 ? "s" : ""}:{" "}
+                            {gates.failed
+                              .map((f) => (f === "volume" ? "volume (below min_calls)" : f === "margin" ? "margin" : "group leader"))
+                              .join(", ")}
+                          </span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -730,12 +728,10 @@ export default function MediaBrainWeeklyPage() {
                 const key = `${level}:${row.groupKey}`;
                 const c = scaleChecks[key] ?? { held: false, capacity: false, stableMix: false, stepPct: STEP_MIN_PCT };
                 const set = (patch: Partial<typeof c>) => setScaleChecks((s) => ({ ...s, [key]: { ...c, ...patch } }));
-                const target = Number(instance!.target_margin);
-                const marginOk = (row.marginPct ?? -1) >= target;
-                const callsOk = data.thresholds.minCalls !== null && row.billable_calls >= data.thresholds.minCalls;
+                const target = ctx!.targetMargin;
                 const dist = row.payoutDistribution;
-                const outlierCarried = rtb && (dist?.top10RevenueShare ?? 0) > 0.5;
-                const eligible = marginOk && callsOk && c.held && c.capacity && (!rtb || (c.stableMix && !outlierCarried));
+                const q = decisions.scaleQualification(row, ctx!, c);
+                const { marginOk, callsOk, outlierCarried, eligible } = q;
                 return (
                   <div key={key} className="rounded-lg border p-3 text-sm">
                     <p className="font-medium">{row.entity_name}</p>

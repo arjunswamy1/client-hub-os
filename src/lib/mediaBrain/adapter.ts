@@ -65,6 +65,14 @@ export interface CanonicalCall {
   payout_amount: number;
 
   buyer_id: string | null;
+  /**
+   * The traffic SOURCE that delivered this call, as the tracking platform names
+   * it (Ringba `metadata.publisher`). A tracking campaign receives calls from
+   * every publisher pointed at it, and only the publishers named in the client's
+   * `attributed_publishers` belong to our media buying. Read, never inferred.
+   * @see engine.partitionByPublisher
+   */
+  publisher: string | null;
   state: string | null;
   no_bid_reason: string | null;
   /**
@@ -256,6 +264,39 @@ export function readAttribution(row: RawCallRow): AttributionTags {
   };
 }
 
+/** Where each platform records the traffic source that delivered the call. */
+const PUBLISHER_KEYS = [
+  'publisher',
+  'publisher_name',
+  'publisherName',
+  'Publisher',
+  'tag:InboundNumber:Publisher',
+  'tag:Publisher:Name',
+  'affiliate_name',
+  'source_name',
+  'traffic_source',
+];
+
+/**
+ * The publisher on a raw row, read from the row itself or from any
+ * `metadata` / `raw_payload` / `tags` object on it. Null where the platform
+ * records none — a missing publisher is named, never assumed to be ours.
+ */
+export function readPublisher(row: RawCallRow): string | null {
+  const bags: Record<string, unknown>[] = [row];
+  for (const nested of ['metadata', 'raw_payload', 'tags'] as const) {
+    const v = row[nested];
+    if (v && typeof v === 'object' && !Array.isArray(v)) bags.push(v as Record<string, unknown>);
+  }
+  for (const bag of bags) {
+    for (const k of PUBLISHER_KEYS) {
+      const s = str(bag[k]);
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
 /* ---------------- mappings, one per call table ---------------- */
 
 
@@ -285,6 +326,7 @@ export const fromRingba: CallMapper = (row, opts) => {
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.target_name),
+    publisher: readPublisher(row),
     state: null,
     no_bid_reason: payout === 0 ? 'no_payout' : null,
     ...readAttribution(row),
@@ -312,6 +354,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
+    publisher: readPublisher(row),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
     ...readAttribution(row),
@@ -340,6 +383,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
+    publisher: readPublisher(row),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
     ...readAttribution(row),
@@ -368,6 +412,7 @@ export const fromMoja: CallMapper = (row, opts) => {
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
+    publisher: readPublisher(row),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
     ...readAttribution(row),
@@ -395,6 +440,7 @@ export const fromCannaball: CallMapper = (row, opts) => {
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: null,
+    publisher: readPublisher(row),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
     ...readAttribution(row),

@@ -37,10 +37,8 @@ export const DEFAULTS = {
   targetMargin: 0.2,
   /** Margin floor. Below this there is no cushion for normal volatility (§16). */
   minMargin: 0.1,
-  /** Gap between angles you would act on. 0.40 → min_calls 25 (§4). */
-  actionableGap: 0.4,
-  /** Default min_calls: detects a 40% gap (§4, §16). */
-  minCallsDefault: 25,
+  /** Gap between angles you would act on. 0.57 → min_calls 25 (§4). */
+  actionableGap: 0.57,
   /** Scale step lower bound (§16). */
   scaleStepMin: 0.1,
   /** Scale step upper bound (§16). */
@@ -48,6 +46,7 @@ export const DEFAULTS = {
   /** Meta needs roughly this many conversions per ad set per week to exit learning phase (§4). */
   fragmentationFloor: 50,
 } as const;
+
 
 type Num = number | null | undefined;
 
@@ -173,18 +172,24 @@ export function allowableCostPerCall(rpcValue: Num, targetMargin: Num): number |
  * ------------------------------------------------------------------ */
 
 /**
- * `{min_calls}` ≈ (2 ÷ actionable gap)², rounded up.
+ * `{min_calls}` ≈ (2√2 ÷ actionable gap)² = 8 ÷ gap², rounded up.
+ *
+ * The wobble on a SINGLE estimate is ≈ 1 ÷ √n, but ranking two angles compares
+ * two independent noisy estimates, so the standard error of the DIFFERENCE is
+ * larger by √2 — the detectable gap is ≈ 2√2 ÷ √n.
+ *
  * [RTB] +40% — payout varies too, so margin per call is noisier.
  *
- * gap 0.40 static → 25 · gap 0.40 rtb → 35
+ * gap 0.57 static → 25 · gap 0.57 rtb → 35 · gap 0.40 static → 50
  * @see docs/media-brain/01_Decision_Engine.md §4, §16
  */
 export function minCalls(actionableGap: Num, payoutMode: PayoutMode = 'static'): number | null {
   if (!ok(actionableGap) || actionableGap <= 0) return null;
-  let n = Math.ceil((2 / actionableGap) ** 2);
+  let n = Math.ceil(8 / actionableGap ** 2);
   if (payoutMode === 'rtb') n = Math.ceil(n * 1.4);
   return n;
 }
+
 
 /**
  * Confidence state for a row.

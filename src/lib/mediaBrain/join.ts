@@ -95,8 +95,14 @@ export interface JoinResult {
   joinNote: string;
 }
 
-const norm = (v: string | null | undefined) =>
-  (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+/**
+ * Normalise a name for comparison. Returns NULL for an empty result — an
+ * unidentifiable row must never share a key with another unidentifiable row.
+ */
+const norm = (v: string | null | undefined): string | null => {
+  const n = (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return n === '' ? null : n;
+};
 
 const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
 

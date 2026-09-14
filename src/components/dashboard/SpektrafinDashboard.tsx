@@ -180,7 +180,7 @@ export default function SpektrafinDashboard() {
                   <th className="px-3 py-2 text-right font-medium">Calls</th>
                   <th className="px-3 py-2 text-right font-medium">Connected</th>
                   <th className="px-3 py-2 text-right font-medium">Paid</th>
-                  <th className="px-3 py-2 text-right font-medium">Paid rate</th>
+                  <th className="px-3 py-2 text-right font-medium">Connect rate</th>
                   <th className="px-3 py-2 text-right font-medium">Avg duration</th>
                   <th className="px-3 py-2 text-right font-medium">Revenue</th>
                   <th className="px-3 py-2 text-right font-medium">RPC</th>
@@ -197,7 +197,7 @@ export default function SpektrafinDashboard() {
                     <td className="px-3 py-2 text-right">{r.calls}</td>
                     <td className="px-3 py-2 text-right">{r.connected}</td>
                     <td className="px-3 py-2 text-right">{r.paid}</td>
-                    <td className="px-3 py-2 text-right">{fmtPct(r.paidRate)}</td>
+                    <td className="px-3 py-2 text-right">{fmtPct(r.connectRate)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtDuration(r.avgDuration)}</td>
                     <td className="px-3 py-2 text-right">{fmtMoney(r.revenue)}</td>
                     <td className="px-3 py-2 text-right">{fmtMoney2(r.rpc)}</td>

@@ -379,9 +379,10 @@ export function verticalRead({
   unclassified.revenueNote =
     'These calls and this spend matched no vertical pattern. They are reported here rather than assigned to a vertical by default — a defaulted assignment would move real money onto the wrong product.';
   unclassified.costPerCall = engine.costPerCall(unclassifiedSpend, unclassified.calls);
-  unclassified.costPerBillableCall = engine.costPerBillableCall(unclassifiedSpend, unclassified.billableCalls);
+  unclassified.costPerBillableCall = engine.costPerBillableCall(unclassifiedSpend, unclassifiedResolved.billableCalls);
   unclassified.confidence = engine.confidenceState(
-    unclassified.billableCalls,
+    unclassifiedResolved.billableCalls,
+
     unclassifiedResolved.billableCalls,
     thresholds.minCalls,
     unclassifiedSpend,

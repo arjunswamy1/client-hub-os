@@ -249,17 +249,23 @@ export function verticalRead({
     row.rpc = revenue === null ? null : engine.rpc(revenue, row.calls);
     row.costPerCall = engine.costPerCall(spend, row.calls);
     row.costPerBillableCall = engine.costPerBillableCall(spend, row.billableCalls);
-    row.marginPerCall = revenue === null ? null : engine.marginPerCall(engine.rpc(revenue, row.calls), row.costPerCall);
+    row.marginPerCall = revenue === null ? null : engine.marginPerCall(revenue, spend, row.calls);
     row.profit = revenue === null ? null : engine.profit(revenue, spend);
     row.marginPct = revenue === null ? null : engine.marginPct(revenue, spend);
-    row.confidence = engine.confidenceState(row.billableCalls, thresholds.minCalls);
+    row.confidence = engine.confidenceState(
+      row.billableCalls,
+      resolved.billableCalls,
+      thresholds.minCalls,
+      spend,
+      thresholds.killThreshold,
+    );
 
     if (eco.revenue_source === 'computed') {
       row.flags.push(
         'Revenue is computed from the contracted payout because the tracking platform does not expose this vertical\'s payouts. A payout we cannot see is a declared data limitation, not a zero.',
       );
     }
-    if (eco.payout_confirmed === false) {
+    if ((eco as { payout_confirmed?: boolean | null }).payout_confirmed === false) {
       row.flags.push('The payout used here was observed in the data, not confirmed by contract. Confirm it at intake.');
     }
     if (row.calls > 0 && resolved.paidCalls === 0 && resolved.source === 'platform') {
@@ -285,7 +291,13 @@ export function verticalRead({
     'These calls and this spend matched no vertical pattern. They are reported here rather than assigned to a vertical by default — a defaulted assignment would move real money onto the wrong product.';
   unclassified.costPerCall = engine.costPerCall(unclassifiedSpend, unclassified.calls);
   unclassified.costPerBillableCall = engine.costPerBillableCall(unclassifiedSpend, unclassified.billableCalls);
-  unclassified.confidence = engine.confidenceState(unclassified.billableCalls, thresholds.minCalls);
+  unclassified.confidence = engine.confidenceState(
+    unclassified.billableCalls,
+    unclassifiedResolved.billableCalls,
+    thresholds.minCalls,
+    unclassifiedSpend,
+    thresholds.killThreshold,
+  );
   unclassified.resolution = unclassifiedResolved;
 
   const coverage =

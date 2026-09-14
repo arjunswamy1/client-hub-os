@@ -1,0 +1,351 @@
+// Pure normalisation for Moja webhook payloads. No Deno, no network, no DB —
+// so it can be unit-tested directly. index.ts owns transport, auth and persistence.
+//
+// Two shapes are accepted:
+//   flat   — every field at the top level (Moja's actual delivery, 2026-09-14)
+//   nested — { call: {...}, tags: {...} } (the shape the original receiver assumed)
+// Detection is the presence of a top-level `call` OBJECT.
+//
+// The heart of this module: an unsubstituted macro like "[TRACKING_NUMBER]" is NOT data.
+// It becomes null and its field name is recorded, because that list is how we learn what
+// Moja can actually substitute on a real call.
+
+/** Moja test fires leave unreplaced macros: [TO], [GCLID], [PUBLISHER_PAID_OUT]. */
+export const TAG_LITERAL_RE = /^\[[A-Z0-9_]+\]$/;
+
+export const isTagLiteral = (v: unknown): boolean =>
+  typeof v === 'string' && TAG_LITERAL_RE.test(v.trim());
+
+/** Empty string, null, undefined and tag literals all collapse to null. */
+export function nullify(v: unknown): unknown {
+  if (v === undefined || v === null) return null;
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (t === '' || TAG_LITERAL_RE.test(t)) return null;
+    return t;
+  }
+  return v;
+}
+
+export function toNumOrNull(v: unknown): number | null {
+  const c = nullify(v);
+  if (c === null) return null;
+  const n = Number(c);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function toIntOrNull(v: unknown): number | null {
+  const n = toNumOrNull(v);
+  return n === null ? null : Math.round(n);
+}
+
+export function toBoolOrNull(v: unknown): boolean | null {
+  const c = nullify(v);
+  if (c === null) return null;
+  if (typeof c === 'boolean') return c;
+  const s = String(c).trim().toLowerCase();
+  if (['true', '1', 'yes', 'y', 'converted', 'answered'].includes(s)) return true;
+  if (['false', '0', 'no', 'n'].includes(s)) return false;
+  return null;
+}
+
+/**
+ * ISO string, or null. `event_timestamp` and friends are treated as UTC unless the value
+ * carries its own offset — a bare "2026-09-14 15:04:11" is read as UTC, not local.
+ */
+export function toIsoOrNull(v: unknown): string | null {
+  const c = nullify(v);
+  if (c === null) return null;
+  const s = String(c);
+  const n = Number(s);
+  if (Number.isFinite(n) && n > 1_000_000_000) {
+    const ms = n < 1e12 ? n * 1000 : n;
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const hasOffset = /(?:Z|[+-]\d{2}:?\d{2})$/.test(s.trim());
+  const normalized = hasOffset ? s.trim() : `${s.trim().replace(' ', 'T')}Z`;
+  const d = new Date(normalized);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Field NAMES only, recursively, shallow. Never values. */
+export function fieldNames(obj: unknown, prefix = '', depth = 0): string[] {
+  if (depth > 2 || obj === null || typeof obj !== 'object') return [];
+  if (Array.isArray(obj)) return obj.length ? fieldNames(obj[0], `${prefix}[]`, depth + 1) : [];
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    out.push(path);
+    if (v && typeof v === 'object') out.push(...fieldNames(v, path, depth + 1));
+  }
+  return out;
+}
+
+/** Names of every field whose value came through as an unreplaced macro. */
+export function unreplacedTagFields(obj: unknown, prefix = '', depth = 0): string[] {
+  if (depth > 2 || obj === null || typeof obj !== 'object' || Array.isArray(obj)) return [];
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (isTagLiteral(v)) out.push(path);
+    else if (v && typeof v === 'object') out.push(...unreplacedTagFields(v, path, depth + 1));
+  }
+  return out;
+}
+
+export type Shape = 'flat' | 'nested';
+
+export function detectShape(payload: Record<string, any>): Shape {
+  const c = payload?.call;
+  return c && typeof c === 'object' && !Array.isArray(c) ? 'nested' : 'flat';
+}
+
+function pick(sources: Record<string, any>[], keys: string[]): unknown {
+  for (const src of sources) {
+    if (!src || typeof src !== 'object') continue;
+    for (const k of keys) {
+      const v = nullify(src[k]);
+      if (v !== null) return v;
+    }
+  }
+  return null;
+}
+
+/** Infer the RRM service line + ad platform from free-text campaign / publisher labels. */
+export function classify(text: string): { service_line: string; platform: string | null } {
+  const t = text.toLowerCase();
+  let service_line = 'unassigned';
+  if (/window|glass|door/.test(t)) service_line = 'windows';
+  else if (/plumb|drain|sewer|water heater|leak/.test(t)) service_line = 'plumbing';
+
+  let platform: string | null = null;
+  if (/meta|facebook|fb|instagram|ig/.test(t)) platform = 'meta';
+  else if (/google|gads|ppc|search|adwords/.test(t)) platform = 'google';
+  else if (service_line === 'windows') platform = 'meta';
+  else if (service_line === 'plumbing') platform = 'google';
+
+  return { service_line, platform };
+}
+
+export interface MojaCallRow {
+  client_id: string;
+  call_id: string;
+  event_type: string | null;
+  service_line: string;
+  platform: string | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  publisher_name: string | null;
+  target_name: string | null;
+  buyer_name: string | null;
+  tracking_number: string | null;
+  forwarded_number: string | null;
+  caller_number: string | null;
+  caller_state: string | null;
+  caller_zip: string | null;
+  call_start: string | null;
+  converted_at: string | null;
+  duration_seconds: number;
+  inbound_duration_seconds: number;
+  connected: boolean;
+  connected_source: string;
+  answered: boolean | null;
+  converted: boolean;
+  revenue: number;
+  payout: number;
+  no_payout_reason: string | null;
+  hangup_cause: string | null;
+  number_pool: string | null;
+  disposition: string | null;
+  recording_url: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_term: string | null;
+  utm_content: string | null;
+  gclid: string | null;
+  fbclid: string | null;
+  raw_payload: unknown;
+}
+
+export interface NormalizeResult {
+  shape: Shape;
+  fields: string[];
+  unreplaced: string[];
+  deliveryId: string | null;
+  eventType: string | null;
+  callId: string | null;
+  /** Named reason the call row was refused; the receipt is still recorded. */
+  reject: string | null;
+  row: MojaCallRow | null;
+  isConversionEvent: boolean;
+}
+
+export interface NormalizeOptions {
+  clientId: string;
+  forcedServiceLine?: string | null;
+  forcedPlatform?: string | null;
+}
+
+export function normalizeDelivery(
+  payload: Record<string, any>,
+  opts: NormalizeOptions,
+): NormalizeResult {
+  const shape = detectShape(payload);
+  const call = shape === 'nested' ? payload.call : payload;
+  const tags = (shape === 'nested' ? payload.call?.tags ?? payload.tags : payload.tags) ?? {};
+  const src = [call, tags, payload];
+
+  const fields = fieldNames(payload);
+  const unreplaced = unreplacedTagFields(payload);
+
+  const eventType = (pick([payload, call], ['event', 'event_type', 'type']) as string | null) ?? null;
+  const callIdRaw = pick(src, ['call_id', 'callId', 'call_sid', 'inbound_call_id', 'uuid', 'id']);
+  const callId = callIdRaw === null ? null : String(callIdRaw);
+  const deliveryId =
+    (pick([payload], ['delivery_id', 'webhook_id', 'event_id', 'request_id']) as string | null) ??
+    callId;
+
+  const isConversionEvent =
+    (eventType ?? '').toLowerCase().includes('convert') ||
+    toBoolOrNull(pick(src, ['converted', 'conversion', 'is_converted'])) === true;
+
+  const base = {
+    shape,
+    fields,
+    unreplaced,
+    deliveryId,
+    eventType,
+    callId,
+    isConversionEvent,
+  };
+
+  // No call id → the row could never be deduplicated. Refuse it by name rather than
+  // accumulating unmergeable duplicates on every retry.
+  if (!callId) {
+    return { ...base, reject: 'missing_call_id', row: null };
+  }
+
+  const campaign_name = (pick(src, ['campaign_name', 'campaign', 'campaignName']) as string | null) ?? null;
+  const publisher_name = (pick(src, ['publisher_name', 'publisher']) as string | null) ?? null;
+  const utm_source = (pick(src, ['utm_source', 'source']) as string | null) ?? null;
+  const utm_campaign = (pick(src, ['utm_campaign', 'campaign_utm']) as string | null) ?? null;
+  const utm_medium = (pick(src, ['utm_medium', 'medium']) as string | null) ?? null;
+  const utm_term = (pick(src, ['utm_term', 'term', 'keyword']) as string | null) ?? null;
+  const utm_content = (pick(src, ['utm_content', 'content', 'creative']) as string | null) ?? null;
+
+  const inferred = classify(
+    [campaign_name, publisher_name, utm_campaign, utm_source].filter(Boolean).join(' '),
+  );
+  const service_line = opts.forcedServiceLine || inferred.service_line;
+  const platform = opts.forcedPlatform || inferred.platform;
+
+  // `to` is the dialled number UNLESS an explicit tracking_number is present, in which case
+  // `to` is where the call was forwarded on to.
+  const explicitTracking = pick(src, ['tracking_number', 'did', 'dialed_number', 'publisher_number']) as
+    | string
+    | null;
+  const to = pick(src, ['to']) as string | null;
+  const tracking_number = explicitTracking ?? to;
+  const forwarded_number = explicitTracking ? to : null;
+
+  const duration_seconds = toIntOrNull(pick(src, ['duration', 'call_duration', 'duration_seconds'])) ?? 0;
+  const inbound_duration_seconds =
+    toIntOrNull(pick(src, ['inbound_duration', 'inbound_duration_seconds'])) ?? 0;
+
+  const answered = toBoolOrNull(pick(src, ['answered', 'connected']));
+  const connected = answered ?? inbound_duration_seconds > 0;
+  const connected_source =
+    answered !== null ? 'answered_field' : inbound_duration_seconds > 0 ? 'inbound_duration' : 'unknown';
+
+  const converted = toBoolOrNull(pick(src, ['converted', 'conversion', 'is_converted'])) ?? false;
+  const converted_at = converted
+    ? toIsoOrNull(pick(src, ['call_converted_at', 'converted_at']))
+    : null;
+
+  // call_start: the tag if present; else event_timestamp minus the connected duration on a
+  // completed event; else NULL. Never now() — a fabricated timestamp lands a call in the
+  // wrong review window without saying so.
+  const startTag = toIsoOrNull(pick(src, ['call_start', 'start_time', 'started_at']));
+  const eventTs = toIsoOrNull(pick([payload, call], ['event_timestamp', 'timestamp']));
+  let call_start: string | null = startTag;
+  if (!call_start && eventTs && (eventType ?? '').toLowerCase().includes('complet')) {
+    call_start = new Date(new Date(eventTs).getTime() - inbound_duration_seconds * 1000).toISOString();
+  }
+
+  const row: MojaCallRow = {
+    client_id: opts.clientId,
+    call_id: callId,
+    event_type: eventType,
+    service_line,
+    platform,
+    campaign_id: (pick(src, ['campaign_id', 'campaignId']) as string | null) ?? null,
+    campaign_name,
+    publisher_name,
+    target_name: (pick(src, ['target_name', 'target']) as string | null) ?? null,
+    buyer_name: (pick(src, ['buyer_name', 'buyer']) as string | null) ?? null,
+    tracking_number,
+    forwarded_number,
+    caller_number: (pick(src, ['caller_id', 'caller', 'from', 'caller_number', 'ani']) as string | null) ?? null,
+    caller_state: (pick(src, ['caller_state', 'state', 'original_state']) as string | null) ?? null,
+    caller_zip: (pick(src, ['caller_zip', 'zip_code', 'zip', 'original_zip_code']) as string | null) ?? null,
+    call_start,
+    converted_at,
+    duration_seconds,
+    inbound_duration_seconds,
+    connected,
+    connected_source,
+    answered,
+    converted,
+    // payout is publisher-paid = CPM revenue. revenue is buyer-paid, informational only.
+    // They are kept strictly distinct; conflating them repeats the Ringba defect inverted.
+    revenue: toNumOrNull(pick(src, ['revenue', 'revenue_paid_out', 'buyer_revenue'])) ?? 0,
+    payout: toNumOrNull(pick(src, ['payout', 'publisher_paid_out', 'publisher_payout', 'target_payout'])) ?? 0,
+    no_payout_reason: (pick(src, ['no_payout_reason']) as string | null) ?? null,
+    hangup_cause: (pick(src, ['hangup_cause']) as string | null) ?? null,
+    number_pool: (pick(src, ['number_pool', 'number_pool_name']) as string | null) ?? null,
+    disposition: (pick(src, ['disposition', 'status', 'result', 'call_termination_by']) as string | null) ?? null,
+    recording_url: (pick(src, ['recording_url', 'recording', 'audio_url']) as string | null) ?? null,
+    utm_source,
+    utm_medium,
+    utm_campaign,
+    utm_term,
+    utm_content,
+    gclid: (pick(src, ['gclid', 'wbraid', 'gbraid']) as string | null) ?? null,
+    fbclid: (pick(src, ['fbclid']) as string | null) ?? null,
+    raw_payload: payload,
+  };
+
+  return { ...base, reject: null, row };
+}
+
+/**
+ * Merge an incoming delivery onto a row that already exists.
+ *
+ * A conversion event updates only the conversion facts. A late `call.completed` arriving
+ * AFTER a conversion must never zero them back out — late completes are normal, and that
+ * ordering bug would silently erase revenue.
+ */
+export function mergeExisting(
+  existing: { converted: boolean; revenue: number; payout: number; converted_at: string | null },
+  incoming: MojaCallRow,
+): Partial<MojaCallRow> {
+  if (incoming.converted) {
+    return {
+      converted: true,
+      revenue: incoming.revenue,
+      payout: incoming.payout,
+      converted_at: incoming.converted_at,
+      event_type: incoming.event_type,
+      raw_payload: incoming.raw_payload,
+    };
+  }
+
+  const { converted, revenue, payout, converted_at, ...rest } = incoming;
+  if (existing.converted) {
+    // Keep every conversion fact from the earlier converted event.
+    return rest;
+  }
+  return { ...rest, converted, revenue, payout, converted_at };
+}

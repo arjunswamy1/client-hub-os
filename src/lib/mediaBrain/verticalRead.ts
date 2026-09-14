@@ -56,7 +56,14 @@ export type VerticalEconomics = RevenueEconomics & {
   attributed_publishers?: (string | null)[] | null;
   /** Field names declared UNKNOWN — assumed, not stated. @see engine.isUnknownField */
   unknown_fields?: string[] | null;
+  /**
+   * Caveats stated on the record itself, rendered verbatim beside the figures.
+   * Used where a term is confirmed by the client but still unverified against
+   * platform data — a trusted contract term is not a measurement.
+   */
+  declared_flags?: string[] | null;
 };
+
 
 /** Per-vertical economics, keyed by `vertical_id`. Falls back to the client default. */
 export interface VerticalEconomicsMap {

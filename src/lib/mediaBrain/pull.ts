@@ -107,6 +107,16 @@ export interface ComputeEconomics {
    * @see engine.partitionByPublisher
    */
   attributed_publishers?: (string | null)[] | null;
+  /**
+   * Whether publisher filtering is required here at all (§3b). `unknown` stops
+   * the pull exactly as an unconfigured publisher list does;
+   * `not_required_dedicated_campaigns` is a recorded human decision and lets it
+   * proceed unfiltered.
+   * @see engine.publisherScopingGate
+   */
+  publisher_scoping?: string | null;
+  publisher_scoping_verified_at?: string | null;
+  publisher_scoping_verified_by?: string | null;
 }
 
 /** The instance thresholds a computation reads. Sourced from `media_brain_instances`. */

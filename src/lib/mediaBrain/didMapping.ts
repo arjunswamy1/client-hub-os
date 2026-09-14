@@ -15,6 +15,7 @@
 
 import type { AttributionTags } from './adapter';
 import { readAttribution } from './adapter';
+import { isMacroLiteral } from './clickKeyReadiness';
 import type { DidMapping, MetaAdRow, ResolutionTier, VerticalRow } from './join';
 import { matchCreativeToAds, matchVertical, resolveCall, resolveDidMapping } from './join';
 

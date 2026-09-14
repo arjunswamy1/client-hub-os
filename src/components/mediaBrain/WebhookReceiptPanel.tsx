@@ -152,6 +152,9 @@ export function WebhookReceiptPanel({ rows }: { rows: SyncStatusRow[] }) {
         <Pair label="Rows written" value={String(row.rows_written ?? 0)} />
       </dl>
 
+      <ClickKeySection verdicts={verdicts} headline={headline} evidenceAt={detail.click_key_evidence_at ?? null} />
+
+
       <FieldList
         title={`Fields received (${fields.length})`}
         empty="No fields at all — the body was empty or unparseable."

@@ -823,8 +823,31 @@ export default function MediaBrainIntakePage() {
             </>
           )}
 
-          {current.key === "b" && computed && (
+          {current.key === "b" && (
+            <div className="mb-4 space-y-3">
+              <BillableDefinitionCheck
+                clientId={clientId}
+                trackingPlatform={form.tracking_platform}
+                revenueSource="platform"
+                minDurationSeconds={numVal("billable_min_duration_seconds")}
+                minPayoutThreshold={null}
+                payout={numVal("payout")}
+                governance={billableGovernance}
+                setGovernance={setBillableGovernance}
+                onBlockingChange={handleBlockingChange}
+              />
+              {billableCheckBlocking && (
+                <Notice tone="danger" title="Thresholds are held back until the governing definition is chosen">
+                  Every threshold below is denominated in billable calls. Computing them on a definition the data
+                  contradicts by more than 10% produces numbers that look authoritative and are not.
+                </Notice>
+              )}
+            </div>
+          )}
+
+          {current.key === "b" && computed && !billableCheckBlocking && (
             <div className="space-y-3">
+
               <Work
                 label="Baseline RPC"
                 formula={computed.baselineRpcSource}

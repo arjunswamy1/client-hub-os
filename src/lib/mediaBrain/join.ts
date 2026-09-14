@@ -56,6 +56,12 @@ export interface MetaAdRow {
   spend: number | null;
   impressions: number | null;
   clicks: number | null;
+  /**
+   * Meta's own reported conversions for this row. Used ONLY for the
+   * reconciliation line beside the vertical read — never as revenue, and never
+   * reconciled silently against our attributed call count.
+   */
+  conversions?: number | null;
   date_from?: string | null;
   date_to?: string | null;
 }

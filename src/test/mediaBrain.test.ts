@@ -32,7 +32,7 @@ function compute(specs: AdSpec[], payoutMode: 'static' | 'rtb' = 'static'): Pull
     economics: economics(payoutMode),
     window: f.window,
   });
-  if (!res.ok) throw new Error(`expected a successful pull, got: ${res.error}`);
+  if (res.ok !== true) throw new Error(`expected a successful pull, got: ${res.error}`);
   return res;
 }
 
@@ -160,7 +160,7 @@ describe('Media Brain — planted decision cases', () => {
       window: f.window,
     });
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toMatch(/no Meta rows|sync/i);
+    if (res.ok !== true) expect(res.error).toMatch(/no Meta rows|sync/i);
   });
 
   it('8. blended ROAS passes while the marginal return fails → stop scaling', () => {

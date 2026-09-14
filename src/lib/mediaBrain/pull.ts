@@ -352,10 +352,14 @@ function decorate(
   payoutMode: PayoutMode,
   kill: number | null,
   minCallsValue: number | null,
+  allowableCostPerCall: number | null,
+  minMargin: number,
+  targetMargin: number,
 ): PullRow {
+  const costPerCallValue = engine.costPerCall(r.spend, r.calls);
   return {
     ...r,
-    costPerCall: engine.costPerCall(r.spend, r.calls),
+    costPerCall: costPerCallValue,
     rpc: engine.rpc(r.revenue, r.calls),
     marginPerCall: engine.marginPerCall(r.revenue, r.spend, r.calls),
     profit: engine.profit(r.revenue, r.spend),
@@ -365,11 +369,13 @@ function decorate(
     connectionRate: engine.connectionRate(r.connected_calls, r.calls),
     billableRate: engine.billableRate(r.billable_calls, r.connected_calls),
     confidenceState: engine.confidenceState(r.billable_calls, minCallsValue, r.spend, kill),
-    marginBand: engine.marginBand(engine.marginPct(r.revenue, r.spend)),
+    marginBand: engine.marginBand(engine.marginPct(r.revenue, r.spend), minMargin, targetMargin),
+    overAllowableCostPerCall: engine.exceedsAllowableCostPerCall(costPerCallValue, allowableCostPerCall),
     medianDurationSeconds: engine.median(r.durations),
 
     payoutDistribution: payoutMode === 'rtb' ? engine.payoutDistribution(r.payouts) : null,
   };
+
 }
 
 export type { CanonicalCall };

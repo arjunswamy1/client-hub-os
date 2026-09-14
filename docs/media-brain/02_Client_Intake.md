@@ -39,6 +39,27 @@ You are running client intake for the ConnectPay media buying framework. Read `L
 - Duration range payout scales across (e.g. 20–180 seconds)
 - Minimum duration for any payout at all
 
+**A2b. Billable definition validation — required for any client with live data**
+
+Before any threshold is computed, compare the stated billable definition against what the platform's data actually did over the last 30 days, and report disagreement **in both directions**:
+
+- **Billable by the stated definition but never paid** — the definition is looser than the buyer's.
+- **Paid but not billable by the stated definition** — the definition is throwing away calls the buyer paid for. This is the more expensive error and the one a one-directional check misses.
+
+Disagreement % is those two counts over total calls. **Above 10% this blocks intake**: the operator must state which definition governs — the stated one, or what the platform actually paid — and the choice is recorded on the Economics record so the disagreement stays visible instead of being smoothed over.
+
+Where `revenue_source = 'computed'` the platform's payouts are not visible to us, so report that plainly and validate only the duration side. Do not report invisible payouts as agreement.
+
+Where no billable duration threshold has been stated, the definition cannot be compared against data at all — that blocks too.
+
+**A2c. Revenue source and payout threshold — per vertical**
+
+Economics are recorded per vertical, with a nullable client-level default. For each vertical ask:
+
+- `revenue_source` — `platform` (revenue is the sum of qualifying payouts) or `computed` (revenue is contracted payout × billable calls, because the payout field is not visible to us). See `01_Decision_Engine.md` §2.
+- `min_payout_threshold` — default $1.00. Payouts below it are excluded from revenue; a sub-threshold payout equal to the recorded total cost is telco cost, not revenue.
+- Whether the payout figure is **confirmed by contract** or merely **observed in the data**. Observed figures are flagged for confirmation and never presented as contracted.
+
 **A3. Cost and budget**
 
 - Daily budget

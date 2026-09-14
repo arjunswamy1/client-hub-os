@@ -167,6 +167,19 @@ export function allowableCostPerCall(rpcValue: Num, targetMargin: Num): number |
   return rpcValue * (1 - targetMargin);
 }
 
+/**
+ * Is this row paying more per call than it can afford? Compares a measured
+ * cost per call against the instance's stored allowable cost per call — the
+ * price above which the target margin cannot be cleared. **Denominator: TOTAL
+ * calls on both sides** (§2 — never against a billable-denominated cost).
+ * Null when either side is unavailable.
+ * @see docs/media-brain/01_Decision_Engine.md §2
+ */
+export function exceedsAllowableCostPerCall(costPerCallValue: Num, allowable: Num): boolean | null {
+  if (!ok(costPerCallValue) || !ok(allowable)) return null;
+  return costPerCallValue > allowable;
+}
+
 /* ------------------------------------------------------------------ *
  * §4 — Confidence
  * ------------------------------------------------------------------ */

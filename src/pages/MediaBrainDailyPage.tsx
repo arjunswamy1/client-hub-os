@@ -238,6 +238,11 @@ export default function MediaBrainDailyPage() {
               />
               <Stat label="Margin per call" value={fmtMoney(data.totals.marginPerCall)} />
               <Stat label="Cost per call" value={fmtMoney(data.totals.costPerCall)} />
+              <Stat
+                label="Allowable cost / call"
+                value={fmtMoney(data.thresholds.allowableCostPerCall)}
+                hint={`The most you can pay per call and still clear the ${fmtPct(data.thresholds.targetMargin)} target margin`}
+              />
               <Stat label="Cost per billable call" value={fmtMoney(data.totals.costPerBillableCall)} />
               <Stat label="RPC" value={fmtMoney(data.totals.rpc)} />
               <Stat label="Connection rate" value={fmtPct(data.totals.connectionRate)} />
@@ -258,10 +263,11 @@ export default function MediaBrainDailyPage() {
 
           <EntityTable
             title="Ad sets"
-            description={`Insufficient rows — under ${fmtNum(data.thresholds.minCalls)} billable calls — are greyed and marked. You see whether a number means anything before you see the number.`}
+            description={`Insufficient rows — under ${fmtNum(data.thresholds.minCalls)} billable calls — are greyed and marked. You see whether a number means anything before you see the number. Cost per call is shown against the allowable cost of ${fmtMoney(data.thresholds.allowableCostPerCall)}.`}
             rows={adsetRows}
             rtb={data.payoutMode === "rtb"}
             showAdColumns={false}
+            allowableCostPerCall={data.thresholds.allowableCostPerCall}
           />
 
           <EntityTable
@@ -270,7 +276,9 @@ export default function MediaBrainDailyPage() {
             rows={adRows}
             rtb={data.payoutMode === "rtb"}
             showAdColumns
+            allowableCostPerCall={data.thresholds.allowableCostPerCall}
           />
+
 
           <p className="text-xs text-muted-foreground">
             Nothing on this page justifies a same-day change except a fired circuit breaker. No week-over-week deltas are

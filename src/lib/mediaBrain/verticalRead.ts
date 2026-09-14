@@ -407,7 +407,13 @@ export function verticalRead({
     // term; on a `computed` vertical it IS the revenue, so an assumed threshold
     // must never be presented as a measurement. Suppress every figure it
     // decides and publish the band instead.
-    const durationUnknown = engine.isUnknownField(eco.unknown_fields, 'billable_min_duration_seconds');
+    // Two different unknowns block the same figures: not knowing WHERE the line is
+    // (`billable_min_duration_seconds`) and not knowing WHICH duration it is drawn on
+    // (`billable_duration_field` — Moja reports two, and which one the buyer bills on is
+    // unconfirmed). Either one makes the billable count unknowable, so both take this path.
+    const unknownThreshold = engine.isUnknownField(eco.unknown_fields, 'billable_min_duration_seconds');
+    const unknownDurationField = engine.isUnknownField(eco.unknown_fields, 'billable_duration_field');
+    const durationUnknown = unknownThreshold || unknownDurationField;
     if (durationUnknown) {
       row.durationThresholdUnknown = true;
       row.blockedFigures = engine.blockedByUnknownDuration(resolved.source);

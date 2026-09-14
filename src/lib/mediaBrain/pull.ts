@@ -107,7 +107,7 @@ export interface PullWindowSuccess {
     marginBand: engine.MarginBandResult | null;
     payoutDistribution: engine.PayoutDistributionResult | null;
   };
-  thresholds: { killThreshold: number | null; minCalls: number | null };
+  thresholds: PullThresholds;
   unjoinedSpend: { entity: string; spend: number }[];
   unjoinedCalls: { call_id: string; did: string | null }[];
   joinLevel: JoinLevel;
@@ -228,11 +228,44 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
     window: { start, end },
   });
 
-  const kill = engine.killThreshold(payoutMode, economics.payout, economics.avg_bid);
-  const minCallsValue =
-    instance.min_calls ?? engine.minCalls(instance.actionable_gap ?? engine.DEFAULTS.actionableGap, payoutMode);
+  /* --------------------------------------------------------------
+   * Thresholds. Every one is READ from the Instance record. A missing
+   * instance value is a stop, not a default (§1: a command run without an
+   * Instance record stops).
+   * -------------------------------------------------------------- */
+  const actionableGap = instance.actionable_gap as number | null;
+  const storedMinCalls = instance.min_calls as number | null;
+  if (storedMinCalls === null && actionableGap === null) {
+    return {
+      ok: false,
+      error:
+        'The Instance record carries neither min_calls nor an actionable gap, so no confidence bar can be set. The framework does not fall back on a default here — re-run intake.',
+    };
+  }
+  const minMargin = instance.min_margin as number | null;
+  const targetMargin = instance.target_margin as number | null;
+  if (minMargin === null || targetMargin === null) {
+    return {
+      ok: false,
+      error:
+        'The Instance record is missing the minimum margin or the target margin, so no margin band can be judged. Re-run intake — bands are never assumed.',
+    };
+  }
+  const minCallsValue = storedMinCalls ?? engine.minCalls(actionableGap, payoutMode);
 
-  const rows: PullRow[] = join.rows.map((r) => decorate(r, payoutMode, kill, minCallsValue));
+  const storedKill = instance.kill_threshold as number | null;
+  const recomputedKill = engine.killThreshold(payoutMode, economics.payout, economics.avg_bid);
+  const kill = storedKill;
+  const allowable = instance.allowable_cost_per_call as number | null;
+
+  const economicsDrift =
+    storedKill !== null &&
+    recomputedKill !== null &&
+    Math.abs(storedKill - recomputedKill) > 0.005;
+
+  const rows: PullRow[] = join.rows.map((r) =>
+    decorate(r, payoutMode, kill, minCallsValue, allowable, minMargin, targetMargin),
+  );
 
   const totals = {
     spend: sum(join.rows.map((r) => r.spend)),

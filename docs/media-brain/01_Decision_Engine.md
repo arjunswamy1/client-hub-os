@@ -58,6 +58,19 @@ Revenue has two possible sources, declared per vertical on the Economics record 
 
 **`{min_payout_threshold}`** (default $1.00) exists because a payout field can carry something other than payout. Where a sync's payout mapping falls through to telco cost, a 13-second call records a few cents of *cost* as *revenue*. Any payout below the threshold is excluded from revenue, and where it is non-zero, sub-threshold and exactly equal to the recorded total cost, the call is flagged `payout_looks_like_cost` and counted by name in the pull's flags. Read-time correction, not a rewrite of stored rows.
 
+### When the billable threshold is an UNKNOWN — the sensitivity band
+
+`{billable_min_duration_seconds}` is a **contract term**, not a setting. Where it is assumed rather than stated it belongs in `unknown_fields`, and per §1 an UNKNOWN must name what it blocks:
+
+| Vertical's `revenue_source` | An UNKNOWN duration threshold blocks |
+|---|---|
+| `computed` | revenue, RPC, margin per call, margin %, profit, cost per billable call, and every threshold derived from them |
+| `platform` | billable calls and cost per billable call (revenue comes from the payout field, so it survives) |
+
+On a `computed` vertical the threshold **is** the revenue, because revenue is `{payout}` × billable calls. Read at 30s a real BuyologyIQ vertical showed +88.7% margin; read at 300s, −40.7%. The same 30 days, the same spend, opposite verdicts — decided by a number nobody had supplied.
+
+So where a `computed` vertical's threshold is UNKNOWN, **no revenue or margin point estimate renders at all.** Calls and spend render, because they are measured. In place of revenue the read publishes the **sensitivity band** (`engine.revenueSensitivity`) across 30 / 60 / 90 / 120 / 180 / 240 / 300 seconds, with a plain statement that the true figure depends on a contract term nobody has supplied. **A band that crosses zero says so explicitly and blocks any verdict** — a range spanning profit and loss is not a measurement to act on. The same band renders on the intake compute step, so the operator sees the swing at the moment they are asked for the threshold. It is shown *instead of* a point estimate, never beside one: a figure printed next to its own range gets read as the answer.
+
 **Verticals are read-only.** A vertical row blends many ads, so cut / hold / scale verdicts never render at that level — the blend hides precisely the differences those rules act on. The vertical read is information for a human, shown alongside the ad-level coverage figure so the reader knows why they are looking at verticals rather than ads.
 
 

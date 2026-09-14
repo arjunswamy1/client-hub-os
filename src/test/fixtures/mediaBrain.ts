@@ -100,6 +100,27 @@ export interface AdSpec {
   connectedCalls?: number;
   /** Set false to leave this ad's spend with no DID mapping and no calls. */
   joins?: boolean;
+  /**
+   * Set false to keep the calls but create NO `client_dids` row for them, so the
+   * DID path cannot resolve. Used to isolate the UTM tiers.
+   */
+  mapDid?: boolean;
+  /**
+   * Campaign name written on the CALL rows. Defaults to the fixture campaign,
+   * which the vertical patterns match — override it with something unmatched to
+   * stop the vertical fallback from catching the call.
+   */
+  callCampaignName?: string;
+  /**
+   * Attribution tags planted on the call, exactly as Ringba stores them in
+   * `metadata` (`tag:User:*`). This is the UTM tier's only input.
+   */
+  utm?: {
+    creativeId?: string;
+    utmContent?: string;
+    utmCampaign?: string;
+    utmSource?: string;
+  };
 }
 
 export interface Fixture {
@@ -145,6 +166,17 @@ function callsFor(spec: AdSpec): Record<string, unknown>[] {
   const paid = spec.paidCalls ?? spec.billableCalls;
   const payout = spec.payoutPerPaidCall ?? FIXTURE_ECONOMICS.payout;
   const connected = spec.connectedCalls ?? spec.calls;
+  const campaignName = spec.callCampaignName ?? CAMPAIGN;
+  // Ringba keeps its user tags inside `metadata`, so that is where they go.
+  const metadata: Record<string, unknown> | undefined = spec.utm
+    ? {
+        source: 'ringba_api',
+        ...(spec.utm.creativeId ? { 'tag:User:creative': spec.utm.creativeId } : {}),
+        ...(spec.utm.utmContent ? { 'tag:User:utm_content': spec.utm.utmContent } : {}),
+        ...(spec.utm.utmCampaign ? { 'tag:User:utm_campaign': spec.utm.utmCampaign } : {}),
+        ...(spec.utm.utmSource ? { 'tag:User:utm_source': spec.utm.utmSource } : {}),
+      }
+    : undefined;
   const rows: Record<string, unknown>[] = [];
   for (let i = 0; i < spec.calls; i++) {
     const isBillable = i < spec.billableCalls;
@@ -153,7 +185,8 @@ function callsFor(spec: AdSpec): Record<string, unknown>[] {
       call_id: `${spec.adId}-call-${i}`,
       call_date: `${WINDOW_DAYS[i % WINDOW_DAYS.length]}T15:00:00Z`,
       inbound_number: spec.did,
-      campaign_name: CAMPAIGN,
+      campaign_name: campaignName,
+      metadata,
       duration_seconds: isPaidShort ? 30 : 120,
       connected: i < connected,
       converted: isBillable,
@@ -170,13 +203,15 @@ export function buildFixture(specs: AdSpec[]): Fixture {
   return {
     calls: joining.flatMap(callsFor),
     metaAds: specs.flatMap(metaRowsFor),
-    didMappings: joining.map((s) => ({
-      did: s.did,
-      did_formatted: s.did,
-      creative_name: s.adName,
-      platform: 'meta',
-      campaign_name: CAMPAIGN,
-    })),
+    didMappings: joining
+      .filter((s) => s.mapDid !== false)
+      .map((s) => ({
+        did: s.did,
+        did_formatted: s.did,
+        creative_name: s.adName,
+        platform: 'meta',
+        campaign_name: CAMPAIGN,
+      })),
     verticals: [
       { vertical_id: 'final-expense', label: 'Final Expense', meta_patterns: ['Final Expense'], ringba_patterns: ['Final Expense'] },
     ],
@@ -316,5 +351,60 @@ export const SCENARIOS = {
     billableCalls: 0,
     paidCalls: 3,
     payoutPerPaidCall: 22,
+  } satisfies AdSpec,
+
+  /**
+   * 11. UTM ad tier — the Meta ad id arrives on the call itself
+   * (`tag:User:creative`). No DID mapping exists and the call's campaign name
+   * matches no vertical pattern, so ONLY the UTM tier can resolve it.
+   */
+  utmAdByCreativeId: {
+    adId: 'ad-utm',
+    adName: 'Angle UTM Tagged',
+    adsetId: 'adset-I',
+    adsetName: 'Ad set I',
+    did: '8005550110',
+    spend: 1000,
+    calls: 100,
+    billableCalls: 30,
+    mapDid: false,
+    callCampaignName: 'Untagged Buyer Campaign',
+    utm: { creativeId: 'ad-utm', utmSource: 'an' },
+  } satisfies AdSpec,
+
+  /**
+   * 12. Campaign tier — only `utm_campaign` is present, carrying the Meta
+   * campaign id. Resolves at campaign level and must be excluded from ad-level
+   * verdict eligibility.
+   */
+  utmCampaignOnly: {
+    adId: 'ad-camp-only',
+    adName: 'Angle Campaign Only',
+    adsetId: 'adset-J',
+    adsetName: 'Ad set J',
+    did: '8005550111',
+    spend: 800,
+    calls: 60,
+    billableCalls: 20,
+    mapDid: false,
+    callCampaignName: 'Untagged Buyer Campaign',
+    utm: { utmCampaign: 'camp-1', utmSource: 'an' },
+  } satisfies AdSpec,
+
+  /**
+   * 13. No key at all — no UTM tags, no DID mapping, no vertical-matching
+   * campaign name. These calls must land in `unjoinedCalls`, never in a row.
+   */
+  noAttributionKey: {
+    adId: 'ad-nokey',
+    adName: 'Angle No Key',
+    adsetId: 'adset-K',
+    adsetName: 'Ad set K',
+    did: '8005550112',
+    spend: 500,
+    calls: 20,
+    billableCalls: 6,
+    mapDid: false,
+    callCampaignName: 'Untagged Buyer Campaign',
   } satisfies AdSpec,
 } as const;

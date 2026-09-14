@@ -164,3 +164,62 @@ Every edit across `docs/media-brain/`, per file. **The full set needs re-syncing
 - **`04_Client_Deck_Template.md` and the `DECK` command are still unbuilt.**
 - **Volume tier boundaries are unvalidated.** They need data from a campaign with enough history to check whether the cut/scale cadences hold up against real variance.
 - **Universal Ads for Cannaball remains blocked** on `403 INVALID_ADVERTISER_AUTHORIZATION` despite app approval; the spend backlog table is the workaround until access lands.
+
+---
+
+## Phase 1 — pilot unblock: the UTM attribution tier, and what Ringba actually offers
+
+*Appended after the phases above. Flag for re-sync to Lovable project knowledge along with `01` §3 and `03` §2.*
+
+### The redirect
+
+Phase 0 established that the Ringba sync never asks for a dialed number: `inbound_number` maps from `inboundPhoneNumber`, which this account returns as the caller's ANI, and the `tag:DialedNumber:Number` fallback in the mapper is dead code because `DialedNumber` was in neither `VALUE_COLUMNS` nor the `["InboundNumber","Geo","User"]` tag allowlist. So the DID remedy could not be the fix.
+
+The account does, however, already carry an ad-level key the join ignored: the UTM tags Meta passes into Ringba, stored in `ringba_calls.metadata` as `tag:User:*`.
+
+### The tier model
+
+The join now resolves each call through explicit tiers and reports coverage per tier. `src/lib/mediaBrain/join.ts` holds the order in one function, `resolveCall`, which both the join and the coverage meter call — so coverage cannot drift from behaviour.
+
+| Tier | Path | Level | Ad-level decisions |
+|---|---|---|---|
+| `utm_ad` | `creative_id` → `platform_ad_id`; else `utm_content` → `platform_ad_id`, else `ad_name` | Ad | Yes |
+| `did_ad` | DID → `client_dids` / `client_did_periods` → `creative_name` → ad | Ad | Yes |
+| `utm_campaign` | `utm_campaign` → `platform_campaign_id`, else `campaign_name` | Campaign | **No** |
+| `vertical` | campaign-name patterns | Vertical | No |
+| `none` | unresolved | — | No |
+
+Every joined row carries `resolution` and `adLevelEligible`. Campaign- and vertical-level rows are barred from per-ad verdicts and excluded from the headline coverage number, because per-ad cut/hold/scale and per-angle graduation need one ad per row.
+
+### BuyologyIQ coverage with the UTM tier active — last 30 days
+
+| Tier | Calls | Share |
+|---|---|---|
+| Total calls | 2,423 | 100% |
+| `utm_ad` — ad level | 94 | 3.9% |
+| `did_ad` — ad level | 0 | 0.0% |
+| **Ad level total (the 80% threshold)** | **94** | **3.9%** |
+| `utm_campaign` — campaign level only | 0 | 0.0% |
+| `vertical` | 0 | 0.0% |
+| `none` | 2,329 | 96.1% |
+
+Up from 0%, and still nowhere near a pilot. 621 calls carry a `utm_source`, 604 a `utm_content` and 72 a `creative_id`, but only 94 resolve: the rest reference Meta objects in the 23 ad accounts on this token that are not being synced. Notably all 613 `utm_campaign` values (26 distinct) match no synced campaign, so campaign-level resolution adds nothing yet. `client_dids` and `client_verticals` remain empty, which is why both fallback tiers are zero.
+
+### What Ringba actually exposes — the diagnostic answer
+
+`sync-ringba-calls-buyology?diagnose=1` (read-only; it returns before any call-log fetch or insert) reports **110 call-log columns and 88 tags in 18 groups**. The dialed number *is* available, in more than one place:
+
+- Columns: `number` ("Number", group Call) and `numberId`; `numberPoolName`, `numberPoolId`, `isFromNumberPool` (group Impression); `targetNumber` / `buyerTargetNumber` (the buyer's number, not the tracking number); `inboundPhoneNumber` is titled "Caller ID", confirming Phase 0's reading.
+- Tag groups include **`DialedNumber`** with `Number` and `Name` — exactly the tag the mapper already reads and never requests.
+
+Also newly visible and useful later: `noPayoutReason`, `blockReason`, `hasPayout`, the `RTB` group (`bidAmount`, `winningBid`, `winningBidCallAccepted/Rejected`) and the `Ring Tree` group (winning bid, bid depth, ring successes/failures) — the no-bid diagnostics the RTB branch of the framework asks for.
+
+Per instruction, nothing was changed in `VALUE_COLUMNS` or the tag allowlist, no `did` column was added and no backfill was written. The next step is a decision, not a guess: request `DialedNumber:Number` (and `numberPoolName`) going forward.
+
+### Meta ad accounts
+
+The sync already reads `metadata.sync_ad_accounts` as an array. Settings now has an admin-only picker listing all 24 accounts on the token by name, writing that list. It records intent only — it changes no sync behaviour and starts no sync, because several accounts on this token belong to other clients and syncing them would contaminate BuyologyIQ's spend.
+
+### Tests
+
+20/20 (was 17/17). Three new cases: a `creative_id` matching a `platform_ad_id` resolves at `utm_ad`; a call with only `utm_campaign` resolves at `utm_campaign`, is `adLevelEligible: false` and leaves ad-level coverage at zero; a call with no tags, no DID mapping and no vertical match lands in `unjoinedCalls` while its spend surfaces as a tracking flag.

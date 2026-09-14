@@ -13,8 +13,10 @@
  * @see docs/media-brain/03_Operating_Procedures.md §2
  */
 
-import type { DidMapping, MetaAdRow, VerticalRow } from './join';
-import { matchCreativeToAds, matchVertical, resolveDidMapping } from './join';
+import type { AttributionTags } from './adapter';
+import { readAttribution } from './adapter';
+import type { DidMapping, MetaAdRow, ResolutionTier, VerticalRow } from './join';
+import { matchCreativeToAds, matchVertical, resolveCall, resolveDidMapping } from './join';
 
 /* ------------------------------------------------------------------ *
  * Where each call table keeps its DID, and what else is on the row.
@@ -33,6 +35,12 @@ export interface CallSourceSpec {
   creativeColumn: string | null;
   targetColumn: string | null;
   idColumn: string;
+  /**
+   * Columns that carry the attribution tags for the UTM tier — either real utm
+   * columns or the jsonb blob they are nested in. Selected alongside the rest so
+   * `readAttribution` has something to read.
+   */
+  attributionColumns: string[];
 }
 
 /** Every call source, keyed by the `tracking_platform` on the economics record. */
@@ -48,6 +56,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: null,
     targetColumn: 'target_name',
     idColumn: 'call_id',
+    attributionColumns: ['metadata'],
   },
   ringba_4js: {
     platform: 'ringba_4js',
@@ -60,6 +69,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: 'creative_name',
     targetColumn: 'target_name',
     idColumn: 'ringba_call_id',
+    attributionColumns: ['tags'],
   },
   ringfuel: {
     platform: 'ringfuel',
@@ -72,6 +82,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: 'creative_label',
     targetColumn: 'target_name',
     idColumn: 'call_id',
+    attributionColumns: ['raw_payload'],
   },
   moja: {
     platform: 'moja',
@@ -84,6 +95,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: null,
     targetColumn: 'target_name',
     idColumn: 'call_id',
+    attributionColumns: ['utm_campaign', 'utm_content', 'utm_source', 'utm_term', 'raw_payload'],
   },
   cannaball: {
     platform: 'cannaball',
@@ -96,6 +108,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: 'creative_name',
     targetColumn: null,
     idColumn: 'call_id',
+    attributionColumns: ['raw_payload'],
   },
 };
 
@@ -121,7 +134,7 @@ export const digitsOnly = (v: string | null | undefined) =>
   (v ?? '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
 
 /** A call reduced to only what the DID screen and the join need. */
-export interface MappingCall {
+export interface MappingCall extends AttributionTags {
   call_id: string;
   timestamp: string;
   did: string | null;
@@ -148,24 +161,41 @@ export function toMappingCalls(rows: Record<string, unknown>[], spec: CallSource
     creative_name: spec.creativeColumn ? s(r[spec.creativeColumn]) : null,
     target_name: spec.targetColumn ? s(r[spec.targetColumn]) : null,
     payout_amount: Number(r[spec.payoutColumn] ?? 0) || 0,
+    // Same reader the adapter uses, so the UTM tier sees identical values here.
+    ...readAttribution(r),
   }));
 }
+
 
 /* ------------------------------------------------------------------ *
  * Coverage — the point of the screen.
  * ------------------------------------------------------------------ */
 
-export type CoverageBucket = 'real_path' | 'vertical_fallback' | 'unresolved';
+/**
+ * Coverage buckets are the join's resolution tiers, unchanged. They are counted
+ * separately and never summed into one "resolved" figure: `utm_campaign` and
+ * `vertical` cannot carry the ad-level decisions the Decision Engine makes.
+ */
+export type CoverageBucket = ResolutionTier;
 
 export interface CoverageResult {
   totalCalls: number;
-  realPath: number;
+  /** Per-tier counts. @see ResolutionTier */
+  utmAd: number;
+  didAd: number;
+  utmCampaign: number;
   verticalFallback: number;
   unresolved: number;
-  realPathPct: number | null;
+  /** `utm_ad` + `did_ad` — the only calls a per-ad verdict can be built on. */
+  adLevel: number;
+  utmAdPct: number | null;
+  didAdPct: number | null;
+  utmCampaignPct: number | null;
   verticalFallbackPct: number | null;
   unresolvedPct: number | null;
-  /** §Pilot readiness: the real path must carry at least this share. */
+  /** The headline number, measured against `threshold`. */
+  adLevelPct: number | null;
+  /** §Pilot readiness: ad-level resolution must carry at least this share. */
   threshold: number;
   ready: boolean;
   perCall: Record<string, CoverageBucket>;
@@ -174,10 +204,10 @@ export interface CoverageResult {
 export const COVERAGE_THRESHOLD = 0.8;
 
 /**
- * Count calls by how they resolve, using the SAME functions the join uses:
- * `resolveDidMapping` → `matchCreativeToAds` is the real path; `matchVertical`
- * is the fallback; anything else is unresolved. An empty pull is not coverage —
- * `totalCalls` 0 leaves every percentage null rather than reading as 0%.
+ * Count calls by how they resolve, using the SAME resolver the join uses
+ * (`resolveCall`), so coverage can never drift from the join's behaviour. An
+ * empty pull is not coverage — `totalCalls` 0 leaves every percentage null
+ * rather than reading as 0%.
  */
 export function computeCoverage(
   calls: MappingCall[],
@@ -186,45 +216,47 @@ export function computeCoverage(
   verticals: VerticalRow[],
 ): CoverageResult {
   const perCall: Record<string, CoverageBucket> = {};
-  let realPath = 0;
-  let verticalFallback = 0;
-  let unresolved = 0;
+  const counts: Record<ResolutionTier, number> = {
+    utm_ad: 0,
+    did_ad: 0,
+    utm_campaign: 0,
+    vertical: 0,
+    none: 0,
+  };
 
   for (const call of calls) {
-    // resolveDidMapping / matchVertical read only did, timestamp, campaign_name.
-    const asCanonical = call as unknown as Parameters<typeof resolveDidMapping>[0];
-    const mapping = resolveDidMapping(asCanonical, didMappings);
-    const creativeName = mapping?.creative_name ?? call.creative_name;
-    const matched = creativeName ? matchCreativeToAds(creativeName, metaAds) : [];
-    const identified = matched.filter((a) => a.platform_ad_id ?? normName(a.ad_name));
-
-    let bucket: CoverageBucket;
-    if (mapping && identified.length > 0) bucket = 'real_path';
-    else if (matchVertical(asCanonical, verticals)) bucket = 'vertical_fallback';
-    else bucket = 'unresolved';
-
-    perCall[call.call_id] = bucket;
-    if (bucket === 'real_path') realPath++;
-    else if (bucket === 'vertical_fallback') verticalFallback++;
-    else unresolved++;
+    // resolveCall reads only did, timestamp, campaign/creative names and the
+    // attribution tags — all present on MappingCall.
+    const asCanonical = call as unknown as Parameters<typeof resolveCall>[0];
+    const tier = resolveCall(asCanonical, didMappings, metaAds, verticals).tier;
+    perCall[call.call_id] = tier;
+    counts[tier] += 1;
   }
 
   const total = calls.length;
   const pct = (n: number) => (total === 0 ? null : n / total);
-  const realPct = pct(realPath);
+  const adLevel = counts.utm_ad + counts.did_ad;
+  const adLevelPct = pct(adLevel);
   return {
     totalCalls: total,
-    realPath,
-    verticalFallback,
-    unresolved,
-    realPathPct: realPct,
-    verticalFallbackPct: pct(verticalFallback),
-    unresolvedPct: pct(unresolved),
+    utmAd: counts.utm_ad,
+    didAd: counts.did_ad,
+    utmCampaign: counts.utm_campaign,
+    verticalFallback: counts.vertical,
+    unresolved: counts.none,
+    adLevel,
+    utmAdPct: pct(counts.utm_ad),
+    didAdPct: pct(counts.did_ad),
+    utmCampaignPct: pct(counts.utm_campaign),
+    verticalFallbackPct: pct(counts.vertical),
+    unresolvedPct: pct(counts.none),
+    adLevelPct,
     threshold: COVERAGE_THRESHOLD,
-    ready: realPct !== null && realPct >= COVERAGE_THRESHOLD,
+    ready: adLevelPct !== null && adLevelPct >= COVERAGE_THRESHOLD,
     perCall,
   };
 }
+
 
 /* ------------------------------------------------------------------ *
  * The unmapped-DID list, ordered by what fixing it buys.

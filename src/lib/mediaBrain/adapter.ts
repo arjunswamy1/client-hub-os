@@ -45,7 +45,28 @@ export interface CanonicalCall {
   buyer_id: string | null;
   state: string | null;
   no_bid_reason: string | null;
+  /**
+   * Attribution tags carried on the call itself. On accounts that pass UTMs into
+   * the tracking platform these are the ONLY ad-level key available — the call
+   * tables hold no Meta ad_id and, on some accounts, no usable tracking number
+   * either. `creative_id` is the Meta ad id where the platform captured it
+   * (Ringba `tag:User:creative`). Values are read, never derived.
+   * @see join.ts — the UTM resolution tier
+   */
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_source: string | null;
+  utm_term: string | null;
+  utm_medium: string | null;
+  creative_id: string | null;
 }
+
+/** The attribution tags, split out so every mapper reads them the same way. */
+export type AttributionTags = Pick<
+  CanonicalCall,
+  'utm_campaign' | 'utm_content' | 'utm_source' | 'utm_term' | 'utm_medium' | 'creative_id'
+>;
+
 
 export type TrackingPlatform =
   | 'ringba'
@@ -125,7 +146,54 @@ function deriveBillable(
   return durationSeconds >= minDuration;
 }
 
+/**
+ * Where each platform keeps its attribution tags. Ringba nests them in
+ * `metadata` as `tag:User:utm_content` etc; Moja has real columns; RingFuel and
+ * Cannaball keep a `raw_payload`. Every candidate key is read in order and the
+ * first non-empty value wins. Nothing is inferred from a name.
+ */
+const ATTRIBUTION_KEYS: Record<keyof AttributionTags, string[]> = {
+  utm_campaign: ['utm_campaign', 'tag:User:utm_campaign', 'tag:user:utm_campaign'],
+  utm_content: ['utm_content', 'tag:User:utm_content', 'tag:user:utm_content'],
+  utm_source: ['utm_source', 'tag:User:utm_source', 'tag:user:utm_source'],
+  utm_term: ['utm_term', 'tag:User:utm_term', 'tag:user:utm_term'],
+  utm_medium: ['utm_medium', 'tag:User:utm_medium', 'tag:user:utm_medium'],
+  creative_id: ['creative_id', 'tag:User:creative', 'tag:user:creative', 'creative'],
+};
+
+/**
+ * Read the attribution tags off a raw row, looking at the row itself and at any
+ * `metadata` / `raw_payload` object on it. Missing tags come back null — they are
+ * named as absent by the join, never substituted.
+ */
+export function readAttribution(row: RawCallRow): AttributionTags {
+  const bags: Record<string, unknown>[] = [row];
+  for (const nested of ['metadata', 'raw_payload', 'tags'] as const) {
+    const v = row[nested];
+    if (v && typeof v === 'object' && !Array.isArray(v)) bags.push(v as Record<string, unknown>);
+  }
+  const pick = (keys: string[]): string | null => {
+    for (const bag of bags) {
+      for (const k of keys) {
+        const s = str(bag[k]);
+        if (s) return s;
+      }
+    }
+    return null;
+  };
+  return {
+    utm_campaign: pick(ATTRIBUTION_KEYS.utm_campaign),
+    utm_content: pick(ATTRIBUTION_KEYS.utm_content),
+    utm_source: pick(ATTRIBUTION_KEYS.utm_source),
+    utm_term: pick(ATTRIBUTION_KEYS.utm_term),
+    utm_medium: pick(ATTRIBUTION_KEYS.utm_medium),
+    creative_id: pick(ATTRIBUTION_KEYS.creative_id),
+  };
+}
+
 /* ---------------- mappings, one per call table ---------------- */
+
+
 
 /** `ringba_calls` → canonical. @see §3 */
 export const fromRingba: CallMapper = (row, opts) => {
@@ -149,6 +217,7 @@ export const fromRingba: CallMapper = (row, opts) => {
     buyer_id: str(row.target_name),
     state: null,
     no_bid_reason: payout === 0 ? 'no_payout' : null,
+    ...readAttribution(row),
   };
 };
 
@@ -173,6 +242,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 
@@ -198,6 +268,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 
@@ -223,6 +294,7 @@ export const fromMoja: CallMapper = (row, opts) => {
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 
@@ -247,6 +319,7 @@ export const fromCannaball: CallMapper = (row, opts) => {
     buyer_id: null,
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 

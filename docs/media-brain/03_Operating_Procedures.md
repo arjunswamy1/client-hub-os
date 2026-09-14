@@ -34,7 +34,24 @@ Per `ad_id`, for the window: total calls · connected calls · billable calls ·
 
 ### Join
 
-On `ad_id`. Any Meta spend that doesn't join to call data is a tracking flag, not a zero — see §3.
+On `ad_id` in principle. In practice **no call table carries a Meta `ad_id` column**, so the join runs through resolution tiers, tried in order of how precisely each identifies an ad. The tier is recorded on every call and reported per tier — never summed into one "resolved" figure.
+
+| Tier | Path | Level | Can carry ad-level decisions? |
+|---|---|---|---|
+| `utm_ad` | `creative_id` (e.g. Ringba `tag:User:creative`) → `platform_ad_id`; else `utm_content` → `platform_ad_id`, else → `ad_name` | Ad | Yes |
+| `did_ad` | DID → `client_dids` / `client_did_periods` → `creative_name` → `ad_creatives` | Ad | Yes |
+| `utm_campaign` | `utm_campaign` → `platform_campaign_id`, else → `campaign_name` | **Campaign** | **No** |
+| `vertical` | campaign-name patterns on `client_verticals` | Vertical | No |
+| `none` | nothing resolved | — | No |
+
+`utm_ad` is tried before `did_ad` because a UTM names the ad directly while the DID path names it through two lookups. Both ad-level tiers beat `utm_campaign`, because ad-level resolution of any kind beats campaign-level resolution.
+
+**A campaign-level resolution is not an ad-level one.** Per-ad cut/hold/scale and per-angle graduation need one ad per row, so `utm_campaign` and `vertical` rows are flagged ineligible for those verdicts and excluded from the ad-level coverage figure. Reporting them together would overstate readiness for exactly the decisions the engine exists to make.
+
+**Pilot readiness is measured on ad-level coverage** (`utm_ad` + `did_ad`) against an 80% threshold. Below it, say plainly that the client is not ready for a pilot.
+
+Any Meta spend that doesn't join to call data is a tracking flag, not a zero — see §3. Calls that resolve to nothing are reported as unattributed, never folded into a row.
+
 
 ### Computed columns
 

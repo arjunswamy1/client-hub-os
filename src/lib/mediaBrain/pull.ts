@@ -18,6 +18,7 @@ import {
   type JoinLevel,
   type JoinedEntityRow,
   type MetaAdRow,
+  type ResolutionTier,
   type VerticalRow,
 } from './join';
 
@@ -148,6 +149,13 @@ export interface PullWindowSuccess {
   unjoinedCalls: { call_id: string; did: string | null }[];
   joinLevel: JoinLevel;
   joinNote: string;
+  /**
+   * Calls per resolution tier, reported separately. `utm_ad` + `did_ad` is the
+   * only set ad-level verdicts may be built on; a `utm_campaign` resolution is
+   * campaign level and conflating the two would overstate readiness.
+   */
+  resolutionCounts: Record<ResolutionTier, number>;
+  adLevelCalls: number;
   /** Call ids whose billable status is undetermined — surface, never hide. */
   missingBillableDefinition: string[];
   /** Circuit breakers raised by the pull itself (§ Circuit breakers). */
@@ -421,6 +429,8 @@ export function computeWindow({
     unjoinedCalls: join.unjoinedCalls,
     joinLevel: join.joinLevel,
     joinNote: join.joinNote,
+    resolutionCounts: join.resolutionCounts,
+    adLevelCalls: join.adLevelCalls,
     missingBillableDefinition,
     breakers,
   };

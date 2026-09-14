@@ -129,6 +129,65 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    /* ----------------------------------------------------------------
+     * READ-ONLY DIAGNOSTIC: `?diagnose=1`
+     *
+     * Returns the FULL menu this account exposes — every call-log column id and
+     * every tag group — with no allowlist applied, so we can see whether Ringba
+     * offers a number-pool / target / dialed-number field at all. It writes
+     * nothing: it returns before any call-log fetch or any insert into
+     * `ringba_calls`, and it does not touch VALUE_COLUMNS or the tag allowlist.
+     * ---------------------------------------------------------------- */
+    if (new URL(req.url).searchParams.get("diagnose") === "1") {
+      const auth = { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" };
+      const out: Record<string, unknown> = { diagnostic: true, wrote_nothing: true };
+
+      const colRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs/columns`, { headers: auth });
+      out.columns_status = colRes.status;
+      if (colRes.ok) {
+        const colJson = await colRes.json();
+        const raw = colJson?.columns ?? colJson?.report?.columns ?? colJson;
+        const columns = Array.isArray(raw)
+          ? raw.map((c: Record<string, unknown> | string) =>
+              typeof c === "string"
+                ? { id: c }
+                : { id: c?.id ?? c?.name, title: c?.title ?? c?.displayName ?? null, type: c?.type ?? null, group: c?.group ?? c?.groupName ?? null },
+            )
+          : [];
+        out.column_count = columns.length;
+        out.columns = columns;
+        // Named explicitly so the answer to "is a dialed number available?" is legible.
+        const hay = (v: unknown) => String(v ?? "").toLowerCase();
+        out.candidate_dialed_number_columns = columns.filter((c: Record<string, unknown>) =>
+          ["number pool", "numberpool", "dialed", "tracking", "target number", "targetnumber", "inbound"].some((k) =>
+            hay(c.id).includes(k.replace(/ /g, "")) || hay(c.title).includes(k),
+          ),
+        );
+      } else {
+        out.columns_error = (await colRes.text()).substring(0, 400);
+      }
+
+      const tagRes = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/tags`, { headers: auth });
+      out.tags_status = tagRes.status;
+      if (tagRes.ok) {
+        const tags = await tagRes.json();
+        const list = Array.isArray(tags) ? tags : (tags?.tags ?? []);
+        out.tag_count = Array.isArray(list) ? list.length : 0;
+        out.tags = Array.isArray(list) ? list.map((t: Record<string, unknown>) => ({ tagType: t?.tagType, tagName: t?.tagName })) : list;
+        out.tag_groups = Array.isArray(list)
+          ? [...new Set(list.map((t: Record<string, unknown>) => String(t?.tagType ?? "")).filter(Boolean))].sort()
+          : [];
+      } else {
+        out.tags_error = (await tagRes.text()).substring(0, 400);
+      }
+
+      return new Response(JSON.stringify(out, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+
+
     let daysBack = 7;
     if (req.method === "POST") {
       try {

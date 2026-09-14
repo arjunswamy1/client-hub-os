@@ -189,7 +189,7 @@ export function matchVertical(call: CanonicalCall, verticals: VerticalRow[]): Ve
     verticals.find((v) =>
       [...(v.ringba_patterns ?? []), ...(v.meta_patterns ?? [])].some((p) => {
         const np = norm(p);
-        return np && name.includes(np);
+        return !!np && name.includes(np);
       }),
     ) ?? null
   );

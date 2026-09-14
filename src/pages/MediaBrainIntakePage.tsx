@@ -371,6 +371,7 @@ export default function MediaBrainIntakePage() {
         actionable_gap_pct: "{min_calls}, cost per angle, max angles — the whole confidence bar",
         daily_budget: "expected billable calls per week, volume tier, test budget, max angles",
         planned_ad_sets: "the fragmentation check",
+        expected_weekly_meta_events: "the fragmentation check — billable calls are never substituted for the Meta optimisation event",
       };
       flags.push({
         level: "warn",
@@ -450,7 +451,6 @@ export default function MediaBrainIntakePage() {
           existing_structure_notes: form.existing_structure_notes.trim() || null,
           known_problems: form.known_problems.trim() || null,
           routing_mode: "recommend_only",
-          meta_conversion_event_note: null,
           unknown_fields: unknownFields.length ? unknownFields : null,
           last_reviewed_at: new Date().toISOString(),
         })

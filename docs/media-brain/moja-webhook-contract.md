@@ -46,46 +46,76 @@ timestamp and the list of field names your payload carried. A misconfigured deli
 visible to us immediately; it no longer looks identical to no delivery at all. Retry on
 `5xx`; do not retry on `400`/`401` (fix the configuration instead).
 
-## 3. Test payload A — a **converting** call
+## 2b. Payload shape
+
+**The flat shape is primary** — every field at the top level, which is what your test fire on
+2026-09-14 sent. We also still accept a nested `{"call": {…}, "tags": {…}}` shape; we detect it
+by the presence of a top-level `call` object. Either is fine; do not change what you already send.
+
+Three rules that matter on our side:
+
+- **Unreplaced macros are discarded.** Any value matching `[SOMETHING]` — e.g. `"[TRACKING_NUMBER]"`
+  — is stored as empty, never as text, and the field is named in our receipt log. Your test fire
+  substituted 9 of 31 fields; the other 22 arrived as bare macros. That list is the single most
+  useful thing you can help us confirm (see §4b).
+- **`call_id` is required.** A delivery without it is accepted, logged and **not stored** — we
+  cannot deduplicate it, and duplicate call rows would corrupt every figure. Your test fire sent
+  `"[CALL_ID]"`, so it produced a receipt but no usable call.
+- **Timestamps are read as UTC unless the value carries an offset.** `"2026-09-14T15:04:11Z"` and
+  `"2026-09-14T11:04:11-04:00"` are unambiguous; a bare `"2026-09-14 15:04:11"` is taken as UTC.
+  Please send an offset or a `Z`.
+
+`call_start` is used as sent. If it is absent we derive it on a `call.completed` as
+`event_timestamp − inbound_duration`. If neither is available we leave it empty rather than
+guessing — a guessed timestamp files a call into the wrong reporting week silently.
+
+## 2c. `payout` vs `revenue` — please keep them separate
+
+- **`payout`** = what the publisher (us) is paid. This is our revenue and the only figure that
+  decides whether media is profitable.
+- **`revenue`** = what the buyer paid you. Informational to us.
+
+Never fold telco/carrier cost into `payout`. We have been burned by exactly that on another
+provider, where a $0.07 carrier cost was recorded as revenue.
+
+## 3. Test payload A — a **converting** call (flat shape)
 
 ```json
 {
   "event": "call.converted",
   "delivery_id": "test-delivery-0001",
-  "call": {
-    "call_id": "MOJA-TEST-CONVERTED-0001",
-    "call_start": "2026-09-14T15:04:11Z",
-    "converted": true,
-    "call_converted_at": "2026-09-14T15:06:38Z",
-    "duration": 412,
-    "inbound_duration": 431,
-    "connected": true,
-    "disposition": "converted",
-    "revenue": 145.00,
-    "payout": 95.00,
-    "has_payout": true,
-    "no_payout_reason": null,
-    "campaign_id": "cmp_9931",
-    "campaign_name": "RRM - Windows - Meta - Prospecting",
-    "publisher_name": "Connect Paid Media",
-    "buyer_name": "River Road Windows",
-    "target_name": "RRW Main Queue",
-    "tracking_number": "+15055550142",
-    "is_from_number_pool": false,
-    "number_pool_name": null,
-    "caller_id": "+15055559987",
-    "caller_state": "NM",
-    "caller_zip": "87109",
-    "recording_url": "https://example.moja.ai/recordings/test-0001.mp3",
-    "tags": {
-      "source": "facebook",
-      "campaign": "120210000000000001",
-      "content": "120210000000000009",
-      "term": "120210000000000007",
-      "gclid": null,
-      "fbclid": "IwAR-test-fbclid-0001"
-    }
-  }
+  "call_id": "MOJA-TEST-CONVERTED-0001",
+  "event_timestamp": "2026-09-14T15:06:38Z",
+  "call_start": "2026-09-14T15:04:11Z",
+  "converted": true,
+  "call_converted_at": "2026-09-14T15:06:38Z",
+  "duration": 412,
+  "inbound_duration": 431,
+  "answered": true,
+  "disposition": "converted",
+  "revenue": 145.00,
+  "payout": 95.00,
+  "no_payout_reason": null,
+  "hangup_cause": "caller_hangup",
+  "campaign_id": "cmp_9931",
+  "campaign_name": "RRM - Windows - Meta - Prospecting",
+  "publisher_name": "Connect Paid Media",
+  "buyer_name": "River Road Windows",
+  "target_name": "RRW Main Queue",
+  "to": "+15055550142",
+  "tracking_number": "+15055550142",
+  "number_pool": null,
+  "caller_id": "+15055559987",
+  "caller_state": "NM",
+  "zip_code": "87109",
+  "recording_url": "https://example.moja.ai/recordings/test-0001.mp3",
+  "utm_source": "facebook",
+  "utm_medium": "paid_social",
+  "utm_campaign": "120210000000000001",
+  "utm_content": "120210000000000009",
+  "utm_term": "120210000000000007",
+  "gclid": null,
+  "fbclid": "IwAR-test-fbclid-0001"
 }
 ```
 
@@ -99,42 +129,58 @@ that answer is the information we need.
 {
   "event": "call.completed",
   "delivery_id": "test-delivery-0002",
-  "call": {
-    "call_id": "MOJA-TEST-NOTCONVERTED-0002",
-    "call_start": "2026-09-14T15:22:03Z",
-    "converted": false,
-    "call_converted_at": null,
-    "duration": 47,
-    "inbound_duration": 61,
-    "connected": true,
-    "disposition": "buyer_hangup",
-    "revenue": 0,
-    "payout": 0,
-    "has_payout": false,
-    "no_payout_reason": "duration_below_threshold",
-    "campaign_id": "cmp_9931",
-    "campaign_name": "RRM - Windows - Meta - Prospecting",
-    "publisher_name": "Connect Paid Media",
-    "buyer_name": "River Road Windows",
-    "target_name": "RRW Main Queue",
-    "tracking_number": "+15055550142",
-    "is_from_number_pool": false,
-    "number_pool_name": null,
-    "caller_id": "+15055551122",
-    "caller_state": "NM",
-    "caller_zip": "87114",
-    "recording_url": null,
-    "tags": {
-      "source": "facebook",
-      "campaign": "120210000000000001",
-      "content": "120210000000000009",
-      "term": "120210000000000007",
-      "gclid": null,
-      "fbclid": "IwAR-test-fbclid-0002"
-    }
-  }
+  "call_id": "MOJA-TEST-NOTCONVERTED-0002",
+  "event_timestamp": "2026-09-14T15:22:50Z",
+  "call_start": "2026-09-14T15:22:03Z",
+  "converted": false,
+  "call_converted_at": null,
+  "duration": 47,
+  "inbound_duration": 61,
+  "answered": true,
+  "disposition": "buyer_hangup",
+  "revenue": 0,
+  "payout": 0,
+  "no_payout_reason": "duration_below_threshold",
+  "hangup_cause": "buyer_hangup",
+  "campaign_id": "cmp_9931",
+  "campaign_name": "RRM - Windows - Meta - Prospecting",
+  "publisher_name": "Connect Paid Media",
+  "buyer_name": "River Road Windows",
+  "target_name": "RRW Main Queue",
+  "to": "+15055550142",
+  "tracking_number": "+15055550142",
+  "number_pool": null,
+  "caller_id": "+15055551122",
+  "caller_state": "NM",
+  "zip_code": "87114",
+  "recording_url": null,
+  "utm_source": "facebook",
+  "utm_medium": "paid_social",
+  "utm_campaign": "120210000000000001",
+  "utm_content": "120210000000000009",
+  "utm_term": "120210000000000007",
+  "gclid": null,
+  "fbclid": "IwAR-test-fbclid-0002"
 }
 ```
+
+## 4b. The question your test fire raises
+
+Your 2026-09-14 test substituted only `event`, `duration`, `zip_code`, `caller_id`,
+`campaign_id`, `campaign_name`, `publisher_name`, `buyer_name` and `target_name`. These 22 came
+back as literal macros:
+
+`to`, `call_id`, `event_timestamp`, `call_start`, `tracking_number`, `inbound_duration`,
+`converted`, `call_converted_at`, `answered`, `revenue`, `payout`, `no_payout_reason`,
+`hangup_cause`, `number_pool`, `caller_state`, `utm_source`, `utm_medium`, `utm_campaign`,
+`utm_content`, `utm_term`, `gclid`, `fbclid`.
+
+We assume that is because a test fire has no real call to substitute from. **Please confirm
+which of those 22 are populated on a real call.** If `call_id`, `payout`, `tracking_number`,
+the UTMs and the click IDs are genuinely unavailable, then we cannot deduplicate deliveries,
+cannot measure revenue, and cannot attribute below campaign level — so we need to know now
+rather than infer it from data in a month. A single real, non-test delivery answers it.
+
 
 ### Why B decides the whole integration
 

@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as engine from "@/lib/mediaBrain/engine";
-import type { PullRow } from "@/lib/mediaBrain/pull";
+import type { PullRow, PullThresholds } from "@/lib/mediaBrain/pull";
 import type { ConfidenceState, PayoutMode } from "@/lib/mediaBrain/engine";
 
 /* ------------------------------------------------------------------ *
@@ -335,9 +335,9 @@ export function groupRows(
   rows: PullRow[],
   level: "adset" | "ad",
   payoutMode: PayoutMode,
-  killThreshold: number | null,
-  minCalls: number | null,
+  thresholds: PullThresholds,
 ): GroupedRow[] {
+  const { killThreshold, minCalls, allowableCostPerCall, minMargin, targetMargin } = thresholds;
   const buckets = new Map<string, { name: string; members: PullRow[] }>();
   for (const r of rows) {
     const key =
@@ -362,6 +362,7 @@ export function groupRows(
     const payouts = b.members.flatMap((m) => m.payouts);
     const durations = b.members.flatMap((m) => m.durations);
     const first = b.members[0];
+    const costPerCallValue = engine.costPerCall(spend, calls);
 
     return {
       ...first,
@@ -379,7 +380,7 @@ export function groupRows(
       payouts,
       durations,
       call_ids: b.members.flatMap((m) => m.call_ids),
-      costPerCall: engine.costPerCall(spend, calls),
+      costPerCall: costPerCallValue,
       rpc: engine.rpc(revenue, calls),
       marginPerCall: engine.marginPerCall(revenue, spend, calls),
       profit: engine.profit(revenue, spend),
@@ -389,12 +390,14 @@ export function groupRows(
       connectionRate: engine.connectionRate(connected, calls),
       billableRate: engine.billableRate(billable, connected),
       confidenceState: engine.confidenceState(billable, minCalls, spend, killThreshold),
-      marginBand: engine.marginBand(engine.marginPct(revenue, spend)),
+      marginBand: engine.marginBand(engine.marginPct(revenue, spend), minMargin, targetMargin),
+      overAllowableCostPerCall: engine.exceedsAllowableCostPerCall(costPerCallValue, allowableCostPerCall),
       medianDurationSeconds: engine.median(durations),
       payoutDistribution: payoutMode === "rtb" ? engine.payoutDistribution(payouts) : null,
     } as GroupedRow;
   });
 }
+
 
 function sum(values: number[]) {
   return values.reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);

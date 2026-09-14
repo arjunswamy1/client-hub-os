@@ -127,12 +127,8 @@ export default function MediaBrainDailyPage() {
   }
 
   const anyFired = breakers.some((b) => b.fired);
-  const adsetRows = data?.ok
-    ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls)
-    : [];
-  const adRows = data?.ok
-    ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls)
-    : [];
+  const adsetRows = data?.ok ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds) : [];
+  const adRows = data?.ok ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds) : [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -216,6 +212,23 @@ export default function MediaBrainDailyPage() {
             </Notice>
           )}
 
+          {/* Flags raised by the pull itself — including economics drift against
+              the stored instance thresholds, and rows over the allowable cost. */}
+          {data.breakers.length > 0 && (
+            <Notice tone="warn" title="Flags raised by this pull">
+              <ul className="list-disc space-y-1 pl-5">
+                {data.breakers.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+              <div className="mt-3">
+                <Button asChild size="sm" variant="outline">
+                  <a href={`/media-brain/${clientId}/intake`}>Re-run intake</a>
+                </Button>
+              </div>
+            </Notice>
+          )}
+
           <Notice tone="info" title={`Join resolved at ${data.joinLevel} level`}>
             {data.joinNote}
           </Notice>
@@ -242,6 +255,11 @@ export default function MediaBrainDailyPage() {
               />
               <Stat label="Margin per call" value={fmtMoney(data.totals.marginPerCall)} />
               <Stat label="Cost per call" value={fmtMoney(data.totals.costPerCall)} />
+              <Stat
+                label="Allowable cost / call"
+                value={fmtMoney(data.thresholds.allowableCostPerCall)}
+                hint={`The most you can pay per call and still clear the ${fmtPct(data.thresholds.targetMargin)} target margin`}
+              />
               <Stat label="Cost per billable call" value={fmtMoney(data.totals.costPerBillableCall)} />
               <Stat label="RPC" value={fmtMoney(data.totals.rpc)} />
               <Stat label="Connection rate" value={fmtPct(data.totals.connectionRate)} />
@@ -262,10 +280,11 @@ export default function MediaBrainDailyPage() {
 
           <EntityTable
             title="Ad sets"
-            description={`Insufficient rows — under ${fmtNum(data.thresholds.minCalls)} billable calls — are greyed and marked. You see whether a number means anything before you see the number.`}
+            description={`Insufficient rows — under ${fmtNum(data.thresholds.minCalls)} billable calls — are greyed and marked. You see whether a number means anything before you see the number. Cost per call is shown against the allowable cost of ${fmtMoney(data.thresholds.allowableCostPerCall)}.`}
             rows={adsetRows}
             rtb={data.payoutMode === "rtb"}
             showAdColumns={false}
+            allowableCostPerCall={data.thresholds.allowableCostPerCall}
           />
 
           <EntityTable
@@ -274,7 +293,9 @@ export default function MediaBrainDailyPage() {
             rows={adRows}
             rtb={data.payoutMode === "rtb"}
             showAdColumns
+            allowableCostPerCall={data.thresholds.allowableCostPerCall}
           />
+
 
           <p className="text-xs text-muted-foreground">
             Nothing on this page justifies a same-day change except a fired circuit breaker. No week-over-week deltas are
@@ -302,14 +323,17 @@ function EntityTable({
   rows,
   rtb,
   showAdColumns,
+  allowableCostPerCall,
 }: {
   title: string;
   description: string;
   rows: ReturnType<typeof groupRows>;
   rtb: boolean;
   showAdColumns: boolean;
+  allowableCostPerCall: number | null;
 }) {
   const sorted = [...rows].sort((a, b) => (b.marginPerCall ?? -Infinity) - (a.marginPerCall ?? -Infinity));
+  const colCount = 7 + (showAdColumns ? 1 : 0) + (showAdColumns && rtb ? 1 : 0);
   return (
     <Card>
       <CardHeader>
@@ -323,6 +347,10 @@ function EntityTable({
               <TableHead>Entity</TableHead>
               <TableHead>Confidence</TableHead>
               <TableHead className="text-right">Margin / call</TableHead>
+              <TableHead className="text-right">Cost / call</TableHead>
+              <TableHead className="text-right">
+                vs allowable {allowableCostPerCall === null ? "" : fmtMoney(allowableCostPerCall)}
+              </TableHead>
               <TableHead className="text-right">Cost / billable call</TableHead>
               <TableHead className="text-right">Billable calls</TableHead>
               {showAdColumns && <TableHead className="text-right">Call rate</TableHead>}
@@ -332,7 +360,7 @@ function EntityTable({
           <TableBody>
             {sorted.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-sm text-muted-foreground">
+                <TableCell colSpan={colCount} className="text-sm text-muted-foreground">
                   No entities in this window.
                 </TableCell>
               </TableRow>
@@ -344,6 +372,18 @@ function EntityTable({
                   <ConfidenceBadge state={r.confidenceState} />
                 </TableCell>
                 <TableCell className="text-right">{fmtMoney(r.marginPerCall)}</TableCell>
+                <TableCell className="text-right">{fmtMoney(r.costPerCall)}</TableCell>
+                <TableCell className="text-right">
+                  {r.overAllowableCostPerCall === null ? (
+                    "—"
+                  ) : r.overAllowableCostPerCall ? (
+                    <Badge variant="destructive">Over allowable</Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-emerald-400 text-emerald-700 dark:text-emerald-400">
+                      Within
+                    </Badge>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">{fmtMoney(r.costPerBillableCall)}</TableCell>
                 <TableCell className="text-right">{fmtNum(r.billable_calls)}</TableCell>
                 {showAdColumns && <TableCell className="text-right">{fmtPct(r.callRate)}</TableCell>}
@@ -352,6 +392,7 @@ function EntityTable({
                 )}
               </TableRow>
             ))}
+
           </TableBody>
         </Table>
       </CardContent>

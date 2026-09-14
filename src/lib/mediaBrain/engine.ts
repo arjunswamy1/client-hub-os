@@ -37,10 +37,8 @@ export const DEFAULTS = {
   targetMargin: 0.2,
   /** Margin floor. Below this there is no cushion for normal volatility (§16). */
   minMargin: 0.1,
-  /** Gap between angles you would act on. 0.40 → min_calls 25 (§4). */
-  actionableGap: 0.4,
-  /** Default min_calls: detects a 40% gap (§4, §16). */
-  minCallsDefault: 25,
+  /** Gap between angles you would act on. 0.57 → min_calls 25 (§4). */
+  actionableGap: 0.57,
   /** Scale step lower bound (§16). */
   scaleStepMin: 0.1,
   /** Scale step upper bound (§16). */
@@ -48,6 +46,7 @@ export const DEFAULTS = {
   /** Meta needs roughly this many conversions per ad set per week to exit learning phase (§4). */
   fragmentationFloor: 50,
 } as const;
+
 
 type Num = number | null | undefined;
 
@@ -168,23 +167,42 @@ export function allowableCostPerCall(rpcValue: Num, targetMargin: Num): number |
   return rpcValue * (1 - targetMargin);
 }
 
+/**
+ * Is this row paying more per call than it can afford? Compares a measured
+ * cost per call against the instance's stored allowable cost per call — the
+ * price above which the target margin cannot be cleared. **Denominator: TOTAL
+ * calls on both sides** (§2 — never against a billable-denominated cost).
+ * Null when either side is unavailable.
+ * @see docs/media-brain/01_Decision_Engine.md §2
+ */
+export function exceedsAllowableCostPerCall(costPerCallValue: Num, allowable: Num): boolean | null {
+  if (!ok(costPerCallValue) || !ok(allowable)) return null;
+  return costPerCallValue > allowable;
+}
+
 /* ------------------------------------------------------------------ *
  * §4 — Confidence
  * ------------------------------------------------------------------ */
 
 /**
- * `{min_calls}` ≈ (2 ÷ actionable gap)², rounded up.
+ * `{min_calls}` ≈ (2√2 ÷ actionable gap)² = 8 ÷ gap², rounded up.
+ *
+ * The wobble on a SINGLE estimate is ≈ 1 ÷ √n, but ranking two angles compares
+ * two independent noisy estimates, so the standard error of the DIFFERENCE is
+ * larger by √2 — the detectable gap is ≈ 2√2 ÷ √n.
+ *
  * [RTB] +40% — payout varies too, so margin per call is noisier.
  *
- * gap 0.40 static → 25 · gap 0.40 rtb → 35
+ * gap 0.57 static → 25 · gap 0.57 rtb → 35 · gap 0.40 static → 50
  * @see docs/media-brain/01_Decision_Engine.md §4, §16
  */
 export function minCalls(actionableGap: Num, payoutMode: PayoutMode = 'static'): number | null {
   if (!ok(actionableGap) || actionableGap <= 0) return null;
-  let n = Math.ceil((2 / actionableGap) ** 2);
+  let n = Math.ceil(8 / actionableGap ** 2);
   if (payoutMode === 'rtb') n = Math.ceil(n * 1.4);
   return n;
 }
+
 
 /**
  * Confidence state for a row.
@@ -362,20 +380,43 @@ export interface MarginBandResult {
 }
 
 /**
- * Margin band for a margin %. 10% is the floor.
+ * Margin band for a margin %, anchored on THIS CLIENT's two stored values:
+ * `minMargin` (the floor — below it there is no cushion) and `targetMargin`
+ * (the band we are aiming at). Boundaries are never hardcoded: a client on a
+ * 15% floor must not be judged against 10%.
+ *
+ * Bands, in terms of the two anchors:
+ *   < 0                    losing
+ *   < minMargin            fragile (below the floor)
+ *   < minMargin × 1.5      thin but workable
+ *   < targetMargin         decent
+ *   < targetMargin × 1.5   good (target)
+ *   < targetMargin × 2     very good
+ *   ≥ targetMargin × 2     excellent
+ *
+ * With the framework defaults (floor 10%, target 20%) that reproduces the §10
+ * table exactly: 10 / 15 / 20 / 30 / 40.
+ *
+ * Scale steps quoted from DEFAULTS so the range is stated in exactly one place.
  * [RTB] judge by the MEDIAN, not the mean.
  * @see docs/media-brain/01_Decision_Engine.md §10
  */
-export function marginBand(marginPctValue: Num): MarginBandResult | null {
-  if (!ok(marginPctValue)) return null;
+export function marginBand(
+  marginPctValue: Num,
+  minMargin: Num,
+  targetMargin: Num,
+): MarginBandResult | null {
+  if (!ok(marginPctValue) || !ok(minMargin) || !ok(targetMargin)) return null;
+  const step = `Scale one step of ${Math.round(DEFAULTS.scaleStepMin * 100)}-${Math.round(DEFAULTS.scaleStepMax * 100)}%`;
   if (marginPctValue < 0) return { band: 'losing', verdict: 'Losing', action: 'Stop' };
-  if (marginPctValue < 0.1) return { band: 'fragile', verdict: 'Fragile', action: 'Below the floor — fix or stop' };
-  if (marginPctValue < 0.15) return { band: 'thin', verdict: 'Thin but workable', action: 'Hold, improve before scaling' };
-  if (marginPctValue < 0.2) return { band: 'decent', verdict: 'Decent', action: 'Hold or scale cautiously' };
-  if (marginPctValue < 0.3) return { band: 'good', verdict: 'Good (target)', action: 'Scale one step of 10-20%' };
-  if (marginPctValue < 0.4) return { band: 'very_good', verdict: 'Very good', action: 'Scale one step of 10-20%' };
-  return { band: 'excellent', verdict: 'Excellent', action: 'Scale one step of 10-20%' };
+  if (marginPctValue < minMargin) return { band: 'fragile', verdict: 'Fragile', action: 'Below the floor — fix or stop' };
+  if (marginPctValue < minMargin * 1.5) return { band: 'thin', verdict: 'Thin but workable', action: 'Hold, improve before scaling' };
+  if (marginPctValue < targetMargin) return { band: 'decent', verdict: 'Decent', action: 'Hold or scale cautiously' };
+  if (marginPctValue < targetMargin * 1.5) return { band: 'good', verdict: 'Good (target)', action: step };
+  if (marginPctValue < targetMargin * 2) return { band: 'very_good', verdict: 'Very good', action: step };
+  return { band: 'excellent', verdict: 'Excellent', action: step };
 }
+
 
 /* ------------------------------------------------------------------ *
  * §5 — RTB payout distribution

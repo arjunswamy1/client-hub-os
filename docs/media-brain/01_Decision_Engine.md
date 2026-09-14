@@ -18,7 +18,7 @@ From Layer 0 intake and the Layer 1 economics file.
 | `{payout}` | **[STATIC]** Fixed revenue per billable call |
 | `{bid_range}`, `{avg_bid}`, `{duration_range}` | **[RTB]** Buyer's stated bid floor/ceiling, stated average, and the duration window payout scales across |
 | `{billable_def}` | Duration threshold plus product, state, or buyer filters |
-| `{expected_cpc}` | Trailing cost per call — your baseline |
+| `{expected_cpc}` | Trailing cost per call — your baseline. **Note: test-budget arithmetic uses cost per *billable* call, not this.** |
 | `{target_margin}` | Target margin % |
 | `{min_margin}` | Floor. Below this, stop or change something. |
 | `{min_calls}` | Computed — §4 |
@@ -88,19 +88,20 @@ Two ad sets measuring $55 and $68 on 10 calls each have plausible ranges of $37�
 
 It does not gate the zero-conversion kill in §6.3 — that fires on spend, and deliberately doesn't wait for a sample.
 
-The gap you can reliably detect is about `2 ÷ √n`. Inverted:
+The wobble on a single estimate is about `1 ÷ √n`. But ranking angles never compares one estimate to a known truth — it compares two noisy estimates, and the standard error of a *difference* between two independent samples is larger by √2. The gap you can reliably detect is therefore about `2√2 ÷ √n`. Inverted:
 
-`{min_calls}` **≈ (2 ÷ the gap you'd act on)²**
+`{min_calls}` **≈ (2√2 ÷ the gap you'd act on)² = 8 ÷ gap²**
 
 | Gap between angles | Calls needed each |
 |---|---|
-| 100% | ~4 |
-| 60% | ~11 |
-| 40% | ~25 |
-| 25% | ~64 |
-| 10% | ~400 |
+| 100% | ~8 |
+| 60% | ~22 |
+| **57%** | **~25** |
+| 40% | ~50 |
+| 25% | ~128 |
+| 10% | ~800 |
 
-**25 is the default because it detects a 40% gap** — and gaps under 40% rarely justify what they cost to prove.
+**25 is the default because it detects a ~57% gap.** Detecting 40% takes 50 billable calls per angle, and at most pay-per-call economics that is more than the answer is worth. This is a deliberate trade: we act on large differences quickly rather than small ones slowly.
 
 **Cost decides how strict you can afford to be.** At $80 per call, detecting a 25% gap costs $5,120 per angle. Not worth it. Expensive verticals act on wide gaps and lean on the fast proxies (§9) for the rest. Cheap verticals can afford real precision.
 
@@ -173,7 +174,7 @@ If the whole group is underwater, cut the whole group. Don't promote the least-b
 
 **Kill at 2× payout with zero billable calls.** **[STATIC]** 2 × `{payout}`. Payout $50 → kill at $100. **[RTB]** 2 × `{avg_bid}`. Average bid $25 → kill at $50.
 
-Why 2x is defensible rather than arbitrary: if the ad were performing at your allowable cost, the odds of seeing zero conversions by the time you've spent double the payout are roughly 6%. So you're about 94% confident it's genuinely broken, not unlucky. You'll occasionally kill a fine ad. Far more often you'll stop paying for a dead one — and letting losers run is the more expensive mistake.
+Why 2x is defensible rather than arbitrary: if the ad were performing at your allowable cost, the odds of seeing zero conversions by the time you've spent double the payout are about 13.5% (e⁻²). So you're about 87% confident it's genuinely broken, not unlucky. Going to 3× would buy ~95% confidence at the cost of letting a dead ad run 50% longer — we take the faster trigger, because letting losers run is the more expensive mistake. You'll occasionally kill a fine ad. Far more often you'll stop paying for a dead one — and letting losers run is the more expensive mistake.
 
 This one fires any day, not just at review (§12).
 
@@ -231,9 +232,9 @@ The shift happens when at least one angle has cleared the graduation gate, not o
 
 ### How many angles you can test
 
-`angles = test budget ÷ ({min_calls} × {expected_cpc})`
+`angles = test budget ÷ ({min_calls} × cost per billable call)`
 
-At $60 per call and `{min_calls}` of 25, each angle needs $1,500 to be conclusively ranked. At $300/day total, that's real arithmetic — test fewer angles properly rather than five badly.
+At $60 per **billable** call and `{min_calls}` of 25, each angle needs $1,500 to be conclusively ranked. At $300/day total, that's real arithmetic — test fewer angles properly rather than five badly.
 
 **Spend floors are mandatory at low volume.** CBO reallocates within hours based on click signal, before any call has happened. Without floors it starves an angle that would have converted.
 
@@ -344,15 +345,16 @@ Every change logged with what you changed, why, what you expect to happen, and a
 
 | Variable | Value | Basis |
 |---|---|---|
-| Kill threshold | **2 × payout** (static) or **2 × average bid** (RTB), at zero billable calls | ~94% confidence the entity is genuinely broken rather than unlucky |
-| `{min_calls}` | **Computed** — (2 ÷ actionable gap)². Default **25**, +40% under RTB | 25 detects a 40% gap; smaller gaps rarely justify their cost to prove |
+| Kill threshold | **2 × payout** (static) or **2 × average bid** (RTB), at zero billable calls | ~87% confidence the entity is genuinely broken rather than unlucky (e⁻² ≈ 13.5% chance of a false kill) |
+| `{min_calls}` | **Computed** — (2√2 ÷ actionable gap)² = 8 ÷ gap². Default **25** at a 0.57 gap, +40% under RTB | 25 detects a ~57% gap; detecting 40% would take 50 per angle |
 | Scale step | **10–20%** | Keeps delivery stable and the marginal read legible |
 | Margin floor | **10%** | Below this there's no cushion for normal volatility |
 
-**Worked example** — $50 payout, static, $30 expected cost per call:
+**Worked example** — $50 payout, static, $40 expected cost per **billable** call (a 20% margin):
 - Kill any ad at $100 spent with zero billable calls
 - 25 billable calls before an angle graduates
-- Test budget: 25 × $30 = $750 per angle per window
+- Test budget: 25 × $40 = $1,000 per angle per window
+- Allowable cost per call at a 20% target margin: $50 × 0.80 = $40
 - A winning ad set at $200/day moves to $220–240/day
 
 ## Still open

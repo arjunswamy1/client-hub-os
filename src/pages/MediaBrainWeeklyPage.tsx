@@ -49,6 +49,11 @@ import {
   useMediaBrainGate,
 } from "@/components/mediaBrain/shared";
 
+/** Scale-step bounds and the learning-phase floor are stated once, in engine.DEFAULTS. */
+const STEP_MIN_PCT = Math.round(engine.DEFAULTS.scaleStepMin * 100);
+const STEP_MAX_PCT = Math.round(engine.DEFAULTS.scaleStepMax * 100);
+const FRAG_FLOOR = engine.DEFAULTS.fragmentationFloor;
+
 type Trend = "" | "stable" | "rising" | "falling";
 type Verdict = "" | "keep" | "cut" | "hold";
 
@@ -116,11 +121,11 @@ export default function MediaBrainWeeklyPage() {
 
   /* ---------------- step 3 — dispositions ---------------- */
   const adsetRows = useMemo<GroupedRow[]>(
-    () => (data ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls) : []),
+    () => (data ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds) : []),
     [data],
   );
   const adRows = useMemo<GroupedRow[]>(
-    () => (data ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls) : []),
+    () => (data ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds) : []),
     [data],
   );
 
@@ -699,8 +704,8 @@ export default function MediaBrainWeeklyPage() {
           <CardHeader>
             <CardTitle className="text-base">Step 5 — Scale</CardTitle>
             <CardDescription>
-              All four conditions must hold, and a step is 10–20%. Judge the marginal return on the last increase, not
-              blended ROAS.
+              All four conditions must hold, and a step is {STEP_MIN_PCT}–{STEP_MAX_PCT}%. Judge the marginal return on
+              the last increase, not blended ROAS.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -708,7 +713,7 @@ export default function MediaBrainWeeklyPage() {
               .filter(({ level, row }) => dispositions[`${level}:${row.groupKey}`]?.verdict === "keep")
               .map(({ level, row }) => {
                 const key = `${level}:${row.groupKey}`;
-                const c = scaleChecks[key] ?? { held: false, capacity: false, stableMix: false, stepPct: 10 };
+                const c = scaleChecks[key] ?? { held: false, capacity: false, stableMix: false, stepPct: STEP_MIN_PCT };
                 const set = (patch: Partial<typeof c>) => setScaleChecks((s) => ({ ...s, [key]: { ...c, ...patch } }));
                 const target = Number(instance!.target_margin);
                 const marginOk = (row.marginPct ?? -1) >= target;
@@ -755,13 +760,17 @@ export default function MediaBrainWeeklyPage() {
                       <Label className="text-sm">Step %</Label>
                       <Input
                         type="number"
-                        min={10}
-                        max={20}
+                        min={STEP_MIN_PCT}
+                        max={STEP_MAX_PCT}
                         className="w-24"
                         value={c.stepPct}
                         onChange={(e) => set({ stepPct: Number(e.target.value) })}
                       />
-                      {(c.stepPct < 10 || c.stepPct > 20) && <span className="text-xs text-destructive">A step is 10–20%.</span>}
+                      {(c.stepPct < STEP_MIN_PCT || c.stepPct > STEP_MAX_PCT) && (
+                        <span className="text-xs text-destructive">
+                          A step is {STEP_MIN_PCT}–{STEP_MAX_PCT}%.
+                        </span>
+                      )}
                       {!eligible && <span className="text-xs text-muted-foreground">Not eligible to scale yet.</span>}
                     </div>
                   </div>
@@ -838,7 +847,7 @@ export default function MediaBrainWeeklyPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Step 7 — Fragmentation check</CardTitle>
-            <CardDescription>Expected weekly conversions ÷ active ad sets, against the learning-phase floor of 50.</CardDescription>
+            <CardDescription>Expected weekly conversions ÷ active ad sets, against the learning-phase floor of {FRAG_FLOOR}.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-end gap-3">
@@ -853,7 +862,7 @@ export default function MediaBrainWeeklyPage() {
             <p>
               {fmtNum(instance?.expected_billable_calls_per_week)} ÷ {activeAdSets || "—"} ={" "}
               <strong>{fmtNum(frag.perAdSet, 1)}</strong> per ad set —{" "}
-              {frag.passes ? "clears the floor of 50." : "below the floor of 50."}
+              {frag.passes ? `clears the floor of ${FRAG_FLOOR}.` : `below the floor of ${FRAG_FLOOR}.`}
             </p>
             {!frag.passes && activeAdSets && (
               <Notice tone="warn" title="The structure will not exit learning phase">

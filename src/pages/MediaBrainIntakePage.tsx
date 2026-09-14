@@ -33,6 +33,7 @@ const STEPS = [
   { key: "a5", title: "A5 · Buyer hours" },
   { key: "a6", title: "A6 · Campaign state" },
   { key: "a7", title: "A7 · Reporting" },
+  { key: "a8", title: "A8 · Margin targets" },
   { key: "b", title: "Part B · Compute" },
   { key: "c", title: "Part C · Save" },
 ] as const;
@@ -61,7 +62,10 @@ type NumField =
   | "expected_cost_per_call"
   | "expected_cost_per_billable_call"
   | "steps_to_live_person"
-  | "planned_ad_sets";
+  | "planned_ad_sets"
+  | "target_margin_pct"
+  | "min_margin_pct"
+  | "actionable_gap_pct";
 
 interface FormState {
   vertical: string;
@@ -99,6 +103,10 @@ const emptyNums = (): Record<NumField, string> => ({
   expected_cost_per_billable_call: "",
   steps_to_live_person: "",
   planned_ad_sets: "",
+  // Pre-filled with the framework defaults (§16). A client may state otherwise.
+  target_margin_pct: String(engine.DEFAULTS.targetMargin * 100),
+  min_margin_pct: String(engine.DEFAULTS.minMargin * 100),
+  actionable_gap_pct: String(engine.DEFAULTS.actionableGap * 100),
 });
 
 const emptyUnknown = (): Record<NumField, boolean> =>
@@ -237,6 +245,9 @@ export default function MediaBrainIntakePage() {
     if (!form.reporting_format.trim()) m.push("Reporting format");
     if (!form.reporting_cadence.trim()) m.push("Reporting cadence");
     need("planned_ad_sets", "Planned ad sets (for the fragmentation check)");
+    need("target_margin_pct", "Target margin %");
+    need("min_margin_pct", "Minimum margin % (the floor)");
+    need("actionable_gap_pct", "Actionable gap % between angles");
     return m;
   }, [form]);
 
@@ -254,8 +265,15 @@ export default function MediaBrainIntakePage() {
     const dailyBudget = numVal("daily_budget");
     const plannedAdSets = numVal("planned_ad_sets");
 
-    const targetMargin = engine.DEFAULTS.targetMargin;
-    const actionableGap = engine.DEFAULTS.actionableGap;
+    // Stated by the client, pre-filled with the framework default. An UNKNOWN
+    // stays null and blocks everything that depends on it — never substituted.
+    const pctVal = (f: NumField) => {
+      const v = numVal(f);
+      return v === null ? null : v / 100;
+    };
+    const targetMargin = pctVal("target_margin_pct");
+    const minMargin = pctVal("min_margin_pct");
+    const actionableGap = pctVal("actionable_gap_pct");
 
     const baselineRpc =
       mode === "static" ? payout : form.rtb_live && observedRpc !== null ? observedRpc : avgBid;
@@ -314,6 +332,9 @@ export default function MediaBrainIntakePage() {
         billable_min_duration_seconds: "every billable-denominated metric — no call can be marked billable",
         expected_cost_per_billable_call: "cost per angle, max angles, expected billable calls per week, volume tier",
         expected_cost_per_call: "expected cost comparisons",
+        target_margin_pct: "allowable cost per call, the margin bands, and every scale decision",
+        min_margin_pct: "the margin floor and the fragile/below-the-floor band",
+        actionable_gap_pct: "{min_calls}, cost per angle, max angles — the whole confidence bar",
         daily_budget: "expected billable calls per week, volume tier, test budget, max angles",
         planned_ad_sets: "the fragmentation check",
       };
@@ -326,6 +347,7 @@ export default function MediaBrainIntakePage() {
     return {
       mode,
       targetMargin,
+      minMargin,
       actionableGap,
       baselineRpc,
       baselineRpcSource,
@@ -402,7 +424,7 @@ export default function MediaBrainIntakePage() {
         client_id: clientId,
         economics_id: eco.id,
         target_margin: computed.targetMargin,
-        min_margin: engine.DEFAULTS.minMargin,
+        min_margin: computed.minMargin,
         actionable_gap: computed.actionableGap,
         baseline_rpc: computed.baselineRpc,
         allowable_cost_per_call: computed.allowable,
@@ -694,6 +716,39 @@ export default function MediaBrainIntakePage() {
             </>
           )}
 
+          {current.key === "a8" && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Pre-filled with the framework defaults. Change them only where the client has stated otherwise — every
+                margin band, the allowable cost per call and the confidence bar are read from these three values.
+              </p>
+              <NumberField
+                label="Target margin (%)"
+                field="target_margin_pct"
+                form={form}
+                setNum={setNum}
+                toggleUnknown={toggleUnknown}
+                hint={`Framework default ${engine.DEFAULTS.targetMargin * 100}%. Sets the allowable cost per call and the "good (target)" band.`}
+              />
+              <NumberField
+                label="Minimum margin — the floor (%)"
+                field="min_margin_pct"
+                form={form}
+                setNum={setNum}
+                toggleUnknown={toggleUnknown}
+                hint={`Framework default ${engine.DEFAULTS.minMargin * 100}%. Below the floor there is no cushion for normal volatility.`}
+              />
+              <NumberField
+                label="Actionable gap between angles (%)"
+                field="actionable_gap_pct"
+                form={form}
+                setNum={setNum}
+                toggleUnknown={toggleUnknown}
+                hint={`Framework default ${engine.DEFAULTS.actionableGap * 100}%. The smallest difference worth acting on — it sets {min_calls} at 8 ÷ gap². A 57% gap needs 25 billable calls per angle; 40% needs 50.`}
+              />
+            </>
+          )}
+
           {current.key === "b" && computed && (
             <div className="space-y-3">
               <Work
@@ -720,8 +775,8 @@ export default function MediaBrainIntakePage() {
               />
               <Work
                 label="{min_calls}"
-                formula={`(2 ÷ actionable gap)²${computed.mode === "rtb" ? " , +40% under RTB" : ""}`}
-                substitution={`(2 ÷ ${computed.actionableGap})²${computed.mode === "rtb" ? " × 1.4" : ""}`}
+                formula={`(2√2 ÷ actionable gap)² = 8 ÷ gap²${computed.mode === "rtb" ? " , +40% under RTB" : ""}`}
+                substitution={`8 ÷ ${computed.actionableGap ?? "—"}²${computed.mode === "rtb" ? " × 1.4" : ""}`}
                 result={fmtNum(computed.minCallsValue)}
               />
               <Work

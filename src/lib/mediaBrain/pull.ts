@@ -50,12 +50,28 @@ export interface PullRow extends JoinedEntityRow {
   billableRate: number | null;
   confidenceState: ConfidenceState;
   marginBand: engine.MarginBandResult | null;
+  /**
+   * True when this row's cost per call is above the instance's stored
+   * `allowable_cost_per_call` — the most you can pay per call and still clear
+   * the target margin (§2). Null when either side is unavailable.
+   */
+  overAllowableCostPerCall: boolean | null;
   /** Median call duration in seconds. Null when no durations came back. */
   medianDurationSeconds: number | null;
   /** RTB only — zeros included. Null under static. */
   payoutDistribution: engine.PayoutDistributionResult | null;
 
 }
+
+/** Every threshold on a pull comes from the Instance record — never a default. */
+export interface PullThresholds {
+  killThreshold: number | null;
+  minCalls: number | null;
+  allowableCostPerCall: number | null;
+  minMargin: number;
+  targetMargin: number;
+}
+
 
 export interface PullWindowArgs {
   clientId: string;
@@ -91,7 +107,7 @@ export interface PullWindowSuccess {
     marginBand: engine.MarginBandResult | null;
     payoutDistribution: engine.PayoutDistributionResult | null;
   };
-  thresholds: { killThreshold: number | null; minCalls: number | null };
+  thresholds: PullThresholds;
   unjoinedSpend: { entity: string; spend: number }[];
   unjoinedCalls: { call_id: string; did: string | null }[];
   joinLevel: JoinLevel;
@@ -212,11 +228,44 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
     window: { start, end },
   });
 
-  const kill = engine.killThreshold(payoutMode, economics.payout, economics.avg_bid);
-  const minCallsValue =
-    instance.min_calls ?? engine.minCalls(instance.actionable_gap ?? engine.DEFAULTS.actionableGap, payoutMode);
+  /* --------------------------------------------------------------
+   * Thresholds. Every one is READ from the Instance record. A missing
+   * instance value is a stop, not a default (§1: a command run without an
+   * Instance record stops).
+   * -------------------------------------------------------------- */
+  const actionableGap = instance.actionable_gap as number | null;
+  const storedMinCalls = instance.min_calls as number | null;
+  if (storedMinCalls === null && actionableGap === null) {
+    return {
+      ok: false,
+      error:
+        'The Instance record carries neither min_calls nor an actionable gap, so no confidence bar can be set. The framework does not fall back on a default here — re-run intake.',
+    };
+  }
+  const minMargin = instance.min_margin as number | null;
+  const targetMargin = instance.target_margin as number | null;
+  if (minMargin === null || targetMargin === null) {
+    return {
+      ok: false,
+      error:
+        'The Instance record is missing the minimum margin or the target margin, so no margin band can be judged. Re-run intake — bands are never assumed.',
+    };
+  }
+  const minCallsValue = storedMinCalls ?? engine.minCalls(actionableGap, payoutMode);
 
-  const rows: PullRow[] = join.rows.map((r) => decorate(r, payoutMode, kill, minCallsValue));
+  const storedKill = instance.kill_threshold as number | null;
+  const recomputedKill = engine.killThreshold(payoutMode, economics.payout, economics.avg_bid);
+  const kill = storedKill;
+  const allowable = instance.allowable_cost_per_call as number | null;
+
+  const economicsDrift =
+    storedKill !== null &&
+    recomputedKill !== null &&
+    Math.abs(storedKill - recomputedKill) > 0.005;
+
+  const rows: PullRow[] = join.rows.map((r) =>
+    decorate(r, payoutMode, kill, minCallsValue, allowable, minMargin, targetMargin),
+  );
 
   const totals = {
     spend: sum(join.rows.map((r) => r.spend)),
@@ -239,11 +288,23 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
   if (missingBillableDefinition.length) {
     breakers.push('Billable definition is missing on the Economics record, so no call can be marked billable. Every billable-denominated metric is unavailable until it is supplied.');
   }
+  if (economicsDrift) {
+    breakers.push(
+      `The economics changed since intake was last run: the Instance record stores a kill threshold of $${(storedKill as number).toFixed(2)}, but the current payout terms imply $${(recomputedKill as number).toFixed(2)}. Neither is used silently — the stored value is shown, the instance is treated as stale, and intake must be re-run before acting on any threshold here.`,
+    );
+  }
+  const overAllowable = rows.filter((r) => r.overAllowableCostPerCall === true);
+  if (overAllowable.length) {
+    breakers.push(
+      `${overAllowable.length} ${overAllowable.length === 1 ? 'entity is' : 'entities are'} paying more per call than the allowable cost per call of $${(allowable as number).toFixed(2)} — above that price the target margin cannot be cleared.`,
+    );
+  }
   for (const r of rows) {
     if (r.confidenceState === 'decisive_zero') {
       breakers.push(`${r.entity_name}: $${r.spend.toFixed(2)} spent past the kill threshold with zero billable calls.`);
     }
   }
+
 
   return {
     ok: true,
@@ -261,10 +322,17 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
       connectionRate: engine.connectionRate(totals.connectedCalls, totals.calls),
       billableRate: engine.billableRate(totals.billableCalls, totals.connectedCalls),
       callRate: engine.callRate(totals.calls, totals.clicks),
-      marginBand: engine.marginBand(engine.marginPct(totals.revenue, totals.spend)),
+      marginBand: engine.marginBand(engine.marginPct(totals.revenue, totals.spend), minMargin, targetMargin),
       payoutDistribution: payoutMode === 'rtb' ? engine.payoutDistribution(allPayouts) : null,
     },
-    thresholds: { killThreshold: kill, minCalls: minCallsValue },
+    thresholds: {
+      killThreshold: kill,
+      minCalls: minCallsValue,
+      allowableCostPerCall: allowable,
+      minMargin,
+      targetMargin,
+    },
+
     unjoinedSpend: join.unjoinedSpend,
     unjoinedCalls: join.unjoinedCalls,
     joinLevel: join.joinLevel,
@@ -284,10 +352,14 @@ function decorate(
   payoutMode: PayoutMode,
   kill: number | null,
   minCallsValue: number | null,
+  allowableCostPerCall: number | null,
+  minMargin: number,
+  targetMargin: number,
 ): PullRow {
+  const costPerCallValue = engine.costPerCall(r.spend, r.calls);
   return {
     ...r,
-    costPerCall: engine.costPerCall(r.spend, r.calls),
+    costPerCall: costPerCallValue,
     rpc: engine.rpc(r.revenue, r.calls),
     marginPerCall: engine.marginPerCall(r.revenue, r.spend, r.calls),
     profit: engine.profit(r.revenue, r.spend),
@@ -297,11 +369,13 @@ function decorate(
     connectionRate: engine.connectionRate(r.connected_calls, r.calls),
     billableRate: engine.billableRate(r.billable_calls, r.connected_calls),
     confidenceState: engine.confidenceState(r.billable_calls, minCallsValue, r.spend, kill),
-    marginBand: engine.marginBand(engine.marginPct(r.revenue, r.spend)),
+    marginBand: engine.marginBand(engine.marginPct(r.revenue, r.spend), minMargin, targetMargin),
+    overAllowableCostPerCall: engine.exceedsAllowableCostPerCall(costPerCallValue, allowableCostPerCall),
     medianDurationSeconds: engine.median(r.durations),
 
     payoutDistribution: payoutMode === 'rtb' ? engine.payoutDistribution(r.payouts) : null,
   };
+
 }
 
 export type { CanonicalCall };

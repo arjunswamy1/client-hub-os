@@ -338,7 +338,33 @@ export function verticalRead({
         `${resolved.subThresholdPayoutCalls} calls carry a non-zero payout below the revenue threshold; excluded as telco cost recorded in the payout field.`,
       );
     }
+
+    // §1 — UNKNOWN discipline. The billable duration threshold is a contract
+    // term; on a `computed` vertical it IS the revenue, so an assumed threshold
+    // must never be presented as a measurement. Suppress every figure it
+    // decides and publish the band instead.
+    const durationUnknown = engine.isUnknownField(eco.unknown_fields, 'billable_min_duration_seconds');
+    if (durationUnknown) {
+      row.durationThresholdUnknown = true;
+      row.blockedFigures = engine.blockedByUnknownDuration(resolved.source);
+      row.sensitivity = engine.revenueSensitivity(eco, bucket.map(toRevenueRow), spend);
+      row.billableCalls = null;
+      row.costPerBillableCall = null;
+      if (resolved.source === 'computed') {
+        row.revenue = null;
+        row.rpc = null;
+        row.marginPerCall = null;
+        row.marginPct = null;
+        row.profit = null;
+        row.confidence = 'insufficient';
+      }
+      row.revenueNote = row.sensitivity.note;
+      row.flags.push(
+        `UNKNOWN: billable_min_duration_seconds is assumed, not stated. It blocks ${row.blockedFigures.join(', ')}.`,
+      );
+    }
     return row;
+
   });
 
   const unclassified = emptyRow('unclassified', 'Unclassified');

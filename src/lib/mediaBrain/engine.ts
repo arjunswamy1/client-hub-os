@@ -881,11 +881,33 @@ export function revenueSensitivity(
   const marginPctLow = margins.length ? Math.min(...margins) : null;
   const marginPctHigh = margins.length ? Math.max(...margins) : null;
   const crossesZero = marginPctLow !== null && marginPctHigh !== null && marginPctLow < 0 && marginPctHigh > 0;
+  const drawable = marginPctLow !== null && marginPctHigh !== null;
+  const direction: SensitivityBand['direction'] = !drawable
+    ? 'undrawable'
+    : crossesZero
+      ? 'mixed'
+      : marginPctHigh! < 0
+        ? 'negative'
+        : 'positive';
+  // §8 — an UNKNOWN suppresses the FIGURE, not automatically the verdict. Where
+  // every plausible threshold lands on the same side of zero the direction is
+  // established and a verdict may be drawn; only a band spanning both sides
+  // leaves the direction itself unknown.
+  const directionEstablished = direction === 'negative' || direction === 'positive';
 
   const range =
     revenueLow === null || revenueHigh === null
       ? 'The band cannot be drawn because no contracted payout is recorded — supply it at intake.'
       : `Across ${thresholds[0]}s to ${thresholds[thresholds.length - 1]}s, revenue runs $${revenueLow.toFixed(2)} to $${revenueHigh.toFixed(2)} and margin runs ${(marginPctLow! * 100).toFixed(1)}% to ${(marginPctHigh! * 100).toFixed(1)}%.`;
+
+  const directionNote =
+    direction === 'mixed'
+      ? ' THE RANGE CROSSES ZERO: on the same window this vertical is either clearly profitable or losing money, depending entirely on a contract term nobody has supplied. No verdict may be drawn until it is.'
+      : direction === 'negative'
+        ? ' THE RANGE IS NEGATIVE THROUGHOUT: every plausible threshold loses money, so the DIRECTION is established even though the magnitude is not. The UNKNOWN blocks quoting a figure; it does not block acting on a loss.'
+        : direction === 'positive'
+          ? ' The range is positive throughout: every plausible threshold clears breakeven, so the direction is established even though the magnitude is not.'
+          : '';
 
   return {
     points,
@@ -894,14 +916,15 @@ export function revenueSensitivity(
     marginPctLow,
     marginPctHigh,
     crossesZero,
+    direction,
+    directionEstablished,
     verdictBlocking: crossesZero,
     note:
       `The billable duration threshold is UNKNOWN — assumed, not stated in any contract — and on a ${source} vertical it is the revenue. No point estimate is shown, only this range. ${range}` +
-      (crossesZero
-        ? ' THE RANGE CROSSES ZERO: on the same 30 days this vertical is either clearly profitable or losing money, depending entirely on a contract term nobody has supplied. No verdict may be drawn until it is.'
-        : ''),
+      directionNote,
   };
 }
+
 
 /* ------------------------------------------------------------------ *
  * §3 — PUBLISHER ATTRIBUTION

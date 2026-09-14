@@ -3848,17 +3848,20 @@ export type Database = {
           id: string
           known_problems: string | null
           last_reviewed_at: string | null
+          min_payout_threshold: number
           payout: number | null
           payout_mode: string
           platforms: string[] | null
           reporting_cadence: string | null
           reporting_format: string | null
+          revenue_source: string
           routing_mode: string
           steps_to_live_person: number | null
           tracking_platform: string | null
           unknown_fields: string[] | null
           updated_at: string | null
           vertical: string | null
+          vertical_id: string | null
         }
         Insert: {
           ad_account_ids?: string[] | null
@@ -3883,17 +3886,20 @@ export type Database = {
           id?: string
           known_problems?: string | null
           last_reviewed_at?: string | null
+          min_payout_threshold?: number
           payout?: number | null
           payout_mode: string
           platforms?: string[] | null
           reporting_cadence?: string | null
           reporting_format?: string | null
+          revenue_source?: string
           routing_mode?: string
           steps_to_live_person?: number | null
           tracking_platform?: string | null
           unknown_fields?: string[] | null
           updated_at?: string | null
           vertical?: string | null
+          vertical_id?: string | null
         }
         Update: {
           ad_account_ids?: string[] | null
@@ -3918,17 +3924,20 @@ export type Database = {
           id?: string
           known_problems?: string | null
           last_reviewed_at?: string | null
+          min_payout_threshold?: number
           payout?: number | null
           payout_mode?: string
           platforms?: string[] | null
           reporting_cadence?: string | null
           reporting_format?: string | null
+          revenue_source?: string
           routing_mode?: string
           steps_to_live_person?: number | null
           tracking_platform?: string | null
           unknown_fields?: string[] | null
           updated_at?: string | null
           vertical?: string | null
+          vertical_id?: string | null
         }
         Relationships: [
           {

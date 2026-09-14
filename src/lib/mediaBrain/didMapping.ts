@@ -123,7 +123,7 @@ export const digitsOnly = (v: string | null | undefined) =>
   (v ?? '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
 
 /** A call reduced to only what the DID screen and the join need. */
-export interface MappingCall {
+export interface MappingCall extends AttributionTags {
   call_id: string;
   timestamp: string;
   did: string | null;
@@ -150,8 +150,11 @@ export function toMappingCalls(rows: Record<string, unknown>[], spec: CallSource
     creative_name: spec.creativeColumn ? s(r[spec.creativeColumn]) : null,
     target_name: spec.targetColumn ? s(r[spec.targetColumn]) : null,
     payout_amount: Number(r[spec.payoutColumn] ?? 0) || 0,
+    // Same reader the adapter uses, so the UTM tier sees identical values here.
+    ...readAttribution(r),
   }));
 }
+
 
 /* ------------------------------------------------------------------ *
  * Coverage — the point of the screen.

@@ -4123,6 +4123,59 @@ export type Database = {
           },
         ]
       }
+      media_brain_sync_status: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          detail: Json
+          error: string | null
+          id: string
+          last_attempted_at: string | null
+          last_succeeded_at: string | null
+          rows_written: number | null
+          source: string
+          status: string
+          token_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          detail?: Json
+          error?: string | null
+          id?: string
+          last_attempted_at?: string | null
+          last_succeeded_at?: string | null
+          rows_written?: number | null
+          source: string
+          status: string
+          token_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          detail?: Json
+          error?: string | null
+          id?: string
+          last_attempted_at?: string | null
+          last_succeeded_at?: string | null
+          rows_written?: number | null
+          source?: string
+          status?: string
+          token_status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_sync_status_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_push_log: {
         Row: {
           action: string

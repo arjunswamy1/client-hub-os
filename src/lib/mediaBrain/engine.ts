@@ -814,10 +814,22 @@ export interface SensitivityBand {
   marginPctHigh: number | null;
   /** True when the band spans both profit and loss. */
   crossesZero: boolean;
-  /** True whenever the band crosses zero — no verdict may be drawn from it. */
+  /**
+   * Which way the band points. `negative` — every plausible threshold loses
+   * money; `positive` — every one makes money; `mixed` — it crosses zero.
+   */
+  direction: 'positive' | 'negative' | 'mixed' | 'undrawable';
+  /**
+   * True when the DIRECTION is established even though the MAGNITUDE is not — an
+   * entirely negative or entirely positive band. The UNKNOWN still forbids
+   * quoting a figure, but it no longer forbids a verdict (§8).
+   */
+  directionEstablished: boolean;
+  /** True ONLY when the band crosses zero. Direction unknown → no verdict. */
   verdictBlocking: boolean;
   note: string;
 }
+
 
 /**
  * The revenue/margin band across plausible duration thresholds. Renders INSTEAD

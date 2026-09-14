@@ -456,9 +456,18 @@ export function computeWindow({
     calls,
   );
 
+  const scopingRecheck = engine.publisherScopingRecheck(economics);
+  const scopingContradiction = engine.dedicatedCampaignContradiction(economics, allCalls);
+
   const breakers: string[] = [];
   if (publisherSplit.excludedCalls) {
     breakers.push(`Publisher attribution: ${publisherSplit.note}`);
+  }
+  if (scopingContradiction.contradicted) {
+    breakers.push(`Publisher scoping: ${scopingContradiction.note}`);
+  }
+  if (scopingRecheck.due && scopingRecheck.note) {
+    breakers.push(`Publisher scoping: ${scopingRecheck.note}`);
   }
   if (join.unjoinedSpend.length) {
     breakers.push(

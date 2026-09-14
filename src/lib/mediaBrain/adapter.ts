@@ -168,7 +168,7 @@ const ATTRIBUTION_KEYS: Record<keyof AttributionTags, string[]> = {
  */
 export function readAttribution(row: RawCallRow): AttributionTags {
   const bags: Record<string, unknown>[] = [row];
-  for (const nested of ['metadata', 'raw_payload'] as const) {
+  for (const nested of ['metadata', 'raw_payload', 'tags'] as const) {
     const v = row[nested];
     if (v && typeof v === 'object' && !Array.isArray(v)) bags.push(v as Record<string, unknown>);
   }

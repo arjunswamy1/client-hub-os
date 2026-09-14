@@ -35,6 +35,12 @@ export interface CallSourceSpec {
   creativeColumn: string | null;
   targetColumn: string | null;
   idColumn: string;
+  /**
+   * Columns that carry the attribution tags for the UTM tier — either real utm
+   * columns or the jsonb blob they are nested in. Selected alongside the rest so
+   * `readAttribution` has something to read.
+   */
+  attributionColumns: string[];
 }
 
 /** Every call source, keyed by the `tracking_platform` on the economics record. */
@@ -50,6 +56,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: null,
     targetColumn: 'target_name',
     idColumn: 'call_id',
+    attributionColumns: ['metadata'],
   },
   ringba_4js: {
     platform: 'ringba_4js',
@@ -62,6 +69,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: 'creative_name',
     targetColumn: 'target_name',
     idColumn: 'ringba_call_id',
+    attributionColumns: ['tags'],
   },
   ringfuel: {
     platform: 'ringfuel',
@@ -74,6 +82,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: 'creative_label',
     targetColumn: 'target_name',
     idColumn: 'call_id',
+    attributionColumns: ['raw_payload'],
   },
   moja: {
     platform: 'moja',
@@ -86,6 +95,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: null,
     targetColumn: 'target_name',
     idColumn: 'call_id',
+    attributionColumns: ['utm_campaign', 'utm_content', 'utm_source', 'utm_term', 'raw_payload'],
   },
   cannaball: {
     platform: 'cannaball',
@@ -98,6 +108,7 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: 'creative_name',
     targetColumn: null,
     idColumn: 'call_id',
+    attributionColumns: ['raw_payload'],
   },
 };
 

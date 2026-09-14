@@ -41,7 +41,7 @@ From Layer 0 intake and the Layer 1 economics file.
 
 **[STATIC]** Billable is binary — a call either pays `{payout}` or pays nothing. **Cost per billable call is the primary decision metric.**
 
-**[RTB]** Payout is continuous and includes zeros, so "billable" isn't a clean line. **Use total calls as the denominator for both RPC and cost per call**, so margin per call subtracts cleanly and no-bid losses stay visible instead of hidden.
+**[RTB]** Payout is continuous and includes zeros, so "billable" isn't a clean line. **Use total calls as the denominator for both RPC and cost per call**, so margin per call subtracts cleanly and no-bid losses stay visible instead of hidden. Because there is no clean billable line here, the kill rule's "zero billable" has an explicit RTB definition: **zero calls with a payout above zero** (§6.3). Track paid calls separately from whatever the billable definition says.
 
 **RPC is always trailing** — what calls actually paid. There's no separate forecast number; uncertainty about the next call lives in the distribution (§5).
 
@@ -121,7 +121,7 @@ Cadence means **how often you're allowed to decide** — not how often you look.
 
 **Cuts move faster than scale steps.** Cutting a losing ad disturbs nothing else, so at high volume there's no reason to let one bleed for six more days. Raising a budget resets Meta's learning on that entity — stack two increases back to back and you never get a clean read on either. Higher spend justifies faster cutting, not faster scaling.
 
-**Fragmentation check.** Expected weekly conversions ÷ number of ad sets. Meta needs roughly 50 per ad set per week to exit learning phase. When the check comes back well below that, you're splitting volume across ad sets that will each learn nothing — consolidate. This is a calculation to run, not an ad set count to obey.
+**Fragmentation check.** Expected weekly count of **the account's own Meta optimisation event** ÷ number of ad sets. Meta needs roughly 50 per ad set per week to exit learning phase — and a "conversion" in Meta's sense is whatever event the ad set bids toward, usually "call initiated" or a CAPI-fired qualified call, **not your billable definition**. Counting billable calls against Meta's 50 floor is a denominator error: it compares Meta's counter against a different, usually rarer, event, and makes a structure look more fragmented than it is (or less). Record the optimisation event on the client's Instance record. **Where that event is not recorded the check does not run** — it reports that it cannot run, and billable calls are never substituted (§1 on UNKNOWNs). When the check comes back well below that, you're splitting volume across ad sets that will each learn nothing — consolidate. This is a calculation to run, not an ad set count to obey.
 
 ### Confidence states
 
@@ -175,6 +175,10 @@ If the whole group is underwater, cut the whole group. Don't promote the least-b
 **Kill at 2× payout with zero billable calls.** **[STATIC]** 2 × `{payout}`. Payout $50 → kill at $100. **[RTB]** 2 × `{avg_bid}`. Average bid $25 → kill at $50.
 
 Why 2x is defensible rather than arbitrary: if the ad were performing at your allowable cost, the odds of seeing zero conversions by the time you've spent double the payout are about 13.5% (e⁻²). So you're about 87% confident it's genuinely broken, not unlucky. Going to 3× would buy ~95% confidence at the cost of letting a dead ad run 50% longer — we take the faster trigger, because letting losers run is the more expensive mistake. You'll occasionally kill a fine ad. Far more often you'll stop paying for a dead one — and letting losers run is the more expensive mistake.
+
+**[RTB] What "zero billable" means here.** Under RTB, payout is continuous and includes zeros, so there is no clean billable line (§2). The rule therefore fires on **zero calls with a payout above zero** in the window — paid calls, not billable calls. Under static it fires on zero billable calls as defined on the economics record.
+
+**The static asymmetry, stated rather than hidden.** Under static, a call that ran long enough but paid $0, or paid but ran short, collapses into "not billable" and disappears from every surfaced number. Surface **paid but not billable** as its own count and flag it when it is non-trivial: it usually means the billable definition on the economics record disagrees with what the buyer is actually paying for.
 
 This one fires any day, not just at review (§12).
 
@@ -315,7 +319,7 @@ Act same day, any day. Everything else waits for the scheduled review.
 
 1. Tracking broken or calls not routing
 2. Buyer down or at capacity — **[RTB]** abrupt no-bid spike or rate-limiting
-3. Spend past 2× payout with zero billable calls
+3. Spend past 2× payout with zero billable calls — **[RTB]** "zero billable" means zero calls with a payout above zero, since payout is continuous and there is no clean billable line (§2, §6.3)
 
 Compliance runs as a passive monitor — flagged, not auto-actioned.
 

@@ -51,6 +51,9 @@ interface EconomicsRow {
   billable_filters: Record<string, unknown> | null;
   unknown_fields: string[] | null;
   attributed_publishers: string[] | null;
+  publisher_scoping: string | null;
+  publisher_scoping_verified_at: string | null;
+  publisher_scoping_verified_by: string | null;
 }
 
 export function useMediaBrainVerticalRead(
@@ -83,13 +86,14 @@ export function useMediaBrainVerticalRead(
         return { error: 'No verticals are defined for this client, so there is nothing to read at vertical level.' };
       }
 
-      // §3 — publisher attribution is required. Without it every figure below
-      // would include calls from traffic sources this client did not buy.
-      if (!economicsRows.some((r) => engine.publisherAttributionConfigured(r.attributed_publishers))) {
-        return {
-          error:
-            'Publisher attribution is not configured for this client, so every margin figure would include other traffic sources\' calls. A tracking campaign receives calls from every publisher pointed at it. State the attributed publishers per vertical at intake — the framework does not default to all publishers.',
-        };
+      // §3b — publisher scoping is answered before any figure exists. Either the
+      // attributed publishers are stated, or a human has recorded the deliberate
+      // decision that the campaign carries only our traffic. `unknown` stops here,
+      // exactly as an unconfigured publisher list does — silence is never read as
+      // "dedicated".
+      if (!economicsRows.some((r) => engine.publisherScopingGate(r).ok)) {
+        const gate = engine.publisherScopingGate(economicsRows[0]);
+        return { error: gate.error! };
       }
 
       const trackingPlatform = (economicsRows.find((r) => r.tracking_platform)?.tracking_platform ??
@@ -132,6 +136,9 @@ export function useMediaBrainVerticalRead(
         unknown_fields: clientRow?.unknown_fields ?? null,
         attributed_publishers: clientRow?.attributed_publishers ?? null,
         declared_flags: declaredFlagsOf(clientRow?.billable_filters),
+        publisher_scoping: clientRow?.publisher_scoping ?? null,
+        publisher_scoping_verified_at: clientRow?.publisher_scoping_verified_at ?? null,
+        publisher_scoping_verified_by: clientRow?.publisher_scoping_verified_by ?? null,
       };
 
       const byVertical: Record<string, VerticalEconomics> = {};
@@ -146,6 +153,9 @@ export function useMediaBrainVerticalRead(
           unknown_fields: row.unknown_fields ?? null,
           attributed_publishers: row.attributed_publishers ?? null,
           declared_flags: declaredFlagsOf(filters),
+          publisher_scoping: row.publisher_scoping,
+          publisher_scoping_verified_at: row.publisher_scoping_verified_at,
+          publisher_scoping_verified_by: row.publisher_scoping_verified_by,
           payout_confirmed:
             typeof filters.payout_confirmed === 'boolean' ? (filters.payout_confirmed as boolean) : null,
         };
@@ -175,10 +185,16 @@ export function useMediaBrainVerticalRead(
         // Same assignment rule as the read itself — imported, never re-derived.
         // Only OUR publishers' calls validate our billable definition; another
         // publisher's traffic answers a different question.
+        const scopingSource = engine.publisherScopingOf(eco) === 'unknown' ? clientDefault : eco;
+        const dedicated = engine.publisherScopingOf(scopingSource) === 'not_required_dedicated_campaigns';
         const bucketCalls = calls.filter(
           (c) =>
             assignCallToVertical(c.campaign_name, verticals) === v.vertical_id &&
-            engine.isAttributedPublisher(c.publisher, eco.attributed_publishers ?? clientDefault.attributed_publishers),
+            (dedicated ||
+              engine.isAttributedPublisher(
+                c.publisher,
+                eco.attributed_publishers ?? clientDefault.attributed_publishers,
+              )),
         );
         return {
           vertical_id: v.vertical_id,

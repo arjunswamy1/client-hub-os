@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import * as engine from "@/lib/mediaBrain/engine";
 import * as decisions from "@/lib/mediaBrain/decisions";
 import { pullWindow, type PullWindowResult, type PullWindowSuccess } from "@/lib/mediaBrain/pull";
+import { VerticalReadPanel } from "@/components/mediaBrain/VerticalReadPanel";
 import {
   ConfidenceBadge,
   GateBlock,

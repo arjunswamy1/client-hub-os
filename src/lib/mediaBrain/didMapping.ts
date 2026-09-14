@@ -219,6 +219,7 @@ export function toMappingCalls(rows: Record<string, unknown>[], spec: CallSource
     creative_name: spec.creativeColumn ? s(r[spec.creativeColumn]) : null,
     target_name: spec.targetColumn ? s(r[spec.targetColumn]) : null,
     payout_amount: Number(r[spec.payoutColumn] ?? 0) || 0,
+    click_keys: readClickKeys(r),
     // Same reader the adapter uses, so the UTM tier sees identical values here.
     ...readAttribution(r),
   }));

@@ -297,3 +297,103 @@ the token belong to BuyologyIQ and sync them. That one action fixes ad-level att
 (the UTM tags already carry the keys — they just name objects we have not pulled) and gives
 Live Transfer's $17,821 a cost side. Everything else is a confirmation email: the $80
 duration threshold, the $60 and $55 payouts, and Bathroom Remodel's governing definition.
+
+---
+
+## 2026-09-14 — Walk-In Tubs billable threshold confirmed (record change)
+
+**Confirmed by AJ Swamy on 2026-09-14, as a client contract term:** the Walk-In Tubs
+billable definition is **90 seconds**, against the **$80** payout, revenue source
+`computed`.
+
+Recorded on the BuyologyIQ `walk-in-tubs` economics row only — Bathroom Remodel and every
+other client untouched:
+
+- `payout = 80`, `billable_min_duration_seconds = 90`, `revenue_source = 'computed'`
+- `billable_min_duration_seconds` **removed from `unknown_fields`** (now `{}`)
+- provenance on the existing record: `last_reviewed_at = 2026-09-14`, plus
+  `billable_filters.billable_duration_confirmed_by = 'AJ Swamy'`,
+  `billable_duration_confirmed_at = '2026-09-14'`
+- declared flag, verbatim: *"payout assumed from client terms; not verified against platform
+  payout data — CPM-attributed calls show $0 platform payout."*
+
+**The platform still shows $0.** Across the 79 CPM-attributed Walk-In Tubs calls in the last
+30 days the summed Ringba payout is **$2.80**, with **zero** calls paying $1 or more. The $80
+is a contract term we are trusting; it is not corroborated by any payout the platform exposes
+to us. Revenue stays labelled `computed` and the flag renders beside the point estimate.
+
+**No special case was written.** The suppression rule already keyed on `unknown_fields`
+(`engine.isUnknownField` → `blockedByUnknownDuration` → `revenueSensitivity`), so the band
+disappeared on the record change alone. The only code added is a generic path for
+record-declared caveats (`VerticalEconomics.declared_flags`, read from
+`billable_filters.flags`) so a stated caveat renders verbatim. Bathroom Remodel's threshold
+is still UNKNOWN and still suppresses its billable-denominated figures — covered by a new
+test alongside the existing one.
+
+### The read that follows — Walk-In Tubs, CPM-attributed only, 2026-08-15 to 2026-09-14
+
+| Figure | Value |
+| --- | --- |
+| Spend | $5,425.31 |
+| Calls | 79 |
+| Connected | 77 |
+| Billable (≥90s) | 42 |
+| Revenue (computed, $80 × 42) | $3,360.00 |
+| RPC | $42.53 |
+| Cost per call | $68.68 |
+| Cost per billable call | $129.17 |
+| Margin per call | **−$26.14** |
+| Margin % | **−61.5%** (profit −$2,065.31) |
+| Margin band | **below the 10% floor — negative** |
+| Connection rate | 97.5% |
+| Billable rate | 54.5% |
+| Call rate | 3.55% (79 calls ÷ 2,223 clicks) |
+| Confidence | sufficient (42 billable ≥ min_calls 25) |
+
+**Excluded volume beside it:** 1,096 calls on the same tracking campaigns from other
+publishers — You 550, BIQ 537, Madrivo 6, Pilothouse 3. The client's campaign total and CPM's
+attributable total are different numbers; both are true.
+
+### Derived thresholds
+
+No Instance record exists for this client yet, so these are computed for this report from the
+framework defaults and must be written at intake before any command runs (§9).
+
+- Baseline RPC: **$42.53**
+- Allowable cost per billable call: **$64.00** at the 20% target margin, **$72.00** at the
+  10% floor (`payout × (1 − margin)`)
+- Actual cost per billable call: **$129.17** — **2.02× allowable at target, 1.79× at the floor**
+- Kill threshold: **$160** (2 × $80) at zero billable
+- `min_calls`: **25**, from an actionable gap of **0.57** (`8 ÷ gap²`, static)
+- Expected billable calls per week: **9.8** → volume tier **5–25/wk** → cuts and scale steps
+  **every 2 weeks**, both sides
+- Cost to rank one angle to `min_calls`: 25 × $129.17 = **$3,229**. The full 30-day budget of
+  $5,425 buys **1.7 angles**; a single 2-week decision window (~$2,713) buys **0.84** — it
+  cannot even complete one.
+
+**Under 3 angles, stated plainly (§9):** at this cost per billable call the budget cannot rank
+angles at all. Any creative-versus-creative claim in this vertical is unsupported and every
+per-angle row must render greyed and labelled insufficient. The only decision the data
+supports is at vertical level, and at −61.5% margin that decision is to cut or to renegotiate
+the terms, not to test.
+
+### The mixed campaign
+
+`08/19 Ringba_Lifetime_Statics - Copy` totals **$757.28** across five ads (current sync; the
+$758.36 quoted earlier predates the last sync) and splits ad by ad:
+
+- **Walk-In Tubs:** `TubWalls_Static` $19.53, 1 conversion
+- **Bathroom Remodel:** `TheBathIsAboveThis_Static` $64.12, 0 conversions
+- **Unclassified:** `SameRoomSixDays_Static` $565.46, `ThatsNotDirt_Static` $62.82,
+  `GutIt_Static` $45.35 — **$673.63 across 3 ads, matching no vertical pattern.** Reported as
+  unclassified, not allocated.
+
+**Yes, it adds spend to Walk-In Tubs, and the $5,425.31 above already includes that $19.53.**
+Tub campaigns alone are $5,405.78.
+
+### Verification
+
+Full suite **43/43 pass** (was 41), typecheck clean. No Bathroom Remodel figure changed: its
+row was not written, its `unknown_fields` still carry both
+`billable_min_duration_seconds` and `payout`, and its billable-denominated figures remain
+suppressed.

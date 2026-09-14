@@ -122,6 +122,8 @@ export function useMediaBrainVerticalRead(
       }
 
       const clientRow = economicsRows.find((r) => !r.vertical_id) ?? null;
+      const declaredFlagsOf = (filters: Record<string, unknown> | null | undefined): string[] =>
+        Array.isArray(filters?.flags) ? (filters!.flags as unknown[]).filter((f): f is string => typeof f === 'string') : [];
       const clientDefault: VerticalEconomics = {
         revenue_source: clientRow?.revenue_source ?? 'platform',
         payout: clientRow?.payout ?? null,
@@ -129,6 +131,7 @@ export function useMediaBrainVerticalRead(
         billable_min_duration_seconds: clientRow?.billable_min_duration_seconds ?? null,
         unknown_fields: clientRow?.unknown_fields ?? null,
         attributed_publishers: clientRow?.attributed_publishers ?? null,
+        declared_flags: declaredFlagsOf(clientRow?.billable_filters),
       };
 
       const byVertical: Record<string, VerticalEconomics> = {};
@@ -142,10 +145,12 @@ export function useMediaBrainVerticalRead(
           billable_min_duration_seconds: row.billable_min_duration_seconds,
           unknown_fields: row.unknown_fields ?? null,
           attributed_publishers: row.attributed_publishers ?? null,
+          declared_flags: declaredFlagsOf(filters),
           payout_confirmed:
             typeof filters.payout_confirmed === 'boolean' ? (filters.payout_confirmed as boolean) : null,
         };
       }
+
 
       // Mapping uses the CLIENT-level duration only for the canonical shape; the
       // vertical read re-decides billable with each vertical's own economics.

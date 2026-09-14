@@ -20,6 +20,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { pullWindow, type PullWindowResult } from "@/lib/mediaBrain/pull";
 import {
+  REVIEW_WINDOW_HOURS,
+  syncBreakers,
+  useMediaBrainSyncStatus,
+} from "@/hooks/useMediaBrainSyncStatus";
+import {
   ConfidenceBadge,
   GateBlock,
   Notice,

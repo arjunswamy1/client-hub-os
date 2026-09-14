@@ -1047,9 +1047,17 @@ export const PUBLISHER_SCOPING_DEFAULT: PublisherScoping = 'unknown';
 export const PUBLISHER_SCOPING_RECHECK_DAYS = 30;
 
 /** Normalise the stored value; anything unrecognised is `unknown`, never permissive. */
-export function publisherScopingOf(eco: { publisher_scoping?: string | null }): PublisherScoping {
+export function publisherScopingOf(eco: {
+  publisher_scoping?: string | null;
+  attributed_publishers?: (string | null)[] | null;
+}): PublisherScoping {
   const v = (eco.publisher_scoping ?? '').trim();
-  return v === 'required' || v === 'not_required_dedicated_campaigns' ? v : PUBLISHER_SCOPING_DEFAULT;
+  if (v === 'required' || v === 'not_required_dedicated_campaigns') return v;
+  // A record with no scoping state but a stated publisher list HAS answered the
+  // question — the publishers are named, so filtering plainly applies. Only a
+  // record that says nothing either way is `unknown`.
+  if (publisherAttributionConfigured(eco.attributed_publishers)) return 'required';
+  return PUBLISHER_SCOPING_DEFAULT;
 }
 
 export interface PublisherScopingGate {

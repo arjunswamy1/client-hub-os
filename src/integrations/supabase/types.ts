@@ -3827,6 +3827,7 @@ export type Database = {
       media_brain_economics: {
         Row: {
           ad_account_ids: string[] | null
+          attributed_publishers: string[] | null
           avg_bid: number | null
           bid_ceiling: number | null
           bid_floor: number | null
@@ -3865,6 +3866,7 @@ export type Database = {
         }
         Insert: {
           ad_account_ids?: string[] | null
+          attributed_publishers?: string[] | null
           avg_bid?: number | null
           bid_ceiling?: number | null
           bid_floor?: number | null
@@ -3903,6 +3905,7 @@ export type Database = {
         }
         Update: {
           ad_account_ids?: string[] | null
+          attributed_publishers?: string[] | null
           avg_bid?: number | null
           bid_ceiling?: number | null
           bid_floor?: number | null

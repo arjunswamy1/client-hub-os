@@ -281,7 +281,11 @@ export function normalizeDelivery(
     return [a, b];
   }).flat();
   const custom_tags = collectCustomTags(call, tags, payload, ...nestedTagBags);
-  const src = [call, tags, payload, custom_tags];
+  // The nested tag containers are read directly too: a click ID or utm_content arriving
+  // inside `custom_tags` is a mapped field, so it must be picked, not bagged.
+  const src = [call, tags, payload, custom_tags, ...nestedTagBags.filter(
+    (b): b is Record<string, unknown> => !!b && typeof b === 'object' && !Array.isArray(b),
+  )];
 
   const fields = fieldNames(payload);
   const unreplaced = unreplacedTagFields(payload);

@@ -203,39 +203,58 @@ export function matchVertical(call: CanonicalCall, verticals: VerticalRow[]): Ve
 export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window }: JoinInput): JoinResult {
   const rows = new Map<string, JoinedEntityRow>();
   const unjoinedCalls: { call_id: string; did: string | null }[] = [];
-  const touchedAdRefs = new Set<string>();
+  /**
+   * Every Meta row actually consumed by a joined entity, tracked by row identity
+   * rather than by ad ref. Keying on the ref would suppress sibling period rows
+   * of the same ad from `unjoinedSpend` even when their spend was dropped.
+   */
+  const consumedRows = new Set<MetaAdRow>();
 
   let adLevelJoins = 0;
   let verticalJoins = 0;
 
-  const adRef = (a: MetaAdRow) => a.platform_ad_id ?? norm(a.ad_name) ?? '';
+  /** Null when a row carries neither a platform ad id nor a usable name. */
+  const adRef = (a: MetaAdRow): string | null => a.platform_ad_id ?? norm(a.ad_name);
 
   for (const call of calls) {
     const mapping = resolveDidMapping(call, didMappings);
     const creativeName = mapping?.creative_name ?? call.creative_name;
-    const ad = creativeName ? matchCreativeToAd(creativeName, metaAds) : null;
+    // All overlapping Meta rows for this ad, not just the first.
+    const matched = creativeName ? matchCreativeToAds(creativeName, metaAds) : [];
+    // Unidentifiable rows must not merge into a shared bucket — they fall through
+    // to unjoinedSpend instead.
+    const identified = matched.filter((a) => adRef(a) !== null);
+    const primary = identified[0] ?? null;
 
     let key: string;
     let row: JoinedEntityRow;
 
-    if (ad) {
-      key = `ad:${adRef(ad)}`;
-      touchedAdRefs.add(adRef(ad));
-      row =
-        rows.get(key) ??
-        emptyRow({
+    if (primary) {
+      const ref = adRef(primary)!;
+      key = `ad:${ref}`;
+      const existing = rows.get(key);
+      if (existing) {
+        row = existing;
+      } else {
+        // Sum spend, impressions and clicks across every row of this ad in the
+        // window. CTR and frequency are derived downstream from these totals,
+        // never by averaging per-row values.
+        const siblings = identified.filter((a) => adRef(a) === ref);
+        row = emptyRow({
           level: 'ad',
-          entity_ref: adRef(ad),
-          entity_name: ad.ad_name ?? creativeName ?? 'Unnamed ad',
-          campaign_name: ad.campaign_name,
-          adset_name: ad.adset_name,
-          platform_ad_id: ad.platform_ad_id,
-          platform_adset_id: ad.platform_adset_id,
-          platform_campaign_id: ad.platform_campaign_id,
-          spend: Number(ad.spend ?? 0),
-          impressions: Number(ad.impressions ?? 0),
-          clicks: Number(ad.clicks ?? 0),
+          entity_ref: ref,
+          entity_name: primary.ad_name ?? creativeName ?? 'Unnamed ad',
+          campaign_name: primary.campaign_name,
+          adset_name: primary.adset_name,
+          platform_ad_id: primary.platform_ad_id,
+          platform_adset_id: primary.platform_adset_id,
+          platform_campaign_id: primary.platform_campaign_id,
+          spend: siblings.reduce((s, a) => s + Number(a.spend ?? 0), 0),
+          impressions: siblings.reduce((s, a) => s + Number(a.impressions ?? 0), 0),
+          clicks: siblings.reduce((s, a) => s + Number(a.clicks ?? 0), 0),
         });
+        for (const a of siblings) consumedRows.add(a);
+      }
       adLevelJoins++;
     } else {
       const vertical = matchVertical(call, verticals);

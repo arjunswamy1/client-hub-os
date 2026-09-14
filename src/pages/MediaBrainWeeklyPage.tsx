@@ -272,8 +272,8 @@ export default function MediaBrainWeeklyPage() {
           entity_level: level,
           entity_ref: row.groupKey,
           entity_name: row.entity_name,
-          verdict: d.verdict,
-          reason: d.reason || suggestions[`${level}:${row.groupKey}`]?.reason || null,
+          verdict: d?.verdict,
+          reason: d?.reason || suggestions[`${level}:${row.groupKey}`]?.reason || null,
           evidence: {
             spend: row.spend,
             revenue: row.revenue,

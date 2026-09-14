@@ -168,7 +168,13 @@ export function useMediaBrainVerticalRead(
       const validations: VerticalValidation[] = verticals.map((v) => {
         const eco = byVertical[v.vertical_id] ?? clientDefault;
         // Same assignment rule as the read itself — imported, never re-derived.
-        const bucketCalls = calls.filter((c) => assignCallToVertical(c.campaign_name, verticals) === v.vertical_id);
+        // Only OUR publishers' calls validate our billable definition; another
+        // publisher's traffic answers a different question.
+        const bucketCalls = calls.filter(
+          (c) =>
+            assignCallToVertical(c.campaign_name, verticals) === v.vertical_id &&
+            engine.isAttributedPublisher(c.publisher, eco.attributed_publishers ?? clientDefault.attributed_publishers),
+        );
         return {
           vertical_id: v.vertical_id,
           label: v.label ?? v.vertical_id,

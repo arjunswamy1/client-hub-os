@@ -50,6 +50,7 @@ interface EconomicsRow {
   min_payout_threshold: number | null;
   billable_filters: Record<string, unknown> | null;
   unknown_fields: string[] | null;
+  attributed_publishers: string[] | null;
 }
 
 export function useMediaBrainVerticalRead(
@@ -80,6 +81,15 @@ export function useMediaBrainVerticalRead(
       }
       if (!verticals.length) {
         return { error: 'No verticals are defined for this client, so there is nothing to read at vertical level.' };
+      }
+
+      // §3 — publisher attribution is required. Without it every figure below
+      // would include calls from traffic sources this client did not buy.
+      if (!economicsRows.some((r) => engine.publisherAttributionConfigured(r.attributed_publishers))) {
+        return {
+          error:
+            'Publisher attribution is not configured for this client, so every margin figure would include other traffic sources\' calls. A tracking campaign receives calls from every publisher pointed at it. State the attributed publishers per vertical at intake — the framework does not default to all publishers.',
+        };
       }
 
       const trackingPlatform = (economicsRows.find((r) => r.tracking_platform)?.tracking_platform ??
@@ -118,6 +128,7 @@ export function useMediaBrainVerticalRead(
         min_payout_threshold: clientRow?.min_payout_threshold ?? null,
         billable_min_duration_seconds: clientRow?.billable_min_duration_seconds ?? null,
         unknown_fields: clientRow?.unknown_fields ?? null,
+        attributed_publishers: clientRow?.attributed_publishers ?? null,
       };
 
       const byVertical: Record<string, VerticalEconomics> = {};
@@ -130,6 +141,7 @@ export function useMediaBrainVerticalRead(
           min_payout_threshold: row.min_payout_threshold,
           billable_min_duration_seconds: row.billable_min_duration_seconds,
           unknown_fields: row.unknown_fields ?? null,
+          attributed_publishers: row.attributed_publishers ?? null,
           payout_confirmed:
             typeof filters.payout_confirmed === 'boolean' ? (filters.payout_confirmed as boolean) : null,
         };

@@ -417,7 +417,7 @@ export default function MediaBrainIntakePage() {
 
   /* ---------------- Part C — save ---------------- */
   const handleSave = async () => {
-    if (!clientId || !computed) return;
+    if (!clientId || !computed || billableCheckBlocking) return;
     setSaving(true);
     try {
       if (existingInstance) {
@@ -992,7 +992,7 @@ export default function MediaBrainIntakePage() {
                   Economics and Instance records saved for {client.name}.
                 </div>
               ) : (
-                <Button onClick={handleSave} disabled={saving}>
+                <Button onClick={handleSave} disabled={saving || billableCheckBlocking}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Economics + Instance
                 </Button>

@@ -208,6 +208,23 @@ Cadence means **how often you're allowed to decide** — not how often you look.
 
 **Fragmentation check.** Expected weekly count of **the account's own Meta optimisation event** ÷ number of ad sets. Meta needs roughly 50 per ad set per week to exit learning phase — and a "conversion" in Meta's sense is whatever event the ad set bids toward, usually "call initiated" or a CAPI-fired qualified call, **not your billable definition**. Counting billable calls against Meta's 50 floor is a denominator error: it compares Meta's counter against a different, usually rarer, event, and makes a structure look more fragmented than it is (or less). Record the optimisation event on the client's Instance record. **Where that event is not recorded the check does not run** — it reports that it cannot run, and billable calls are never substituted (§1 on UNKNOWNs). When the check comes back well below that, you're splitting volume across ad sets that will each learn nothing — consolidate. This is a calculation to run, not an ad set count to obey.
 
+### Platform-attributed vs call-attributed — two measures, never one
+
+An ad platform reports its own conversion count. We hold our own call records. **These are two different measures with different denominators and different attribution, and they are never blended, averaged, or reconciled into a single figure.** They are shown side by side, and the gap between them is reported as the finding.
+
+| | Platform-attributed | Call-attributed |
+|---|---|---|
+| Counted by | The ad platform | Our call records |
+| Attribution | The platform's own window and modelling; offline-upload match rate | The join tiers in §3 |
+| Denominator | Ad impressions/clicks the platform claims credit for | Calls we received and attributed |
+| May decide | Nothing on its own — it *explains* delivery and checks our own count | Margin per call and every verdict in §6 |
+
+**A platform count is a floor, not a census.** Where conversions arrive by offline upload, only the calls the upload matched are counted, and match rates run well short of 100%. An implausible cost per conversion — River Road's Google read implies $852 per plumbing call — is far more likely a match-rate failure than a performance one. That caveat belongs on the screen, not in a doc.
+
+**The governing event decides; a sum never does.** One account records many event names for the same call: BuyologyIQ fires `offsite_conversion.fb_pixel_custom.RingbaConversion` (37 events, $2,710 in 30 days) *and* `contact_website` / `contact_total` (354). Adding them triple-counts one call and produces a confidently wrong cost per conversion. So the decision-time count is **the single event named in `media_brain_instances.meta_conversion_event`**, read from the stored per-event breakdown. **Where that field is unset the count is UNKNOWN** — not zero, not a sum, not the largest event — and it names what it blocks: the fragmentation check, cost per conversion, and any conversion-based read of the account.
+
+**Never hardcode an event name in a sync.** Capture every `action_type` the account returns, with its count and value, per entity, per date, into `media_brain_platform_conversions`; choose afterwards. Naming one client's event in code is what stored zero conversions for RRM against $4,451.81 of spend while its account reported 489 `lead` events. Show the full event menu wherever the governing count appears — a hidden alternative is how the wrong event gets picked and never noticed.
+
 ### Confidence states
 
 - **Sufficient** — at or above `{min_calls}`. Act.

@@ -19,7 +19,9 @@ You are running client intake for the ConnectPay media buying framework. Read `L
 - Platforms active now, and any planned later
 - Ad account ID(s)
 - Call tracking platform
-- **Meta conversion event this account optimises toward** — free text, e.g. "call initiated", "call connected", "CAPI qualified call". This is what Meta's learning phase counts, and it is the numerator of the fragmentation check. UNKNOWN is an acceptable answer; the fragmentation check then does not run, and billable calls are never substituted for it.
+- **Meta conversion event this account optimises toward — required, and chosen from the account's real event list.** Not free text and not from memory: the sync records every `action_type` the account actually returns, so intake shows that list and the answer is one of them. It is the numerator of the fragmentation check and the only conversion count that decides anything.
+  - **Pick exactly one.** Accounts fire several names for the same call — BuyologyIQ records `offsite_conversion.fb_pixel_custom.RingbaConversion` *and* `contact_website` / `contact_total`; RRM records `lead` alongside `onsite_web_lead` and `offsite_conversion.fb_pixel_lead`. Summing them counts one call several times.
+  - UNKNOWN is still an acceptable answer, and it is honest rather than harmless: the fragmentation check does not run, no cost per conversion is published, no conversion-based read of the account renders, and billable calls are never substituted. The full event list stays visible so the answer can be supplied later.
 - Expected weekly count of that Meta conversion event
 
 **A1b. Publisher attribution — asked per vertical, and required**

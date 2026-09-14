@@ -33,6 +33,7 @@ import * as engine from "@/lib/mediaBrain/engine";
 import * as decisions from "@/lib/mediaBrain/decisions";
 import { pullWindow, type PullWindowResult, type PullWindowSuccess } from "@/lib/mediaBrain/pull";
 import { VerticalReadPanel } from "@/components/mediaBrain/VerticalReadPanel";
+import { PlatformAttributedRead } from "@/components/mediaBrain/PlatformAttributedRead";
 import {
   ConfidenceBadge,
   GateBlock,
@@ -475,6 +476,31 @@ export default function MediaBrainWeeklyPage() {
               end={confirmed.end}
               adLevelPct={data.totals.calls ? data.adLevelCalls / data.totals.calls : null}
             />
+          )}
+          {/*
+            The platform's own conversion count, kept strictly apart from the
+            call-attributed read above. Different attribution, different
+            denominators — shown side by side with the gap stated.
+          */}
+          {data && confirmed && (
+            <>
+              <PlatformAttributedRead
+                clientId={clientId}
+                platform="meta"
+                start={confirmed.start}
+                end={confirmed.end}
+                callAttributedCalls={data.totals.calls ?? null}
+                callAttributedSpend={data.totals.spend ?? null}
+              />
+              <PlatformAttributedRead
+                clientId={clientId}
+                platform="google"
+                start={confirmed.start}
+                end={confirmed.end}
+                callAttributedCalls={data.totals.calls ?? null}
+                callAttributedSpend={data.totals.spend ?? null}
+              />
+            </>
           )}
 
         </div>

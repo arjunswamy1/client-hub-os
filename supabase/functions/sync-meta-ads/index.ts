@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2/cors";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
+import { extractEventBreakdown, governingCount } from "./conversions.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -144,8 +145,22 @@ Deno.serve(async (req) => {
 
     if (adAccountsToSync.length === 0) continue;
 
+    // The event that DECIDES comes from the client's instance record — never from
+    // a name in this file. Unset means UNKNOWN downstream, not zero.
+    let governingEvent: string | null = null;
+    if (conn.client_id) {
+      const { data: inst } = await supabaseAdmin
+        .from("media_brain_instances")
+        .select("meta_conversion_event, computed_at")
+        .eq("client_id", conn.client_id)
+        .order("computed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      governingEvent = (inst?.meta_conversion_event as string | null) ?? null;
+    }
+
     const daysBack = bodyDaysBack || 90;
-    const result = await syncMetaForUser(supabaseAdmin, conn.user_id, conn.access_token, adAccountsToSync, conn.client_id, daysBack);
+    const result = await syncMetaForUser(supabaseAdmin, conn.user_id, conn.access_token, adAccountsToSync, conn.client_id, daysBack, governingEvent);
     results.push(result);
 
     // Update connection health
@@ -184,7 +199,7 @@ Deno.serve(async (req) => {
   });
 });
 
-async function syncMetaForUser(supabase: any, userId: string, accessToken: string, adAccounts: any[], clientId: string | null = null, daysBack: number = 90) {
+async function syncMetaForUser(supabase: any, userId: string, accessToken: string, adAccounts: any[], clientId: string | null = null, daysBack: number = 90, governingEvent: string | null = null) {
   try {
     const endDate = new Date();
     const startDate = new Date();
@@ -193,10 +208,36 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
     const until = formatDate(endDate);
 
     let totalRecords = 0;
+    /** Every event the account records, per entity, per date. Nothing collapsed. */
+    const conversionRows: any[] = [];
+    const discoveredEvents = new Set<string>();
+
+    function recordEvents(row: any, level: string, ref: string | null, name: string | null) {
+      if (!clientId || !ref || !row?.date_start) return;
+      for (const e of extractEventBreakdown(row)) {
+        discoveredEvents.add(e.event_name);
+        conversionRows.push({
+          client_id: clientId,
+          platform: "meta",
+          entity_level: level,
+          entity_ref: ref,
+          entity_name: name,
+          date: row.date_start,
+          event_name: e.event_name,
+          count: e.count,
+          value: e.value,
+          source: e.source,
+        });
+      }
+    }
 
     for (const account of adAccounts) {
       const accountId = account.id || account.account_id;
       if (!accountId) continue;
+
+      // What conversion events does this account actually define? Recorded on the
+      // connection so intake can offer the real list instead of a typed guess.
+      const customConversions = await fetchCustomConversions(accountId, accessToken);
 
       // === Existing: daily + campaign metrics ===
       const [dailyInsights, campaignInsights] = await Promise.all([
@@ -206,7 +247,8 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
 
       if (dailyInsights) {
         const batch = dailyInsights.map((day: any) => {
-          const m = extractMetrics(day);
+          const m = extractMetrics(day, governingEvent);
+          recordEvents(day, "account", accountId, account.name ?? null);
           return {
             client_id: clientId,
             platform: "meta",
@@ -226,7 +268,8 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
 
       if (campaignInsights) {
         const batch = campaignInsights.map((c: any) => {
-          const m = extractMetrics(c);
+          const m = extractMetrics(c, governingEvent);
+          recordEvents(c, "campaign", c.campaign_id ?? null, c.campaign_name ?? null);
           return {
             client_id: clientId,
             platform: "meta",
@@ -254,7 +297,8 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
         if (adsetInsights) {
           const adsetStatusMap = await fetchEntityStatuses(accountId, accessToken, "adsets");
           const batch = adsetInsights.map((a: any) => {
-            const m = extractMetrics(a);
+            const m = extractMetrics(a, governingEvent);
+            recordEvents(a, "adset", a.adset_id ?? null, a.adset_name ?? null);
             return {
               client_id: clientId,
               platform: "meta",
@@ -284,21 +328,57 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
 
       // === NEW: Ad-level data with creatives ===
       try {
-        const adCreativeRecords = await syncAdCreatives(supabase, accountId, accessToken, clientId, since, until);
+        const adCreativeRecords = await syncAdCreatives(supabase, accountId, accessToken, clientId, since, until, governingEvent, recordEvents);
         totalRecords += adCreativeRecords;
       } catch (err) {
         console.error("Ad creative sync error:", err);
       }
+
+      if (clientId && (customConversions.length > 0 || discoveredEvents.size > 0)) {
+        await recordAccountEventMenu(supabase, userId, clientId, accountId, customConversions, discoveredEvents);
+      }
     }
 
-    return { success: true, records_synced: totalRecords };
+    // The breakdown is its own table on purpose: the raw ad tables stay untouched,
+    // and every event survives even though only one of them ever decides.
+    const deduped = new Map<string, any>();
+    for (const r of conversionRows) {
+      deduped.set(`${r.entity_level}|${r.entity_ref}|${r.date}|${r.event_name}`, r);
+    }
+    if (deduped.size > 0) {
+      await batchUpsert(
+        supabase,
+        "media_brain_platform_conversions",
+        [...deduped.values()],
+        "client_id,platform,entity_level,entity_ref,date,event_name",
+      );
+    }
+
+    return {
+      success: true,
+      records_synced: totalRecords,
+      conversion_rows: deduped.size,
+      governing_event: governingEvent,
+      /** UNKNOWN, stated: no governing event means no conversion count decides. */
+      governing_event_state: governingEvent ? "set" : "unknown",
+      discovered_events: [...discoveredEvents].sort(),
+    };
   } catch (err) {
     console.error("Meta sync error:", err);
     return { error: err.message };
   }
 }
 
-async function syncAdCreatives(supabase: any, accountId: string, accessToken: string, clientId: string | null, since: string, until: string): Promise<number> {
+async function syncAdCreatives(
+  supabase: any,
+  accountId: string,
+  accessToken: string,
+  clientId: string | null,
+  since: string,
+  until: string,
+  governingEvent: string | null = null,
+  recordEvents: ((row: any, level: string, ref: string | null, name: string | null) => void) | null = null,
+): Promise<number> {
   // Step 1: Get all ads with their creative details and performance
   const adFields = "id,name,status,campaign_id,adset_id,creative{id,thumbnail_url,image_url,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,image_hash}";
   let ads: any[] = [];
@@ -354,7 +434,8 @@ async function syncAdCreatives(supabase: any, accountId: string, accessToken: st
     for (const row of adInsights) {
       const adId = row.ad_id;
       if (!adId) continue;
-      const m = extractMetrics(row);
+      const m = extractMetrics(row, governingEvent);
+      recordEvents?.(row, "ad", adId, row.ad_name ?? null);
       const existing = perfMap.get(adId);
       if (existing) {
         existing.spend += m.spend;
@@ -609,57 +690,121 @@ function formatMetaObjective(objective: string): string {
   return map[objective] || objective.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
 }
 
-const PURCHASE_ACTIONS = ["purchase", "offsite_conversion.fb_pixel_purchase"];
+/**
+ * The account's own conversion-event definitions. Read so intake can offer the
+ * real list rather than have someone type an event name from memory.
+ */
+async function fetchCustomConversions(accountId: string, accessToken: string): Promise<any[]> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${accountId}/customconversions?fields=id,name,custom_event_type,rule&limit=200&access_token=${accessToken}`,
+    );
+    const data = await res.json();
+    if (data.error) {
+      console.error("Custom conversions fetch error:", data.error.message);
+      return [];
+    }
+    return Array.isArray(data.data) ? data.data : [];
+  } catch (err) {
+    console.error("Custom conversions fetch failed:", err);
+    return [];
+  }
+}
+
+/** Stores the discovered event menu on the connection — no ad table is touched. */
+async function recordAccountEventMenu(
+  supabase: any,
+  userId: string,
+  clientId: string,
+  accountId: string,
+  customConversions: any[],
+  discoveredEvents: Set<string>,
+) {
+  try {
+    const { data: conn } = await supabase
+      .from("platform_connections")
+      .select("metadata")
+      .eq("user_id", userId)
+      .eq("platform", "meta")
+      .eq("client_id", clientId)
+      .maybeSingle();
+    const metadata = (conn?.metadata as any) ?? {};
+    const menu = (metadata.meta_conversion_event_menu as any) ?? {};
+    menu[accountId] = {
+      discovered_at: new Date().toISOString(),
+      insights_event_names: [...discoveredEvents].sort(),
+      custom_conversions: customConversions.map((c) => ({
+        id: c.id,
+        name: c.name,
+        custom_event_type: c.custom_event_type ?? null,
+      })),
+    };
+    await supabase
+      .from("platform_connections")
+      .update({ metadata: { ...metadata, meta_conversion_event_menu: menu } })
+      .eq("user_id", userId)
+      .eq("platform", "meta")
+      .eq("client_id", clientId);
+  } catch (err) {
+    console.error("Failed to record conversion event menu:", err);
+  }
+}
+
+const ADD_TO_CART_ACTIONS = ["add_to_cart", "omni_add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"];
 
 /**
- * Call-driven accounts record no purchase. Meta's `conversions` field carries the
- * offline/Ringba custom conversion — on Easy Bath Renovation it is
- * `offsite_conversion.fb_pixel_custom.RingbaConversion`. Tried in order; a match
- * here wins over the purchase list, which stays for e-commerce accounts.
- * Never inferred: only these named action types count.
+ * LEGACY COMPATIBILITY ONLY — not a decision rule.
+ *
+ * These names exist for one reason: the older client dashboards read the single
+ * `conversions` column on `ad_campaigns` / `ad_sets` / `ad_creatives`, and zeroing
+ * it would silently break screens that predate Media Brain. It is used ONLY when
+ * no governing event is recorded for the client.
+ *
+ * No Media Brain figure ever reads this column. Media Brain reads
+ * `media_brain_platform_conversions` and reports UNKNOWN when the instance record
+ * names no governing event — see src/lib/mediaBrain/platformConversions.ts.
  */
-const CALL_CONVERSION_ACTIONS = [
+const LEGACY_DASHBOARD_FALLBACK_EVENTS = [
   "offsite_conversion.fb_pixel_custom.RingbaConversion",
   "contact_total",
   "contact_website",
+  "purchase",
+  "offsite_conversion.fb_pixel_purchase",
 ];
-const ADD_TO_CART_ACTIONS = ["add_to_cart", "omni_add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"];
 
-function extractMetrics(row: any) {
+function pick(arr: unknown, name: string): number | null {
+  if (!Array.isArray(arr)) return null;
+  const hit = (arr as any[]).find((a) => a?.action_type === name);
+  return hit ? parseFloat(hit.value || "0") : null;
+}
+
+function extractMetrics(row: any, governingEvent: string | null = null) {
   const spend = parseFloat(row.spend || "0");
   const impressions = parseInt(row.impressions || "0");
   const clicks = parseInt(row.clicks || "0");
   let conversions = 0, revenue = 0, addToCart = 0;
 
-  // Call conversions first — a call-driven account has no purchase action at all.
-  if (Array.isArray(row.conversions)) {
-    for (const wanted of CALL_CONVERSION_ACTIONS) {
-      const hit = row.conversions.find((c: any) => c.action_type === wanted);
-      if (hit) { conversions = parseInt(hit.value || "0"); break; }
-    }
-  }
-  if (revenue === 0 && Array.isArray(row.conversion_values)) {
-    for (const wanted of CALL_CONVERSION_ACTIONS) {
-      const hit = row.conversion_values.find((c: any) => c.action_type === wanted);
-      if (hit) { revenue = parseFloat(hit.value || "0"); break; }
+  if (governingEvent) {
+    // The governing event decides, and only the governing event. Never a sum.
+    const g = governingCount(extractEventBreakdown(row), governingEvent);
+    conversions = g.count ?? 0;
+    revenue = g.value ?? 0;
+  } else {
+    // Legacy dashboard column only — see the comment above.
+    for (const wanted of LEGACY_DASHBOARD_FALLBACK_EVENTS) {
+      const c = pick(row.conversions, wanted) ?? pick(row.actions, wanted);
+      if (c !== null) {
+        conversions = c;
+        revenue = pick(row.conversion_values, wanted) ?? pick(row.action_values, wanted) ?? 0;
+        break;
+      }
     }
   }
 
-  if (row.actions) {
+  if (Array.isArray(row.actions)) {
     for (const a of row.actions) {
-      if (conversions === 0 && PURCHASE_ACTIONS.includes(a.action_type)) {
-        conversions = parseInt(a.value || "0");
-      }
       if (addToCart === 0 && ADD_TO_CART_ACTIONS.includes(a.action_type)) {
         addToCart = parseInt(a.value || "0");
-      }
-    }
-  }
-  if (row.action_values) {
-    for (const a of row.action_values) {
-      if (PURCHASE_ACTIONS.includes(a.action_type)) {
-        revenue += parseFloat(a.value || "0");
-        break;
       }
     }
   }

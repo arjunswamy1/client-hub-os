@@ -100,6 +100,20 @@ export function WebhookReceiptPanel({ rows }: { rows: SyncStatusRow[] }) {
   const isKnownTestFire = !!receiptAt && receiptAt.startsWith(KNOWN_TEST_FIRE);
   const looksLikeTest = isKnownTestFire || unreplaced.length > 0;
 
+  // Three bags, in precedence order: the per-key values the webhook captured, the
+  // custom-tag bag, then a synthesised bag of the fields that arrived as literals (so
+  // receipts recorded before per-key capture still diagnose the literal state), then a
+  // bag of every field name present, which turns "absent" into "listed but empty".
+  const literalBag: Record<string, unknown> = {};
+  for (const f of unreplaced) {
+    const leaf = f.split('.').pop()!;
+    literalBag[leaf] = `[${leaf.toUpperCase()}]`;
+  }
+  const presentBag: Record<string, unknown> = {};
+  for (const f of fields) presentBag[f.split('.').pop()!] = '';
+  const verdicts = clickKeyReadiness([detail.last_click_keys, tags, literalBag, presentBag]);
+  const headline = clickKeyHeadline(verdicts);
+
   return (
     <div className="rounded-lg border p-4">
       <div className="flex flex-wrap items-center gap-2">

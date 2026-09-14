@@ -95,7 +95,11 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: null,
     targetColumn: 'target_name',
     idColumn: 'call_id',
-    attributionColumns: ['utm_campaign', 'utm_content', 'utm_source', 'utm_term', 'raw_payload'],
+    attributionColumns: [
+      'utm_campaign', 'utm_content', 'utm_source', 'utm_term', 'utm_medium',
+      'gclid', 'fbclid', 'wbraid', 'gbraid', 'msclkid',
+      'custom_tags', 'raw_payload',
+    ],
   },
   cannaball: {
     platform: 'cannaball',

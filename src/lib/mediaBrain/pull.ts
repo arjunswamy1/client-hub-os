@@ -210,6 +210,9 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
     .from('media_brain_economics')
     .select('*')
     .eq('client_id', clientId)
+    // The client-level DEFAULT record. Per-vertical records (vertical_id set)
+    // are read by the vertical read, not by the ad-level pull.
+    .is('vertical_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();

@@ -197,6 +197,92 @@ function Pair({ label, value }: { label: string; value: string }) {
   );
 }
 
+const STATE_LABEL: Record<ClickKeyState, string> = {
+  value: 'arrived with a value',
+  macro_literal: 'unreplaced [MACRO] literal',
+  absent: 'absent from the payload',
+  not_expected: 'not expected',
+};
+
+const STATE_CLASS: Record<ClickKeyState, string> = {
+  value: 'text-emerald-600 dark:text-emerald-400',
+  macro_literal: 'text-destructive',
+  absent: 'text-amber-600 dark:text-amber-400',
+  not_expected: 'text-muted-foreground',
+};
+
+/**
+ * The test's result. One headline, then a per-key verdict — because "missing" hides
+ * three different failures with three different fixes.
+ */
+function ClickKeySection({
+  verdicts,
+  headline,
+  evidenceAt,
+}: {
+  verdicts: ClickKeyVerdict[];
+  headline: ReturnType<typeof clickKeyHeadline>;
+  evidenceAt: string | null;
+}) {
+  return (
+    <div className="mt-4 rounded-md border p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Click-key readiness</p>
+
+      <p
+        className={`mt-1 text-sm font-semibold ${
+          headline.adLevelKeyArrived ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
+        }`}
+      >
+        {headline.headline}
+      </p>
+      {evidenceAt && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          First ad-level click key seen on a receipt at {fmt(evidenceAt)}.
+        </p>
+      )}
+
+      <dl className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+        {verdicts.map((v) => (
+          <div key={v.key} className="flex gap-2">
+            <dt className="shrink-0 font-mono text-muted-foreground">{v.key}</dt>
+            <dd className={`break-all ${STATE_CLASS[v.state]}`}>
+              {STATE_LABEL[v.state]}
+              {v.value ? <span className="ml-1 font-mono">{v.value}</span> : null}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground">What to do with this result</p>
+        <p>
+          <strong>Keys arrive with values</strong> — done, nothing more to do.
+        </p>
+        <p>
+          <strong>Keys still arrive as [MACRO] literals</strong> — the syntax that references a custom tag differs from
+          the system-macro syntax. Ask Moja which syntax references a custom tag in an outgoing webhook template.
+        </p>
+        <p>
+          <strong>Keys absent entirely</strong> — the template does not list them. Add the field names to the Moja
+          webhook payload template.
+        </p>
+        <p>
+          Moja said <code>gclid</code> and <code>fbclid</code> are not system macros and must be populated as custom
+          tags. The template already references <code>"gclid": "[GCLID]"</code>, which came back as a literal on the test
+          fire. The likely reading is that once the landing page supplies a custom tag of that name the same reference
+          resolves, so <strong>no template change may be needed</strong> — but that is our inference, not something Moja
+          confirmed.
+        </p>
+        <p>
+          Only <code>[UTM_SOURCE]</code> is a confirmed system macro, so <code>utm_campaign</code>,{' '}
+          <code>utm_content</code>, <code>utm_term</code> and <code>utm_medium</code> are subject to the same custom-tag
+          question — <code>utm_content</code> most of all, since it is the ad-level key.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function FieldList({
   title,
   items,

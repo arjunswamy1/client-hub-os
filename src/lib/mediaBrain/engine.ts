@@ -890,3 +890,91 @@ export function revenueSensitivity(
         : ''),
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * §3 — PUBLISHER ATTRIBUTION
+ *
+ * A tracking-platform campaign receives calls from every traffic source pointed
+ * at it, not only from the media we buy. On BuyologyIQ the `Walk In tubs`
+ * campaign took 1,144 calls in 30 days from six publishers; exactly 79 of them
+ * came from Connect Paid Media. Dividing all 1,144 calls into our spend is the
+ * same class of error as mixing denominators: it credits our media with someone
+ * else's calls.
+ *
+ * So `attributed_publishers` on the Economics record is the definitive list of
+ * publishers whose calls belong to this client's media buying, and EVERY metric,
+ * verdict, vertical read and coverage figure filters on it. A call from any other
+ * publisher is excluded from margin entirely and reported as excluded volume, so
+ * the client's campaign total and our attributable total stay visibly different
+ * numbers.
+ *
+ * There is NO default. An unconfigured list stops the pull — defaulting to "all
+ * publishers" is precisely what produced the wrong read.
+ * @see docs/media-brain/01_Decision_Engine.md §3
+ * ------------------------------------------------------------------ */
+
+/** Label used where a call carries no publisher at all. Never treated as ours. */
+export const PUBLISHER_NOT_RECORDED = '(no publisher recorded)';
+
+/** Has the operator stated whose calls these are? No list means no pull (§3). */
+export function publisherAttributionConfigured(list: (string | null)[] | null | undefined): boolean {
+  return !!list && list.some((p) => typeof p === 'string' && p.trim().length > 0);
+}
+
+/**
+ * Does this call belong to our media buying? Exact match on the trimmed,
+ * case-folded publisher name. A missing publisher is never assumed to be ours.
+ */
+export function isAttributedPublisher(
+  publisher: string | null | undefined,
+  list: (string | null)[] | null | undefined,
+): boolean {
+  if (!publisher || !publisherAttributionConfigured(list)) return false;
+  const p = publisher.trim().toLowerCase();
+  return (list ?? []).some((l) => typeof l === 'string' && l.trim().toLowerCase() === p);
+}
+
+export interface PublisherPartition<T> {
+  /** Calls from a publisher on the list. The ONLY calls any metric may read. */
+  attributed: T[];
+  /** Calls belonging to someone else's media buying. Counted, never metered. */
+  excluded: T[];
+  excludedCalls: number;
+  excludedByPublisher: { publisher: string; calls: number }[];
+  note: string;
+}
+
+/**
+ * Split calls into ours and everyone else's. The excluded side is reported
+ * prominently rather than dropped — the system is not losing data, it is
+ * declining to attribute other sources' calls to our spend.
+ */
+export function partitionByPublisher<T extends { publisher: string | null }>(
+  calls: T[],
+  list: (string | null)[] | null | undefined,
+): PublisherPartition<T> {
+  const attributed: T[] = [];
+  const excluded: T[] = [];
+  const counts = new Map<string, number>();
+  for (const call of calls) {
+    if (isAttributedPublisher(call.publisher, list)) {
+      attributed.push(call);
+      continue;
+    }
+    excluded.push(call);
+    const key = call.publisher?.trim() || PUBLISHER_NOT_RECORDED;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const excludedByPublisher = [...counts.entries()]
+    .map(([publisher, c]) => ({ publisher, calls: c }))
+    .sort((a, b) => b.calls - a.calls);
+  return {
+    attributed,
+    excluded,
+    excludedCalls: excluded.length,
+    excludedByPublisher,
+    note: excluded.length
+      ? `${excluded.length} of ${calls.length} calls came from ${excludedByPublisher.length} publisher${excludedByPublisher.length === 1 ? '' : 's'} not attributed to this client's media buying (${excludedByPublisher.map((e) => `${e.publisher} ${e.calls}`).join(', ')}). They are excluded from every metric and reported here: the tracking campaign total and our attributable total are different numbers and both are true.`
+      : `All ${calls.length} calls came from attributed publishers.`,
+  };
+}

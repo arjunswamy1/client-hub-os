@@ -56,6 +56,12 @@ function isBuyologyClient(client: { slug: string; name: string } | null): boolea
   return client.slug.toLowerCase().includes('buyology') || client.name.toLowerCase().includes('buyology');
 }
 
+/** Detect Spektrafin client */
+function isSpektrafinClient(client: { slug: string; name: string } | null): boolean {
+  if (!client) return false;
+  return client.slug.toLowerCase().includes('spektrafin') || client.name.toLowerCase().includes('spektrafin');
+}
+
 
 
 function DashboardContent() {

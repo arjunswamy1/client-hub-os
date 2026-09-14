@@ -304,7 +304,6 @@ describe('publisher attribution stops and filters the pull (§3)', () => {
     // An empty list on a record that states no scoping is an UNANSWERED question,
     // and it stops the pull just as a required-but-unconfigured list does.
     if (res.ok === false) expect(res.error).toMatch(/never read as "dedicated"|does not default to all publishers/);
-    if (false) expect('').toContain('Publisher attribution is not configured');
   });
 
   it('excludes another publisher\'s calls from every metric and counts them as excluded volume', () => {

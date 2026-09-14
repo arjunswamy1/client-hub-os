@@ -217,6 +217,7 @@ export const fromRingba: CallMapper = (row, opts) => {
     buyer_id: str(row.target_name),
     state: null,
     no_bid_reason: payout === 0 ? 'no_payout' : null,
+    ...readAttribution(row),
   };
 };
 
@@ -241,6 +242,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 
@@ -266,6 +268,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 
@@ -291,6 +294,7 @@ export const fromMoja: CallMapper = (row, opts) => {
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 
@@ -315,6 +319,7 @@ export const fromCannaball: CallMapper = (row, opts) => {
     buyer_id: null,
     state: str(row.caller_state),
     no_bid_reason: payout === 0 ? (str(row.disposition) ?? 'no_payout') : null,
+    ...readAttribution(row),
   };
 };
 

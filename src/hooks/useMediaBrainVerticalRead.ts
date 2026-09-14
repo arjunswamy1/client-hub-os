@@ -13,6 +13,7 @@ import * as engine from '@/lib/mediaBrain/engine';
 import type { MetaAdRow } from '@/lib/mediaBrain/join';
 import { CALL_DATE_COLUMN, CALL_TABLES } from '@/lib/mediaBrain/pull';
 import {
+  assignCallToVertical,
   verticalRead,
   type VerticalDefinition,
   type VerticalReadResult,
@@ -148,11 +149,8 @@ export function useMediaBrainVerticalRead(
       // Intake 3a — per vertical, in both directions.
       const validations: VerticalValidation[] = verticals.map((v) => {
         const eco = byVertical[v.vertical_id] ?? clientDefault;
-        const bucketCalls = calls.filter(
-          (c) =>
-            read.rows.find((r) => r.vertical_id === v.vertical_id) &&
-            require_vertical(c.campaign_name, v),
-        );
+        // Same assignment rule as the read itself — imported, never re-derived.
+        const bucketCalls = calls.filter((c) => assignCallToVertical(c.campaign_name, verticals) === v.vertical_id);
         return {
           vertical_id: v.vertical_id,
           label: v.label ?? v.vertical_id,
@@ -183,11 +181,3 @@ export function useMediaBrainVerticalRead(
   });
 }
 
-/** Mirrors verticalRead's call-assignment rule for the per-vertical validation split. */
-function require_vertical(campaignName: string | null, v: VerticalDefinition): boolean {
-  const patterns = v.ringba_patterns ?? [];
-  if (!patterns.length) return false;
-  const name = (campaignName ?? '').toLowerCase().trim();
-  if (v.ringba_exact_match) return patterns.some((p) => name === p.toLowerCase().trim());
-  return patterns.some((p) => name.includes(p.toLowerCase().trim()));
-}

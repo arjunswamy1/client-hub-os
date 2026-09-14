@@ -178,12 +178,18 @@ export default function MediaBrainWeeklyPage() {
     return out;
   }, [data, instance, entities, adRows, rtb]);
 
-  const undecided = entities.filter(({ level, row }) => {
+  /**
+   * §6.4 — nothing carries forward unstated. A missing disposition, a missing
+   * verdict, or a hold without evidence + review date all count as undecided.
+   * Re-used verbatim at save time; never computed twice from different rules.
+   */
+  const undecidedEntities = entities.filter(({ level, row }) => {
     const d = dispositions[`${level}:${row.groupKey}`];
-    if (!d || !d.verdict) return true;
-    if (d.verdict === "hold" && (!d.awaiting.trim() || !d.reviewDate)) return true;
+    if (!d?.verdict) return true;
+    if (d?.verdict === "hold" && (!d?.awaiting?.trim() || !d?.reviewDate)) return true;
     return false;
-  }).length;
+  });
+  const undecided = undecidedEntities.length;
 
   /* ---------------- step 4/5 ---------------- */
   const [graduated, setGraduated] = useState<Record<string, boolean>>({});
@@ -238,6 +244,18 @@ export default function MediaBrainWeeklyPage() {
 
   async function saveEverything() {
     if (!reviewId || !data) return;
+    // §6.4 — re-check the step 3 guard at save. Step 3 stays reachable, and the
+    // entity list can refetch, so a decision can be blanked after the step was
+    // marked complete. Refuse here rather than letting the DB CHECK reject it.
+    if (undecidedEntities.length > 0) {
+      const names = undecidedEntities.slice(0, 5).map(({ row }) => row.entity_name).join(", ");
+      toast.error(
+        `${undecidedEntities.length} ${undecidedEntities.length === 1 ? "entity is" : "entities are"} still undecided: ${names}${
+          undecidedEntities.length > 5 ? ` and ${undecidedEntities.length - 5} more` : ""
+        }. Go back to step 3 — a hold also needs the evidence awaited and a review date.`,
+      );
+      return;
+    }
     const missing = logs.some((l) => l.description.trim() && (!l.why.trim() || !l.expected.trim() || !l.reviewDate));
     if (missing) {
       toast.error("Every logged change needs why, expected result and a review date.");
@@ -254,8 +272,8 @@ export default function MediaBrainWeeklyPage() {
           entity_level: level,
           entity_ref: row.groupKey,
           entity_name: row.entity_name,
-          verdict: d.verdict,
-          reason: d.reason || suggestions[`${level}:${row.groupKey}`]?.reason || null,
+          verdict: d?.verdict,
+          reason: d?.reason || suggestions[`${level}:${row.groupKey}`]?.reason || null,
           evidence: {
             spend: row.spend,
             revenue: row.revenue,
@@ -266,8 +284,8 @@ export default function MediaBrainWeeklyPage() {
             costPerBillableCall: row.costPerBillableCall,
           } as any,
           confidence_state: row.confidenceState,
-          awaiting_evidence: d.verdict === "hold" ? d.awaiting : null,
-          review_date: d.verdict === "hold" ? d.reviewDate : null,
+          awaiting_evidence: d?.verdict === "hold" ? d?.awaiting : null,
+          review_date: d?.verdict === "hold" ? d?.reviewDate : null,
           status: "approved",
           decided_by_id: teamMember?.id ?? null,
           decided_at: new Date().toISOString(),

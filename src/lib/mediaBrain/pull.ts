@@ -185,6 +185,15 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
       error: `Meta spend exists for ${start} to ${end} (${timezone}) but no call records came back. Tracking flag: calls are not routing or not syncing. Zero billable calls is a kill trigger, so a failed pull must not be read as performance.`,
     };
   }
+  // The mirror case, and the more flattering failure: calls with no Meta rows
+  // would give every row spend 0 → cost per call 0, margin 100%, band
+  // "excellent". Zero spend across a whole window is never a real result.
+  if (metaAds.length === 0) {
+    return {
+      ok: false,
+      error: `Call records exist for ${start} to ${end} (${timezone}) but no Meta rows came back for the window. That is a Meta sync or date-range failure, not free calls — zero spend across an entire window is never a real result. Check the last Meta sync and the window before reading any margin.`,
+    };
+  }
 
   const { calls, missingBillableDefinition } = mapCalls(rawCalls, mapper, {
     billableMinDurationSeconds: economics.billable_min_duration_seconds ?? null,

@@ -95,8 +95,14 @@ export interface JoinResult {
   joinNote: string;
 }
 
-const norm = (v: string | null | undefined) =>
-  (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+/**
+ * Normalise a name for comparison. Returns NULL for an empty result — an
+ * unidentifiable row must never share a key with another unidentifiable row.
+ */
+const norm = (v: string | null | undefined): string | null => {
+  const n = (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return n === '' ? null : n;
+};
 
 const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
 
@@ -148,19 +154,31 @@ export function resolveDidMapping(
   return inWindow ?? candidates.find((m) => !m.effective_from && !m.effective_to) ?? candidates[0];
 }
 
-/** creative_name → Meta ad, by `ad_name` or `creative_name`. @see §2 step 2 */
-export function matchCreativeToAd(creativeName: string | null, metaAds: MetaAdRow[]): MetaAdRow | null {
+/**
+ * creative_name → EVERY Meta row for that ad inside the window.
+ *
+ * `ad_creatives` rows are period-scoped and `ad_sets` / `ad_campaigns` are
+ * per-date, so one ad routinely has several rows overlapping a review window.
+ * Returning a single row would silently drop the rest of its spend, understating
+ * cost and overstating margin. Exact-name matches win outright; only when there
+ * are none do we fall back to substring matches.
+ * @see §2 step 2
+ */
+export function matchCreativeToAds(creativeName: string | null, metaAds: MetaAdRow[]): MetaAdRow[] {
   const key = norm(creativeName);
-  if (!key) return null;
-  return (
-    metaAds.find((a) => norm(a.ad_name) === key || norm(a.creative_name) === key) ??
-    metaAds.find((a) => {
-      const an = norm(a.ad_name);
-      const cn = norm(a.creative_name);
-      return (an && (an.includes(key) || key.includes(an))) || (cn && (cn.includes(key) || key.includes(cn)));
-    }) ??
-    null
-  );
+  if (!key) return [];
+  const exact = metaAds.filter((a) => norm(a.ad_name) === key || norm(a.creative_name) === key);
+  if (exact.length) return exact;
+  return metaAds.filter((a) => {
+    const an = norm(a.ad_name);
+    const cn = norm(a.creative_name);
+    return (!!an && (an.includes(key) || key.includes(an))) || (!!cn && (cn.includes(key) || key.includes(cn)));
+  });
+}
+
+/** Convenience single-row form. Prefer `matchCreativeToAds` — spend must be summed. */
+export function matchCreativeToAd(creativeName: string | null, metaAds: MetaAdRow[]): MetaAdRow | null {
+  return matchCreativeToAds(creativeName, metaAds)[0] ?? null;
 }
 
 /** Fallback: campaign-name pattern → vertical. Grouping is vertical level ONLY. @see §2 step 3 */
@@ -171,7 +189,7 @@ export function matchVertical(call: CanonicalCall, verticals: VerticalRow[]): Ve
     verticals.find((v) =>
       [...(v.ringba_patterns ?? []), ...(v.meta_patterns ?? [])].some((p) => {
         const np = norm(p);
-        return np && name.includes(np);
+        return !!np && name.includes(np);
       }),
     ) ?? null
   );
@@ -185,39 +203,58 @@ export function matchVertical(call: CanonicalCall, verticals: VerticalRow[]): Ve
 export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window }: JoinInput): JoinResult {
   const rows = new Map<string, JoinedEntityRow>();
   const unjoinedCalls: { call_id: string; did: string | null }[] = [];
-  const touchedAdRefs = new Set<string>();
+  /**
+   * Every Meta row actually consumed by a joined entity, tracked by row identity
+   * rather than by ad ref. Keying on the ref would suppress sibling period rows
+   * of the same ad from `unjoinedSpend` even when their spend was dropped.
+   */
+  const consumedRows = new Set<MetaAdRow>();
 
   let adLevelJoins = 0;
   let verticalJoins = 0;
 
-  const adRef = (a: MetaAdRow) => a.platform_ad_id ?? norm(a.ad_name) ?? '';
+  /** Null when a row carries neither a platform ad id nor a usable name. */
+  const adRef = (a: MetaAdRow): string | null => a.platform_ad_id ?? norm(a.ad_name);
 
   for (const call of calls) {
     const mapping = resolveDidMapping(call, didMappings);
     const creativeName = mapping?.creative_name ?? call.creative_name;
-    const ad = creativeName ? matchCreativeToAd(creativeName, metaAds) : null;
+    // All overlapping Meta rows for this ad, not just the first.
+    const matched = creativeName ? matchCreativeToAds(creativeName, metaAds) : [];
+    // Unidentifiable rows must not merge into a shared bucket — they fall through
+    // to unjoinedSpend instead.
+    const identified = matched.filter((a) => adRef(a) !== null);
+    const primary = identified[0] ?? null;
 
     let key: string;
     let row: JoinedEntityRow;
 
-    if (ad) {
-      key = `ad:${adRef(ad)}`;
-      touchedAdRefs.add(adRef(ad));
-      row =
-        rows.get(key) ??
-        emptyRow({
+    if (primary) {
+      const ref = adRef(primary)!;
+      key = `ad:${ref}`;
+      const existing = rows.get(key);
+      if (existing) {
+        row = existing;
+      } else {
+        // Sum spend, impressions and clicks across every row of this ad in the
+        // window. CTR and frequency are derived downstream from these totals,
+        // never by averaging per-row values.
+        const siblings = identified.filter((a) => adRef(a) === ref);
+        row = emptyRow({
           level: 'ad',
-          entity_ref: adRef(ad),
-          entity_name: ad.ad_name ?? creativeName ?? 'Unnamed ad',
-          campaign_name: ad.campaign_name,
-          adset_name: ad.adset_name,
-          platform_ad_id: ad.platform_ad_id,
-          platform_adset_id: ad.platform_adset_id,
-          platform_campaign_id: ad.platform_campaign_id,
-          spend: Number(ad.spend ?? 0),
-          impressions: Number(ad.impressions ?? 0),
-          clicks: Number(ad.clicks ?? 0),
+          entity_ref: ref,
+          entity_name: primary.ad_name ?? creativeName ?? 'Unnamed ad',
+          campaign_name: primary.campaign_name,
+          adset_name: primary.adset_name,
+          platform_ad_id: primary.platform_ad_id,
+          platform_adset_id: primary.platform_adset_id,
+          platform_campaign_id: primary.platform_campaign_id,
+          spend: siblings.reduce((s, a) => s + Number(a.spend ?? 0), 0),
+          impressions: siblings.reduce((s, a) => s + Number(a.impressions ?? 0), 0),
+          clicks: siblings.reduce((s, a) => s + Number(a.clicks ?? 0), 0),
         });
+        for (const a of siblings) consumedRows.add(a);
+      }
       adLevelJoins++;
     } else {
       const vertical = matchVertical(call, verticals);
@@ -256,13 +293,16 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
     const vertical = verticals.find((v) => v.vertical_id === row.entity_ref);
     if (!vertical) continue;
     for (const ad of metaAds) {
+      if (consumedRows.has(ad)) continue;
       const name = norm(ad.campaign_name);
-      const hit = (vertical.meta_patterns ?? []).some((p) => {
-        const np = norm(p);
-        return np && name.includes(np);
-      });
+      const hit =
+        !!name &&
+        (vertical.meta_patterns ?? []).some((p) => {
+          const np = norm(p);
+          return !!np && name.includes(np);
+        });
       if (!hit) continue;
-      touchedAdRefs.add(adRef(ad));
+      consumedRows.add(ad);
       row.spend += Number(ad.spend ?? 0);
       row.impressions += Number(ad.impressions ?? 0);
       row.clicks += Number(ad.clicks ?? 0);
@@ -270,9 +310,11 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
   }
 
   // Meta spend with no call records: a tracking flag, not a zero. These rows are
-  // deliberately NOT emitted as entities with 0 calls.
+  // deliberately NOT emitted as entities with 0 calls. Rows are checked by
+  // identity, so a sibling period row of a joined ad still surfaces here if its
+  // spend was not consumed — and so does a row with no usable identifier.
   const unjoinedSpend = metaAds
-    .filter((a) => !touchedAdRefs.has(adRef(a)) && Number(a.spend ?? 0) > 0)
+    .filter((a) => !consumedRows.has(a) && Number(a.spend ?? 0) > 0)
     .map((a) => ({ entity: a.ad_name ?? a.campaign_name ?? 'Unnamed Meta entity', spend: Number(a.spend ?? 0) }));
 
   let joinLevel: JoinLevel = 'none';

@@ -8,7 +8,7 @@
  * thresholds that look authoritative and aren't.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, RefreshCw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,6 +24,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import * as engine from "@/lib/mediaBrain/engine";
+import { Notice } from "@/components/mediaBrain/shared";
+import { BillableDefinitionCheck, type BillableGovernance } from "@/components/mediaBrain/BillableDefinitionCheck";
 
 const STEPS = [
   { key: "a1", title: "A1 · Client and accounts" },
@@ -436,7 +438,13 @@ export default function MediaBrainIntakePage() {
           payout_mode: form.payout_mode,
           payout: numVal("payout"),
           billable_min_duration_seconds: numVal("billable_min_duration_seconds"),
-          billable_filters: form.billable_filters.trim() ? { notes: form.billable_filters.trim() } : null,
+          billable_filters:
+            form.billable_filters.trim() || billableGovernance
+              ? {
+                  ...(form.billable_filters.trim() ? { notes: form.billable_filters.trim() } : {}),
+                  ...(billableGovernance ? { governing_definition: billableGovernance } : {}),
+                }
+              : null,
           bid_floor: numVal("bid_floor"),
           bid_ceiling: numVal("bid_ceiling"),
           avg_bid: numVal("avg_bid"),

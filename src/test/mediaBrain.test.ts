@@ -386,6 +386,77 @@ describe('ad-level availability — no click key in the feed', () => {
     expect(mapping.readClickKeys({ custom_tags: { msclkid: 'ms-1' } })).toEqual(['msclkid']);
     expect(mapping.readClickKeys({ raw_payload: { utm_content: 'x' } })).toEqual([]);
   });
+
+  it('never counts an unreplaced [GCLID] literal as a click key', () => {
+    expect(mapping.readClickKeys({ gclid: '[GCLID]' })).toEqual([]);
+    expect(mapping.readClickKeys({ custom_tags: { fbclid: '[FBCLID]' } })).toEqual([]);
+    const a = mapping.adLevelAvailability([call({ click_keys: mapping.readClickKeys({ gclid: '[GCLID]' }) })]);
+    expect(a.available).toBe(false);
+    expect(a.reason).toContain('unavailable');
+  });
+
+  it('separates "no key exists" from "a key exists but nothing joined"', () => {
+    const unavailable = mapping.adLevelAvailability([call(), call({ call_id: 'c2' })]);
+    expect(unavailable.available).toBe(false);
+    expect(unavailable.callsWithKey).toBe(0);
+
+    const zeroCoverage = mapping.adLevelAvailability([call({ click_keys: ['gclid'] }), call({ call_id: 'c2' })]);
+    expect(zeroCoverage.available).toBe(true);
+    expect(zeroCoverage.callsWithKey).toBe(1);
+    expect(zeroCoverage.totalCalls).toBe(2);
+    expect(zeroCoverage.keyRate).toBeCloseTo(0.5);
+    expect(zeroCoverage.reason).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Click-key readiness — the operator's test result, per key.
+ * ------------------------------------------------------------------ */
+
+describe('click-key readiness on a webhook receipt', () => {
+  const verdictFor = (bags: unknown[], key: string) =>
+    readiness.clickKeyReadiness(bags).find((v) => v.key === key)!;
+
+  it('a real gclid reports arrived-with-value and flips the headline off unavailable', () => {
+    const verdicts = readiness.clickKeyReadiness([{ gclid: 'Cj0KCQ-real' }]);
+    const g = verdicts.find((v) => v.key === 'gclid')!;
+    expect(g.state).toBe('value');
+    expect(g.value).toBe('Cj0KCQ-real');
+    const head = readiness.clickKeyHeadline(verdicts);
+    expect(head.adLevelKeyArrived).toBe(true);
+    expect(head.headline).toContain('gclid');
+  });
+
+  it('reads a key out of the custom-tag bag as readily as the top level', () => {
+    expect(verdictFor([{}, { utm_content: '1202100000009' }], 'utm_content').state).toBe('value');
+  });
+
+  it('[GCLID] reports the literal state and leaves ad-level unavailable', () => {
+    const verdicts = readiness.clickKeyReadiness([{ gclid: '[GCLID]', utm_source: '[UTM_SOURCE]' }]);
+    expect(verdictFor([{ gclid: '[GCLID]' }], 'gclid').state).toBe('macro_literal');
+    const head = readiness.clickKeyHeadline(verdicts);
+    expect(head.adLevelKeyArrived).toBe(false);
+    expect(head.headline.toLowerCase()).toContain('literal');
+  });
+
+  it('a receipt with neither reports absent, and says the template never listed it', () => {
+    const verdicts = readiness.clickKeyReadiness([{}]);
+    expect(verdicts.every((v) => v.state === 'absent')).toBe(true);
+    expect(verdictFor([{}], 'gclid').fix).toMatch(/template/i);
+    expect(readiness.clickKeyHeadline(verdicts).adLevelKeyArrived).toBe(false);
+  });
+
+  it('a value on utm_campaign alone is not an ad-level arrival', () => {
+    const verdicts = readiness.clickKeyReadiness([{ utm_campaign: 'Windows_Leads_Calls' }]);
+    expect(verdictFor([{ utm_campaign: 'x' }], 'utm_campaign').adLevel).toBe(false);
+    expect(readiness.clickKeyHeadline(verdicts).adLevelKeyArrived).toBe(false);
+  });
+
+  it('an unexpected key can be marked not_expected rather than failing', () => {
+    const verdicts = readiness.clickKeyReadiness([{}], { expected: ['gclid', 'utm_content'] });
+    expect(verdictFor([{}], 'gclid').state).toBe('absent');
+    expect(verdicts.find((v) => v.key === 'msclkid')!.state).toBe('not_expected');
+  });
 });
 
 /* ==================================================================

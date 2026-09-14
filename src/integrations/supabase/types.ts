@@ -4255,9 +4255,10 @@ export type Database = {
       }
       moja_calls: {
         Row: {
+          answered: boolean | null
           buyer_name: string | null
           call_id: string
-          call_start: string
+          call_start: string | null
           caller_number: string | null
           caller_state: string | null
           caller_zip: string | null
@@ -4265,14 +4266,22 @@ export type Database = {
           campaign_name: string | null
           client_id: string
           connected: boolean
+          connected_source: string | null
           converted: boolean
           converted_at: string | null
           created_at: string
           disposition: string | null
           duration_seconds: number
           event_type: string | null
+          fbclid: string | null
+          forwarded_number: string | null
+          gclid: string | null
+          hangup_cause: string | null
           id: string
           inbound_duration_seconds: number
+          is_test_delivery: boolean
+          no_payout_reason: string | null
+          number_pool: string | null
           payout: number
           platform: string | null
           publisher_name: string | null
@@ -4285,13 +4294,15 @@ export type Database = {
           updated_at: string
           utm_campaign: string | null
           utm_content: string | null
+          utm_medium: string | null
           utm_source: string | null
           utm_term: string | null
         }
         Insert: {
+          answered?: boolean | null
           buyer_name?: string | null
           call_id: string
-          call_start?: string
+          call_start?: string | null
           caller_number?: string | null
           caller_state?: string | null
           caller_zip?: string | null
@@ -4299,14 +4310,22 @@ export type Database = {
           campaign_name?: string | null
           client_id: string
           connected?: boolean
+          connected_source?: string | null
           converted?: boolean
           converted_at?: string | null
           created_at?: string
           disposition?: string | null
           duration_seconds?: number
           event_type?: string | null
+          fbclid?: string | null
+          forwarded_number?: string | null
+          gclid?: string | null
+          hangup_cause?: string | null
           id?: string
           inbound_duration_seconds?: number
+          is_test_delivery?: boolean
+          no_payout_reason?: string | null
+          number_pool?: string | null
           payout?: number
           platform?: string | null
           publisher_name?: string | null
@@ -4319,13 +4338,15 @@ export type Database = {
           updated_at?: string
           utm_campaign?: string | null
           utm_content?: string | null
+          utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
         }
         Update: {
+          answered?: boolean | null
           buyer_name?: string | null
           call_id?: string
-          call_start?: string
+          call_start?: string | null
           caller_number?: string | null
           caller_state?: string | null
           caller_zip?: string | null
@@ -4333,14 +4354,22 @@ export type Database = {
           campaign_name?: string | null
           client_id?: string
           connected?: boolean
+          connected_source?: string | null
           converted?: boolean
           converted_at?: string | null
           created_at?: string
           disposition?: string | null
           duration_seconds?: number
           event_type?: string | null
+          fbclid?: string | null
+          forwarded_number?: string | null
+          gclid?: string | null
+          hangup_cause?: string | null
           id?: string
           inbound_duration_seconds?: number
+          is_test_delivery?: boolean
+          no_payout_reason?: string | null
+          number_pool?: string | null
           payout?: number
           platform?: string | null
           publisher_name?: string | null
@@ -4353,6 +4382,7 @@ export type Database = {
           updated_at?: string
           utm_campaign?: string | null
           utm_content?: string | null
+          utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
         }

@@ -112,20 +112,34 @@ function pick(sources: Record<string, any>[], keys: string[]): unknown {
   return null;
 }
 
-/** Infer the RRM service line + ad platform from free-text campaign / publisher labels. */
-export function classify(text: string): { service_line: string; platform: string | null } {
+/**
+ * Infer the RRM service line from free-text campaign / publisher labels.
+ *
+ * PLATFORM IS NOT DECIDED HERE. It used to be, from the same free text, with
+ * windows defaulting to Meta and plumbing to Google — a guess that would be
+ * quietly right often enough never to be questioned. Platform now has exactly one
+ * rule and one source: `utm_source`. @see platformFromUtmSource
+ */
+export function classify(text: string): { service_line: string } {
   const t = text.toLowerCase();
   let service_line = 'unassigned';
   if (/window|glass|door/.test(t)) service_line = 'windows';
   else if (/plumb|drain|sewer|water heater|leak/.test(t)) service_line = 'plumbing';
+  return { service_line };
+}
 
-  let platform: string | null = null;
-  if (/meta|facebook|fb|instagram|ig/.test(t)) platform = 'meta';
-  else if (/google|gads|ppc|search|adwords/.test(t)) platform = 'google';
-  else if (service_line === 'windows') platform = 'meta';
-  else if (service_line === 'plumbing') platform = 'google';
-
-  return { service_line, platform };
+/**
+ * The ad platform, from `utm_source` and nothing else. Case-insensitive, trimmed.
+ * `[UTM_SOURCE]` is the one UTM macro Moja confirmed, so this is the only platform
+ * signal that will ever arrive — which makes its absence a gap worth showing.
+ * Anything unrecognised or absent is `unclassified`: never the dialed number, never
+ * the campaign name, never the likelier of the two platforms.
+ */
+export function platformFromUtmSource(utmSource: string | null | undefined): string {
+  const key = (utmSource ?? '').trim().toLowerCase();
+  if (key === 'facebook' || key === 'fb' || key === 'meta') return 'meta';
+  if (key === 'google' || key === 'adwords') return 'google';
+  return 'unclassified';
 }
 
 /**
@@ -329,7 +343,9 @@ export function normalizeDelivery(
     [campaign_name, publisher_name, utm_campaign, utm_source].filter(Boolean).join(' '),
   );
   const service_line = opts.forcedServiceLine || inferred.service_line;
-  const platform = opts.forcedPlatform || inferred.platform;
+  // Platform comes from utm_source alone (an explicit ?platform= override still wins,
+  // because that is a human stating it rather than the code guessing).
+  const platform = opts.forcedPlatform || platformFromUtmSource(utm_source);
 
   // `to` is the dialled number UNLESS an explicit tracking_number is present, in which case
   // `to` is where the call was forwarded on to.

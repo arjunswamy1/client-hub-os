@@ -145,7 +145,7 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
         </div>
 
         {rows.some((r) => r.flags.length > 0) && (
-          <Notice tone="warning" title="Named caveats on these numbers">
+          <Notice tone="warn" title="Named caveats on these numbers">
             <ul className="ml-4 list-disc space-y-1">
               {rows.flatMap((r) => r.flags.map((f, i) => <li key={`${r.vertical_id}-${i}`}>{r.label}: {f}</li>))}
             </ul>
@@ -163,13 +163,13 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
         )}
 
         {read.unclassifiedCallCampaigns.length > 0 && (
-          <Notice tone="warning" title="Calls on campaigns that match no vertical">
+          <Notice tone="warn" title="Calls on campaigns that match no vertical">
             {read.unclassifiedCallCampaigns.join(" · ")}. Reported as unclassified, never folded into a vertical.
           </Notice>
         )}
 
         {notes.map((n) => (
-          <Notice key={n} tone="warning" title="Data limitation">
+          <Notice key={n} tone="warn" title="Data limitation">
             {n}
           </Notice>
         ))}

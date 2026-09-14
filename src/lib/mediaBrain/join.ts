@@ -154,19 +154,31 @@ export function resolveDidMapping(
   return inWindow ?? candidates.find((m) => !m.effective_from && !m.effective_to) ?? candidates[0];
 }
 
-/** creative_name → Meta ad, by `ad_name` or `creative_name`. @see §2 step 2 */
-export function matchCreativeToAd(creativeName: string | null, metaAds: MetaAdRow[]): MetaAdRow | null {
+/**
+ * creative_name → EVERY Meta row for that ad inside the window.
+ *
+ * `ad_creatives` rows are period-scoped and `ad_sets` / `ad_campaigns` are
+ * per-date, so one ad routinely has several rows overlapping a review window.
+ * Returning a single row would silently drop the rest of its spend, understating
+ * cost and overstating margin. Exact-name matches win outright; only when there
+ * are none do we fall back to substring matches.
+ * @see §2 step 2
+ */
+export function matchCreativeToAds(creativeName: string | null, metaAds: MetaAdRow[]): MetaAdRow[] {
   const key = norm(creativeName);
-  if (!key) return null;
-  return (
-    metaAds.find((a) => norm(a.ad_name) === key || norm(a.creative_name) === key) ??
-    metaAds.find((a) => {
-      const an = norm(a.ad_name);
-      const cn = norm(a.creative_name);
-      return (an && (an.includes(key) || key.includes(an))) || (cn && (cn.includes(key) || key.includes(cn)));
-    }) ??
-    null
-  );
+  if (!key) return [];
+  const exact = metaAds.filter((a) => norm(a.ad_name) === key || norm(a.creative_name) === key);
+  if (exact.length) return exact;
+  return metaAds.filter((a) => {
+    const an = norm(a.ad_name);
+    const cn = norm(a.creative_name);
+    return (!!an && (an.includes(key) || key.includes(an))) || (!!cn && (cn.includes(key) || key.includes(cn)));
+  });
+}
+
+/** Convenience single-row form. Prefer `matchCreativeToAds` — spend must be summed. */
+export function matchCreativeToAd(creativeName: string | null, metaAds: MetaAdRow[]): MetaAdRow | null {
+  return matchCreativeToAds(creativeName, metaAds)[0] ?? null;
 }
 
 /** Fallback: campaign-name pattern → vertical. Grouping is vertical level ONLY. @see §2 step 3 */

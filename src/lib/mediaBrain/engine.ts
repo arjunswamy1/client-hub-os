@@ -367,20 +367,43 @@ export interface MarginBandResult {
 }
 
 /**
- * Margin band for a margin %. 10% is the floor.
+ * Margin band for a margin %, anchored on THIS CLIENT's two stored values:
+ * `minMargin` (the floor — below it there is no cushion) and `targetMargin`
+ * (the band we are aiming at). Boundaries are never hardcoded: a client on a
+ * 15% floor must not be judged against 10%.
+ *
+ * Bands, in terms of the two anchors:
+ *   < 0                    losing
+ *   < minMargin            fragile (below the floor)
+ *   < minMargin × 1.5      thin but workable
+ *   < targetMargin         decent
+ *   < targetMargin × 1.5   good (target)
+ *   < targetMargin × 2     very good
+ *   ≥ targetMargin × 2     excellent
+ *
+ * With the framework defaults (floor 10%, target 20%) that reproduces the §10
+ * table exactly: 10 / 15 / 20 / 30 / 40.
+ *
+ * Scale steps quoted from DEFAULTS so the range is stated in exactly one place.
  * [RTB] judge by the MEDIAN, not the mean.
  * @see docs/media-brain/01_Decision_Engine.md §10
  */
-export function marginBand(marginPctValue: Num): MarginBandResult | null {
-  if (!ok(marginPctValue)) return null;
+export function marginBand(
+  marginPctValue: Num,
+  minMargin: Num,
+  targetMargin: Num,
+): MarginBandResult | null {
+  if (!ok(marginPctValue) || !ok(minMargin) || !ok(targetMargin)) return null;
+  const step = `Scale one step of ${Math.round(DEFAULTS.scaleStepMin * 100)}-${Math.round(DEFAULTS.scaleStepMax * 100)}%`;
   if (marginPctValue < 0) return { band: 'losing', verdict: 'Losing', action: 'Stop' };
-  if (marginPctValue < 0.1) return { band: 'fragile', verdict: 'Fragile', action: 'Below the floor — fix or stop' };
-  if (marginPctValue < 0.15) return { band: 'thin', verdict: 'Thin but workable', action: 'Hold, improve before scaling' };
-  if (marginPctValue < 0.2) return { band: 'decent', verdict: 'Decent', action: 'Hold or scale cautiously' };
-  if (marginPctValue < 0.3) return { band: 'good', verdict: 'Good (target)', action: 'Scale one step of 10-20%' };
-  if (marginPctValue < 0.4) return { band: 'very_good', verdict: 'Very good', action: 'Scale one step of 10-20%' };
-  return { band: 'excellent', verdict: 'Excellent', action: 'Scale one step of 10-20%' };
+  if (marginPctValue < minMargin) return { band: 'fragile', verdict: 'Fragile', action: 'Below the floor — fix or stop' };
+  if (marginPctValue < minMargin * 1.5) return { band: 'thin', verdict: 'Thin but workable', action: 'Hold, improve before scaling' };
+  if (marginPctValue < targetMargin) return { band: 'decent', verdict: 'Decent', action: 'Hold or scale cautiously' };
+  if (marginPctValue < targetMargin * 1.5) return { band: 'good', verdict: 'Good (target)', action: step };
+  if (marginPctValue < targetMargin * 2) return { band: 'very_good', verdict: 'Very good', action: step };
+  return { band: 'excellent', verdict: 'Excellent', action: step };
 }
+
 
 /* ------------------------------------------------------------------ *
  * §5 — RTB payout distribution

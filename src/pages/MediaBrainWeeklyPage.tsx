@@ -13,7 +13,7 @@
  * @see docs/media-brain/01_Decision_Engine.md §6, §7, §8, §11
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Circle, Loader2, Lock, RefreshCw } from "lucide-react";

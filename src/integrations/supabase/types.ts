@@ -4265,21 +4265,26 @@ export type Database = {
           campaign_id: string | null
           campaign_name: string | null
           client_id: string
-          connected: boolean
+          connected: boolean | null
           connected_source: string | null
+          connected_unknown_reason: string | null
           converted: boolean
           converted_at: string | null
           created_at: string
+          custom_tags: Json
           disposition: string | null
           duration_seconds: number
+          duration_semantics: string
           event_type: string | null
           fbclid: string | null
           forwarded_number: string | null
+          gbraid: string | null
           gclid: string | null
           hangup_cause: string | null
           id: string
           inbound_duration_seconds: number
           is_test_delivery: boolean
+          msclkid: string | null
           no_payout_reason: string | null
           number_pool: string | null
           payout: number
@@ -4287,6 +4292,8 @@ export type Database = {
           publisher_name: string | null
           raw_payload: Json | null
           recording_url: string | null
+          reported_duration_seconds: number | null
+          reported_inbound_duration_seconds: number | null
           revenue: number
           service_line: string
           target_name: string | null
@@ -4297,6 +4304,7 @@ export type Database = {
           utm_medium: string | null
           utm_source: string | null
           utm_term: string | null
+          wbraid: string | null
         }
         Insert: {
           answered?: boolean | null
@@ -4309,21 +4317,26 @@ export type Database = {
           campaign_id?: string | null
           campaign_name?: string | null
           client_id: string
-          connected?: boolean
+          connected?: boolean | null
           connected_source?: string | null
+          connected_unknown_reason?: string | null
           converted?: boolean
           converted_at?: string | null
           created_at?: string
+          custom_tags?: Json
           disposition?: string | null
           duration_seconds?: number
+          duration_semantics?: string
           event_type?: string | null
           fbclid?: string | null
           forwarded_number?: string | null
+          gbraid?: string | null
           gclid?: string | null
           hangup_cause?: string | null
           id?: string
           inbound_duration_seconds?: number
           is_test_delivery?: boolean
+          msclkid?: string | null
           no_payout_reason?: string | null
           number_pool?: string | null
           payout?: number
@@ -4331,6 +4344,8 @@ export type Database = {
           publisher_name?: string | null
           raw_payload?: Json | null
           recording_url?: string | null
+          reported_duration_seconds?: number | null
+          reported_inbound_duration_seconds?: number | null
           revenue?: number
           service_line?: string
           target_name?: string | null
@@ -4341,6 +4356,7 @@ export type Database = {
           utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          wbraid?: string | null
         }
         Update: {
           answered?: boolean | null
@@ -4353,21 +4369,26 @@ export type Database = {
           campaign_id?: string | null
           campaign_name?: string | null
           client_id?: string
-          connected?: boolean
+          connected?: boolean | null
           connected_source?: string | null
+          connected_unknown_reason?: string | null
           converted?: boolean
           converted_at?: string | null
           created_at?: string
+          custom_tags?: Json
           disposition?: string | null
           duration_seconds?: number
+          duration_semantics?: string
           event_type?: string | null
           fbclid?: string | null
           forwarded_number?: string | null
+          gbraid?: string | null
           gclid?: string | null
           hangup_cause?: string | null
           id?: string
           inbound_duration_seconds?: number
           is_test_delivery?: boolean
+          msclkid?: string | null
           no_payout_reason?: string | null
           number_pool?: string | null
           payout?: number
@@ -4375,6 +4396,8 @@ export type Database = {
           publisher_name?: string | null
           raw_payload?: Json | null
           recording_url?: string | null
+          reported_duration_seconds?: number | null
+          reported_inbound_duration_seconds?: number | null
           revenue?: number
           service_line?: string
           target_name?: string | null
@@ -4385,6 +4408,7 @@ export type Database = {
           utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          wbraid?: string | null
         }
         Relationships: [
           {

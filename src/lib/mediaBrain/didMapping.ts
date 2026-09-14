@@ -95,7 +95,11 @@ export const CALL_SOURCES: Record<string, CallSourceSpec> = {
     creativeColumn: null,
     targetColumn: 'target_name',
     idColumn: 'call_id',
-    attributionColumns: ['utm_campaign', 'utm_content', 'utm_source', 'utm_term', 'raw_payload'],
+    attributionColumns: [
+      'utm_campaign', 'utm_content', 'utm_source', 'utm_term', 'utm_medium',
+      'gclid', 'fbclid', 'wbraid', 'gbraid', 'msclkid',
+      'custom_tags', 'raw_payload',
+    ],
   },
   cannaball: {
     platform: 'cannaball',
@@ -143,6 +147,64 @@ export interface MappingCall extends AttributionTags {
   creative_name: string | null;
   target_name: string | null;
   payout_amount: number;
+  /**
+   * Click identifiers found on the call, if the feed carries any. Their PRESENCE is what
+   * separates "ad-level coverage is low" from "ad-level attribution is unavailable" —
+   * two different facts with two different remedies.
+   */
+  click_keys?: string[];
+}
+
+/** Click identifiers, in the order platforms name them. */
+export const CLICK_KEY_COLUMNS = ['gclid', 'fbclid', 'wbraid', 'gbraid', 'msclkid'];
+
+/** Every click identifier present on a raw row, read from the row or any jsonb bag on it. */
+export function readClickKeys(row: Record<string, unknown>): string[] {
+  const bags: Record<string, unknown>[] = [row];
+  for (const nested of ['metadata', 'raw_payload', 'tags', 'custom_tags'] as const) {
+    const v = row[nested];
+    if (v && typeof v === 'object' && !Array.isArray(v)) bags.push(v as Record<string, unknown>);
+  }
+  const found = new Set<string>();
+  for (const bag of bags) {
+    for (const k of CLICK_KEY_COLUMNS) {
+      const v = bag[k];
+      if (v !== null && v !== undefined && String(v).trim() !== '') found.add(k);
+    }
+  }
+  return [...found];
+}
+
+export interface AdLevelAvailability {
+  /** False when NO call in the window carries any key capable of naming a single ad. */
+  available: boolean;
+  /** The keys actually seen: click identifiers, `utm_content`, `creative_id`. */
+  keysPresent: string[];
+  /** Plain statement of the fact, for the screen to render verbatim. */
+  reason: string | null;
+}
+
+/**
+ * Can this client be attributed at AD level at all? A feed with no click identifier, no
+ * `utm_content` and no captured creative id has no key that names a single ad — and where
+ * tracking numbers are pooled the DID names a campaign, never a creative. Reporting that
+ * as 0% coverage invites someone to fix it by adding mappings, which cannot work.
+ */
+export function adLevelAvailability(calls: MappingCall[]): AdLevelAvailability {
+  const keys = new Set<string>();
+  for (const c of calls) {
+    for (const k of c.click_keys ?? []) keys.add(k);
+    if (c.utm_content) keys.add('utm_content');
+    if (c.creative_id) keys.add('creative_id');
+  }
+  const keysPresent = [...keys];
+  return {
+    available: keysPresent.length > 0,
+    keysPresent,
+    reason: keysPresent.length
+      ? null
+      : 'ad-level attribution unavailable — no click key in the feed. No call in this window carries a gclid, fbclid, wbraid, gbraid, msclkid, utm_content or captured creative id, so nothing identifies a single ad. Mapping tracking numbers cannot raise this: a number identifies a campaign, not a creative.',
+  };
 }
 
 /** Read raw rows from a call table into the shape this screen works in. */
@@ -161,6 +223,7 @@ export function toMappingCalls(rows: Record<string, unknown>[], spec: CallSource
     creative_name: spec.creativeColumn ? s(r[spec.creativeColumn]) : null,
     target_name: spec.targetColumn ? s(r[spec.targetColumn]) : null,
     payout_amount: Number(r[spec.payoutColumn] ?? 0) || 0,
+    click_keys: readClickKeys(r),
     // Same reader the adapter uses, so the UTM tier sees identical values here.
     ...readAttribution(r),
   }));

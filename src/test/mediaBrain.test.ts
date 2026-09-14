@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import * as engine from '@/lib/mediaBrain/engine';
 import * as decisions from '@/lib/mediaBrain/decisions';
 import { fromRingba } from '@/lib/mediaBrain/adapter';
+import * as mapping from '@/lib/mediaBrain/didMapping';
 import { computeWindow } from '@/lib/mediaBrain/pull';
 import type { PullRow, PullWindowSuccess } from '@/lib/mediaBrain/pull';
 import { rowClass } from '@/components/mediaBrain/shared';
@@ -333,5 +334,54 @@ describe('publisher attribution stops and filters the pull (§3)', () => {
       { publisher: 'Squeeze Media Group SS', calls: SCENARIOS.graduationCandidate.calls },
     ]);
     expect(res.breakers.some((b) => b.includes('Publisher attribution'))).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Ad-level attribution: unavailable is a different fact from 0%.
+ * ------------------------------------------------------------------ */
+
+describe('ad-level availability — no click key in the feed', () => {
+  const call = (over: Partial<mapping.MappingCall> = {}): mapping.MappingCall => ({
+    call_id: 'c1',
+    timestamp: '2026-03-02T15:00:00Z',
+    did: '+15055550142',
+    caller_number: '+16067270011',
+    campaign_name: 'RRM - Windows - Meta',
+    creative_name: null,
+    target_name: null,
+    payout_amount: 0,
+    click_keys: [],
+    utm_campaign: null,
+    utm_content: null,
+    utm_source: 'facebook',
+    utm_term: null,
+    utm_medium: null,
+    creative_id: null,
+    ...over,
+  });
+
+  it('reports unavailable, with a reason, when no call carries any ad-level key', () => {
+    const a = mapping.adLevelAvailability([call(), call({ call_id: 'c2' })]);
+    expect(a.available).toBe(false);
+    expect(a.keysPresent).toEqual([]);
+    expect(a.reason).toContain('ad-level attribution unavailable');
+    expect(a.reason).toContain('no click key in the feed');
+  });
+
+  it('reports available — a low number, not an unavailable one — as soon as one key appears', () => {
+    const withClick = mapping.adLevelAvailability([call(), call({ call_id: 'c2', click_keys: ['gclid'] })]);
+    expect(withClick.available).toBe(true);
+    expect(withClick.keysPresent).toContain('gclid');
+
+    const withUtm = mapping.adLevelAvailability([call({ utm_content: '1202100000009' })]);
+    expect(withUtm.available).toBe(true);
+    expect(withUtm.keysPresent).toContain('utm_content');
+  });
+
+  it('reads click keys off a raw row and out of its jsonb bags', () => {
+    expect(mapping.readClickKeys({ gclid: 'Cj-1', fbclid: '' })).toEqual(['gclid']);
+    expect(mapping.readClickKeys({ custom_tags: { msclkid: 'ms-1' } })).toEqual(['msclkid']);
+    expect(mapping.readClickKeys({ raw_payload: { utm_content: 'x' } })).toEqual([]);
   });
 });

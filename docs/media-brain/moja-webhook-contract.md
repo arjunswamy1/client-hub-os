@@ -165,22 +165,65 @@ that answer is the information we need.
 }
 ```
 
-## 4b. The question your test fire raises
+## 4b. Confirmed macro list (Moja, 2026-09-14) — and what it settles
 
-Your 2026-09-14 test substituted only `event`, `duration`, `zip_code`, `caller_id`,
-`campaign_id`, `campaign_name`, `publisher_name`, `buyer_name` and `target_name`. These 22 came
-back as literal macros:
+Moja has confirmed the outgoing webhook macro list. This section replaces the earlier
+question about the test fire.
 
-`to`, `call_id`, `event_timestamp`, `call_start`, `tracking_number`, `inbound_duration`,
-`converted`, `call_converted_at`, `answered`, `revenue`, `payout`, `no_payout_reason`,
-`hangup_cause`, `number_pool`, `caller_state`, `utm_source`, `utm_medium`, `utm_campaign`,
-`utm_content`, `utm_term`, `gclid`, `fbclid`.
+**Confirmed available.** `[CALL_ID]`, `[TO]` (the tracking number dialled), `[CALLER_ID]`,
+`[DURATION]` (described as **connected** duration), `[INBOUND_DURATION]`,
+`[PUBLISHER_PAID_OUT]` (publisher payout), `[CONVERTED]`, `[EVENT_TIMESTAMP]`,
+`[CALL_CONVERTED_AT]`, `[UTM_SOURCE]`.
 
-We assume that is because a test fire has no real call to substitute from. **Please confirm
-which of those 22 are populated on a real call.** If `call_id`, `payout`, `tracking_number`,
-the UTMs and the click IDs are genuinely unavailable, then we cannot deduplicate deliveries,
-cannot measure revenue, and cannot attribute below campaign level — so we need to know now
-rather than infer it from data in a month. A single real, non-test delivery answers it.
+**Confirmed NOT available.** `gclid` and `fbclid` — there is no built-in macro for either.
+They must be populated as **custom tags**, from the landing page or an incoming webhook, and
+then referenced in the template.
+
+**The 2026-09-14 test fire returned eight of the confirmed macros as unreplaced literals.**
+Because Moja states those macros exist, the non-substitution is a **test-mode artifact, not a
+missing macro**: a test fire has no real call to substitute from. The template field names are
+correct and a real call should populate them. *Any earlier note in this document implying
+those tags may not exist was wrong — do not read the test fire as evidence of absence.*
+
+**What that settles, and what it costs.** With no `gclid`/`fbclid` macro and only
+`[UTM_SOURCE]` among the UTMs, the delivered payload carries **no click-level key**. Tracking
+numbers are the only other candidate and we do not yet know whether they are pooled. So on
+current evidence River Road tops out at **campaign level**: ad-level attribution is
+*unavailable*, not merely low-coverage, and no amount of number mapping changes that. Our
+receiver now stores every unmapped field in a `custom_tags` bag and reads `gclid`, `fbclid`,
+`wbraid`, `gbraid`, `msclkid` and the UTMs from **either** a top-level field **or** that bag,
+so the moment a click key starts arriving by any mechanism it is picked up with no further
+work on our side.
+
+**On the two durations.** We store `[DURATION]` and `[INBOUND_DURATION]` separately and
+exactly as delivered, under names that say which macro they came from. We do **not** infer the
+connection state from either one: `connected` is taken from an `answered` field alone, and is
+recorded as *unknown* when that field is absent. Which duration the billable threshold applies
+to is recorded as UNKNOWN for River Road, and that unknown blocks the billable count, cost per
+billable call, billable rate and every threshold derived from them until question 2 below is
+answered.
+
+### Questions we still need a human answer to
+
+1. **Are `utm_campaign`, `utm_content`, `utm_term` and `utm_medium` available as macros, or is
+   `[UTM_SOURCE]` the only one?** `utm_content` is the ad-level key; its absence is precisely
+   what caps attribution at campaign level.
+2. **Which of `[DURATION]` and `[INBOUND_DURATION]` is talk time with the buyer, and which
+   includes ring time? Which one does the buyer's billable threshold apply to?** If inbound
+   duration counts ring time, treating it as connected time would mark unanswered calls as
+   connected and corrupt every downstream diagnostic.
+3. **Is there a macro for publisher / traffic source, no-payout reason, hangup cause, number
+   pool membership, and `answered`?** All five were in our template but absent from the
+   confirmed list. Publisher is the one we cannot manage without: a tracking campaign receives
+   calls from every source pointed at it, and without it every margin figure silently includes
+   traffic we did not buy.
+4. **Are the tracking numbers pooled or statically assigned per campaign?** A pooled number
+   rotates between visitors, so it identifies a campaign and never a creative.
+5. **Exactly how are custom tags populated** — via the incoming `call_data` webhook, URL
+   parameters on the number request, or a JavaScript snippet on the landing page? This is the
+   route by which `gclid` and `fbclid` would reach us, so the mechanics matter.
+
+
 
 
 ### Why B decides the whole integration

@@ -20,7 +20,34 @@ export interface BuyologyCall {
   metadata: any;
 }
 
-/** Ringba calls for BuyologyIQ within the active date range */
+/**
+ * The publishers attributed to CPM for BuyologyIQ, read from the client's
+ * economics records (`attributed_publishers`). The Ringba campaigns receive
+ * calls from many publishers; only these belong to our media buying. The list
+ * is read, never defaulted — an unconfigured record returns an empty list and
+ * the calls query returns nothing rather than everyone.
+ */
+async function fetchAttributedPublishers(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("media_brain_economics")
+    .select("attributed_publishers")
+    .eq("client_id", BUYOLOGY_CLIENT_ID);
+  if (error) throw error;
+  const set = new Set<string>();
+  for (const row of data || []) {
+    for (const p of (row.attributed_publishers as string[] | null) || []) {
+      if (p) set.add(p);
+    }
+  }
+  return [...set];
+}
+
+/** PostgREST filter matching calls whose publisher is one of the attributed publishers. */
+function publisherFilter(publishers: string[]): string {
+  return publishers.map((p) => `metadata->>publisher.eq.${p}`).join(",");
+}
+
+/** Ringba calls for BuyologyIQ within the active date range — CPM-attributed publishers only */
 export function useBuyologyCalls() {
   const { dateRange } = useDateRange();
   const from = format(dateRange.from, "yyyy-MM-dd");
@@ -29,12 +56,15 @@ export function useBuyologyCalls() {
   return useQuery({
     queryKey: ["buyology-calls", from, to],
     queryFn: async () => {
+      const publishers = await fetchAttributedPublishers();
+      if (publishers.length === 0) return [] as BuyologyCall[];
       const { data, error } = await supabase
         .from("ringba_calls")
         .select(
           "call_id, call_date, campaign_name, target_name, caller_number, inbound_number, duration_seconds, connected, converted, revenue, payout, metadata"
         )
         .eq("client_id", BUYOLOGY_CLIENT_ID)
+        .or(publisherFilter(publishers))
         .gte("call_date", `${from}T00:00:00`)
         .lte("call_date", `${to}T23:59:59`)
         .order("call_date", { ascending: true })

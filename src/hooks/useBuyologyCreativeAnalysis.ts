@@ -90,6 +90,19 @@ export function useBuyologyCreativeAnalysis() {
   return useQuery({
     queryKey: ["buyology-creative-analysis"],
     queryFn: async () => {
+      // Only publishers attributed to CPM on the economics records count as our
+      // traffic; the Ringba campaigns carry many publishers' calls.
+      const { data: ecoRows, error: ecoError } = await supabase
+        .from("media_brain_economics")
+        .select("attributed_publishers")
+        .eq("client_id", BUYOLOGY_CLIENT_ID);
+      if (ecoError) throw ecoError;
+      const publishers = [
+        ...new Set(
+          (ecoRows || []).flatMap((r) => (r.attributed_publishers as string[] | null) || []).filter(Boolean)
+        ),
+      ];
+
       const [creativesRes, callsRes] = await Promise.all([
         supabase
           .from("ad_creatives")
@@ -97,13 +110,16 @@ export function useBuyologyCreativeAnalysis() {
             "ad_name, adset_name, campaign_name, platform_ad_id, spend, impressions, clicks, status, format, creative_type, creative_thumbnail_url"
           )
           .eq("client_id", BUYOLOGY_CLIENT_ID),
-        supabase
-          .from("ringba_calls")
-          .select(
-            "call_id, call_date, campaign_name, target_name, caller_number, inbound_number, duration_seconds, connected, converted, revenue, payout, metadata"
-          )
-          .eq("client_id", BUYOLOGY_CLIENT_ID)
-          .limit(50000),
+        publishers.length === 0
+          ? Promise.resolve({ data: [], error: null })
+          : supabase
+              .from("ringba_calls")
+              .select(
+                "call_id, call_date, campaign_name, target_name, caller_number, inbound_number, duration_seconds, connected, converted, revenue, payout, metadata"
+              )
+              .eq("client_id", BUYOLOGY_CLIENT_ID)
+              .or(publishers.map((p) => `metadata->>publisher.eq.${p}`).join(","))
+              .limit(50000),
       ]);
       if (creativesRes.error) throw creativesRes.error;
       if (callsRes.error) throw callsRes.error;

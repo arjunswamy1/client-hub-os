@@ -297,6 +297,8 @@ export default function MediaBrainMappingsPage() {
   if (!d || !coverage) return null;
 
   const pct = coverage.adLevelPct;
+  // An empty window is neither available nor unavailable — it is no evidence at all.
+  const adLevelUnavailable = coverage.totalCalls > 0 && adLevel !== null && !adLevel.available;
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -323,21 +325,38 @@ export default function MediaBrainMappingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-4xl font-semibold tabular-nums">{fmtPct(pct)}</p>
-                <p className="text-xs text-muted-foreground">
-                  of calls resolve to a single Meta ad — by UTM tag on the call, or by DID → mapping → creative. Only
-                  these support per-ad decisions.
-                </p>
+          {/* Unavailable is not 0%. Zero percent invites someone to fix it by adding
+              mappings; unavailable says no key in the feed can ever name a single ad. */}
+          {adLevelUnavailable ? (
+            <div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-2xl font-semibold">Ad-level attribution unavailable</p>
+                  <p className="text-xs text-muted-foreground">
+                    No click key in the feed — not 0% coverage. Nothing on these calls identifies a single ad, so this
+                    client's ceiling is campaign level and no mapping changes that.
+                  </p>
+                </div>
+                <Badge variant="destructive">No ad-level key</Badge>
               </div>
-              <Badge variant={coverage.ready ? "default" : "destructive"}>
-                {coverage.ready ? "At or above the 80% threshold" : "Below the 80% threshold"}
-              </Badge>
             </div>
-            <Progress value={pct === null ? 0 : Math.min(100, pct * 100)} className="mt-3" />
-          </div>
+          ) : (
+            <div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-4xl font-semibold tabular-nums">{fmtPct(pct)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    of calls resolve to a single Meta ad — by UTM tag on the call, or by DID → mapping → creative. Only
+                    these support per-ad decisions.
+                  </p>
+                </div>
+                <Badge variant={coverage.ready ? "default" : "destructive"}>
+                  {coverage.ready ? "At or above the 80% threshold" : "Below the 80% threshold"}
+                </Badge>
+              </div>
+              <Progress value={pct === null ? 0 : Math.min(100, pct * 100)} className="mt-3" />
+            </div>
+          )}
 
           {/* Each tier counted separately. A campaign-level resolution is NOT an
               ad-level one, so they are never added together. */}
@@ -366,12 +385,20 @@ export default function MediaBrainMappingsPage() {
             </Notice>
           )}
 
-          {!coverage.ready && (
-            <Notice tone="danger" title="This client is not ready for a Media Brain pilot">
-              Below 80% ad-level coverage, most calls cannot be tied to the ad that produced them, so no margin or
-              angle comparison on the daily and weekly screens means anything. Mapping the DIDs below is what moves this
-              number — each mapping you save recomputes it immediately.
+          {adLevelUnavailable ? (
+            <Notice tone="danger" title="Ad-level attribution unavailable — no click key in the feed">
+              {adLevel?.reason} Decisions here can go no finer than the campaign: cut, hold and scale per ad, and
+              graduation per angle, all need one ad per row. The remedy is not mapping — it is getting a click
+              identifier or a <code>utm_content</code> value into the call feed.
             </Notice>
+          ) : (
+            !coverage.ready && (
+              <Notice tone="danger" title="This client is not ready for a Media Brain pilot">
+                Below 80% ad-level coverage, most calls cannot be tied to the ad that produced them, so no margin or
+                angle comparison on the daily and weekly screens means anything. Mapping the DIDs below is what moves
+                this number — each mapping you save recomputes it immediately.
+              </Notice>
+            )
           )}
 
 

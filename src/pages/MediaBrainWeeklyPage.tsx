@@ -467,6 +467,15 @@ export default function MediaBrainWeeklyPage() {
               </CardContent>
             </Card>
           )}
+          {data && confirmed && (
+            <VerticalReadPanel
+              clientId={clientId}
+              start={confirmed.start}
+              end={confirmed.end}
+              adLevelPct={data.totals.calls ? data.adLevelCalls / data.totals.calls : null}
+            />
+          )}
+
         </div>
       )}
 

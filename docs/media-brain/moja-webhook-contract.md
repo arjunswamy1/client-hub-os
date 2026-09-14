@@ -203,6 +203,36 @@ to is recorded as UNKNOWN for River Road, and that unknown blocks the billable c
 billable call, billable rate and every threshold derived from them until question 2 below is
 answered.
 
+## 4c. River Road configuration recorded 2026-09-14 (confirmed by AJ Swamy)
+
+**Campaign → vertical.** Moja campaign `Internal Plumbing` → vertical `plumbing`; `Internal Windows` → vertical `windows`.
+
+**Publisher scoping.** Both campaigns are dedicated to CPM traffic only, so
+`{publisher_scoping} = not_required_dedicated_campaigns` and the pull proceeds without a
+publisher filter. This is a dated, attributed decision — not an absent answer — and it carries
+two safety nets: it is flagged for re-check after 30 days, and if more than one distinct
+publisher ever appears on a call for either campaign the read reports the dedicated-campaign
+claim as contradicted by the data and names the publishers being counted. Any client whose
+scoping is still `unknown` continues to stop the pull.
+
+**Platform.** Read from `utm_source` alone — `facebook`/`fb`/`meta` → Meta,
+`google`/`adwords` → Google, anything else or absent → `unclassified` and shown as its own
+row. The webhook's old keyword guess from the campaign name has been removed from the platform
+decision path entirely, so there is exactly one rule.
+
+**Ad side, recorded as an UNKNOWN.** River Road's live ads carry no UTM parameters in their
+final URLs (Google `homepromatch.net/plumbing`, 16 ads, $5,611.62; Meta
+`homepromatch.net/windows`, 5 ads, $2,012.70; `yourhomeservicespros.com`, 60 Google ads,
+$2,077.37 — all bare). But Google UTMs commonly live in the account tracking template or
+`final_url_suffix` and Meta's in `creative{url_tags}`, and **our syncs capture none of those
+three fields**. So "no UTMs in the final URL" is what we can see, not proof that none are
+stamped at click time. Recorded as the `ad_side_utm_capture` UNKNOWN; capturing those fields is
+on the sync backlog. Separately, the $0.00-spend Final Expense campaigns in the same synced
+account are a scoping risk for any window covering their active period.
+
+The landing-page work that would close the click-ID gap is specified in
+`homepromatch-clickid-proposal.md` — written for the site owner, not applied.
+
 ### Questions we still need a human answer to
 
 1. **Are `utm_campaign`, `utm_content`, `utm_term` and `utm_medium` available as macros, or is

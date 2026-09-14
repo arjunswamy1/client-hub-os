@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { pullWindow, type PullWindowResult } from "@/lib/mediaBrain/pull";
+import { WebhookReceiptPanel } from "@/components/mediaBrain/WebhookReceiptPanel";
 import {
   REVIEW_WINDOW_HOURS,
   syncBreakers,
@@ -229,6 +230,9 @@ export default function MediaBrainDailyPage() {
           )}
         </div>
       )}
+
+      {/* Operator test helper: the single most recent webhook receipt. */}
+      {syncStatus.data && <WebhookReceiptPanel rows={syncStatus.data} />}
 
       {/* Circuit-breaker banner sits above everything, always visible. */}
       {data?.ok && (

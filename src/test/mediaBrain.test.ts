@@ -415,7 +415,7 @@ describe('ad-level availability — no click key in the feed', () => {
  * ------------------------------------------------------------------ */
 
 describe('click-key readiness on a webhook receipt', () => {
-  const verdictFor = (bags: unknown[], key: string) =>
+  const verdictFor = (bags: Record<string, unknown>[], key: string) =>
     readiness.clickKeyReadiness(bags).find((v) => v.key === key)!;
 
   it('a real gclid reports arrived-with-value and flips the headline off unavailable', () => {

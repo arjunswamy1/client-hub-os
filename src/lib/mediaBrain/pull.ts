@@ -50,12 +50,28 @@ export interface PullRow extends JoinedEntityRow {
   billableRate: number | null;
   confidenceState: ConfidenceState;
   marginBand: engine.MarginBandResult | null;
+  /**
+   * True when this row's cost per call is above the instance's stored
+   * `allowable_cost_per_call` — the most you can pay per call and still clear
+   * the target margin (§2). Null when either side is unavailable.
+   */
+  overAllowableCostPerCall: boolean | null;
   /** Median call duration in seconds. Null when no durations came back. */
   medianDurationSeconds: number | null;
   /** RTB only — zeros included. Null under static. */
   payoutDistribution: engine.PayoutDistributionResult | null;
 
 }
+
+/** Every threshold on a pull comes from the Instance record — never a default. */
+export interface PullThresholds {
+  killThreshold: number | null;
+  minCalls: number | null;
+  allowableCostPerCall: number | null;
+  minMargin: number;
+  targetMargin: number;
+}
+
 
 export interface PullWindowArgs {
   clientId: string;

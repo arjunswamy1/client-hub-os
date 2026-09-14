@@ -117,9 +117,13 @@ export default function MediaBrainMappingsPage() {
           spec.campaignColumn,
           spec.creativeColumn,
           spec.targetColumn,
+          // Needed by the UTM tier — without these the coverage meter would
+          // report ad-level UTM matches as unresolved.
+          ...spec.attributionColumns,
         ]
           .filter(Boolean)
           .join(", ");
+
         const rows = await fetchAll(spec.table, cols, clientId!, spec.dateColumn, since);
         if (rows.length) found.push({ spec, calls: dm.toMappingCalls(rows, spec) });
       }

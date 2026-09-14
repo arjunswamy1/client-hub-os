@@ -757,3 +757,136 @@ export function validateBillableDefinition(
         : ' Within the 10% limit, so the stated definition may govern.'),
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * UNKNOWN thresholds and the SENSITIVITY BAND
+ *
+ * `billable_min_duration_seconds` is a contract term. Where a vertical's
+ * revenue_source is `computed`, revenue IS payout x billable count, so that one
+ * unconfirmed number decides revenue, RPC, margin per call, margin % and every
+ * threshold derived from them. On BuyologyIQ's Walk-In Tubs the same 30 days
+ * read +88.7% margin at 30s and -40.7% at 300s: the verdict flips on an input
+ * nobody has supplied.
+ *
+ * So when the threshold is an UNKNOWN we publish no point estimate at all. We
+ * publish the BAND across plausible thresholds, and say plainly that the true
+ * figure depends on a contract term nobody has given us. A band that crosses
+ * zero blocks verdicts outright.
+ * @see docs/media-brain/01_Decision_Engine.md §1, §2
+ * ------------------------------------------------------------------ */
+
+/** The thresholds the band is evaluated at. Plausible call-duration terms. */
+export const SENSITIVITY_DURATION_THRESHOLDS = [30, 60, 90, 120, 180, 240, 300];
+
+/** Is this economics field declared UNKNOWN rather than stated? (§1) */
+export function isUnknownField(
+  unknownFields: string[] | null | undefined,
+  field: string,
+): boolean {
+  if (!unknownFields?.length) return false;
+  return unknownFields.some((f) => String(f).trim().toLowerCase() === field.toLowerCase());
+}
+
+/**
+ * What an UNKNOWN `billable_min_duration_seconds` blocks. An UNKNOWN must name
+ * what it blocks (§1), and for a `computed` vertical that is nearly everything.
+ */
+export function blockedByUnknownDuration(source: RevenueSource): string[] {
+  return source === 'computed'
+    ? ['revenue', 'RPC', 'margin per call', 'margin %', 'profit', 'cost per billable call', 'every threshold derived from them']
+    : ['billable calls', 'cost per billable call'];
+}
+
+export interface SensitivityPoint {
+  thresholdSeconds: number;
+  billableCalls: number;
+  /** Null when no contracted payout is recorded — the band cannot be drawn. */
+  revenue: number | null;
+  marginPerCall: number | null;
+  marginPct: number | null;
+}
+
+export interface SensitivityBand {
+  points: SensitivityPoint[];
+  revenueLow: number | null;
+  revenueHigh: number | null;
+  marginPctLow: number | null;
+  marginPctHigh: number | null;
+  /** True when the band spans both profit and loss. */
+  crossesZero: boolean;
+  /** True whenever the band crosses zero — no verdict may be drawn from it. */
+  verdictBlocking: boolean;
+  note: string;
+}
+
+/**
+ * The revenue/margin band across plausible duration thresholds. Renders INSTEAD
+ * of revenue and margin whenever the threshold is UNKNOWN on a `computed`
+ * vertical — never alongside a point estimate, which would be read as measured.
+ */
+export function revenueSensitivity(
+  eco: RevenueEconomics,
+  rows: BillableCallInput[],
+  spend: Num,
+  thresholds: number[] = SENSITIVITY_DURATION_THRESHOLDS,
+): SensitivityBand {
+  const source = revenueSourceOf(eco);
+  const payoutThreshold = minPayoutThreshold(eco);
+  const calls = rows.length;
+  const spendNum = ok(spend) ? spend : 0;
+
+  const points: SensitivityPoint[] = thresholds.map((t) => {
+    let billableCalls = 0;
+    let platformRevenue = 0;
+    for (const r of rows) {
+      const longEnough = ok(r.duration_seconds) && r.duration_seconds >= t;
+      if (!longEnough) continue;
+      if (source === 'computed') {
+        billableCalls += 1;
+        continue;
+      }
+      if (r.converted === false) continue;
+      if (payoutIsRevenue(r.payout_amount, payoutThreshold)) {
+        billableCalls += 1;
+        platformRevenue += ok(r.payout_amount) ? r.payout_amount : 0;
+      }
+    }
+    const revenue =
+      source === 'computed' ? (ok(eco.payout) ? eco.payout * billableCalls : null) : platformRevenue;
+    return {
+      thresholdSeconds: t,
+      billableCalls,
+      revenue,
+      marginPerCall: revenue === null ? null : marginPerCall(revenue, spendNum, calls),
+      marginPct: revenue === null ? null : marginPct(revenue, spendNum),
+    };
+  });
+
+  const revenues = points.map((p) => p.revenue).filter((v): v is number => v !== null);
+  const margins = points.map((p) => p.marginPct).filter((v): v is number => v !== null);
+  const revenueLow = revenues.length ? Math.min(...revenues) : null;
+  const revenueHigh = revenues.length ? Math.max(...revenues) : null;
+  const marginPctLow = margins.length ? Math.min(...margins) : null;
+  const marginPctHigh = margins.length ? Math.max(...margins) : null;
+  const crossesZero = marginPctLow !== null && marginPctHigh !== null && marginPctLow < 0 && marginPctHigh > 0;
+
+  const range =
+    revenueLow === null || revenueHigh === null
+      ? 'The band cannot be drawn because no contracted payout is recorded — supply it at intake.'
+      : `Across ${thresholds[0]}s to ${thresholds[thresholds.length - 1]}s, revenue runs $${revenueLow.toFixed(2)} to $${revenueHigh.toFixed(2)} and margin runs ${(marginPctLow! * 100).toFixed(1)}% to ${(marginPctHigh! * 100).toFixed(1)}%.`;
+
+  return {
+    points,
+    revenueLow,
+    revenueHigh,
+    marginPctLow,
+    marginPctHigh,
+    crossesZero,
+    verdictBlocking: crossesZero,
+    note:
+      `The billable duration threshold is UNKNOWN — assumed, not stated in any contract — and on a ${source} vertical it is the revenue. No point estimate is shown, only this range. ${range}` +
+      (crossesZero
+        ? ' THE RANGE CROSSES ZERO: on the same 30 days this vertical is either clearly profitable or losing money, depending entirely on a contract term nobody has supplied. No verdict may be drawn until it is.'
+        : ''),
+  };
+}

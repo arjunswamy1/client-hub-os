@@ -168,6 +168,11 @@ export default function MediaBrainIntakePage() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  /* 3a — the billable definition is validated against data before anything computes. */
+  const [billableGovernance, setBillableGovernance] = useState<BillableGovernance | null>(null);
+  const [billableCheckBlocking, setBillableCheckBlocking] = useState(false);
+  const handleBlockingChange = useCallback((b: boolean) => setBillableCheckBlocking(b), []);
+
 
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ["mb-intake-client", clientId],

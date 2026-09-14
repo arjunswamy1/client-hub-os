@@ -141,9 +141,10 @@ describe('Media Brain — planted decision cases', () => {
     const res = compute([SCENARIOS.graduationCandidate, SCENARIOS.unjoinedSpend]);
 
     expect(res.rows.some((r) => r.entity_name === SCENARIOS.unjoinedSpend.adName)).toBe(false);
-    const flagged = res.unjoinedSpend.find((u) => u.entity === SCENARIOS.unjoinedSpend.adName);
-    expect(flagged).toBeTruthy();
-    expect(flagged!.spend).toBeCloseTo(SCENARIOS.unjoinedSpend.spend, 4);
+    // Unjoined spend is reported per Meta row, so sum the entity's rows.
+    const flagged = res.unjoinedSpend.filter((u) => u.entity === SCENARIOS.unjoinedSpend.adName);
+    expect(flagged.length).toBeGreaterThan(0);
+    expect(flagged.reduce((a, u) => a + u.spend, 0)).toBeCloseTo(SCENARIOS.unjoinedSpend.spend, 4);
     expect(res.breakers.some((b) => /tracking/i.test(b))).toBe(true);
   });
 

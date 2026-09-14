@@ -223,3 +223,65 @@ The sync already reads `metadata.sync_ad_accounts` as an array. Settings now has
 ### Tests
 
 20/20 (was 17/17). Three new cases: a `creative_id` matching a `platform_ad_id` resolves at `utm_ad`; a call with only `utm_campaign` resolves at `utm_campaign`, is `adLevelEligible: false` and leaves ad-level coverage at zero; a call with no tags, no DID mapping and no vertical match lands in `unjoinedCalls` while its spend surfaces as a tracking flag.
+
+---
+
+## Phase 1b — the dialed number, recovered
+
+The diagnostic's answer was acted on. `sync-ringba-calls-buyology` now requests `number`, `numberId`, `numberPoolName`, `numberPoolId`, `isFromNumberPool`, `hasPayout`, `noPayoutReason`, and `DialedNumber` joins the tag-discovery allowlist. `ringba_calls` gained `did`, `did_pool_name`, `is_from_number_pool`, `has_payout`, `no_payout_reason`, and both phone columns now carry a comment recording what they actually contain.
+
+`inbound_number` maps from `inboundPhoneNumber` and nothing else — the `tag:DialedNumber:Number` fallback that conflated caller with tracking number is gone. In `adapter.ts` the canonical `did` reads `ringba_calls.did` and falls back to `inbound_number` only when it is null, setting `did_is_caller_number_fallback`; the pull raises that as a named count. There is no silent path from a caller's number into attribution.
+
+`sync-ringba-calls` (Billy/CPM) has the same mapping gap but sends **no `valueColumns` at all**, so there is no column list to extend — adding one would narrow the default record it currently relies on. Its mapper now reads the five fields from whatever the default record carries and leaves them null otherwise. Campaign filtering untouched.
+
+### Backfill
+
+`supabase/functions/ringba-backfill-did` — parameterised by `client_id` and either `days_back` or an explicit `start`/`end`, idempotent, `UPDATE ... WHERE call_id = $1 AND client_id = $2` only, restricted to the five new columns by an explicit allowlist that throws on anything else. No insert, no delete, no pre-existing column. Ran in three window slices for BuyologyIQ's last 30 days (each invocation stops at a 110s budget).
+
+| | |
+|---|---|
+| Rows in window | 2,417 |
+| Matched by call id | 2,417 |
+| Populated with a non-null `did` | 2,321 (96.0%) |
+| Ringba returned no dialed number | 96 |
+| **Distinct `did` values** | **302** |
+| Rows where `did` equals `inbound_number` | 0 |
+
+302 distinct values across 2,321 calls — **genuine tracking numbers**, not caller numbers. They are toll-free (`+18884611277` alone took 337 calls) and `is_from_number_pool` is true on the bulk of them, consistent with Ringba number pools.
+
+### Payout: what `noPayoutReason` and `hasPayout` actually say
+
+**Neither field answers the question on this account.**
+
+- `no_payout_reason` is **null on all 2,417 rows** — the column is requested and returns nothing.
+- `has_payout` is **never false**: true on 1,605 rows, null on the rest. It is true on 1,267 of the 1,354 rows whose payout is $0. It does not distinguish the sub-dollar tail from the $55/$60 calls, or even zero from paid.
+
+The sub-dollar tail was answered by the data instead, decisively:
+
+| Payout | Calls | Range | Median duration | `has_payout` true / null | Converted |
+|---|---|---|---|---|---|
+| $0 | 1,354 | — | 44s | 1,267 / 87 | 245 |
+| $0.05–$0.75 | 721 | avg $0.07 | 13s | 6 / 715 | 24 |
+| $1.00 | 1 | — | 1,193s | 0 / 1 | 0 |
+| $55–$60 | 341 | avg $55.25 | 357s | 332 / 9 | 341 |
+
+On **all 721** sub-dollar rows, `payout` equals `metadata.total_cost` exactly. This is not payout at all: the mapper's `payoutAmount || payout || totalCost` chain falls through to telco cost whenever Ringba's real payout is zero. So the account has two payout states, $0 and $55/$60 — a **STATIC** payout shape — and the $0.05–$0.75 tail is cost misrecorded as revenue. The billable definition for this client should key on the $55/$60 payout with the duration threshold, and `payout` must stop falling back to `totalCost`. That fallback is in the pre-existing mapping and was left alone here; changing it rewrites historical revenue and needs its own decision.
+
+### Coverage after the backfill — BuyologyIQ, last 30 days
+
+| Tier | Calls | Share |
+|---|---|---|
+| `utm_ad` | 94 | 3.9% |
+| `did_ad` | 0 | 0.0% |
+| **Ad level** | **94** | **3.9%** |
+| `utm_campaign` | 0 | 0.0% |
+| `vertical` | 0 | 0.0% |
+| `none` | 2,329 | 96.1% |
+
+Unchanged against the 3.9% baseline, and the reason is exactly the one the mapping tool exists to fix: **`client_dids` holds zero rows for this client**, so 2,321 calls now carry a real tracking number with nothing to match it to. The 302 distinct DIDs, top ones by call volume:
+
+`+18884611277` 337 · `+18884611282` 55 · `+18888310922` 41 · `+18664722878` 30 · `+18887070993` 30 · `+18889651917` 29 · `+18666590082` 23 · `+18559651602` 22 · `+18887110714` 20 · `+18887070831` 20 · `+18886793596` 19 · `+18887070862` 18 · `+18887772486` 17 · `+18889282764` 17 · `+18888491498` 17 · `+18887070942` 16 · `+18887070867` 16 · `+18442596021` 16 · `+18888543195` 16 · `+18889641487` 16 · `+18887070915` 16 · `+18889282756` 15 · `+18887071018` 14 · `+18663173380` 14 · `+18883311799` 14
+
+The gap is missing mappings, not missing data. Mapping the top 20 DIDs covers roughly 750 calls; mapping the long tail is what gets this client past 80%.
+
+Tests: 21/21 (was 20/20) — one new case asserting a real dialed number is not flagged and a caller-number fallback is.

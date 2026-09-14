@@ -538,7 +538,7 @@ describe('publisher scoping on the vertical read (§3b)', () => {
     });
     const row = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
     expect(row.calls).toBe(2);
-    expect(row.excludedCalls).toBe(0);
+    expect(row.excludedPublisherCalls).toBe(0);
     expect(row.dedicatedCampaignContradiction?.contradicted).toBe(false);
   });
 

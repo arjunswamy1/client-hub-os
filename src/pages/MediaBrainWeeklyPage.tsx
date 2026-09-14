@@ -349,10 +349,25 @@ export default function MediaBrainWeeklyPage() {
     .filter(({ level, row }) => dispositions[`${level}:${row.groupKey}`]?.verdict === "cut" && level === "adset")
     .reduce((s, { row }) => s + row.spend, 0);
   const anyGraduated = Object.values(graduated).some(Boolean);
-  const frag = engine.fragmentationCheck(
-    instance?.expected_billable_calls_per_week ?? null,
-    activeAdSets ? Number(activeAdSets) : null,
-  );
+  /**
+   * §4: the numerator is the account's META OPTIMISATION EVENT — whatever the ad
+   * sets bid toward — not the billable-call count. Meta's ~50-per-ad-set
+   * learning-phase floor counts its own event, so substituting billable calls
+   * compares two different things. Where the event is UNKNOWN, the check does
+   * not run.
+   */
+  const metaEvent = (instance?.meta_conversion_event as string | null) ?? null;
+  const expectedMetaEvents = (instance?.expected_meta_events_per_week as number | null) ?? null;
+  const fragBlocked = !metaEvent
+    ? "Cannot run: the Meta conversion event for this account is not recorded."
+    : expectedMetaEvents === null
+      ? `Cannot run: the expected weekly count of "${metaEvent}" is not recorded.`
+      : null;
+  const frag = fragBlocked
+    ? { perAdSet: null as number | null, passes: false }
+    : engine.fragmentationCheck(expectedMetaEvents, activeAdSets ? Number(activeAdSets) : null);
+  /** The billable definition is a different event; say so rather than implying they agree. */
+  const billableDiffersFromMetaEvent = !!metaEvent && !/billable/i.test(metaEvent);
   const marginalResult = engine.marginalReturn(
     marginal.baseSpend === "" ? null : Number(marginal.baseSpend),
     marginal.baseRevenue === "" ? null : Number(marginal.baseRevenue),
@@ -847,24 +862,48 @@ export default function MediaBrainWeeklyPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Step 7 — Fragmentation check</CardTitle>
-            <CardDescription>Expected weekly conversions ÷ active ad sets, against the learning-phase floor of {FRAG_FLOOR}.</CardDescription>
+            <CardDescription>
+              Expected weekly count of this account&apos;s Meta optimisation event ÷ active ad sets, against the
+              learning-phase floor of {FRAG_FLOOR}. Meta&apos;s learning phase counts its own event — billable calls are
+              never substituted for it.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="flex items-end gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Active ad sets</Label>
-                <Input type="number" className="w-28" value={activeAdSets} onChange={(e) => setActiveAdSets(e.target.value)} />
-              </div>
-              <p className="text-muted-foreground">
-                Expected billable calls / week: {fmtNum(instance?.expected_billable_calls_per_week)}
-              </p>
-            </div>
-            <p>
-              {fmtNum(instance?.expected_billable_calls_per_week)} ÷ {activeAdSets || "—"} ={" "}
-              <strong>{fmtNum(frag.perAdSet, 1)}</strong> per ad set —{" "}
-              {frag.passes ? `clears the floor of ${FRAG_FLOOR}.` : `below the floor of ${FRAG_FLOOR}.`}
+            <p className="rounded-md border bg-muted/40 p-3">
+              <span className="font-medium">Event counted: </span>
+              {metaEvent ?? "not recorded"}
+              {billableDiffersFromMetaEvent && (
+                <span className="text-muted-foreground">
+                  {" "}
+                  — this is not the billable definition on the Economics record. The two counts are not the same thing,
+                  and this check is about Meta&apos;s learning phase only.
+                </span>
+              )}
             </p>
-            {!frag.passes && activeAdSets && (
+            {fragBlocked ? (
+              <Notice tone="warn" title="Fragmentation check did not run">
+                {fragBlocked} Billable calls are not substituted — re-run intake and record the Meta conversion event
+                and its expected weekly count.
+              </Notice>
+            ) : (
+              <>
+                <div className="flex items-end gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Active ad sets</Label>
+                    <Input type="number" className="w-28" value={activeAdSets} onChange={(e) => setActiveAdSets(e.target.value)} />
+                  </div>
+                  <p className="text-muted-foreground">
+                    Expected &quot;{metaEvent}&quot; events / week: {fmtNum(expectedMetaEvents)}
+                  </p>
+                </div>
+                <p>
+                  {fmtNum(expectedMetaEvents)} ÷ {activeAdSets || "—"} ={" "}
+                  <strong>{fmtNum(frag.perAdSet, 1)}</strong> per ad set —{" "}
+                  {frag.passes ? `clears the floor of ${FRAG_FLOOR}.` : `below the floor of ${FRAG_FLOOR}.`}
+                </p>
+              </>
+            )}
+            {!fragBlocked && !frag.passes && activeAdSets && (
               <Notice tone="warn" title="The structure will not exit learning phase">
                 Volume is split across ad sets that will each learn nothing. Consolidate before scaling.
               </Notice>

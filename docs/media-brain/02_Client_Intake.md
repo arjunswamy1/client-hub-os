@@ -19,6 +19,8 @@ You are running client intake for the ConnectPay media buying framework. Read `L
 - Platforms active now, and any planned later
 - Ad account ID(s)
 - Call tracking platform
+- **Meta conversion event this account optimises toward** — free text, e.g. "call initiated", "call connected", "CAPI qualified call". This is what Meta's learning phase counts, and it is the numerator of the fragmentation check. UNKNOWN is an acceptable answer; the fragmentation check then does not run, and billable calls are never substituted for it.
+- Expected weekly count of that Meta conversion event
 
 **A2. Payout economics**
 
@@ -91,7 +93,8 @@ Once Part A is complete, calculate and show your work. Targets come from the ans
 | Cost to reach `{min_calls}` per angle | `{min_calls}` × cost per billable call |
 | **Max angles testable** | Test budget ÷ cost per angle, rounded down |
 | Test budget | 100% at launch; 80/20 once an angle has graduated |
-| Fragmentation check | Expected weekly conversions ÷ planned ad sets, against ~50 |
+| Meta conversion event | Stated in A1. The fragmentation check depends on it — where it is UNKNOWN the check does not run, and billable calls are not substituted. |
+| Fragmentation check | Expected weekly count of the account's Meta optimisation event ÷ planned ad sets, against ~50. Never billable calls — Layer 2 §4. |
 | Buyer count and concentration | From call data — revenue share of the top buyer |
 | Capacity read | Inferred from call data: connection rate by hour, no-bid clustering. No API exposes it directly. |
 

@@ -3952,12 +3952,14 @@ export type Database = {
           cut_cadence: string | null
           economics_id: string | null
           expected_billable_calls_per_week: number | null
+          expected_meta_events_per_week: number | null
           flags: Json | null
           id: string
           is_stale: boolean | null
           kill_threshold: number | null
           lifecycle_stage: string | null
           max_angles: number | null
+          meta_conversion_event: string | null
           min_calls: number | null
           min_margin: number
           naming_convention: Json | null
@@ -3978,12 +3980,14 @@ export type Database = {
           cut_cadence?: string | null
           economics_id?: string | null
           expected_billable_calls_per_week?: number | null
+          expected_meta_events_per_week?: number | null
           flags?: Json | null
           id?: string
           is_stale?: boolean | null
           kill_threshold?: number | null
           lifecycle_stage?: string | null
           max_angles?: number | null
+          meta_conversion_event?: string | null
           min_calls?: number | null
           min_margin?: number
           naming_convention?: Json | null
@@ -4004,12 +4008,14 @@ export type Database = {
           cut_cadence?: string | null
           economics_id?: string | null
           expected_billable_calls_per_week?: number | null
+          expected_meta_events_per_week?: number | null
           flags?: Json | null
           id?: string
           is_stale?: boolean | null
           kill_threshold?: number | null
           lifecycle_stage?: string | null
           max_angles?: number | null
+          meta_conversion_event?: string | null
           min_calls?: number | null
           min_margin?: number
           naming_convention?: Json | null

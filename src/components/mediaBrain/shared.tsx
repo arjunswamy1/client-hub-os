@@ -357,6 +357,8 @@ export function groupRows(
     const calls = sum(b.members.map((m) => m.calls));
     const connected = sum(b.members.map((m) => m.connected_calls));
     const billable = sum(b.members.map((m) => m.billable_calls));
+    const paid = sum(b.members.map((m) => m.paid_calls));
+    const paidNotBillable = sum(b.members.map((m) => m.paid_not_billable_calls));
     const clicks = sum(b.members.map((m) => m.clicks));
     const impressions = sum(b.members.map((m) => m.impressions));
     const payouts = b.members.flatMap((m) => m.payouts);
@@ -375,6 +377,8 @@ export function groupRows(
       calls,
       connected_calls: connected,
       billable_calls: billable,
+      paid_calls: paid,
+      paid_not_billable_calls: paidNotBillable,
       clicks,
       impressions,
       payouts,
@@ -389,7 +393,14 @@ export function groupRows(
       callRate: engine.callRate(calls, clicks),
       connectionRate: engine.connectionRate(connected, calls),
       billableRate: engine.billableRate(billable, connected),
-      confidenceState: engine.confidenceState(billable, minCalls, spend, killThreshold),
+      killCount: engine.killCount(payoutMode, { billable_calls: billable, paid_calls: paid }),
+      confidenceState: engine.confidenceState(
+        billable,
+        engine.killCount(payoutMode, { billable_calls: billable, paid_calls: paid }),
+        minCalls,
+        spend,
+        killThreshold,
+      ),
       marginBand: engine.marginBand(engine.marginPct(revenue, spend), minMargin, targetMargin),
       overAllowableCostPerCall: engine.exceedsAllowableCostPerCall(costPerCallValue, allowableCostPerCall),
       medianDurationSeconds: engine.median(durations),

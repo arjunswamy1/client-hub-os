@@ -63,6 +63,7 @@ type NumField =
   | "expected_cost_per_billable_call"
   | "steps_to_live_person"
   | "planned_ad_sets"
+  | "expected_weekly_meta_events"
   | "target_margin_pct"
   | "min_margin_pct"
   | "actionable_gap_pct";
@@ -72,6 +73,13 @@ interface FormState {
   platforms: string;
   ad_account_ids: string;
   tracking_platform: string;
+  /**
+   * The event this account's Meta ad sets optimise toward. The fragmentation
+   * check counts THIS, never billable calls — Meta's learning phase counts its
+   * own optimisation event (§4).
+   */
+  meta_conversion_event: string;
+  meta_conversion_event_unknown: boolean;
   payout_mode: "static" | "rtb";
   rtb_live: boolean;
   observed_rpc: string;
@@ -103,6 +111,7 @@ const emptyNums = (): Record<NumField, string> => ({
   expected_cost_per_billable_call: "",
   steps_to_live_person: "",
   planned_ad_sets: "",
+  expected_weekly_meta_events: "",
   // Pre-filled with the framework defaults (§16). A client may state otherwise.
   target_margin_pct: String(engine.DEFAULTS.targetMargin * 100),
   min_margin_pct: String(engine.DEFAULTS.minMargin * 100),
@@ -117,6 +126,8 @@ const initialForm: FormState = {
   platforms: "",
   ad_account_ids: "",
   tracking_platform: "",
+  meta_conversion_event: "",
+  meta_conversion_event_unknown: false,
   payout_mode: "static",
   rtb_live: false,
   observed_rpc: "",
@@ -223,6 +234,8 @@ export default function MediaBrainIntakePage() {
     if (!form.platforms.trim()) m.push("Platforms");
     if (!form.ad_account_ids.trim()) m.push("Ad account ID(s)");
     if (!form.tracking_platform) m.push("Call tracking platform");
+    if (!form.meta_conversion_event.trim() && !form.meta_conversion_event_unknown)
+      m.push("Meta conversion event this account optimises toward");
     if (form.payout_mode === "static") {
       need("payout", "Payout per billable call");
       need("billable_min_duration_seconds", "Billable duration threshold");
@@ -245,6 +258,7 @@ export default function MediaBrainIntakePage() {
     if (!form.reporting_format.trim()) m.push("Reporting format");
     if (!form.reporting_cadence.trim()) m.push("Reporting cadence");
     need("planned_ad_sets", "Planned ad sets (for the fragmentation check)");
+    need("expected_weekly_meta_events", "Expected weekly count of that Meta conversion event");
     need("target_margin_pct", "Target margin %");
     need("min_margin_pct", "Minimum margin % (the floor)");
     need("actionable_gap_pct", "Actionable gap % between angles");
@@ -297,7 +311,25 @@ export default function MediaBrainIntakePage() {
     const testBudgetPct = 1; // 100% at launch; 80/20 once an angle has graduated.
     const testBudget = weeklyBudget === null ? null : weeklyBudget * testBudgetPct;
     const angles = engine.maxAngles(testBudget, perAngle);
-    const fragmentation = engine.fragmentationCheck(expectedBillablePerWeek, plannedAdSets);
+    /**
+     * §4: the fragmentation numerator is the account's META OPTIMISATION EVENT,
+     * not the billable-call count. Substituting one for the other compares
+     * Meta's learning-phase counter against a different event entirely. Where
+     * the event is UNKNOWN the check does not run.
+     */
+    const metaConversionEvent = form.meta_conversion_event_unknown
+      ? null
+      : form.meta_conversion_event.trim() || null;
+    const expectedMetaEventsPerWeek = numVal("expected_weekly_meta_events");
+    const fragmentationBlockedReason =
+      metaConversionEvent === null
+        ? "Cannot run: the Meta conversion event for this account is not recorded."
+        : expectedMetaEventsPerWeek === null
+          ? `Cannot run: the expected weekly count of "${metaConversionEvent}" is not recorded.`
+          : null;
+    const fragmentation = fragmentationBlockedReason
+      ? { perAdSet: null as number | null, passes: false }
+      : engine.fragmentationCheck(expectedMetaEventsPerWeek, plannedAdSets);
 
     const flags: { level: "warn" | "info"; text: string }[] = [];
     if (angles !== null && angles < 3) {
@@ -306,10 +338,12 @@ export default function MediaBrainIntakePage() {
         text: `Max angles testable is ${angles} — under 3. Options: test fewer angles properly, extend the test window, or raise the test budget. Five underpowered tests teach less than one funded one.`,
       });
     }
-    if (fragmentation.perAdSet !== null && !fragmentation.passes) {
+    if (fragmentationBlockedReason) {
+      flags.push({ level: "warn", text: `Fragmentation check — ${fragmentationBlockedReason} Billable calls are NOT substituted: Meta's learning phase counts its own optimisation event, so the two numbers are not the same thing.` });
+    } else if (fragmentation.perAdSet !== null && !fragmentation.passes) {
       flags.push({
         level: "warn",
-        text: `Fragmentation check: ${fmtNum(fragmentation.perAdSet)} expected weekly conversions per ad set against a floor of ${engine.DEFAULTS.fragmentationFloor}. The planned structure will not exit learning phase — consolidate ad sets.`,
+        text: `Fragmentation check: ${fmtNum(fragmentation.perAdSet)} expected weekly "${metaConversionEvent}" events per ad set against a floor of ${engine.DEFAULTS.fragmentationFloor}. The planned structure will not exit learning phase — consolidate ad sets.`,
       });
     }
     if (mode === "rtb" && form.rtb_live && observedRpc !== null && avgBid !== null && avgBid > 0) {
@@ -337,6 +371,7 @@ export default function MediaBrainIntakePage() {
         actionable_gap_pct: "{min_calls}, cost per angle, max angles — the whole confidence bar",
         daily_budget: "expected billable calls per week, volume tier, test budget, max angles",
         planned_ad_sets: "the fragmentation check",
+        expected_weekly_meta_events: "the fragmentation check — billable calls are never substituted for the Meta optimisation event",
       };
       flags.push({
         level: "warn",
@@ -362,6 +397,9 @@ export default function MediaBrainIntakePage() {
       testBudget,
       angles,
       fragmentation,
+      fragmentationBlockedReason,
+      metaConversionEvent,
+      expectedMetaEventsPerWeek,
       costPerCall,
       costPerBillable,
       payout,
@@ -431,6 +469,8 @@ export default function MediaBrainIntakePage() {
         kill_threshold: computed.kill,
         min_calls: computed.minCallsValue,
         expected_billable_calls_per_week: computed.expectedBillablePerWeek,
+        meta_conversion_event: computed.metaConversionEvent,
+        expected_meta_events_per_week: computed.expectedMetaEventsPerWeek,
         volume_tier: computed.tier?.tier ?? null,
         cut_cadence: computed.tier?.cutCadence ?? null,
         scale_cadence: computed.tier?.scaleCadence ?? null,
@@ -552,6 +592,27 @@ export default function MediaBrainIntakePage() {
                   </SelectContent>
                 </Select>
               </Field>
+              <Field
+                label="Meta conversion event this account optimises toward"
+                hint='Examples: "call initiated", "call connected", "CAPI qualified call". The fragmentation check counts this event, not billable calls — Meta&apos;s learning phase counts its own optimisation event.'
+              >
+                <div className="flex items-center gap-3">
+                  <Input
+                    value={form.meta_conversion_event}
+                    disabled={form.meta_conversion_event_unknown}
+                    onChange={(e) => set("meta_conversion_event", e.target.value)}
+                    placeholder="call initiated"
+                  />
+                  <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={form.meta_conversion_event_unknown}
+                      onChange={(e) => set("meta_conversion_event_unknown", e.target.checked)}
+                    />
+                    Unknown
+                  </label>
+                </div>
+              </Field>
               <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">Routing: recommend-only.</span> Fixed for every client. Buyer,
                 floor and waterfall changes are proposed with evidence; the client executes.
@@ -615,7 +676,15 @@ export default function MediaBrainIntakePage() {
               <NumberField label="Daily budget ($)" field="daily_budget" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
               <NumberField label="Known or estimated cost per call ($)" field="expected_cost_per_call" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
               <NumberField label="Known or estimated cost per billable call ($)" field="expected_cost_per_billable_call" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
-              <NumberField label="Planned ad sets" field="planned_ad_sets" form={form} setNum={setNum} toggleUnknown={toggleUnknown} hint="Used by the fragmentation check" />
+              <NumberField label="Planned ad sets" field="planned_ad_sets" form={form} setNum={setNum} toggleUnknown={toggleUnknown} hint="Denominator of the fragmentation check" />
+              <NumberField
+                label="Expected weekly count of that Meta conversion event"
+                field="expected_weekly_meta_events"
+                form={form}
+                setNum={setNum}
+                toggleUnknown={toggleUnknown}
+                hint="Numerator of the fragmentation check. Meta needs roughly 50 of ITS optimisation event per ad set per week — not 50 billable calls. Mark Unknown and the check does not run."
+              />
             </>
           )}
 
@@ -814,10 +883,22 @@ export default function MediaBrainIntakePage() {
                 result={fmtNum(computed.angles)}
               />
               <Work
+                label="Meta conversion event"
+                formula="stated by the account — the fragmentation check counts this event, never billable calls"
+                substitution={computed.metaConversionEvent ?? "UNKNOWN"}
+                result={computed.metaConversionEvent ?? "UNKNOWN — the fragmentation check cannot run"}
+              />
+              <Work
                 label="Fragmentation check"
-                formula={`expected weekly conversions ÷ planned ad sets, against ~${engine.DEFAULTS.fragmentationFloor}`}
-                substitution={`${fmtNum(computed.expectedBillablePerWeek)} ÷ ${form.nums.planned_ad_sets || "—"}`}
-                result={`${fmtNum(computed.fragmentation.perAdSet)} per ad set — ${computed.fragmentation.passes ? "passes" : "below the floor"}`}
+                formula={`expected weekly ${computed.metaConversionEvent ? `"${computed.metaConversionEvent}"` : "Meta optimisation"} events ÷ planned ad sets, against ~${engine.DEFAULTS.fragmentationFloor}`}
+                substitution={
+                  computed.fragmentationBlockedReason ??
+                  `${fmtNum(computed.expectedMetaEventsPerWeek)} ÷ ${form.nums.planned_ad_sets || "—"}`
+                }
+                result={
+                  computed.fragmentationBlockedReason ??
+                  `${fmtNum(computed.fragmentation.perAdSet)} per ad set — ${computed.fragmentation.passes ? "passes" : "below the floor"}`
+                }
               />
 
               <div className="space-y-2 pt-2">

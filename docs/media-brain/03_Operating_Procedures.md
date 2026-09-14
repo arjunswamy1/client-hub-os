@@ -66,10 +66,14 @@ Grouping by angle, audience, and creative iteration depends on parsing structure
 1. **Circuit-breaker scan** — before anything else:
 
     - Tracking broken or calls not routing. *Signal: Meta spend with no joined call records, or calls with no* `ad_id`*.*
+      **Recommended action:** pause all spend for this client and alert the account team. Spend is accruing against call data that is not arriving; nothing downstream can be read until the join is fixed.
     - Buyer down or at capacity. **[RTB]** abrupt no-bid spike or rate-limiting.
-    - Any ad past 2× payout with zero billable calls.
+      **Recommended action:** pause the affected ad sets and alert the client. This is a routing conversation, not a media one.
+    - Any ad past 2× payout with zero billable calls — **[RTB]** zero calls with a payout above zero (Layer 2 §6.3).
+      **Recommended action:** propose pausing those specific ads, named. §6.3 makes this the decisive verdict — it does not wait for `{min_calls}`.
 
 - A breaker fires → act today. Nothing else here justifies a same-day change.
+- **Every breaker states its recommended action, and the daily view only ever proposes it.** The page executes nothing — no pauses, no budget changes, no creative swaps. The account manager carries the action out in Meta. A stated remedy is never something the page has already done.
 
 2. **Account totals** — spend, calls, billable calls, profit, margin % against the client's floor.
 

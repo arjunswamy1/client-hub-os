@@ -205,9 +205,26 @@ export function minCalls(actionableGap: Num, payoutMode: PayoutMode = 'static'):
 
 
 /**
+ * The count the kill rule reads — stated ONCE, here, so no page re-derives it.
+ *
+ * [STATIC] billable calls: the payout contract draws a clean line.
+ * [RTB] PAID calls: payout is continuous and there is no clean billable line,
+ * so "zero billable" is defined as zero calls with a payout above zero.
+ *
+ * @see docs/media-brain/01_Decision_Engine.md §2, §6.3, §12
+ */
+export function killCount(
+  payoutMode: PayoutMode,
+  row: { billable_calls?: Num; paid_calls?: Num },
+): number | null {
+  const v = payoutMode === 'rtb' ? row.paid_calls : row.billable_calls;
+  return ok(v) ? v : null;
+}
+
+/**
  * Confidence state for a row.
  *
- * - `decisive_zero` — zero billable calls past the kill threshold. Decisive
+ * - `decisive_zero` — zero of the kill count (`killCount`) past the kill threshold. Decisive
  *   despite a low count; deliberately does NOT wait for `{min_calls}` (§6.3).
  * - `sufficient` — at or above `{min_calls}`. Act.
  * - `insufficient` — below it. Hold, and render greyed / marked *insufficient data*.
@@ -217,13 +234,15 @@ export function minCalls(actionableGap: Num, payoutMode: PayoutMode = 'static'):
  */
 export function confidenceState(
   billableCalls: Num,
+  /** From `killCount()` — billable under static, PAID under RTB. */
+  killCountValue: Num,
   minCallsValue: Num,
   spend: Num,
   killThresholdValue: Num,
 ): ConfidenceState {
   if (
-    ok(billableCalls) &&
-    billableCalls === 0 &&
+    ok(killCountValue) &&
+    killCountValue === 0 &&
     ok(spend) &&
     ok(killThresholdValue) &&
     spend >= killThresholdValue
@@ -252,7 +271,9 @@ export function wobblePct(n: Num): number | null {
  * ------------------------------------------------------------------ */
 
 /**
- * Kill threshold: spend at which an entity with ZERO billable calls is killed.
+ * Kill threshold: spend at which an entity with a ZERO kill count is killed.
+ * The count itself is `killCount()` — billable calls under static, PAID calls
+ * under RTB, where payout is continuous and billable has no clean line.
  * [STATIC] 2 × `{payout}` · [RTB] 2 × `{avg_bid}`.
  * This fires on any day, not only on review day, and does not wait for `{min_calls}`.
  * @see docs/media-brain/01_Decision_Engine.md §6.3, §16

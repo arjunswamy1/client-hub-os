@@ -156,6 +156,11 @@ export interface PullWindowSuccess {
    */
   resolutionCounts: Record<ResolutionTier, number>;
   adLevelCalls: number;
+  /**
+   * Calls whose DID had to fall back to the caller's own number because no dialed
+   * number was recorded. Reported as a named count; never resolved silently.
+   */
+  didCallerNumberFallbackCalls: number;
   /** Call ids whose billable status is undetermined — surface, never hide. */
   missingBillableDefinition: string[];
   /** Circuit breakers raised by the pull itself (§ Circuit breakers). */
@@ -362,6 +367,12 @@ export function computeWindow({
       `Tracking flag: ${join.unjoinedSpend.length} Meta entities spent $${sum(join.unjoinedSpend.map((u) => u.spend)).toFixed(2)} with no joined call records. Treated as a tracking failure, not as zero calls.`,
     );
   }
+  const didFallbackCalls = calls.filter((c) => c.did_is_caller_number_fallback);
+  if (didFallbackCalls.length) {
+    breakers.push(
+      `Data quality: ${didFallbackCalls.length} of ${calls.length} calls have no dialed number recorded, so their DID fell back to the caller's own number. Any DID mapping those calls match is a coincidence, not attribution — they are counted here rather than resolved silently.`,
+    );
+  }
   if (missingBillableDefinition.length) {
     breakers.push('Billable definition is missing on the Economics record, so no call can be marked billable. Every billable-denominated metric is unavailable until it is supplied.');
   }
@@ -431,6 +442,7 @@ export function computeWindow({
     joinNote: join.joinNote,
     resolutionCounts: join.resolutionCounts,
     adLevelCalls: join.adLevelCalls,
+    didCallerNumberFallbackCalls: didFallbackCalls.length,
     missingBillableDefinition,
     breakers,
   };

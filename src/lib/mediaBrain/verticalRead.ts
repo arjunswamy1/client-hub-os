@@ -139,19 +139,58 @@ export function verticalsMatchingCampaign(
   return verticals.filter((v) => matchesAny(campaignName, v.meta_patterns)).map((v) => v.vertical_id);
 }
 
+/** The vertical an ad's own NAME identifies, if any. */
+export function verticalFromAdName(ad: MetaAdRow, verticals: VerticalDefinition[]): string | null {
+  const matches = verticals.filter((v) => matchesAny(ad.ad_name, v.meta_patterns));
+  return matches.length === 1 ? matches[0].vertical_id : null;
+}
+
 /**
  * Ad-name match first, campaign name second. In a MIXED campaign only the ad name
  * may assign; an ad matching nothing is unclassified, never defaulted.
  */
-export function assignAdToVertical(ad: MetaAdRow, verticals: VerticalDefinition[]): string | null {
-  const byAdName = verticals.find((v) => matchesAny(ad.ad_name, v.meta_patterns));
-  if (byAdName) return byAdName.vertical_id;
+export function assignAdToVertical(
+  ad: MetaAdRow,
+  verticals: VerticalDefinition[],
+  /** Campaign names known to carry ads from more than one vertical. */
+  mixedCampaigns?: Set<string>,
+): string | null {
+  const byAdName = verticalFromAdName(ad, verticals);
+  if (byAdName) return byAdName;
+  if (ad.campaign_name && mixedCampaigns?.has(ad.campaign_name)) return null;
   const campaignMatches = verticalsMatchingCampaign(ad.campaign_name, verticals);
   if (campaignMatches.length === 1) return campaignMatches[0];
   return null;
 }
 
+/**
+ * Which Meta campaigns are MIXED — either their name matches more than one
+ * vertical, or their ads' own names resolve to more than one vertical. A mixed
+ * campaign can only ever be assigned ad by ad.
+ */
+export function findMixedCampaigns(metaAds: MetaAdRow[], verticals: VerticalDefinition[]): Set<string> {
+  const byCampaign = new Map<string, Set<string>>();
+  const mixed = new Set<string>();
+  for (const ad of metaAds) {
+    const campaign = ad.campaign_name;
+    if (!campaign) continue;
+    if (verticalsMatchingCampaign(campaign, verticals).length > 1) mixed.add(campaign);
+    const fromName = verticalFromAdName(ad, verticals);
+    if (!fromName) continue;
+    const set = byCampaign.get(campaign) ?? new Set<string>();
+    set.add(fromName);
+    byCampaign.set(campaign, set);
+  }
+  for (const [campaign, set] of byCampaign) if (set.size > 1) mixed.add(campaign);
+  return mixed;
+}
+
 /* ---------------- the read ---------------- */
+
+/** A call reduced to what the revenue rule reads. Drops any stored `billable`. */
+function toRevenueRow(call: CanonicalCall): engine.BillableCallInput {
+  return { duration_seconds: call.duration_seconds, payout_amount: call.payout_amount };
+}
 
 function emptyRow(vertical_id: string, label: string): VerticalReadRow {
   return {
@@ -213,13 +252,11 @@ export function verticalRead({
 
   const spendByVertical = new Map<string, number>();
   let unclassifiedSpend = 0;
-  const mixedCampaigns = new Set<string>();
+  const mixedCampaigns = findMixedCampaigns(metaAds, verticals);
   const unclassifiedAdNames = new Set<string>();
 
   for (const ad of metaAds) {
-    const campaignMatches = verticalsMatchingCampaign(ad.campaign_name, verticals);
-    if (campaignMatches.length > 1 && ad.campaign_name) mixedCampaigns.add(ad.campaign_name);
-    const id = assignAdToVertical(ad, verticals);
+    const id = assignAdToVertical(ad, verticals, mixedCampaigns);
     const spend = Number.isFinite(ad.spend) ? (ad.spend as number) : 0;
     if (!id) {
       unclassifiedSpend += spend;
@@ -233,7 +270,10 @@ export function verticalRead({
     const eco = economics.byVertical[v.vertical_id] ?? economics.clientDefault;
     const bucket = callsByVertical.get(v.vertical_id) ?? [];
     const spend = spendByVertical.get(v.vertical_id) ?? 0;
-    const resolved = engine.resolveRevenue(eco, bucket);
+    // Strip each call's stored `billable`: it was derived from the CLIENT-level
+    // economics, and this vertical may bill differently. The vertical's own
+    // economics decide, in the engine.
+    const resolved = engine.resolveRevenue(eco, bucket.map(toRevenueRow));
 
     const row = emptyRow(v.vertical_id, v.label ?? v.vertical_id);
     row.spend = spend;
@@ -282,7 +322,7 @@ export function verticalRead({
   const unclassified = emptyRow('unclassified', 'Unclassified');
   unclassified.spend = unclassifiedSpend;
   unclassified.calls = unclassifiedCalls.length;
-  const unclassifiedResolved = engine.resolveRevenue(economics.clientDefault, unclassifiedCalls);
+  const unclassifiedResolved = engine.resolveRevenue(economics.clientDefault, unclassifiedCalls.map(toRevenueRow));
   unclassified.paidCalls = unclassifiedResolved.paidCalls;
   unclassified.billableCalls = unclassifiedResolved.billableCalls;
   unclassified.revenue = unclassifiedResolved.revenue;

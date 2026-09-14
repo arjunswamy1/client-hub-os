@@ -1,0 +1,306 @@
+/**
+ * Media Brain — the VERTICAL READ.
+ *
+ * This is information for a human, not a decision. The Decision Engine's
+ * cut/hold/scale verdicts are ad-level rules and must never render here: a
+ * vertical row is dozens of ads blended together, and blending hides exactly the
+ * differences a verdict acts on.
+ *
+ * Why it exists: on a pooled-DID account the dialed number cannot identify a
+ * creative. On BuyologyIQ, 76% of calls arrive on numbers drawn from rotating
+ * pools and 100 of 302 numbers carried up to six different creatives, so
+ * DID → creative would misattribute. But DID → Ringba campaign is stable — every
+ * one of those 302 numbers maps to exactly one campaign — so the dialed number is
+ * a reliable VERTICAL key even where it is a useless ad key.
+ *
+ * Assignment rules, stated once:
+ *   - CALLS are assigned by the Ringba campaign name on the call (which the DID
+ *     determines), matched against each vertical's `ringba_patterns`. Never by
+ *     creative matching.
+ *   - META SPEND is assigned by the ad name first, then the Meta campaign name,
+ *     both against `meta_patterns`. Where a campaign's name matches more than one
+ *     vertical the campaign is MIXED, and only an ad-name match may assign it —
+ *     an ad in a mixed campaign that matches no vertical's patterns is reported
+ *     as UNCLASSIFIED and is never assigned to a vertical by default.
+ *
+ * Every formula comes from engine.ts. Revenue comes from engine.resolveRevenue.
+ *
+ * @see docs/media-brain/01_Decision_Engine.md §2, §3
+ */
+
+import type { CanonicalCall } from './adapter';
+import * as engine from './engine';
+import type { ConfidenceState, RevenueEconomics, ResolvedRevenue } from './engine';
+import type { MetaAdRow } from './join';
+
+/** The vertical definition this read groups on. Sourced from `client_verticals`. */
+export interface VerticalDefinition {
+  vertical_id: string;
+  label: string | null;
+  emoji?: string | null;
+  /** Ringba campaign-name patterns. Assign CALLS. Support `*` wildcards. */
+  ringba_patterns: string[] | null;
+  /** Meta ad-name / campaign-name patterns. Assign SPEND. Support `*` wildcards. */
+  meta_patterns: string[] | null;
+  ringba_exact_match?: boolean | null;
+}
+
+/** Per-vertical economics, keyed by `vertical_id`. Falls back to the client default. */
+export interface VerticalEconomicsMap {
+  byVertical: Record<string, RevenueEconomics & { payout_confirmed?: boolean | null }>;
+  clientDefault: RevenueEconomics;
+}
+
+export interface VerticalReadThresholds {
+  minCalls: number | null;
+  minMargin: number | null;
+  targetMargin: number | null;
+  killThreshold: number | null;
+}
+
+export interface VerticalReadRow {
+  vertical_id: string;
+  label: string;
+  spend: number;
+  calls: number;
+  paidCalls: number;
+  billableCalls: number;
+  revenue: number | null;
+  revenueSource: engine.RevenueSource | 'unclassified';
+  revenueNote: string;
+  rpc: number | null;
+  costPerCall: number | null;
+  costPerBillableCall: number | null;
+  marginPerCall: number | null;
+  marginPct: number | null;
+  profit: number | null;
+  confidence: ConfidenceState;
+  /** Kept explicit so the UI never renders a verdict at this level. */
+  adLevelDecisionEligible: false;
+  /** Named data caveats — unconfirmed payouts, zero-payout campaigns, and so on. */
+  flags: string[];
+  resolution: ResolvedRevenue | null;
+}
+
+export interface VerticalReadResult {
+  rows: VerticalReadRow[];
+  /** Spend and calls that matched no vertical. Never folded into a vertical. */
+  unclassified: VerticalReadRow;
+  /** Meta campaign names whose patterns matched more than one vertical. */
+  mixedCampaigns: string[];
+  /** Ad names inside a mixed campaign that matched no vertical's patterns. */
+  unclassifiedAdNames: string[];
+  /** Ringba campaign names on calls that matched no vertical. */
+  unclassifiedCallCampaigns: string[];
+  /** Always rendered beside the read, so the reader knows why they are here. */
+  note: string;
+}
+
+/* ---------------- pattern matching ---------------- */
+
+/** `*` wildcards, case-insensitive. `Tub*`, `*WIT*`, `*Bath*` all behave as written. */
+export function matchesPattern(value: string | null | undefined, pattern: string): boolean {
+  if (!value || !pattern) return false;
+  const v = value.toLowerCase().trim();
+  const p = pattern.toLowerCase().trim();
+  if (!p.includes('*')) return v.includes(p);
+  const escaped = p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`).test(v);
+}
+
+function matchesAny(value: string | null | undefined, patterns: string[] | null | undefined): boolean {
+  if (!patterns || !patterns.length) return false;
+  return patterns.some((p) => matchesPattern(value, p));
+}
+
+/** Calls are assigned by the Ringba campaign name the DID resolves to. */
+export function assignCallToVertical(
+  campaignName: string | null,
+  verticals: VerticalDefinition[],
+): string | null {
+  for (const v of verticals) {
+    if (!v.ringba_patterns?.length) continue;
+    if (v.ringba_exact_match) {
+      if (v.ringba_patterns.some((p) => (campaignName ?? '').toLowerCase().trim() === p.toLowerCase().trim())) {
+        return v.vertical_id;
+      }
+      continue;
+    }
+    if (matchesAny(campaignName, v.ringba_patterns)) return v.vertical_id;
+  }
+  return null;
+}
+
+/** Which verticals a Meta campaign name matches. More than one means MIXED. */
+export function verticalsMatchingCampaign(
+  campaignName: string | null,
+  verticals: VerticalDefinition[],
+): string[] {
+  return verticals.filter((v) => matchesAny(campaignName, v.meta_patterns)).map((v) => v.vertical_id);
+}
+
+/**
+ * Ad-name match first, campaign name second. In a MIXED campaign only the ad name
+ * may assign; an ad matching nothing is unclassified, never defaulted.
+ */
+export function assignAdToVertical(ad: MetaAdRow, verticals: VerticalDefinition[]): string | null {
+  const byAdName = verticals.find((v) => matchesAny(ad.ad_name, v.meta_patterns));
+  if (byAdName) return byAdName.vertical_id;
+  const campaignMatches = verticalsMatchingCampaign(ad.campaign_name, verticals);
+  if (campaignMatches.length === 1) return campaignMatches[0];
+  return null;
+}
+
+/* ---------------- the read ---------------- */
+
+function emptyRow(vertical_id: string, label: string): VerticalReadRow {
+  return {
+    vertical_id,
+    label,
+    spend: 0,
+    calls: 0,
+    paidCalls: 0,
+    billableCalls: 0,
+    revenue: 0,
+    revenueSource: 'platform',
+    revenueNote: '',
+    rpc: null,
+    costPerCall: null,
+    costPerBillableCall: null,
+    marginPerCall: null,
+    marginPct: null,
+    profit: null,
+    confidence: 'insufficient',
+    adLevelDecisionEligible: false,
+    flags: [],
+    resolution: null,
+  };
+}
+
+export interface VerticalReadInput {
+  calls: CanonicalCall[];
+  metaAds: MetaAdRow[];
+  verticals: VerticalDefinition[];
+  economics: VerticalEconomicsMap;
+  thresholds: VerticalReadThresholds;
+  /** Share of calls resolved at ad level, shown beside the read. */
+  adLevelPct?: number | null;
+}
+
+export function verticalRead({
+  calls,
+  metaAds,
+  verticals,
+  economics,
+  thresholds,
+  adLevelPct,
+}: VerticalReadInput): VerticalReadResult {
+  const callsByVertical = new Map<string, CanonicalCall[]>();
+  const unclassifiedCalls: CanonicalCall[] = [];
+  const unclassifiedCallCampaigns = new Set<string>();
+
+  for (const call of calls) {
+    const id = assignCallToVertical(call.campaign_name, verticals);
+    if (!id) {
+      unclassifiedCalls.push(call);
+      if (call.campaign_name) unclassifiedCallCampaigns.add(call.campaign_name);
+      continue;
+    }
+    const bucket = callsByVertical.get(id) ?? [];
+    bucket.push(call);
+    callsByVertical.set(id, bucket);
+  }
+
+  const spendByVertical = new Map<string, number>();
+  let unclassifiedSpend = 0;
+  const mixedCampaigns = new Set<string>();
+  const unclassifiedAdNames = new Set<string>();
+
+  for (const ad of metaAds) {
+    const campaignMatches = verticalsMatchingCampaign(ad.campaign_name, verticals);
+    if (campaignMatches.length > 1 && ad.campaign_name) mixedCampaigns.add(ad.campaign_name);
+    const id = assignAdToVertical(ad, verticals);
+    const spend = Number.isFinite(ad.spend) ? (ad.spend as number) : 0;
+    if (!id) {
+      unclassifiedSpend += spend;
+      if (ad.ad_name) unclassifiedAdNames.add(ad.ad_name);
+      continue;
+    }
+    spendByVertical.set(id, (spendByVertical.get(id) ?? 0) + spend);
+  }
+
+  const rows = verticals.map((v) => {
+    const eco = economics.byVertical[v.vertical_id] ?? economics.clientDefault;
+    const bucket = callsByVertical.get(v.vertical_id) ?? [];
+    const spend = spendByVertical.get(v.vertical_id) ?? 0;
+    const resolved = engine.resolveRevenue(eco, bucket);
+
+    const row = emptyRow(v.vertical_id, v.label ?? v.vertical_id);
+    row.spend = spend;
+    row.calls = bucket.length;
+    row.paidCalls = resolved.paidCalls;
+    row.billableCalls = resolved.billableCalls;
+    row.revenue = resolved.revenue;
+    row.revenueSource = resolved.source;
+    row.revenueNote = resolved.note;
+    row.resolution = resolved;
+
+    const revenue = resolved.revenue;
+    row.rpc = revenue === null ? null : engine.rpc(revenue, row.calls);
+    row.costPerCall = engine.costPerCall(spend, row.calls);
+    row.costPerBillableCall = engine.costPerBillableCall(spend, row.billableCalls);
+    row.marginPerCall = revenue === null ? null : engine.marginPerCall(engine.rpc(revenue, row.calls), row.costPerCall);
+    row.profit = revenue === null ? null : engine.profit(revenue, spend);
+    row.marginPct = revenue === null ? null : engine.marginPct(revenue, spend);
+    row.confidence = engine.confidenceState(row.billableCalls, thresholds.minCalls);
+
+    if (eco.revenue_source === 'computed') {
+      row.flags.push(
+        'Revenue is computed from the contracted payout because the tracking platform does not expose this vertical\'s payouts. A payout we cannot see is a declared data limitation, not a zero.',
+      );
+    }
+    if (eco.payout_confirmed === false) {
+      row.flags.push('The payout used here was observed in the data, not confirmed by contract. Confirm it at intake.');
+    }
+    if (row.calls > 0 && resolved.paidCalls === 0 && resolved.source === 'platform') {
+      row.flags.push('No call in this vertical carries any payout, so it may need its own economics record rather than the client default.');
+    }
+    if (resolved.subThresholdPayoutCalls > 0) {
+      row.flags.push(
+        `${resolved.subThresholdPayoutCalls} calls carry a non-zero payout below the revenue threshold; excluded as telco cost recorded in the payout field.`,
+      );
+    }
+    return row;
+  });
+
+  const unclassified = emptyRow('unclassified', 'Unclassified');
+  unclassified.spend = unclassifiedSpend;
+  unclassified.calls = unclassifiedCalls.length;
+  const unclassifiedResolved = engine.resolveRevenue(economics.clientDefault, unclassifiedCalls);
+  unclassified.paidCalls = unclassifiedResolved.paidCalls;
+  unclassified.billableCalls = unclassifiedResolved.billableCalls;
+  unclassified.revenue = unclassifiedResolved.revenue;
+  unclassified.revenueSource = 'unclassified';
+  unclassified.revenueNote =
+    'These calls and this spend matched no vertical pattern. They are reported here rather than assigned to a vertical by default — a defaulted assignment would move real money onto the wrong product.';
+  unclassified.costPerCall = engine.costPerCall(unclassifiedSpend, unclassified.calls);
+  unclassified.costPerBillableCall = engine.costPerBillableCall(unclassifiedSpend, unclassified.billableCalls);
+  unclassified.confidence = engine.confidenceState(unclassified.billableCalls, thresholds.minCalls);
+  unclassified.resolution = unclassifiedResolved;
+
+  const coverage =
+    adLevelPct === null || adLevelPct === undefined
+      ? ''
+      : ` Ad-level attribution currently covers ${(adLevelPct * 100).toFixed(1)}% of calls, which is why the read is at vertical level.`;
+
+  return {
+    rows,
+    unclassified,
+    mixedCampaigns: [...mixedCampaigns],
+    unclassifiedAdNames: [...unclassifiedAdNames],
+    unclassifiedCallCampaigns: [...unclassifiedCallCampaigns],
+    note:
+      'This is a vertical read, not an ad-level decision. Cut, hold and scale verdicts are ad-level rules and are deliberately not shown here — a vertical row blends dozens of ads, and blending hides the differences a verdict acts on.' +
+      coverage,
+  };
+}

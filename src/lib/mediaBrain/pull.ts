@@ -49,6 +49,8 @@ export interface PullRow extends JoinedEntityRow {
   connectionRate: number | null;
   billableRate: number | null;
   confidenceState: ConfidenceState;
+  /** The count the kill rule read for this row — billable under static, PAID under RTB. */
+  killCount: number | null;
   marginBand: engine.MarginBandResult | null;
   /**
    * True when this row's cost per call is above the instance's stored
@@ -93,6 +95,10 @@ export interface PullWindowSuccess {
     calls: number;
     connectedCalls: number;
     billableCalls: number;
+    /** Calls that earned anything at all. The RTB kill count (§6.3). */
+    paidCalls: number;
+    /** Paid but not billable — under static, the signal that the definition is wrong. */
+    paidNotBillableCalls: number;
     clicks: number;
     impressions: number;
     costPerCall: number | null;
@@ -273,6 +279,8 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
     calls: sum(join.rows.map((r) => r.calls)),
     connectedCalls: sum(join.rows.map((r) => r.connected_calls)),
     billableCalls: sum(join.rows.map((r) => r.billable_calls)),
+    paidCalls: sum(join.rows.map((r) => r.paid_calls)),
+    paidNotBillableCalls: sum(join.rows.map((r) => r.paid_not_billable_calls)),
     clicks: sum(join.rows.map((r) => r.clicks)),
     impressions: sum(join.rows.map((r) => r.impressions)),
   };
@@ -299,9 +307,24 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
       `${overAllowable.length} ${overAllowable.length === 1 ? 'entity is' : 'entities are'} paying more per call than the allowable cost per call of $${(allowable as number).toFixed(2)} — above that price the target margin cannot be cleared.`,
     );
   }
+  // Under static, paid-but-not-billable calls should be ~0. A non-trivial count
+  // means the billable definition on the Economics record disagrees with what
+  // the buyer is actually paying for. Named, never quietly folded into "not billable".
+  if (
+    payoutMode === 'static' &&
+    totals.paidNotBillableCalls > 0 &&
+    (totals.paidNotBillableCalls >= 5 ||
+      (totals.paidCalls > 0 && totals.paidNotBillableCalls / totals.paidCalls >= 0.1))
+  ) {
+    breakers.push(
+      `${totals.paidNotBillableCalls} of ${totals.paidCalls} paid calls do not meet the billable definition on the Economics record. Under a static payout those two should agree — this usually means the recorded billable definition is not what the buyer is paying for. Check it before acting on any billable-denominated number.`,
+    );
+  }
   for (const r of rows) {
     if (r.confidenceState === 'decisive_zero') {
-      breakers.push(`${r.entity_name}: $${r.spend.toFixed(2)} spent past the kill threshold with zero billable calls.`);
+      breakers.push(
+        `${r.entity_name}: $${r.spend.toFixed(2)} spent past the kill threshold with zero ${payoutMode === 'rtb' ? 'paid calls (under RTB "zero billable" means zero calls with a payout above zero)' : 'billable calls'}.`,
+      );
     }
   }
 
@@ -368,7 +391,15 @@ function decorate(
     callRate: engine.callRate(r.calls, r.clicks),
     connectionRate: engine.connectionRate(r.connected_calls, r.calls),
     billableRate: engine.billableRate(r.billable_calls, r.connected_calls),
-    confidenceState: engine.confidenceState(r.billable_calls, minCallsValue, r.spend, kill),
+    // The kill count is chosen once, in the engine — never re-derived per page.
+    killCount: engine.killCount(payoutMode, r),
+    confidenceState: engine.confidenceState(
+      r.billable_calls,
+      engine.killCount(payoutMode, r),
+      minCallsValue,
+      r.spend,
+      kill,
+    ),
     marginBand: engine.marginBand(engine.marginPct(r.revenue, r.spend), minMargin, targetMargin),
     overAllowableCostPerCall: engine.exceedsAllowableCostPerCall(costPerCallValue, allowableCostPerCall),
     medianDurationSeconds: engine.median(r.durations),

@@ -4066,6 +4066,62 @@ export type Database = {
           },
         ]
       }
+      media_brain_platform_conversions: {
+        Row: {
+          client_id: string
+          count: number
+          created_at: string
+          date: string
+          entity_level: string
+          entity_name: string | null
+          entity_ref: string
+          event_name: string
+          id: string
+          platform: string
+          source: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          client_id: string
+          count?: number
+          created_at?: string
+          date: string
+          entity_level: string
+          entity_name?: string | null
+          entity_ref: string
+          event_name: string
+          id?: string
+          platform: string
+          source?: string
+          updated_at?: string
+          value?: number
+        }
+        Update: {
+          client_id?: string
+          count?: number
+          created_at?: string
+          date?: string
+          entity_level?: string
+          entity_name?: string | null
+          entity_ref?: string
+          event_name?: string
+          id?: string
+          platform?: string
+          source?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_platform_conversions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       media_brain_reviews: {
         Row: {
           breakers: Json | null

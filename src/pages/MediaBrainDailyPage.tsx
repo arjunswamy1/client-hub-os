@@ -158,6 +158,7 @@ export default function MediaBrainDailyPage() {
     });
   }
 
+  const deliveryBreakers = syncBreakers(syncStatus.data ?? []);
   const anyFired = breakers.some((b) => b.fired);
   const adsetRows = data?.ok ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds) : [];
   const adRows = data?.ok ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds) : [];

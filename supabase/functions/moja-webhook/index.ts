@@ -275,10 +275,15 @@ Deno.serve(async (req) => {
     unreplaced: norm.unreplaced,
     deliveryId: norm.deliveryId,
     customTags: (norm.row?.custom_tags as Record<string, unknown> | undefined) ?? null,
+    clickKeys: norm.clickKeys,
+    adLevelClickKey: norm.adLevelClickKey,
     shape: norm.shape,
     eventType: norm.eventType,
     validation: 'ok',
   };
+
+  // Evidence clears the UNKNOWN it was blocking, whatever else this delivery does.
+  if (norm.adLevelClickKey) await stampClickKeyEvidence(supabase, resolvedClientId, norm.adLevelClickKey);
 
   if (norm.reject || !norm.row) {
     // A call with no id cannot be deduplicated, so it is refused BY NAME rather than

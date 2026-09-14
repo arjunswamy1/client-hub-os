@@ -30,7 +30,7 @@
 
 import type { CanonicalCall } from './adapter';
 import * as engine from './engine';
-import type { ConfidenceState, RevenueEconomics, ResolvedRevenue } from './engine';
+import type { ConfidenceState, RevenueEconomics, ResolvedRevenue, SensitivityBand } from './engine';
 import type { MetaAdRow } from './join';
 
 /** The vertical definition this read groups on. Sourced from `client_verticals`. */
@@ -45,10 +45,17 @@ export interface VerticalDefinition {
   ringba_exact_match?: boolean | null;
 }
 
+/** Economics plus its provenance: was the payout confirmed, what is UNKNOWN. */
+export type VerticalEconomics = RevenueEconomics & {
+  payout_confirmed?: boolean | null;
+  /** Field names declared UNKNOWN — assumed, not stated. @see engine.isUnknownField */
+  unknown_fields?: string[] | null;
+};
+
 /** Per-vertical economics, keyed by `vertical_id`. Falls back to the client default. */
 export interface VerticalEconomicsMap {
-  byVertical: Record<string, RevenueEconomics & { payout_confirmed?: boolean | null }>;
-  clientDefault: RevenueEconomics;
+  byVertical: Record<string, VerticalEconomics>;
+  clientDefault: VerticalEconomics;
 }
 
 export interface VerticalReadThresholds {
@@ -64,7 +71,8 @@ export interface VerticalReadRow {
   spend: number;
   calls: number;
   paidCalls: number;
-  billableCalls: number;
+  /** Null when the billable duration threshold is UNKNOWN — it decides this count. */
+  billableCalls: number | null;
   revenue: number | null;
   revenueSource: engine.RevenueSource | 'unclassified';
   revenueNote: string;
@@ -77,10 +85,20 @@ export interface VerticalReadRow {
   confidence: ConfidenceState;
   /** Kept explicit so the UI never renders a verdict at this level. */
   adLevelDecisionEligible: false;
+  /** True when `billable_min_duration_seconds` is declared UNKNOWN. */
+  durationThresholdUnknown: boolean;
+  /** What that UNKNOWN blocks, named. Empty when nothing is blocked. */
+  blockedFigures: string[];
+  /**
+   * Renders INSTEAD of revenue and margin when the threshold is UNKNOWN on a
+   * `computed` vertical. Never alongside a point estimate.
+   */
+  sensitivity: SensitivityBand | null;
   /** Named data caveats — unconfirmed payouts, zero-payout campaigns, and so on. */
   flags: string[];
   resolution: ResolvedRevenue | null;
 }
+
 
 export interface VerticalReadResult {
   rows: VerticalReadRow[];

@@ -69,6 +69,13 @@ export function useMediaBrainPlatformConversions(
       // Google delivers conversions on the ad row itself rather than as a named
       // event breakdown, so its rows are their own event name — still platform
       // attributed, still never blended with the call read.
+      //
+      // This is the ONE place a raw ad-table `conversions` column is read, and only
+      // for Google, only when no stored breakdown exists. It is not the Meta defect:
+      // Google's column carries the account's own primary-conversion total, not a
+      // pile of different event names summed together, so there is nothing to
+      // triple-count. The moment Google breakdown rows land they take precedence.
+      // Meta never takes this path — its count comes from the governing event alone.
       const rows: ConversionBreakdownRow[] =
         platform === 'google' && breakdown.length === 0
           ? (adRes.data ?? []).map((a: Record<string, unknown>) => ({

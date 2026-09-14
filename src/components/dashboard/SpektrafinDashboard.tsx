@@ -21,12 +21,14 @@ const fmtDuration = (s: number) => {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/** RingFuel reports payout per call, so revenue is the sum of payouts and a paid call is payout > 0. */
+/** Spektrafin payout terms (client-confirmed 2026-09-14): $16 per raw call — every call pays. */
+export const SPEKTRAFIN_PAYOUT_PER_RAW_CALL = 16;
+
 function aggregate(calls: SpektrafinCall[], spend: number) {
   const total = calls.length;
   const connected = calls.filter((c) => c.connected === true).length;
-  const paid = calls.filter((c) => Number(c.payout || 0) > 0).length;
-  const revenue = calls.reduce((s, c) => s + Number(c.payout || 0), 0);
+  const paid = total; // every raw call pays $16
+  const revenue = total * SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
   const duration = calls.reduce((s, c) => s + (c.connection_duration_seconds || c.duration_seconds || 0), 0);
   const rpc = total ? revenue / total : 0;
   const costPerCall = total ? spend / total : 0;
@@ -102,8 +104,8 @@ export default function SpektrafinDashboard() {
       const d = c.call_start.slice(0, 10);
       const r = row(d);
       r.calls += 1;
-      if (Number(c.payout || 0) > 0) r.paid += 1;
-      r.revenue += Number(c.payout || 0);
+      r.paid += 1; // every raw call pays
+      r.revenue += SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
       byDate.set(d, r);
     }
     for (const s of spendRows) {
@@ -139,7 +141,7 @@ export default function SpektrafinDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls & payout — updated {lastSync}</p>
+        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls · revenue at $16 per raw call — updated {lastSync}</p>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
@@ -150,7 +152,7 @@ export default function SpektrafinDashboard() {
         <KPI label="Spend" value={fmtMoney(overall.spend)} icon={DollarSign} accent="text-blue-500" />
         <KPI label="Calls" value={overall.calls.toLocaleString()} icon={Phone} accent="text-indigo-500" />
         <KPI label="Connected" value={overall.connected.toLocaleString()} sub={fmtPct(overall.connectRate)} icon={PhoneCall} accent="text-emerald-500" />
-        <KPI label="Paid calls" value={overall.paid.toLocaleString()} sub={`${fmtPct(overall.paidRate)} of connected`} icon={Target} />
+        <KPI label="Paid calls" value={overall.paid.toLocaleString()} sub="$16 per raw call" icon={Target} />
         <KPI label="Revenue" value={fmtMoney(overall.revenue)} sub={`RPC ${fmtMoney2(overall.rpc)}`} icon={DollarSign} accent="text-emerald-500" />
         <KPI label="Cost / call" value={overall.costPerCall > 0 ? fmtMoney2(overall.costPerCall) : "—"} sub={overall.costPerPaidCall > 0 ? `${fmtMoney2(overall.costPerPaidCall)} per paid call` : undefined} icon={Target} />
         <KPI label="Margin / call" value={overall.calls ? fmtMoney2(overall.marginPerCall) : "—"} sub={overall.revenue > 0 ? fmtPct(overall.marginPct) : undefined} icon={TrendingUp} accent={overall.marginPerCall >= 0 ? "text-emerald-500" : "text-destructive"} />
@@ -178,7 +180,7 @@ export default function SpektrafinDashboard() {
                   <th className="px-3 py-2 text-right font-medium">Calls</th>
                   <th className="px-3 py-2 text-right font-medium">Connected</th>
                   <th className="px-3 py-2 text-right font-medium">Paid</th>
-                  <th className="px-3 py-2 text-right font-medium">Paid rate</th>
+                  <th className="px-3 py-2 text-right font-medium">Connect rate</th>
                   <th className="px-3 py-2 text-right font-medium">Avg duration</th>
                   <th className="px-3 py-2 text-right font-medium">Revenue</th>
                   <th className="px-3 py-2 text-right font-medium">RPC</th>
@@ -195,7 +197,7 @@ export default function SpektrafinDashboard() {
                     <td className="px-3 py-2 text-right">{r.calls}</td>
                     <td className="px-3 py-2 text-right">{r.connected}</td>
                     <td className="px-3 py-2 text-right">{r.paid}</td>
-                    <td className="px-3 py-2 text-right">{fmtPct(r.paidRate)}</td>
+                    <td className="px-3 py-2 text-right">{fmtPct(r.connectRate)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtDuration(r.avgDuration)}</td>
                     <td className="px-3 py-2 text-right">{fmtMoney(r.revenue)}</td>
                     <td className="px-3 py-2 text-right">{fmtMoney2(r.rpc)}</td>
@@ -324,7 +326,7 @@ export default function SpektrafinDashboard() {
                       <td className="px-3 py-1.5 text-muted-foreground">{c.buyer_name || c.target_name || "—"}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtDuration(c.duration_seconds)}</td>
                       <td className="px-3 py-1.5 text-right">{c.connected === true ? "✓" : c.connected === false ? "—" : "?"}</td>
-                      <td className="px-3 py-1.5 text-right">{Number(c.payout || 0) > 0 ? fmtMoney2(Number(c.payout)) : "—"}</td>
+                      <td className="px-3 py-1.5 text-right">{fmtMoney2(SPEKTRAFIN_PAYOUT_PER_RAW_CALL)}</td>
                     </tr>
                   ))}
                 </tbody>

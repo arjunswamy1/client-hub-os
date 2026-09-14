@@ -415,3 +415,17 @@ inverse case — broken but green — also exists.
 10. **Ringba `PlacementInfo` (landing page, placement, search term) and `noConversionReason` are unread** — a second attribution key and the downstream diagnostic we keep asking for.
 
 Nothing in this pass changed code, schema, or data.
+
+---
+
+## Resolution — 2026-09-14: finding 2 (Meta conversion event)
+
+**Fixed.** The sync no longer names any conversion event. Every `action_type` Meta returns is captured with its count and value, per entity, per date, into the new `media_brain_platform_conversions` table. The raw ad tables were not altered.
+
+- **RRM's real event is `lead` — 489 in the last 30 days, $0 reported value**, alongside its aliases `onsite_web_lead`, `offsite_conversion.fb_pixel_lead` and `offsite_lead_add_20_s_calls` (identical counts — the same event under four names, which is exactly why summing is barred). Set `meta_conversion_event = 'lead'` on RRM's instance record and the count publishes; until then it reads UNKNOWN, not 0, against $4,462.59 of spend.
+- **BuyologyIQ unchanged**: 140 tub / 120 bath on `ad_campaigns` over the trailing 30 days (previously 139 / 119 — one day of window roll), and its `RingbaConversion` breakdown holds 37 events / $2,710, matching the figure recorded at intake.
+- **The decision-time count comes from `media_brain_instances.meta_conversion_event` only.** No instance record exists for any client yet, so every Media Brain conversion read currently states UNKNOWN and names what it blocks: the fragmentation check, cost per conversion, and any conversion-based read.
+- The single legacy `conversions` column on `ad_campaigns` / `ad_sets` / `ad_creatives` still carries the pre-existing collapsed value for the older client dashboards, and only when no governing event is set. It is labelled in code as legacy dashboard compatibility. **No Media Brain figure reads it** — Media Brain reads the breakdown table. Removing that column's population is a separate decision about those dashboards.
+- Each account's own event menu (Insights event names plus its defined custom conversions) is recorded on the platform connection, so intake offers the real list instead of free text.
+
+Findings 1, 3–10 remain open.

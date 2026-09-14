@@ -310,12 +310,13 @@ export function verticalRead({
     const revenue = resolved.revenue;
     row.rpc = revenue === null ? null : engine.rpc(revenue, row.calls);
     row.costPerCall = engine.costPerCall(spend, row.calls);
-    row.costPerBillableCall = engine.costPerBillableCall(spend, row.billableCalls);
+    row.costPerBillableCall = engine.costPerBillableCall(spend, resolved.billableCalls);
     row.marginPerCall = revenue === null ? null : engine.marginPerCall(revenue, spend, row.calls);
     row.profit = revenue === null ? null : engine.profit(revenue, spend);
     row.marginPct = revenue === null ? null : engine.marginPct(revenue, spend);
     row.confidence = engine.confidenceState(
-      row.billableCalls,
+      resolved.billableCalls,
+
       resolved.billableCalls,
       thresholds.minCalls,
       spend,

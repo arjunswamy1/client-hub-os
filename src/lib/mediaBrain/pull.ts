@@ -288,11 +288,23 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
   if (missingBillableDefinition.length) {
     breakers.push('Billable definition is missing on the Economics record, so no call can be marked billable. Every billable-denominated metric is unavailable until it is supplied.');
   }
+  if (economicsDrift) {
+    breakers.push(
+      `The economics changed since intake was last run: the Instance record stores a kill threshold of $${(storedKill as number).toFixed(2)}, but the current payout terms imply $${(recomputedKill as number).toFixed(2)}. Neither is used silently — the stored value is shown, the instance is treated as stale, and intake must be re-run before acting on any threshold here.`,
+    );
+  }
+  const overAllowable = rows.filter((r) => r.overAllowableCostPerCall === true);
+  if (overAllowable.length) {
+    breakers.push(
+      `${overAllowable.length} ${overAllowable.length === 1 ? 'entity is' : 'entities are'} paying more per call than the allowable cost per call of $${(allowable as number).toFixed(2)} — above that price the target margin cannot be cleared.`,
+    );
+  }
   for (const r of rows) {
     if (r.confidenceState === 'decisive_zero') {
       breakers.push(`${r.entity_name}: $${r.spend.toFixed(2)} spent past the kill threshold with zero billable calls.`);
     }
   }
+
 
   return {
     ok: true,

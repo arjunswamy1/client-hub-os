@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import * as engine from "@/lib/mediaBrain/engine";
 import * as decisions from "@/lib/mediaBrain/decisions";
 import { pullWindow, type PullWindowResult, type PullWindowSuccess } from "@/lib/mediaBrain/pull";
+import { VerticalReadPanel } from "@/components/mediaBrain/VerticalReadPanel";
 import {
   ConfidenceBadge,
   GateBlock,
@@ -467,6 +468,15 @@ export default function MediaBrainWeeklyPage() {
               </CardContent>
             </Card>
           )}
+          {data && confirmed && (
+            <VerticalReadPanel
+              clientId={clientId}
+              start={confirmed.start}
+              end={confirmed.end}
+              adLevelPct={data.totals.calls ? data.adLevelCalls / data.totals.calls : null}
+            />
+          )}
+
         </div>
       )}
 

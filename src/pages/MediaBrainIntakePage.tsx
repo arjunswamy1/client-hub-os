@@ -8,7 +8,7 @@
  * thresholds that look authoritative and aren't.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, RefreshCw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,6 +24,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import * as engine from "@/lib/mediaBrain/engine";
+import { Notice } from "@/components/mediaBrain/shared";
+import { BillableDefinitionCheck, type BillableGovernance } from "@/components/mediaBrain/BillableDefinitionCheck";
 
 const STEPS = [
   { key: "a1", title: "A1 · Client and accounts" },
@@ -168,6 +170,11 @@ export default function MediaBrainIntakePage() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  /* 3a — the billable definition is validated against data before anything computes. */
+  const [billableGovernance, setBillableGovernance] = useState<BillableGovernance | null>(null);
+  const [billableCheckBlocking, setBillableCheckBlocking] = useState(false);
+  const handleBlockingChange = useCallback((b: boolean) => setBillableCheckBlocking(b), []);
+
 
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ["mb-intake-client", clientId],
@@ -410,7 +417,7 @@ export default function MediaBrainIntakePage() {
 
   /* ---------------- Part C — save ---------------- */
   const handleSave = async () => {
-    if (!clientId || !computed) return;
+    if (!clientId || !computed || billableCheckBlocking) return;
     setSaving(true);
     try {
       if (existingInstance) {
@@ -431,7 +438,13 @@ export default function MediaBrainIntakePage() {
           payout_mode: form.payout_mode,
           payout: numVal("payout"),
           billable_min_duration_seconds: numVal("billable_min_duration_seconds"),
-          billable_filters: form.billable_filters.trim() ? { notes: form.billable_filters.trim() } : null,
+          billable_filters:
+            form.billable_filters.trim() || billableGovernance
+              ? {
+                  ...(form.billable_filters.trim() ? { notes: form.billable_filters.trim() } : {}),
+                  ...(billableGovernance ? { governing_definition: billableGovernance } : {}),
+                }
+              : null,
           bid_floor: numVal("bid_floor"),
           bid_ceiling: numVal("bid_ceiling"),
           avg_bid: numVal("avg_bid"),
@@ -818,8 +831,31 @@ export default function MediaBrainIntakePage() {
             </>
           )}
 
-          {current.key === "b" && computed && (
+          {current.key === "b" && (
+            <div className="mb-4 space-y-3">
+              <BillableDefinitionCheck
+                clientId={clientId}
+                trackingPlatform={form.tracking_platform}
+                revenueSource="platform"
+                minDurationSeconds={numVal("billable_min_duration_seconds")}
+                minPayoutThreshold={null}
+                payout={numVal("payout")}
+                governance={billableGovernance}
+                setGovernance={setBillableGovernance}
+                onBlockingChange={handleBlockingChange}
+              />
+              {billableCheckBlocking && (
+                <Notice tone="danger" title="Thresholds are held back until the governing definition is chosen">
+                  Every threshold below is denominated in billable calls. Computing them on a definition the data
+                  contradicts by more than 10% produces numbers that look authoritative and are not.
+                </Notice>
+              )}
+            </div>
+          )}
+
+          {current.key === "b" && computed && !billableCheckBlocking && (
             <div className="space-y-3">
+
               <Work
                 label="Baseline RPC"
                 formula={computed.baselineRpcSource}
@@ -956,7 +992,7 @@ export default function MediaBrainIntakePage() {
                   Economics and Instance records saved for {client.name}.
                 </div>
               ) : (
-                <Button onClick={handleSave} disabled={saving}>
+                <Button onClick={handleSave} disabled={saving || billableCheckBlocking}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Economics + Instance
                 </Button>

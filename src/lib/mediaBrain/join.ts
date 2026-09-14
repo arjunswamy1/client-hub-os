@@ -30,6 +30,8 @@
  */
 
 import type { CanonicalCall } from './adapter';
+import * as engine from './engine';
+import type { RevenueEconomics, ResolvedRevenue } from './engine';
 
 export interface DidMapping {
   did: string | null;
@@ -114,7 +116,17 @@ export interface JoinedEntityRow {
    * means the billable definition disagrees with what the buyer is paying for.
    */
   paid_not_billable_calls: number;
+  /**
+   * Revenue. When the join is given a `revenue` economics record this is
+   * `engine.resolveRevenue`'s answer — sub-threshold telco payouts excluded, or
+   * `payout × billable calls` where the platform's payouts are not visible.
+   * Without one it is the raw payout sum.
+   */
   revenue: number;
+  /** How `revenue` was arrived at. Null when no revenue economics were supplied. */
+  revenueResolution: ResolvedRevenue | null;
+  /** Per-call payout/duration/billable triples — the input to `resolveRevenue`. */
+  revenueRows: { payout_amount: number; duration_seconds: number | null; billable: boolean }[];
   /** Payouts of every call, zeros INCLUDED — needed for the RTB median. */
   payouts: number[];
   /** Call durations in seconds, nulls dropped — needed for median duration. */
@@ -128,6 +140,11 @@ export interface JoinInput {
   metaAds: MetaAdRow[];
   verticals: VerticalRow[];
   window: { start: string; end: string };
+  /**
+   * Revenue rules for this client. Supplied, revenue is resolved through
+   * `engine.resolveRevenue` instead of summing the raw payout field.
+   */
+  revenue?: RevenueEconomics;
 }
 
 export interface JoinResult {
@@ -178,6 +195,8 @@ function emptyRow(
     paid_calls: 0,
     paid_not_billable_calls: 0,
     revenue: 0,
+    revenueResolution: null,
+    revenueRows: [],
     payouts: [],
     durations: [],
     call_ids: [],
@@ -358,7 +377,7 @@ export function resolveCall(
  * groupings from unparseable names.
  * @see docs/media-brain/03_Operating_Procedures.md §2
  */
-export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window }: JoinInput): JoinResult {
+export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window, revenue }: JoinInput): JoinResult {
   const rows = new Map<string, JoinedEntityRow>();
   const unjoinedCalls: { call_id: string; did: string | null }[] = [];
   /**
@@ -456,12 +475,28 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
     if (call.paid) row.paid_calls += 1;
     if (call.paid && !call.billable) row.paid_not_billable_calls += 1;
     row.revenue += call.payout_amount;
+    row.revenueRows.push({
+      payout_amount: call.payout_amount,
+      duration_seconds: call.duration_seconds,
+      billable: call.billable,
+    });
     // Zeros are included deliberately: a no-bid is real data under RTB.
     row.payouts.push(call.payout_amount);
     if (typeof call.duration_seconds === 'number') row.durations.push(call.duration_seconds);
     row.call_ids.push(call.call_id);
 
     rows.set(key, row);
+  }
+
+  // Revenue is decided in the engine, once, per row — never by summing a payout
+  // field that may carry telco cost, and never by believing a zero in a payout
+  // field the platform does not expose to us.
+  if (revenue) {
+    for (const row of rows.values()) {
+      const resolved = engine.resolveRevenue(revenue, row.revenueRows);
+      row.revenueResolution = resolved;
+      row.revenue = resolved.revenue ?? 0;
+    }
   }
 
   // Vertical-level rows accumulate spend from every Meta campaign matching the

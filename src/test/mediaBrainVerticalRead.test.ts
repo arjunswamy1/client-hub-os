@@ -559,3 +559,72 @@ describe('publisher scoping on the vertical read (§3b)', () => {
     expect(row.flags.join(' ')).toMatch(/dedicated/i);
   });
 });
+
+/**
+ * The GOVERNING conversion event (§2). The raw `conversions` column on the ad
+ * tables holds several event names at once — BuyologyIQ's read 264 while its
+ * governing event read 37 — so no Media Brain figure may touch it. The vertical
+ * read counts one named event or publishes nothing.
+ */
+describe('governed platform conversions', () => {
+  const RINGBA_EVENT = 'offsite_conversion.fb_pixel_custom.RingbaConversion';
+  const ads = [
+    ad({ platform_ad_id: 'tub1', ad_name: 'Tub_Static_3', campaign_name: 'Tubs', spend: 1000 }),
+    ad({ platform_ad_id: 'bath1', ad_name: 'Bath_CB_Walk', campaign_name: 'Bath', spend: 500 }),
+  ];
+  const calls = Array.from({ length: 10 }, (_, i) =>
+    call({ call_id: `c${i}`, campaign_name: 'Walk In tubs', duration_seconds: 200, publisher: OURS }),
+  );
+
+  it('counts only the governing event, per ad, and states the event on every row', () => {
+    const read = verticalRead({
+      calls,
+      metaAds: ads,
+      verticals: VERTICALS,
+      economics: { byVertical: { 'walk-in-tubs': COMPUTED_ECO }, clientDefault: PLATFORM_ECO },
+      thresholds: THRESHOLDS,
+      governedConversions: { event: RINGBA_EVENT, countByAdRef: { tub1: 26, bath1: 9 } },
+    });
+    const tubs = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
+    const bath = read.rows.find((r) => r.vertical_id === 'bathroom-remodel')!;
+    expect(read.conversions.state).toBe('counted');
+    expect(read.conversions.event).toBe(RINGBA_EVENT);
+    expect(tubs.metaConversions).toBe(26);
+    expect(tubs.metaConversionEvent).toBe(RINGBA_EVENT);
+    expect(bath.metaConversions).toBe(9);
+    // Meta reporting FEWER than our attributed calls is the expected offline-upload
+    // shape, and the direction is carried on the row rather than hidden.
+    expect(tubs.conversionDiscrepancy).toBe(26 - tubs.calls);
+  });
+
+  it('publishes no count at all when no governing event is recorded, and names what that blocks', () => {
+    const read = verticalRead({
+      calls,
+      metaAds: ads,
+      verticals: VERTICALS,
+      economics: { byVertical: { 'walk-in-tubs': COMPUTED_ECO }, clientDefault: PLATFORM_ECO },
+      thresholds: THRESHOLDS,
+      // Counts exist in the breakdown, but nothing names which one governs.
+      governedConversions: { event: null, countByAdRef: { tub1: 26, bath1: 9 } },
+    });
+    const tubs = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
+    expect(read.conversions.state).toBe('unknown_event');
+    expect(read.conversions.blocks.length).toBeGreaterThan(0);
+    expect(tubs.metaConversions).toBeNull();
+    expect(tubs.conversionDiscrepancy).toBeNull();
+    expect(read.unclassified.metaConversions).toBeNull();
+    expect(tubs.flags.join(' ')).toMatch(/UNKNOWN: no governing Meta conversion event/);
+  });
+
+  it('never falls back on the ungoverned ad-table column when the input is absent', () => {
+    const read = verticalRead({
+      calls,
+      metaAds: ads,
+      verticals: VERTICALS,
+      economics: { byVertical: { 'walk-in-tubs': COMPUTED_ECO }, clientDefault: PLATFORM_ECO },
+      thresholds: THRESHOLDS,
+    });
+    expect(read.conversions.state).toBe('unknown_event');
+    for (const row of [...read.rows, read.unclassified]) expect(row.metaConversions).toBeNull();
+  });
+});

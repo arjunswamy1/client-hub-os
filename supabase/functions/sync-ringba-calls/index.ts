@@ -38,7 +38,20 @@ function mapCallToRow(call: any, clientId: string) {
     connected: call.hasConnected ?? (duration > 0 && !call.wasBlocked),
     converted: (call.hasConnected && call.hasConverted) ?? false,
     revenue, payout,
+    // `inboundPhoneNumber` is Ringba's "Caller ID" — the CALLER's number, not
+    // the tracking number. The dialed number is stored separately in `did`.
     inbound_number: call.inboundPhoneNumber || null,
+    // Same gap as the Buyology sync. This function sends NO `valueColumns` at
+    // all, so there is no column list to extend — it receives Ringba's default
+    // record and adding a list would narrow it. These read whatever the default
+    // record carries and stay null otherwise; campaign filtering is untouched.
+    did: call["tag:DialedNumber:Number"] || call.number || null,
+    did_pool_name: call.numberPoolName || null,
+    is_from_number_pool: call.isFromNumberPool === undefined || call.isFromNumberPool === null
+      ? null
+      : !!call.isFromNumberPool,
+    has_payout: call.hasPayout === undefined || call.hasPayout === null ? null : !!call.hasPayout,
+    no_payout_reason: call.noPayoutReason || null,
     metadata: {
       publisher: call.publisherName,
       publisherId: call.publisherId,

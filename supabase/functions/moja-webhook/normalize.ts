@@ -134,7 +134,7 @@ export function classify(text: string): { service_line: string; platform: string
  * click key can only ever arrive as a custom tag, and it must survive without a code change.
  */
 export const MAPPED_FIELDS = new Set<string>([
-  'call', 'data', 'tags',
+  'call', 'data', 'tags', 'custom_tags', 'custom', 'custom_fields', 'extra', 'variables',
   'call_id', 'callId', 'call_sid', 'inbound_call_id', 'uuid', 'id',
   'event', 'event_type', 'type', 'delivery_id', 'webhook_id', 'event_id', 'request_id',
   'campaign', 'campaign_name', 'campaignName', 'campaign_id', 'campaignId', 'campaign_utm',

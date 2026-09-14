@@ -321,6 +321,10 @@ export interface NormalizeResult {
   reject: string | null;
   row: MojaCallRow | null;
   isConversionEvent: boolean;
+  /** Raw delivered value per click key, macros preserved, for the receipt panel. */
+  clickKeys: Record<string, string>;
+  /** The ad-level key that arrived with a real value, or null. Evidence, not a guess. */
+  adLevelClickKey: string | null;
 }
 
 export interface NormalizeOptions {

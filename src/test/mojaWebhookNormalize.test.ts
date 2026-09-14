@@ -173,7 +173,9 @@ describe('moja normalize — tag literals', () => {
     expect(r.unreplaced).toContain('event_timestamp');
     expect(r.unreplaced).not.toContain('duration');
     expect(r.unreplaced).not.toContain('campaign_name');
-    expect(r.unreplaced.length).toBe(22);
+    // 22 on the real test fire; 21 here because call_id was substituted so a row exists.
+    expect(r.unreplaced.length).toBe(21);
+    expect(norm(TEST_FIRE).unreplaced.length).toBe(22);
   });
 
   it('refuses a call row with no usable call_id, by name, and still reports the fields', () => {

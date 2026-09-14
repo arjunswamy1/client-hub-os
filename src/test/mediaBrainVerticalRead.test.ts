@@ -63,10 +63,16 @@ const COMPUTED_ECO: VerticalEconomics = {
   attributed_publishers: [OURS],
 };
 
+function enginePlatform(over: Partial<CanonicalCall>) {
+  return over.platform ?? platformFromUtmSource(over.utm_source ?? null);
+}
+
 function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall {
   const payout = over.payout_amount ?? 0;
   return {
     call_id: over.call_id,
+    // Platform comes from utm_source alone (§3c); the override may state it.
+    platform: enginePlatform(over),
     timestamp: '2026-03-10T12:00:00Z',
     ad_id: null,
     adset_id: null,

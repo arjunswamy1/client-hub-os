@@ -128,6 +128,52 @@ export function classify(text: string): { service_line: string; platform: string
   return { service_line, platform };
 }
 
+/**
+ * Every key this module reads into a real column. Anything else Moja sends is kept in
+ * `custom_tags` rather than dropped — Moja confirmed there is NO gclid/fbclid macro, so a
+ * click key can only ever arrive as a custom tag, and it must survive without a code change.
+ */
+export const MAPPED_FIELDS = new Set<string>([
+  'call', 'data', 'tags',
+  'call_id', 'callId', 'call_sid', 'inbound_call_id', 'uuid', 'id',
+  'event', 'event_type', 'type', 'delivery_id', 'webhook_id', 'event_id', 'request_id',
+  'campaign', 'campaign_name', 'campaignName', 'campaign_id', 'campaignId', 'campaign_utm',
+  'publisher', 'publisher_name', 'target', 'target_name', 'buyer', 'buyer_name',
+  'utm_source', 'source', 'utm_campaign', 'utm_medium', 'medium', 'utm_term', 'term',
+  'keyword', 'utm_content', 'content', 'creative',
+  'tracking_number', 'did', 'dialed_number', 'publisher_number', 'to',
+  'duration', 'call_duration', 'duration_seconds', 'inbound_duration', 'inbound_duration_seconds',
+  'answered', 'connected', 'converted', 'conversion', 'is_converted',
+  'call_converted_at', 'converted_at', 'call_start', 'start_time', 'started_at',
+  'event_timestamp', 'timestamp',
+  'caller_id', 'caller', 'from', 'caller_number', 'ani',
+  'caller_state', 'state', 'original_state', 'caller_zip', 'zip_code', 'zip', 'original_zip_code',
+  'revenue', 'revenue_paid_out', 'buyer_revenue',
+  'payout', 'publisher_paid_out', 'publisher_payout', 'target_payout',
+  'no_payout_reason', 'hangup_cause', 'number_pool', 'number_pool_name',
+  'disposition', 'status', 'result', 'call_termination_by',
+  'recording_url', 'recording', 'audio_url',
+  'gclid', 'fbclid', 'wbraid', 'gbraid', 'msclkid', 'ms_clkid',
+]);
+
+/**
+ * Everything delivered that we do not map to a column. Tag literals are still nulled —
+ * an unsubstituted macro is not data wherever it appears. Nested objects are kept whole.
+ */
+export function collectCustomTags(...bags: unknown[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const bag of bags) {
+    if (!bag || typeof bag !== 'object' || Array.isArray(bag)) continue;
+    for (const [k, v] of Object.entries(bag as Record<string, unknown>)) {
+      if (MAPPED_FIELDS.has(k)) continue;
+      const cleaned = v && typeof v === 'object' ? v : nullify(v);
+      if (cleaned === null) continue;
+      out[k] = cleaned;
+    }
+  }
+  return out;
+}
+
 export interface MojaCallRow {
   client_id: string;
   call_id: string;
@@ -227,7 +273,10 @@ export function normalizeDelivery(
   const shape = detectShape(payload);
   const call = shape === 'nested' ? payload.call : payload;
   const tags = (shape === 'nested' ? payload.call?.tags ?? payload.tags : payload.tags) ?? {};
-  const src = [call, tags, payload];
+  // Anything unmapped becomes a custom tag, and custom tags are then a first-class source
+  // for the click IDs and UTMs — whichever mechanism Moja ends up using, it lands.
+  const custom_tags = collectCustomTags(call, tags, payload);
+  const src = [call, tags, payload, custom_tags];
 
   const fields = fieldNames(payload);
   const unreplaced = unreplacedTagFields(payload);
@@ -282,28 +331,43 @@ export function normalizeDelivery(
   const tracking_number = explicitTracking ?? to;
   const forwarded_number = explicitTracking ? to : null;
 
-  const duration_seconds = toIntOrNull(pick(src, ['duration', 'call_duration', 'duration_seconds'])) ?? 0;
-  const inbound_duration_seconds =
-    toIntOrNull(pick(src, ['inbound_duration', 'inbound_duration_seconds'])) ?? 0;
+  // Both durations are stored faithfully and separately. Moja calls [DURATION] the
+  // CONNECTED duration and [INBOUND_DURATION] the inbound one — the reverse of the reading
+  // this code once assumed. Rather than flip one guess for another, neither is interpreted:
+  // `duration_semantics` stays 'unknown' until Moja answers which one the buyer's billable
+  // threshold applies to.
+  const reported_duration_seconds = toIntOrNull(pick(src, ['duration', 'call_duration', 'duration_seconds']));
+  const reported_inbound_duration_seconds =
+    toIntOrNull(pick(src, ['inbound_duration', 'inbound_duration_seconds']));
+  const duration_seconds = reported_duration_seconds ?? 0;
+  const inbound_duration_seconds = reported_inbound_duration_seconds ?? 0;
 
+  // `connected` comes from the answered field ALONE. If inbound duration includes ring
+  // time, a positive duration would mark every unanswered call connected — inflating
+  // connection rate and corrupting Step 1 of the diagnostic tree. Unknown reads as unknown.
   const answered = toBoolOrNull(pick(src, ['answered', 'connected']));
-  const connected = answered ?? inbound_duration_seconds > 0;
-  const connected_source =
-    answered !== null ? 'answered_field' : inbound_duration_seconds > 0 ? 'inbound_duration' : 'unknown';
+  const connected = answered;
+  const connected_source = answered !== null ? 'answered_field' : 'unknown';
+  const connected_unknown_reason =
+    answered === null
+      ? 'answered_field_absent — connection state not reported by Moja; no duration is used as a proxy because which duration includes ring time is unconfirmed'
+      : null;
 
   const converted = toBoolOrNull(pick(src, ['converted', 'conversion', 'is_converted'])) ?? false;
   const converted_at = converted
     ? toIsoOrNull(pick(src, ['call_converted_at', 'converted_at']))
     : null;
 
-  // call_start: the tag if present; else event_timestamp minus the connected duration on a
-  // completed event; else NULL. Never now() — a fabricated timestamp lands a call in the
-  // wrong review window without saying so.
+  // call_start: the tag if present; else event_timestamp minus the LONGEST reported
+  // duration on a completed event — the earliest the call can have begun, which is the only
+  // claim that holds while the two durations' meanings are unconfirmed. Else NULL. Never
+  // now() — a fabricated timestamp lands a call in the wrong review window without saying so.
   const startTag = toIsoOrNull(pick(src, ['call_start', 'start_time', 'started_at']));
   const eventTs = toIsoOrNull(pick([payload, call], ['event_timestamp', 'timestamp']));
   let call_start: string | null = startTag;
   if (!call_start && eventTs && (eventType ?? '').toLowerCase().includes('complet')) {
-    call_start = new Date(new Date(eventTs).getTime() - inbound_duration_seconds * 1000).toISOString();
+    const longest = Math.max(duration_seconds, inbound_duration_seconds);
+    call_start = new Date(new Date(eventTs).getTime() - longest * 1000).toISOString();
   }
 
   const row: MojaCallRow = {
@@ -324,10 +388,14 @@ export function normalizeDelivery(
     caller_zip: (pick(src, ['caller_zip', 'zip_code', 'zip', 'original_zip_code']) as string | null) ?? null,
     call_start,
     converted_at,
+    reported_duration_seconds,
+    reported_inbound_duration_seconds,
+    duration_semantics: 'unknown',
     duration_seconds,
     inbound_duration_seconds,
     connected,
     connected_source,
+    connected_unknown_reason,
     answered,
     converted,
     // payout is publisher-paid = CPM revenue. revenue is buyer-paid, informational only.
@@ -344,8 +412,13 @@ export function normalizeDelivery(
     utm_campaign,
     utm_term,
     utm_content,
-    gclid: (pick(src, ['gclid', 'wbraid', 'gbraid']) as string | null) ?? null,
+    // Kept strictly separate — a wbraid is not a gclid, and the join key differs.
+    gclid: (pick(src, ['gclid']) as string | null) ?? null,
     fbclid: (pick(src, ['fbclid']) as string | null) ?? null,
+    wbraid: (pick(src, ['wbraid']) as string | null) ?? null,
+    gbraid: (pick(src, ['gbraid']) as string | null) ?? null,
+    msclkid: (pick(src, ['msclkid', 'ms_clkid']) as string | null) ?? null,
+    custom_tags,
     raw_payload: payload,
   };
 

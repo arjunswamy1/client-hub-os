@@ -418,10 +418,21 @@ export function verticalRead({
 
   });
 
+  const unclassifiedSplit = engine.partitionByPublisher(
+    unclassifiedCalls,
+    economics.clientDefault.attributed_publishers,
+  );
   const unclassified = emptyRow('unclassified', 'Unclassified');
   unclassified.spend = unclassifiedSpend;
-  unclassified.calls = unclassifiedCalls.length;
-  const unclassifiedResolved = engine.resolveRevenue(economics.clientDefault, unclassifiedCalls.map(toRevenueRow));
+  unclassified.calls = unclassifiedSplit.attributed.length;
+  unclassified.excludedPublisherCalls = unclassifiedSplit.excludedCalls;
+  unclassified.excludedByPublisher = unclassifiedSplit.excludedByPublisher;
+  unclassified.metaConversions = unclassifiedConversions;
+  unclassified.conversionDiscrepancy = unclassifiedConversions - unclassified.calls;
+  const unclassifiedResolved = engine.resolveRevenue(
+    economics.clientDefault,
+    unclassifiedSplit.attributed.map(toRevenueRow),
+  );
   unclassified.paidCalls = unclassifiedResolved.paidCalls;
   unclassified.billableCalls = unclassifiedResolved.billableCalls;
   unclassified.revenue = unclassifiedResolved.revenue;
@@ -440,6 +451,17 @@ export function verticalRead({
   );
   unclassified.resolution = unclassifiedResolved;
 
+  // The excluded total across the whole read, so nobody reads a smaller call
+  // count as lost data.
+  const excludedCounts = new Map<string, number>();
+  for (const r of [...rows, unclassified]) {
+    for (const e of r.excludedByPublisher) excludedCounts.set(e.publisher, (excludedCounts.get(e.publisher) ?? 0) + e.calls);
+  }
+  const excludedByPublisher = [...excludedCounts.entries()]
+    .map(([publisher, c]) => ({ publisher, calls: c }))
+    .sort((a, b) => b.calls - a.calls);
+  const excludedCalls = excludedByPublisher.reduce((sum, e) => sum + e.calls, 0);
+
   const coverage =
     adLevelPct === null || adLevelPct === undefined
       ? ''
@@ -451,6 +473,13 @@ export function verticalRead({
     mixedCampaigns: [...mixedCampaigns],
     unclassifiedAdNames: [...unclassifiedAdNames],
     unclassifiedCallCampaigns: [...unclassifiedCallCampaigns],
+    excluded: {
+      calls: excludedCalls,
+      byPublisher: excludedByPublisher,
+      note: excludedCalls
+        ? `${excludedCalls} calls from ${excludedByPublisher.length} other publisher${excludedByPublisher.length === 1 ? '' : 's'} are excluded from every figure above (${excludedByPublisher.map((e) => `${e.publisher} ${e.calls}`).join(', ')}). Nothing is lost: the client's tracking campaigns received them, but they came from traffic this client's media buying did not pay for, so dividing them into our spend would credit our media with someone else's calls.`
+        : 'Every call in the window came from an attributed publisher.',
+    },
     note:
       'This is a vertical read, not an ad-level decision. Cut, hold and scale verdicts are ad-level rules and are deliberately not shown here — a vertical row blends dozens of ads, and blending hides the differences a verdict acts on.' +
       coverage,

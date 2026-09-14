@@ -244,6 +244,18 @@ export default function MediaBrainWeeklyPage() {
 
   async function saveEverything() {
     if (!reviewId || !data) return;
+    // §6.4 — re-check the step 3 guard at save. Step 3 stays reachable, and the
+    // entity list can refetch, so a decision can be blanked after the step was
+    // marked complete. Refuse here rather than letting the DB CHECK reject it.
+    if (undecidedEntities.length > 0) {
+      const names = undecidedEntities.slice(0, 5).map(({ row }) => row.entity_name).join(", ");
+      toast.error(
+        `${undecidedEntities.length} ${undecidedEntities.length === 1 ? "entity is" : "entities are"} still undecided: ${names}${
+          undecidedEntities.length > 5 ? ` and ${undecidedEntities.length - 5} more` : ""
+        }. Go back to step 3 — a hold also needs the evidence awaited and a review date.`,
+      );
+      return;
+    }
     const missing = logs.some((l) => l.description.trim() && (!l.why.trim() || !l.expected.trim() || !l.reviewDate));
     if (missing) {
       toast.error("Every logged change needs why, expected result and a review date.");

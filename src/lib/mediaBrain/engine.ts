@@ -1013,3 +1013,277 @@ export function partitionByPublisher<T extends { publisher: string | null }>(
       : `All ${calls.length} calls came from attributed publishers.`,
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * §3b — PUBLISHER SCOPING: required, not required, or unanswered
+ *
+ * `attributed_publishers` answers "whose calls are these?". `publisher_scoping`
+ * answers the prior question: "does that question need an answer here?".
+ *
+ * Three states, and the difference between two of them is the whole point:
+ *
+ *  - `required` — the tracking campaign takes traffic from more than one source.
+ *    An unconfigured `attributed_publishers` STOPS the pull, exactly as before.
+ *  - `not_required_dedicated_campaigns` — a RECORDED HUMAN DECISION that this
+ *    campaign receives only our traffic, so there is nothing to filter. Not an
+ *    absent answer: a named person, on a named date, said so.
+ *  - `unknown` — nobody has answered. Stops the pull, identically to `required`
+ *    with no list. Silence is never read as "dedicated".
+ *
+ * The safety net for the middle state is `dedicatedCampaignContradiction`: a
+ * campaign that is dedicated today can quietly have a second publisher pointed
+ * at it tomorrow, and nothing in the feed announces it. So the moment more than
+ * one distinct publisher appears on a campaign marked dedicated, the claim is
+ * reported as contradicted by the data.
+ * @see docs/media-brain/01_Decision_Engine.md §3
+ * ------------------------------------------------------------------ */
+
+export type PublisherScoping = 'required' | 'not_required_dedicated_campaigns' | 'unknown';
+
+/** Default state. An unanswered question stops the pull. */
+export const PUBLISHER_SCOPING_DEFAULT: PublisherScoping = 'unknown';
+
+/** How often a dedicated-campaign claim must be re-verified. */
+export const PUBLISHER_SCOPING_RECHECK_DAYS = 30;
+
+/** Normalise the stored value; anything unrecognised is `unknown`, never permissive. */
+export function publisherScopingOf(eco: { publisher_scoping?: string | null }): PublisherScoping {
+  const v = (eco.publisher_scoping ?? '').trim();
+  return v === 'required' || v === 'not_required_dedicated_campaigns' ? v : PUBLISHER_SCOPING_DEFAULT;
+}
+
+export interface PublisherScopingGate {
+  scoping: PublisherScoping;
+  /** May a computation proceed at all? */
+  ok: boolean;
+  /** TRUE when calls must be filtered by publisher. FALSE only for a dedicated campaign. */
+  filterApplies: boolean;
+  /** Why the pull stops. Null when it does not. */
+  error: string | null;
+  /** Always rendered: what was decided about publisher scoping and by whom. */
+  note: string;
+}
+
+/**
+ * The single gate every computation asks before reading a call.
+ * @see docs/media-brain/01_Decision_Engine.md §3
+ */
+export function publisherScopingGate(
+  eco: {
+    publisher_scoping?: string | null;
+    attributed_publishers?: (string | null)[] | null;
+    publisher_scoping_verified_at?: string | null;
+    publisher_scoping_verified_by?: string | null;
+  },
+): PublisherScopingGate {
+  const scoping = publisherScopingOf(eco);
+  const configured = publisherAttributionConfigured(eco.attributed_publishers);
+
+  if (scoping === 'not_required_dedicated_campaigns') {
+    const who = eco.publisher_scoping_verified_by?.trim();
+    const when = eco.publisher_scoping_verified_at?.trim();
+    return {
+      scoping,
+      ok: true,
+      filterApplies: false,
+      error: null,
+      note:
+        `Publisher filtering is switched off here by a recorded decision that this campaign receives only our traffic${
+          who ? `, confirmed by ${who}` : ''
+        }${when ? ` on ${when}` : ''}. Every call on the campaign is counted as ours. If more than one publisher ever appears on it, that decision is contradicted by the data and the scoping must be revisited.`,
+    };
+  }
+
+  if (scoping === 'unknown') {
+    return {
+      scoping,
+      ok: false,
+      filterApplies: true,
+      error:
+        'Publisher scoping is UNKNOWN for this client, so no margin figure exists yet. A tracking campaign receives calls from every publisher pointed at it; counting all of them against our spend is the same error as mixing denominators. Answer the question at intake — either state the attributed publishers, or record the deliberate decision that the campaign is dedicated to our traffic. An unanswered question is never read as "dedicated".',
+      note: 'Publisher scoping is UNKNOWN.',
+    };
+  }
+
+  if (!configured) {
+    return {
+      scoping,
+      ok: false,
+      filterApplies: true,
+      error:
+        'Publisher attribution is REQUIRED for this client but no attributed publishers are configured, so every margin figure would include other traffic sources\' calls. State attributed_publishers at intake — the framework does not default to all publishers.',
+      note: 'Publisher attribution required, none configured.',
+    };
+  }
+
+  return {
+    scoping,
+    ok: true,
+    filterApplies: true,
+    error: null,
+    note: 'Publisher attribution is required here, and only calls from the attributed publishers reach a metric.',
+  };
+}
+
+export interface PublisherScopingRecheck {
+  due: boolean;
+  /** Days since the claim was last verified. Null when it never was. */
+  ageDays: number | null;
+  note: string | null;
+}
+
+/**
+ * Is the dedicated-campaign claim stale? A claim verified once and never again
+ * is an assumption wearing a date.
+ */
+export function publisherScopingRecheck(
+  eco: { publisher_scoping?: string | null; publisher_scoping_verified_at?: string | null },
+  now: Date = new Date(),
+  maxAgeDays: number = PUBLISHER_SCOPING_RECHECK_DAYS,
+): PublisherScopingRecheck {
+  if (publisherScopingOf(eco) !== 'not_required_dedicated_campaigns') {
+    return { due: false, ageDays: null, note: null };
+  }
+  const verified = eco.publisher_scoping_verified_at?.trim();
+  if (!verified) {
+    return {
+      due: true,
+      ageDays: null,
+      note: 'This campaign is marked dedicated to our traffic but the claim carries no verification date, so there is nothing to say when it was last true. Verify it and record the date.',
+    };
+  }
+  const ts = new Date(verified).getTime();
+  if (!Number.isFinite(ts)) {
+    return { due: true, ageDays: null, note: `The dedicated-campaign verification date "${verified}" cannot be read, so the claim counts as unverified.` };
+  }
+  const ageDays = Math.floor((now.getTime() - ts) / 86_400_000);
+  const due = ageDays > maxAgeDays;
+  return {
+    due,
+    ageDays,
+    note: due
+      ? `The dedicated-campaign claim was last verified ${ageDays} days ago, past the ${maxAgeDays}-day re-check. A campaign dedicated then can have a second publisher pointed at it since, and nothing in the feed would announce it — re-verify before reading margin.`
+      : `Dedicated-campaign claim verified ${ageDays} day${ageDays === 1 ? '' : 's'} ago; next re-check due after ${maxAgeDays} days.`,
+  };
+}
+
+export interface DedicatedCampaignContradiction {
+  contradicted: boolean;
+  publishers: string[];
+  note: string | null;
+}
+
+/**
+ * The safety net for `not_required_dedicated_campaigns`, and the only one there
+ * is: more than one distinct publisher on a campaign claimed as dedicated means
+ * the claim is false in the data, whatever the record says.
+ */
+export function dedicatedCampaignContradiction<T extends { publisher: string | null }>(
+  eco: { publisher_scoping?: string | null },
+  calls: T[],
+): DedicatedCampaignContradiction {
+  if (publisherScopingOf(eco) !== 'not_required_dedicated_campaigns') {
+    return { contradicted: false, publishers: [], note: null };
+  }
+  const seen = new Map<string, string>();
+  for (const c of calls) {
+    const raw = c.publisher?.trim();
+    if (!raw) continue;
+    seen.set(raw.toLowerCase(), raw);
+  }
+  const publishers = [...seen.values()].sort();
+  if (publishers.length <= 1) return { contradicted: false, publishers, note: null };
+  return {
+    contradicted: true,
+    publishers,
+    note: `The dedicated-campaign assumption is CONTRADICTED BY THE DATA: ${publishers.length} distinct publishers appear on calls here (${publishers.join(', ')}). This campaign was recorded as receiving only our traffic, so publisher filtering is switched off — which means every one of these publishers' calls is currently being counted against our spend. Revisit the scoping and state the attributed publishers before reading any margin.`,
+  };
+}
+
+/**
+ * Split calls according to the scoping decision. Under a dedicated campaign
+ * nothing is excluded — there is no second source to exclude — and that is
+ * stated rather than left to look like an empty filter.
+ */
+export function partitionForScoping<T extends { publisher: string | null }>(
+  calls: T[],
+  eco: { publisher_scoping?: string | null; attributed_publishers?: (string | null)[] | null },
+): PublisherPartition<T> {
+  if (publisherScopingOf(eco) === 'not_required_dedicated_campaigns') {
+    return {
+      attributed: calls,
+      excluded: [],
+      excludedCalls: 0,
+      excludedByPublisher: [],
+      note: `All ${calls.length} calls are counted as ours: this campaign is recorded as dedicated to our traffic, so there is no other publisher to exclude.`,
+    };
+  }
+  return partitionByPublisher(calls, eco.attributed_publishers);
+}
+
+/* ------------------------------------------------------------------ *
+ * §3c — AD PLATFORM, from `utm_source` and nothing else
+ *
+ * `utm_source` is the ONE UTM macro Moja confirmed, so it is the only platform
+ * signal that will ever arrive on a Moja call. That makes its absence a real gap
+ * worth showing, not something to paper over with a guess.
+ *
+ * Platform is NEVER inferred from the dialed number, the campaign name, or a
+ * keyword heuristic. A campaign called "Internal Plumbing" says nothing about
+ * which platform delivered the click, and a heuristic that defaults plumbing to
+ * Google will be quietly right often enough to never be questioned.
+ * @see docs/media-brain/01_Decision_Engine.md §3
+ * ------------------------------------------------------------------ */
+
+export type AdPlatform = 'meta' | 'google' | 'unclassified';
+
+const UTM_SOURCE_PLATFORM: Record<string, AdPlatform> = {
+  facebook: 'meta',
+  fb: 'meta',
+  meta: 'meta',
+  google: 'google',
+  adwords: 'google',
+};
+
+/**
+ * The platform a call's `utm_source` names. Case-insensitive and trimmed.
+ * Anything else — or nothing at all — is `unclassified`, which is a visible row
+ * of its own on any platform split and is never folded into the likelier side.
+ */
+export function platformFromUtmSource(utmSource: string | null | undefined): AdPlatform {
+  const key = (utmSource ?? '').trim().toLowerCase();
+  if (!key) return 'unclassified';
+  return UTM_SOURCE_PLATFORM[key] ?? 'unclassified';
+}
+
+export interface PlatformSplitRow {
+  platform: AdPlatform;
+  calls: number;
+  /** For `unclassified`: the utm_source values seen, and whether any were absent. */
+  sources: string[];
+  missingUtmSource: number;
+}
+
+/**
+ * Calls per platform, ALWAYS including an `unclassified` row even at zero, so a
+ * reader can see that the row exists and is empty rather than wonder whether it
+ * was dropped.
+ */
+export function platformSplit<T extends { utm_source: string | null }>(calls: T[]): PlatformSplitRow[] {
+  const order: AdPlatform[] = ['meta', 'google', 'unclassified'];
+  const rows = new Map<AdPlatform, PlatformSplitRow>(
+    order.map((p) => [p, { platform: p, calls: 0, sources: [], missingUtmSource: 0 }]),
+  );
+  const unclassifiedSources = new Set<string>();
+  for (const c of calls) {
+    const p = platformFromUtmSource(c.utm_source);
+    const row = rows.get(p)!;
+    row.calls += 1;
+    if (p !== 'unclassified') continue;
+    const raw = c.utm_source?.trim();
+    if (raw) unclassifiedSources.add(raw);
+    else row.missingUtmSource += 1;
+  }
+  rows.get('unclassified')!.sources = [...unclassifiedSources].sort();
+  return order.map((p) => rows.get(p)!);
+}

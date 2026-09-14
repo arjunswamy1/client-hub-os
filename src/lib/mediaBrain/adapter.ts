@@ -49,8 +49,18 @@ export interface CanonicalCall {
    * the Economics record disagrees with what the buyer actually pays for.
    */
   paid: boolean;
+  /**
+   * TRUE when this call's payout is non-zero, BELOW the client's
+   * `min_payout_threshold`, and exactly equal to the call's telco `total_cost`.
+   * That combination is the signature of a sync that fell back to cost when the
+   * real payout was zero, so the cost got recorded as revenue. Such a payout is
+   * excluded from revenue by `engine.resolveRevenue` and counted here — history
+   * is corrected at read time rather than by rewriting stored rows.
+   */
+  payout_looks_like_cost: boolean;
   /** 0 for a no-bid, never null — under RTB a zero must stay in the denominator. */
   payout_amount: number;
+
   buyer_id: string | null;
   state: string | null;
   no_bid_reason: string | null;

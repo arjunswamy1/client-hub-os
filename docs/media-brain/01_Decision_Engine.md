@@ -45,6 +45,22 @@ From Layer 0 intake and the Layer 1 economics file.
 
 **RPC is always trailing** — what calls actually paid. There's no separate forecast number; uncertainty about the next call lives in the distribution (§5).
 
+### Where revenue comes from — `platform` or `computed`
+
+Revenue has two possible sources, declared per vertical on the Economics record as `revenue_source`, and the engine resolves it in exactly one place (`resolveRevenue`).
+
+| `revenue_source` | Billable is | Revenue is |
+|---|---|---|
+| `platform` | duration ≥ `{billable_min_duration_seconds}` **and** payout ≥ `{min_payout_threshold}` | the sum of those qualifying payouts |
+| `computed` | duration ≥ `{billable_min_duration_seconds}` alone | contracted `{payout}` × billable calls; **null**, never zero, when no contracted payout is on file |
+
+**A payout field we cannot see is a data limitation to declare, not a zero to believe.** On some accounts the buyer pays a contracted amount per billable call and our API access simply does not expose it — the payout column reads $0.00 across thousands of paid calls. Treating that as zero revenue would report a profitable product as a total loss and recommend killing it. `computed` says out loud that the platform is not the source of truth here, and prices revenue off the contracted payout and the duration side, which we *can* see.
+
+**`{min_payout_threshold}`** (default $1.00) exists because a payout field can carry something other than payout. Where a sync's payout mapping falls through to telco cost, a 13-second call records a few cents of *cost* as *revenue*. Any payout below the threshold is excluded from revenue, and where it is non-zero, sub-threshold and exactly equal to the recorded total cost, the call is flagged `payout_looks_like_cost` and counted by name in the pull's flags. Read-time correction, not a rewrite of stored rows.
+
+**Verticals are read-only.** A vertical row blends many ads, so cut / hold / scale verdicts never render at that level — the blend hides precisely the differences those rules act on. The vertical read is information for a human, shown alongside the ad-level coverage figure so the reader knows why they are looking at verticals rather than ads.
+
+
 ### Hierarchy
 
 **Decides:** margin per call, profit contribution. **Measures:** calls, billable calls, cost per billable call, connection rate, billable rate. **Explains:** CPM, CTR, CPC, frequency, duration.

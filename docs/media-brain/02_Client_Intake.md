@@ -66,18 +66,26 @@ Assume API access to call data unless told otherwise. Capacity, buyer count, and
 
 - Client reporting format and cadence
 
+**A8. Margin targets**
+
+Each of these is pre-filled with the framework default and each can be marked UNKNOWN. Nothing that depends on an UNKNOWN is computed.
+
+- Target margin % — default 20%. Sets the allowable cost per call and the "good (target)" band.
+- Minimum margin %, the floor — default 10%. Below it there is no cushion for normal volatility.
+- Actionable gap % between angles — default 57%. The smallest difference worth acting on; it sets `{min_calls}` at 8 ÷ gap².
+
 **Fixed for every client:** routing is recommend-only — you can propose buyer, floor, and waterfall changes with evidence, but the client executes.
 
 ### Part B — Compute
 
-Once Part A is complete, calculate and show your work. Targets come from Layer 2 defaults — 10% margin floor, 40% actionable gap — unless the client has stated otherwise.
+Once Part A is complete, calculate and show your work. Targets come from the answers to A8, pre-filled with the Layer 2 defaults — 20% target margin, 10% margin floor, 57% actionable gap — unless the client has stated otherwise.
 
 | Output | Formula |
 |---|---|
 | Baseline RPC | Static: payout. RTB: observed RPC if the campaign is live, otherwise the stated average bid. |
 | Allowable cost per call | RPC × (1 − target margin) |
 | **Kill threshold** | 2 × payout (static) or 2 × average bid (RTB), at zero billable calls |
-| `{min_calls}` | (2 ÷ actionable gap)². Default 25. Add 40% under RTB. |
+| `{min_calls}` | (2√2 ÷ actionable gap)² = 8 ÷ gap². Default 25 at a 0.57 gap. Add 40% under RTB. |
 | Expected billable calls/week | Live campaign: from call data. New build: budget ÷ cost per billable call. |
 | Volume tier and cadence | From expected billable calls/week — Layer 2 §4 |
 | Cost to reach `{min_calls}` per angle | `{min_calls}` × cost per billable call |

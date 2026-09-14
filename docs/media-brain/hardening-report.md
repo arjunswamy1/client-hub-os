@@ -285,3 +285,31 @@ Unchanged against the 3.9% baseline, and the reason is exactly the one the mappi
 The gap is missing mappings, not missing data. Mapping the top 20 DIDs covers roughly 750 calls; mapping the long tail is what gets this client past 80%.
 
 Tests: 21/21 (was 20/20) — one new case asserting a real dialed number is not flagged and a caller-number fallback is.
+
+---
+
+## Phase 2 + 3a — per-vertical revenue, the vertical read, and intake validation
+
+**The finding that decided the design.** 1,764 of 2,320 backfilled calls (76%) came from number pools across 4 pools, and 100 of the 302 dialed numbers carry more than one distinct `utm_content` — up to 6 creatives on a single number. Pools rotate numbers across visitors, so DID → creative is invalid on this account and mapping it would misattribute. All 302 numbers map to exactly one Ringba campaign each, so the dialed number is a reliable *vertical* key on 96% of calls, and ad-level attribution can only come from UTM tags. **DIDs are therefore mapped to verticals, not creatives.**
+
+**Payout no longer falls back to telco cost.** `mapCallToRow` used `payoutAmount || payout || totalCost || 0`, so a real payout of zero silently recorded the telco cost as revenue — the source of the 721 sub-dollar rows, where `payout` equalled `metadata.total_cost` exactly. The sync now reads `payoutAmount ?? payout ?? 0`; `??` rather than `||` so a legitimate zero is not skipped, and `totalCost` never becomes revenue. **Stored rows were not rewritten.** History and future are both corrected at read time: revenue counts a payout only at or above `{min_payout_threshold}`, and a non-zero sub-threshold payout equal to the recorded total cost sets `payout_looks_like_cost`, surfaced as a named count in the pull's flags.
+
+**Per-vertical economics.** `media_brain_economics` gained `vertical_id` (nullable; null is the client-level default, unique per client either way), `revenue_source` (`platform` | `computed`, default `platform`) and `min_payout_threshold` (default 1.00). `revenue_source` is the load-bearing one: AJ confirmed Walk-In Tubs pays $80 per billable call, but our Ringba access shows $0.00 in payouts above $1 across 1,155 calls. A payout field we cannot see is a data limitation to declare, not a zero to believe — so that vertical computes revenue as contracted payout × billable calls, with billable determined by duration alone. The selection lives once in the engine, in `resolveRevenue`.
+
+**Verticals created for BuyologyIQ**, assigned from the Ringba campaign name on the dialed number rather than from creative matching:
+
+| Vertical | Ringba campaigns | Payout | Source | Confirmed |
+|---|---|---|---|---|
+| Walk-In Tubs | `Walk In tubs`, `Walk In tubs Canada` | $80 | `computed` | yes, by AJ |
+| Bathroom Remodel | `Bathroom Remodel`, `Bathroom Remodel  - Canada`, `Bathroom Remodel - Branded` | $60 | `platform` | **observed, unconfirmed** |
+| Live Transfer | `Walk In tubs Live Transfer` | $55 | `platform` | **observed, unconfirmed** |
+
+Live Transfer is separate because it is 100% paid — blending it into Walk-In Tubs would inflate that vertical's RPC. The Canada and Branded campaigns carry zero payouts and tiny volume; they are mapped but flagged as possibly needing their own economics. The mixed Meta campaign `08/19 Ringba_Lifetime_Statics - Copy` is resolved ad by ad on ad-name patterns; an ad matching no pattern is reported **unclassified**, never assigned by default.
+
+**The vertical read is read-only.** Per vertical: spend, calls, paid, billable, revenue with its source labelled, RPC, cost per call, cost per billable call, margin per call, margin %, confidence — plus an unclassified row and the ad-level coverage figure beside it. Cut / hold / scale verdicts do not render at this level; `adLevelDecisionEligible` is false on every row. A vertical blends many ads and the blend hides exactly the differences those rules act on.
+
+**Intake validation (3a).** Before any threshold is computed, the stated billable definition is compared against the last 30 days of platform data in both directions — billable-by-definition but unpaid, and paid but not billable-by-definition. Above 10% disagreement intake blocks until the operator states which definition governs, and the choice is recorded on the Economics record. Where `revenue_source = 'computed'` the check says the payouts are not visible and validates only the duration side, rather than reporting invisible payouts as agreement.
+
+BuyologyIQ, last 30 days: Walk-In Tubs 0.8% (passes, duration side only) · Bathroom Remodel 17.2% (**blocks**) · Live Transfer 1.5% (passes).
+
+Tests: 31/31 (was 21/21) — ten new cases, including a pooled DID resolving to a vertical without ad-level eligibility, a `computed` vertical ignoring the platform payout field entirely, a 100%-paid vertical not leaking into a neighbour's RPC, and an ad matching no pattern landing in unclassified.

@@ -24,7 +24,10 @@ function mapCallToRow(call: any, clientId: string) {
   // Revenue = conversionAmount only (set on converted calls). Do NOT use ringTreeWinningBid — that's the bid, not earned revenue.
   const isConverted = call.hasConnected && call.hasConverted;
   const revenue = isConverted ? Number(call.conversionAmount || call.revenue || 0) : 0;
-  const payout = Number(call.payoutAmount || call.payout || call.totalCost || 0);
+  // Revenue only. `totalCost` is telco COST and must never become revenue — the old
+  // `|| call.totalCost` fallback recorded a few cents of cost as payout on every call
+  // the buyer did not pay for. `??` so a legitimate 0 payout is kept, not skipped.
+  const payout = Number(call.payoutAmount ?? call.payout ?? 0);
   const duration = call.callLengthInSeconds || call.connectedCallLengthInSeconds || 0;
 
   return {

@@ -97,7 +97,10 @@ function mapCallToRow(call: any) {
   const connected = call.hasConnected ?? (duration > 0 && !call.wasBlocked);
   const converted = !!(connected && call.hasConverted);
   const revenue = converted ? Number(call.conversionAmount || call.revenue || 0) : 0;
-  const payout = Number(call.payoutAmount || call.payout || call.totalCost || 0);
+  // Revenue only. `totalCost` is telco COST and must never become revenue — the old
+  // `|| call.totalCost` fallback recorded a few cents of cost as payout on every call
+  // the buyer did not pay for. `??` so a legitimate 0 payout is kept, not skipped.
+  const payout = Number(call.payoutAmount ?? call.payout ?? 0);
 
   return {
     client_id: BUYOLOGY_CLIENT_ID,

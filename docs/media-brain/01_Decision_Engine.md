@@ -225,6 +225,12 @@ An ad platform reports its own conversion count. We hold our own call records. *
 
 **Never hardcode an event name in a sync.** Capture every `action_type` the account returns, with its count and value, per entity, per date, into `media_brain_platform_conversions`; choose afterwards. Naming one client's event in code is what stored zero conversions for RRM against $4,451.81 of spend while its account reported 489 `lead` events. Show the full event menu wherever the governing count appears — a hidden alternative is how the wrong event gets picked and never noticed.
 
+**The `conversions` column on `ad_campaigns`, `ad_sets` and `ad_creatives` is barred from Media Brain entirely.** It holds whatever the sync happened to write, across several event names at once: over the 30 days to 2026-09-14 BuyologyIQ's read **264** while its governing event read **37**. It is not a governed choice, so it never reaches a decision, a reconciliation or a screen here. Other parts of the app still use it; Media Brain reads `media_brain_platform_conversions` filtered to the governing event, or it publishes nothing.
+
+**A platform count below our attributed call count is the expected shape, not an error.** BuyologyIQ, 30 days to 2026-09-14: Meta reports 37 `RingbaConversion` against 121 CPM-attributed calls. Offline uploads match well short of 100%, so the platform figure is a floor. Report the direction plainly — under-reporting is the opposite of an overclaim — and never reconcile the two into one number.
+
+**Event names sometimes encode a duration, and that is evidence rather than an answer.** Both pilot accounts define `offsite_lead_add_20_s_calls`, `click_to_call_native_20s_call_connect` and `click_to_call_native_60s_call_connect` — somebody drew a 20-second and a 60-second line in the ad account, neither of which is the 90 seconds on record. An event defined for optimisation is not the buyer's billable term. It bears on the open billable-definition question; it does not settle it.
+
 ### Confidence states
 
 - **Sufficient** — at or above `{min_calls}`. Act.

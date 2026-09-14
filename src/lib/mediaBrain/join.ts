@@ -57,11 +57,12 @@ export interface MetaAdRow {
   impressions: number | null;
   clicks: number | null;
   /**
-   * Meta's own reported conversions for this row. Used ONLY for the
-   * reconciliation line beside the vertical read — never as revenue, and never
-   * reconciled silently against our attributed call count.
+   * DELIBERATELY ABSENT: the raw `conversions` column on `ad_creatives`,
+   * `ad_sets` and `ad_campaigns`. It holds whatever the sync happened to write,
+   * across several event names at once, and no Media Brain figure may read it.
+   * Platform conversions reach the read only as the single governing event from
+   * `media_brain_platform_conversions`. @see verticalRead.GovernedConversions
    */
-  conversions?: number | null;
   date_from?: string | null;
   date_to?: string | null;
 }

@@ -3984,12 +3984,16 @@ export type Database = {
           lifecycle_stage: string | null
           max_angles: number | null
           meta_conversion_event: string | null
+          meta_conversion_event_confirmed_at: string | null
+          meta_conversion_event_confirmed_by: string | null
           min_calls: number | null
           min_margin: number
           naming_convention: Json | null
           scale_cadence: string | null
           target_margin: number
           test_budget_pct: number | null
+          unknown_blocks: Json
+          unknown_fields: string[]
           updated_at: string | null
           volume_tier: string | null
         }
@@ -4012,12 +4016,16 @@ export type Database = {
           lifecycle_stage?: string | null
           max_angles?: number | null
           meta_conversion_event?: string | null
+          meta_conversion_event_confirmed_at?: string | null
+          meta_conversion_event_confirmed_by?: string | null
           min_calls?: number | null
           min_margin?: number
           naming_convention?: Json | null
           scale_cadence?: string | null
           target_margin?: number
           test_budget_pct?: number | null
+          unknown_blocks?: Json
+          unknown_fields?: string[]
           updated_at?: string | null
           volume_tier?: string | null
         }
@@ -4040,12 +4048,16 @@ export type Database = {
           lifecycle_stage?: string | null
           max_angles?: number | null
           meta_conversion_event?: string | null
+          meta_conversion_event_confirmed_at?: string | null
+          meta_conversion_event_confirmed_by?: string | null
           min_calls?: number | null
           min_margin?: number
           naming_convention?: Json | null
           scale_cadence?: string | null
           target_margin?: number
           test_budget_pct?: number | null
+          unknown_blocks?: Json
+          unknown_fields?: string[]
           updated_at?: string | null
           volume_tier?: string | null
         }

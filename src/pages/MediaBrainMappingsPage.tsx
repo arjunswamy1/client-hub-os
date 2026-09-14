@@ -385,6 +385,28 @@ export default function MediaBrainMappingsPage() {
             </Notice>
           )}
 
+          {/* A key exists but nothing joined. Completely different from "unavailable":
+              here the feed CAN name an ad, so the fault is in the join, not the ceiling. */}
+          {!adLevelUnavailable && adLevel?.available && pct === 0 && (
+            <Notice tone="danger" title="0% coverage — a key is arriving, but nothing joins">
+              {fmtNum(adLevel.callsWithKey)} of {fmtNum(adLevel.totalCalls)} calls carry an ad-level key (
+              {adLevel.keysPresent.join(", ")}), so this is <strong>0% coverage, not unavailable</strong>. The remedy is
+              the join, not the feed: the delivered values do not match any synced ad or creative id. Check that the
+              value being stamped is the ad id or ad name Meta reports, and that the ad account holding those ads is
+              synced.
+            </Notice>
+          )}
+
+          {!adLevelUnavailable && adLevel?.available && pct !== null && pct > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Ad-level attribution is <strong>available</strong> for this client: {fmtNum(adLevel.callsWithKey)} of{" "}
+              {fmtNum(adLevel.totalCalls)} calls carry a key that can name a single ad ({adLevel.keysPresent.join(", ")}
+              ), so the figure above is a measured coverage percentage rather than a ceiling.
+            </p>
+          )}
+
+
+
           {adLevelUnavailable ? (
             <Notice tone="danger" title="Ad-level attribution unavailable — no click key in the feed">
               {adLevel?.reason} Decisions here can go no finer than the campaign: cut, hold and scale per ad, and

@@ -45,7 +45,28 @@ export interface CanonicalCall {
   buyer_id: string | null;
   state: string | null;
   no_bid_reason: string | null;
+  /**
+   * Attribution tags carried on the call itself. On accounts that pass UTMs into
+   * the tracking platform these are the ONLY ad-level key available — the call
+   * tables hold no Meta ad_id and, on some accounts, no usable tracking number
+   * either. `creative_id` is the Meta ad id where the platform captured it
+   * (Ringba `tag:User:creative`). Values are read, never derived.
+   * @see join.ts — the UTM resolution tier
+   */
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_source: string | null;
+  utm_term: string | null;
+  utm_medium: string | null;
+  creative_id: string | null;
 }
+
+/** The attribution tags, split out so every mapper reads them the same way. */
+export type AttributionTags = Pick<
+  CanonicalCall,
+  'utm_campaign' | 'utm_content' | 'utm_source' | 'utm_term' | 'utm_medium' | 'creative_id'
+>;
+
 
 export type TrackingPlatform =
   | 'ringba'

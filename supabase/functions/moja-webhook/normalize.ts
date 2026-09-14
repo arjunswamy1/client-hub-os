@@ -146,10 +146,33 @@ export interface MojaCallRow {
   caller_zip: string | null;
   call_start: string | null;
   converted_at: string | null;
+  /**
+   * Moja's `[DURATION]`, stored exactly as delivered. Moja DESCRIBES this as the
+   * CONNECTED duration; that is unconfirmed, so the name records the source field
+   * and nothing is re-interpreted here.
+   */
+  reported_duration_seconds: number | null;
+  /** Moja's `[INBOUND_DURATION]`, as delivered. May include ring time; unconfirmed. */
+  reported_inbound_duration_seconds: number | null;
+  /**
+   * Which reported duration governs the billable definition. `unknown` until a human
+   * has Moja's answer — and an UNKNOWN here blocks billable count, cost per billable
+   * call, billable rate and every threshold derived from them.
+   */
+  duration_semantics: 'unknown' | 'duration' | 'inbound_duration';
+  /** Legacy column names, kept populated with the same delivered values. */
   duration_seconds: number;
   inbound_duration_seconds: number;
-  connected: boolean;
+  /**
+   * NULL means the connection state was NOT reported. Never derived from a duration:
+   * if inbound duration includes ring time, `duration > 0` would mark every unanswered
+   * call connected and inflate connection rate — corrupting Step 1 of the diagnostic
+   * tree, which is where every read starts.
+   */
+  connected: boolean | null;
   connected_source: string;
+  /** Named reason `connected` is null. An unknown state must read as unknown. */
+  connected_unknown_reason: string | null;
   answered: boolean | null;
   converted: boolean;
   revenue: number;
@@ -166,6 +189,15 @@ export interface MojaCallRow {
   utm_content: string | null;
   gclid: string | null;
   fbclid: string | null;
+  wbraid: string | null;
+  gbraid: string | null;
+  msclkid: string | null;
+  /**
+   * Every delivered field we do not map to a column, kept intact. Moja has no gclid
+   * or fbclid macro — those must arrive as custom tags, so the bag is the path by
+   * which a click key can start flowing without another code change.
+   */
+  custom_tags: Record<string, unknown>;
   raw_payload: unknown;
 }
 

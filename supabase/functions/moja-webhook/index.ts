@@ -27,6 +27,16 @@ function secretsMatch(provided: string | null | undefined, expected: string): bo
   return diff === 0;
 }
 
+/** Never echo anything credential-shaped back onto a screen, whatever a caller names it. */
+function redactCredentialish(bag: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!bag) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(bag)) {
+    out[k] = /secret|token|password|api[_-]?key|auth/i.test(k) ? '[redacted]' : v;
+  }
+  return out;
+}
+
 type Validation =
   | 'ok'
   | 'server_not_configured'
@@ -43,6 +53,12 @@ interface Receipt {
   unreplaced: string[];
   deliveryId: string | null;
   rowsWritten: number;
+  /**
+   * The custom-tag bag, VALUES included — this feeds an operator's test panel, not a
+   * log, and a test is worthless if you cannot see what arrived. Keys that look like a
+   * credential are redacted anyway; the shared secret never travels in the body.
+   */
+  customTags?: Record<string, unknown> | null;
   shape?: string;
   eventType?: string | null;
   error?: string;
@@ -71,6 +87,7 @@ async function recordReceipt(supabase: any, r: Receipt) {
       last_payload_shape: r.shape ?? null,
       last_event_type: r.eventType ?? null,
       last_delivery_id: r.deliveryId,
+      last_custom_tags: redactCredentialish(r.customTags ?? null),
       last_receipt_at: now,
     },
   };
@@ -210,6 +227,7 @@ Deno.serve(async (req) => {
     fields: norm.fields,
     unreplaced: norm.unreplaced,
     deliveryId: norm.deliveryId,
+    customTags: (norm.row?.custom_tags as Record<string, unknown> | undefined) ?? null,
     shape: norm.shape,
     eventType: norm.eventType,
     validation: 'ok',

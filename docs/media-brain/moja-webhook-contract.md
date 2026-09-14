@@ -6,9 +6,10 @@ call-tracking payload usually omits.
 
 Client in question: **RRM / River Road Marketing** — `client_id = 4b2434db-6d47-4653-be34-313976790f9d`.
 
-As of 2026-09-14 this endpoint has received **zero deliveries, ever**. The 34 call rows in
-our database were seeded by hand on 2026-08-22 and carry no payload. Nothing has been
-mis-parsed; nothing has been sent.
+As of 2026-09-14 12:39 UTC this endpoint has received **exactly one delivery**: your test fire.
+It authenticated and was accepted. It is retained as evidence and flagged as a test, so it never
+enters a report. The 34 other call rows were seeded by hand on 2026-08-22 and carry no payload.
+No real call has ever been delivered.
 
 ---
 

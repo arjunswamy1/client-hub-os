@@ -229,9 +229,13 @@ function emptyRow(vertical_id: string, label: string): VerticalReadRow {
     profit: null,
     confidence: 'insufficient',
     adLevelDecisionEligible: false,
+    durationThresholdUnknown: false,
+    blockedFigures: [],
+    sensitivity: null,
     flags: [],
     resolution: null,
   };
+
 }
 
 export interface VerticalReadInput {

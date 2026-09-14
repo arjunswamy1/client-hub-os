@@ -143,7 +143,7 @@ export interface MapOptions {
   minPayoutThreshold?: number | null;
 }
 
-export type CallMapper = (row: RawCallRow, opts: MapOptions) => CanonicalCall;
+export type CallMapper = (row: RawCallRow, opts: MapOptions) => MappedCall;
 
 /* ---------------- helpers ---------------- */
 
@@ -496,7 +496,11 @@ export interface MapCallsResult {
  * @see docs/media-brain/01_Decision_Engine.md §3
  */
 export function mapCalls(rows: RawCallRow[], mapper: CallMapper, opts: MapOptions): MapCallsResult {
-  const calls = rows.map((r) => mapper(r, opts));
+  const calls: CanonicalCall[] = rows.map((r) => {
+    const mapped = mapper(r, opts);
+    // One rule, applied once: platform comes from utm_source (§3c).
+    return { ...mapped, platform: engine.platformFromUtmSource(mapped.utm_source) };
+  });
   const missingBillableDefinition =
     opts.billableMinDurationSeconds === null || opts.billableMinDurationSeconds === undefined
       ? calls.map((c) => c.call_id)

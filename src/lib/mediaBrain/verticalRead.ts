@@ -54,6 +54,15 @@ export type VerticalEconomics = RevenueEconomics & {
    * excluded volume instead. @see engine.partitionByPublisher
    */
   attributed_publishers?: (string | null)[] | null;
+  /**
+   * Whether publisher filtering is required here at all (§3b). `unknown` means
+   * nobody has answered and the read stops; `not_required_dedicated_campaigns`
+   * is a recorded human decision that this campaign carries only our traffic.
+   * @see engine.publisherScopingGate
+   */
+  publisher_scoping?: string | null;
+  publisher_scoping_verified_at?: string | null;
+  publisher_scoping_verified_by?: string | null;
   /** Field names declared UNKNOWN — assumed, not stated. @see engine.isUnknownField */
   unknown_fields?: string[] | null;
   /**
@@ -117,6 +126,17 @@ export interface VerticalReadRow {
    * not something to reconcile away (§6 Operating Procedures).
    */
   conversionDiscrepancy: number | null;
+  /** How publisher scoping was answered for this vertical, and by whom (§3b). */
+  publisherScoping: engine.PublisherScopingGate | null;
+  /** Whether a dedicated-campaign claim is past its re-check date. */
+  publisherScopingRecheck: engine.PublisherScopingRecheck | null;
+  /** Set when a campaign claimed dedicated shows more than one publisher. */
+  dedicatedCampaignContradiction: engine.DedicatedCampaignContradiction | null;
+  /**
+   * Calls per ad platform from `utm_source` alone, always carrying the
+   * `unclassified` row so it is visible rather than folded away (§3c).
+   */
+  platformSplit: engine.PlatformSplitRow[];
   /** Named data caveats — unconfirmed payouts, zero-payout campaigns, and so on. */
   flags: string[];
   resolution: ResolvedRevenue | null;
@@ -267,6 +287,10 @@ function emptyRow(vertical_id: string, label: string): VerticalReadRow {
     sensitivity: null,
     excludedPublisherCalls: 0,
     excludedByPublisher: [],
+    publisherScoping: null,
+    publisherScopingRecheck: null,
+    dedicatedCampaignContradiction: null,
+    platformSplit: [],
     metaConversions: 0,
     conversionDiscrepancy: null,
     flags: [],
@@ -337,8 +361,14 @@ export function verticalRead({
     // §3 — only calls from publishers this client actually buys may reach a
     // metric. Everything else belongs to another buyer's media and is counted as
     // excluded volume, never divided into our spend.
+    // §3b — a vertical recorded as a dedicated campaign has nothing to filter,
+    // and that is stated on the row rather than looking like an empty filter.
+    const scopingSource = engine.publisherScopingOf(eco) === 'unknown' ? economics.clientDefault : eco;
     const publisherList = eco.attributed_publishers ?? economics.clientDefault.attributed_publishers;
-    const split = engine.partitionByPublisher(allBucket, publisherList);
+    const split = engine.partitionForScoping(allBucket, {
+      publisher_scoping: scopingSource.publisher_scoping,
+      attributed_publishers: publisherList,
+    });
     const bucket = split.attributed;
     // Strip each call's stored `billable`: it was derived from the CLIENT-level
     // economics, and this vertical may bill differently. The vertical's own
@@ -356,6 +386,15 @@ export function verticalRead({
     row.resolution = resolved;
     row.excludedPublisherCalls = split.excludedCalls;
     row.excludedByPublisher = split.excludedByPublisher;
+    row.publisherScoping = engine.publisherScopingGate({
+      publisher_scoping: scopingSource.publisher_scoping,
+      attributed_publishers: publisherList,
+      publisher_scoping_verified_at: scopingSource.publisher_scoping_verified_at,
+      publisher_scoping_verified_by: scopingSource.publisher_scoping_verified_by,
+    });
+    row.publisherScopingRecheck = engine.publisherScopingRecheck(scopingSource);
+    row.dedicatedCampaignContradiction = engine.dedicatedCampaignContradiction(scopingSource, allBucket);
+    row.platformSplit = engine.platformSplit(split.attributed);
     row.metaConversions = conversionsByVertical.get(v.vertical_id) ?? 0;
     row.conversionDiscrepancy = row.metaConversions - row.calls;
 
@@ -382,6 +421,32 @@ export function verticalRead({
     }
     // Caveats stated on the record itself, verbatim. A confirmed contract term
     // the platform does not corroborate still has to read as trusted, not measured.
+    if (row.publisherScoping && !row.publisherScoping.filterApplies) {
+      row.flags.push(row.publisherScoping.note);
+    }
+    if (row.publisherScopingRecheck?.note) {
+      row.flags.push(
+        row.publisherScopingRecheck.due
+          ? `RE-CHECK DUE: ${row.publisherScopingRecheck.note}`
+          : row.publisherScopingRecheck.note,
+      );
+    }
+    if (row.dedicatedCampaignContradiction?.contradicted) {
+      row.flags.push(row.dedicatedCampaignContradiction.note!);
+    }
+    const unclassifiedPlatform = (row.platformSplit ?? []).find((p) => p.platform === 'unclassified');
+    if (unclassifiedPlatform && unclassifiedPlatform.calls > 0) {
+      row.flags.push(
+        `${unclassifiedPlatform.calls} of ${row.calls} calls name no recognised ad platform in utm_source${
+          unclassifiedPlatform.missingUtmSource
+            ? ` (${unclassifiedPlatform.missingUtmSource} carry no utm_source at all` +
+              (unclassifiedPlatform.sources.length ? `; others: ${unclassifiedPlatform.sources.join(', ')})` : ')')
+            : unclassifiedPlatform.sources.length
+              ? ` (${unclassifiedPlatform.sources.join(', ')})`
+              : ''
+        }. They are reported as unclassified on the platform split, never assigned to the likelier platform — utm_source is the only platform signal this feed carries, so its absence is a real gap.`,
+      );
+    }
     for (const declared of eco.declared_flags ?? []) {
       if (declared && declared.trim()) row.flags.push(declared.trim());
     }
@@ -441,10 +506,10 @@ export function verticalRead({
 
   });
 
-  const unclassifiedSplit = engine.partitionByPublisher(
-    unclassifiedCalls,
-    economics.clientDefault.attributed_publishers,
-  );
+  const unclassifiedSplit = engine.partitionForScoping(unclassifiedCalls, {
+    publisher_scoping: economics.clientDefault.publisher_scoping,
+    attributed_publishers: economics.clientDefault.attributed_publishers,
+  });
   const unclassified = emptyRow('unclassified', 'Unclassified');
   unclassified.spend = unclassifiedSpend;
   unclassified.calls = unclassifiedSplit.attributed.length;
@@ -473,6 +538,7 @@ export function verticalRead({
     thresholds.killThreshold,
   );
   unclassified.resolution = unclassifiedResolved;
+  unclassified.platformSplit = engine.platformSplit(unclassifiedSplit.attributed);
 
   // The excluded total across the whole read, so nobody reads a smaller call
   // count as lost data.

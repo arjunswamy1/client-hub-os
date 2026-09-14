@@ -368,6 +368,9 @@ export function normalizeDelivery(
     (eventType ?? '').toLowerCase().includes('convert') ||
     toBoolOrNull(pick(src, ['converted', 'conversion', 'is_converted'])) === true;
 
+  const clickKeys = clickKeyRawValues(src);
+  const adLevelClickKey = adLevelClickKeyArrived(clickKeys);
+
   const base = {
     shape,
     fields,
@@ -376,6 +379,8 @@ export function normalizeDelivery(
     eventType,
     callId,
     isConversionEvent,
+    clickKeys,
+    adLevelClickKey,
   };
 
   // No call id → the row could never be deduplicated. Refuse it by name rather than

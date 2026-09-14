@@ -385,3 +385,121 @@ describe('ad-level availability — no click key in the feed', () => {
     expect(mapping.readClickKeys({ raw_payload: { utm_content: 'x' } })).toEqual([]);
   });
 });
+
+/* ==================================================================
+ * §3b — publisher scoping: a recorded decision vs an unanswered question
+ * ================================================================== */
+
+describe('publisher scoping (§3b)', () => {
+  const call = (publisher: string | null, utm_source: string | null = null) => ({ publisher, utm_source });
+
+  it('stops the pull when scoping is unknown, exactly as an unconfigured publisher list does', () => {
+    const gate = engine.publisherScopingGate({ publisher_scoping: null, attributed_publishers: null });
+    expect(gate.scoping).toBe('unknown');
+    expect(gate.ok).toBe(false);
+    expect(gate.error).toMatch(/UNKNOWN/);
+    // Silence is never read as "dedicated".
+    expect(gate.filterApplies).toBe(true);
+  });
+
+  it('stops when publisher filtering is required but no publishers are configured', () => {
+    const gate = engine.publisherScopingGate({ publisher_scoping: 'required', attributed_publishers: [] });
+    expect(gate.ok).toBe(false);
+    expect(gate.error).toMatch(/does not default to all publishers/);
+  });
+
+  it('proceeds unfiltered on a recorded dedicated-campaign decision, and names who decided', () => {
+    const eco = {
+      publisher_scoping: 'not_required_dedicated_campaigns',
+      attributed_publishers: null,
+      publisher_scoping_verified_by: 'AJ Swamy',
+      publisher_scoping_verified_at: '2026-09-14',
+    };
+    const gate = engine.publisherScopingGate(eco);
+    expect(gate.ok).toBe(true);
+    expect(gate.filterApplies).toBe(false);
+    expect(gate.note).toContain('AJ Swamy');
+
+    const split = engine.partitionForScoping([call('RRM (INTERNAL)'), call(null)], eco);
+    expect(split.attributed).toHaveLength(2);
+    expect(split.excludedCalls).toBe(0);
+  });
+
+  it('still excludes other publishers where scoping is required', () => {
+    const eco = { publisher_scoping: 'required', attributed_publishers: ['Connect Paid Media'] };
+    const split = engine.partitionForScoping([call('Connect Paid Media'), call('Squeeze Media Group')], eco);
+    expect(split.attributed).toHaveLength(1);
+    expect(split.excludedCalls).toBe(1);
+  });
+
+  it('raises a contradiction when a dedicated campaign shows more than one publisher', () => {
+    const eco = { publisher_scoping: 'not_required_dedicated_campaigns' };
+    const clean = engine.dedicatedCampaignContradiction(eco, [call('RRM (INTERNAL)'), call('rrm (internal)')]);
+    expect(clean.contradicted).toBe(false);
+
+    const dirty = engine.dedicatedCampaignContradiction(eco, [call('RRM (INTERNAL)'), call('Global Ventu')]);
+    expect(dirty.contradicted).toBe(true);
+    expect(dirty.publishers).toEqual(['Global Ventu', 'RRM (INTERNAL)']);
+    expect(dirty.note).toMatch(/CONTRADICTED BY THE DATA/);
+  });
+
+  it('makes the dedicated-campaign claim expire: an unverified or old claim is due for re-check', () => {
+    const now = new Date('2026-10-31T00:00:00Z');
+    const fresh = engine.publisherScopingRecheck(
+      { publisher_scoping: 'not_required_dedicated_campaigns', publisher_scoping_verified_at: '2026-10-20' },
+      now,
+    );
+    expect(fresh.due).toBe(false);
+
+    const stale = engine.publisherScopingRecheck(
+      { publisher_scoping: 'not_required_dedicated_campaigns', publisher_scoping_verified_at: '2026-09-14' },
+      now,
+    );
+    expect(stale.due).toBe(true);
+    expect(stale.note).toMatch(/re-verify/i);
+
+    const never = engine.publisherScopingRecheck({ publisher_scoping: 'not_required_dedicated_campaigns' }, now);
+    expect(never.due).toBe(true);
+    expect(never.ageDays).toBeNull();
+  });
+});
+
+/* ==================================================================
+ * §3c — platform comes from utm_source and nothing else
+ * ================================================================== */
+
+describe('ad platform from utm_source (§3c)', () => {
+  it('maps only the confirmed values, case-insensitively', () => {
+    expect(engine.platformFromUtmSource('Facebook')).toBe('meta');
+    expect(engine.platformFromUtmSource(' fb ')).toBe('meta');
+    expect(engine.platformFromUtmSource('META')).toBe('meta');
+    expect(engine.platformFromUtmSource('google')).toBe('google');
+    expect(engine.platformFromUtmSource('AdWords')).toBe('google');
+  });
+
+  it('calls an unrecognised or absent utm_source unclassified, never the likelier platform', () => {
+    expect(engine.platformFromUtmSource('bing')).toBe('unclassified');
+    expect(engine.platformFromUtmSource('')).toBe('unclassified');
+    expect(engine.platformFromUtmSource(null)).toBe('unclassified');
+    expect(engine.platformFromUtmSource(undefined)).toBe('unclassified');
+  });
+
+  it('always shows unclassified as its own row on the split, even at zero', () => {
+    const empty = engine.platformSplit([{ utm_source: 'facebook' }]);
+    expect(empty.map((r) => r.platform)).toEqual(['meta', 'google', 'unclassified']);
+    expect(empty[2].calls).toBe(0);
+
+    const split = engine.platformSplit([
+      { utm_source: 'facebook' },
+      { utm_source: 'google' },
+      { utm_source: 'bing' },
+      { utm_source: null },
+    ]);
+    expect(split[0].calls).toBe(1);
+    expect(split[1].calls).toBe(1);
+    const unclassified = split[2];
+    expect(unclassified.calls).toBe(2);
+    expect(unclassified.sources).toEqual(['bing']);
+    expect(unclassified.missingUtmSource).toBe(1);
+  });
+});

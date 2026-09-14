@@ -342,13 +342,11 @@ export function computeWindow({
     };
   }
 
-  // §3 — publisher attribution is required before any metric exists. No default.
-  if (!engine.publisherAttributionConfigured(economics.attributed_publishers)) {
-    return {
-      ok: false,
-      error:
-        'Publisher attribution is not configured on the Economics record, so every margin figure would include other traffic sources\' calls. A tracking campaign receives calls from every publisher pointed at it; attributing all of them to our spend is the same error as mixing denominators. State attributed_publishers at intake — the framework does not default to all publishers.',
-    };
+  // §3b — publisher scoping is answered before any metric exists. `unknown` stops
+  // the pull; a recorded dedicated-campaign decision lets it proceed unfiltered.
+  const scopingGate = engine.publisherScopingGate(economics);
+  if (!scopingGate.ok) {
+    return { ok: false, error: scopingGate.error! };
   }
 
   const { calls: allCalls, missingBillableDefinition } = mapCalls(rawCalls, mapper, {
@@ -357,7 +355,7 @@ export function computeWindow({
     minPayoutThreshold: economics.min_payout_threshold ?? null,
   });
 
-  const publisherSplit = engine.partitionByPublisher(allCalls, economics.attributed_publishers);
+  const publisherSplit = engine.partitionForScoping(allCalls, economics);
   const calls = publisherSplit.attributed;
   if (calls.length === 0) {
     return {

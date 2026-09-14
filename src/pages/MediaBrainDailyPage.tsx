@@ -62,6 +62,8 @@ export default function MediaBrainDailyPage() {
   const baseline = useQuery({
     queryKey: ["mb-daily-baseline", clientId, baselineStart, baselineEnd],
     queryFn: async (): Promise<PullWindowResult> =>
+      // Circuit-breaker baseline only (§12 RTB no-bid spike) — NOT a week-over-week
+      // delta. Nothing from this pull is ever rendered as a comparison on this page.
       pullWindow({ clientId: clientId!, start: baselineStart!, end: baselineEnd!, timezone: confirmed!.timezone }),
     enabled: !!clientId && !!confirmed && pull.data?.ok === true && pull.data.payoutMode === "rtb",
     staleTime: 60_000,

@@ -63,10 +63,16 @@ const COMPUTED_ECO: VerticalEconomics = {
   attributed_publishers: [OURS],
 };
 
+function enginePlatform(over: Partial<CanonicalCall>) {
+  return over.platform ?? engine.platformFromUtmSource(over.utm_source ?? null);
+}
+
 function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall {
   const payout = over.payout_amount ?? 0;
   return {
     call_id: over.call_id,
+    // Platform comes from utm_source alone (§3c); the override may state it.
+    platform: enginePlatform(over),
     timestamp: '2026-03-10T12:00:00Z',
     ad_id: null,
     adset_id: null,
@@ -494,5 +500,61 @@ describe('sensitivity band direction (§8)', () => {
     expect(band.direction).toBe('mixed');
     expect(band.directionEstablished).toBe(false);
     expect(band.verdictBlocking).toBe(true);
+  });
+});
+
+/**
+ * §3b — dedicated-campaign scoping. The state exists so a recorded human decision can
+ * switch filtering off where an unanswered question may not. Both halves are tested: it
+ * counts every call, AND it reports itself contradicted the moment a second publisher
+ * shows up, because that check is the entire safety net for the state.
+ */
+describe('publisher scoping on the vertical read (§3b)', () => {
+  const DEDICATED: VerticalEconomics = {
+    ...COMPUTED_ECO,
+    attributed_publishers: null,
+    publisher_scoping: 'not_required_dedicated_campaigns',
+    publisher_scoping_verified_at: new Date().toISOString(),
+    publisher_scoping_verified_by: 'AJ Swamy',
+  };
+
+  const tubCall = (id: string, publisher: string | null) =>
+    call({
+      call_id: id,
+      campaign_name: 'Walk In tubs',
+      publisher,
+      duration_seconds: 120,
+      connected: true,
+    });
+
+  it('counts calls from every publisher and does not report a contradiction on one publisher', () => {
+    const read = verticalRead({
+      calls: [tubCall('a', 'Connect Paid Media'), tubCall('b', 'Connect Paid Media')],
+      metaAds: [],
+      verticals: VERTICALS,
+      economics: { byVertical: { 'walk-in-tubs': DEDICATED }, clientDefault: DEDICATED },
+      thresholds: { minCalls: null, minMargin: null, targetMargin: null, killThreshold: null },
+      adLevelPct: null,
+    });
+    const row = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
+    expect(row.calls).toBe(2);
+    expect(row.excludedPublisherCalls).toBe(0);
+    expect(row.dedicatedCampaignContradiction?.contradicted).toBe(false);
+  });
+
+  it('reports the dedicated claim contradicted when a second publisher appears', () => {
+    const read = verticalRead({
+      calls: [tubCall('a', 'Connect Paid Media'), tubCall('b', 'Squeeze Media Group')],
+      metaAds: [],
+      verticals: VERTICALS,
+      economics: { byVertical: { 'walk-in-tubs': DEDICATED }, clientDefault: DEDICATED },
+      thresholds: { minCalls: null, minMargin: null, targetMargin: null, killThreshold: null },
+      adLevelPct: null,
+    });
+    const row = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
+    expect(row.dedicatedCampaignContradiction?.contradicted).toBe(true);
+    expect(row.dedicatedCampaignContradiction?.publishers).toContain('Squeeze Media Group');
+    // The contradiction must reach the row's flags — a note nobody renders is no safety net.
+    expect(row.flags.join(' ')).toMatch(/dedicated/i);
   });
 });

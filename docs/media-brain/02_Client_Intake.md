@@ -30,6 +30,14 @@ You are running client intake for the ConnectPay media buying framework. Read `L
 
 There is **no default**. An unanswered publisher list stops every pull for that client (Decision Engine §3), because the alternative is quoting margin on other buyers' calls. Report the excluded volume alongside the attributed total so the client's campaign figures and ours are both visible.
 
+Ask first, per vertical: **is this tracking campaign dedicated to our traffic only?**
+
+- **No / mixed** → `{publisher_scoping} = required`, and the publisher names above must be listed or every pull stops.
+- **Yes, dedicated** → `{publisher_scoping} = not_required_dedicated_campaigns`. Record **who** confirmed it and **on what date** — this is a claim by a named person, not an absent answer, and it is the only reason filtering may be switched off. It is re-checked every 30 days, and a second publisher appearing on the campaign reports the claim as contradicted by the data.
+- **Don't know** → leave it `unknown`. That stops the pull, and it should: an unanswered question is never read as "dedicated".
+
+Also ask which **platform signal** the call carries. Platform is read from `utm_source` only (Decision Engine §3) — never guessed from the number or the campaign name — so establish whether `utm_source` is populated on every call and what values it uses. Where it is absent, those calls appear as `unclassified` on the platform split and stay there.
+
 **A2. Payout economics**
 
 - Payout mode: static or RTB?

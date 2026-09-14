@@ -89,7 +89,21 @@ export interface CanonicalCall {
   utm_term: string | null;
   utm_medium: string | null;
   creative_id: string | null;
+  /**
+   * The ad platform that delivered this call, read from `utm_source` and from
+   * nothing else — never from the dialed number, the campaign name, or a keyword
+   * heuristic (§3c). Anything unrecognised or absent is `unclassified`, which is
+   * a visible row on every platform split rather than a silent default.
+   * @see engine.platformFromUtmSource
+   */
+  platform: engine.AdPlatform;
 }
+
+/**
+ * What a mapper returns. `platform` is derived from `utm_source` centrally in
+ * `mapCalls`, so no per-platform mapping can quietly invent its own rule.
+ */
+export type MappedCall = Omit<CanonicalCall, 'platform'>;
 
 /** The attribution tags, split out so every mapper reads them the same way. */
 export type AttributionTags = Pick<
@@ -129,7 +143,7 @@ export interface MapOptions {
   minPayoutThreshold?: number | null;
 }
 
-export type CallMapper = (row: RawCallRow, opts: MapOptions) => CanonicalCall;
+export type CallMapper = (row: RawCallRow, opts: MapOptions) => MappedCall;
 
 /* ---------------- helpers ---------------- */
 
@@ -482,7 +496,11 @@ export interface MapCallsResult {
  * @see docs/media-brain/01_Decision_Engine.md §3
  */
 export function mapCalls(rows: RawCallRow[], mapper: CallMapper, opts: MapOptions): MapCallsResult {
-  const calls = rows.map((r) => mapper(r, opts));
+  const calls: CanonicalCall[] = rows.map((r) => {
+    const mapped = mapper(r, opts);
+    // One rule, applied once: platform comes from utm_source (§3c).
+    return { ...mapped, platform: engine.platformFromUtmSource(mapped.utm_source) };
+  });
   const missingBillableDefinition =
     opts.billableMinDurationSeconds === null || opts.billableMinDurationSeconds === undefined
       ? calls.map((c) => c.call_id)

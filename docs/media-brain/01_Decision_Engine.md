@@ -116,6 +116,31 @@ So `publisher` is canonical, read off the call (`metadata->>'publisher'` on Ring
 
 A vertical whose traffic is entirely another publisher's is not a vertical we operate. It gets no Economics record and is retired for that client, with the reason recorded.
 
+### Publisher scoping — required, not required, or unanswered
+
+`{attributed_publishers}` answers *whose calls are these*. `{publisher_scoping}` answers the question before it: **does that question need an answer here at all?** Three states, and the difference between two of them is the whole point.
+
+| State | Meaning | Effect |
+| --- | --- | --- |
+| `required` | The tracking campaign takes traffic from more than one source. | An unconfigured `{attributed_publishers}` **stops the pull**, exactly as before. |
+| `not_required_dedicated_campaigns` | A **recorded human decision** that this campaign receives only our traffic, so there is nothing to filter. | The pull proceeds unfiltered, and the decision — who made it, on what date — renders beside every figure. |
+| `unknown` (default) | Nobody has answered. | **Stops the pull**, identically to `required` with no list. |
+
+A record that states no scoping but *does* name publishers has answered the question — the publishers are named, so filtering plainly applies, and it reads as `required`. Only a record that says nothing either way is `unknown`. Silence is never read as "dedicated".
+
+`not_required_dedicated_campaigns` is a deliberate, dated, attributed claim, not an absent answer — which is why it may switch filtering off where an absent answer may not. Two safety nets, and they are the only ones:
+
+- **Contradiction check.** The moment more than one distinct publisher appears on calls for a vertical marked dedicated, the read reports the claim as *contradicted by the data* and names every publisher currently being counted against our spend. A campaign dedicated today can quietly have a second publisher pointed at it tomorrow and nothing in the feed announces it.
+- **Re-check date.** `{publisher_scoping_verified_at}` records when the claim was last verified. Past 30 days it is surfaced on the vertical read as due for re-check; a claim with no date at all counts as unverified.
+
+### Platform comes from `utm_source`, and from nothing else
+
+`platform` on a canonical call is read from `utm_source`: `facebook` / `fb` / `meta` → `meta`; `google` / `adwords` → `google`; anything else, or absent → **`unclassified`**. Case-insensitive, trimmed.
+
+It is never inferred from the dialed number, the campaign name, or a keyword heuristic. A campaign called "Internal Plumbing" says nothing about which platform delivered the click, and a heuristic that defaults plumbing to Google is quietly right often enough never to be questioned.
+
+`unclassified` is a **visible row of its own** on every platform split, even at zero, and is never folded into the likelier platform or dropped. On Moja, `[UTM_SOURCE]` is the one UTM macro confirmed available, so it is the only platform signal that will ever arrive — which makes its absence a real gap worth showing rather than papering over.
+
 **Meta conversion reconciliation.** Where the account records an offline or call conversion, the vertical read prints Meta's reported conversions beside our attributed call count and shows the gap. Per §6 of Operating Procedures a material disagreement is flagged, never reconciled silently — if Meta reports 300 conversions and we attribute 79 calls, that gap is the finding. Zero conversions against real spend is declared as a conversion-tracking gap on the account, not read as zero performance.
 
 **Dialed numbers may be pooled.** Where a tracking number sits in a number pool it rotates across visitors, so one number carries several creatives and DID → creative is invalid. DID → campaign stays stable, so a pooled DID is a reliable **vertical** key and never an ad-level one; the join marks it accordingly and ad-level verdicts are withheld from it.

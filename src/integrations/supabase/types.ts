@@ -3853,6 +3853,10 @@ export type Database = {
           payout: number | null
           payout_mode: string
           platforms: string[] | null
+          publisher_scoping: string
+          publisher_scoping_note: string | null
+          publisher_scoping_verified_at: string | null
+          publisher_scoping_verified_by: string | null
           reporting_cadence: string | null
           reporting_format: string | null
           revenue_source: string
@@ -3892,6 +3896,10 @@ export type Database = {
           payout?: number | null
           payout_mode: string
           platforms?: string[] | null
+          publisher_scoping?: string
+          publisher_scoping_note?: string | null
+          publisher_scoping_verified_at?: string | null
+          publisher_scoping_verified_by?: string | null
           reporting_cadence?: string | null
           reporting_format?: string | null
           revenue_source?: string
@@ -3931,6 +3939,10 @@ export type Database = {
           payout?: number | null
           payout_mode?: string
           platforms?: string[] | null
+          publisher_scoping?: string
+          publisher_scoping_note?: string | null
+          publisher_scoping_verified_at?: string | null
+          publisher_scoping_verified_by?: string | null
           reporting_cadence?: string | null
           reporting_format?: string | null
           revenue_source?: string

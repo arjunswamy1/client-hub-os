@@ -83,7 +83,9 @@ describe('moja normalize — payload shapes', () => {
     expect(row.connected).toBe(true);
     expect(row.connected_source).toBe('answered_field');
     expect(row.service_line).toBe('windows');
-    expect(row.platform).toBe('meta');
+    // Platform comes from utm_source ALONE. Here [UTM_SOURCE] arrived unreplaced, so
+    // there is no platform signal — and a windows campaign is NOT quietly called Meta.
+    expect(row.platform).toBe('unclassified');
     expect(row.fbclid).toBe('IwAR-abc');
     expect(row.utm_content).toBe('120210000000000009');
   });

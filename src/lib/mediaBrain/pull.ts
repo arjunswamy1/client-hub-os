@@ -200,6 +200,20 @@ export interface PullWindowSuccess {
   excludedPublisherCalls: number;
   excludedByPublisher: { publisher: string; calls: number }[];
   publisherNote: string;
+  /** How publisher scoping was answered for this client, and by whom (§3b). */
+  publisherScoping: engine.PublisherScopingGate;
+  /** Whether a dedicated-campaign claim is past its re-check date. */
+  publisherScopingRecheck: engine.PublisherScopingRecheck;
+  /**
+   * Set when a campaign recorded as dedicated to our traffic shows more than one
+   * publisher in the data. The whole safety net for that scoping state.
+   */
+  dedicatedCampaignContradiction: engine.DedicatedCampaignContradiction;
+  /**
+   * Calls per ad platform from `utm_source` alone, always including the
+   * `unclassified` row (§3c).
+   */
+  platformSplit: engine.PlatformSplitRow[];
   /** Publishers whose calls this pull counted as ours. */
   attributedPublishers: string[];
   /** How revenue was resolved for this window, in plain language. */

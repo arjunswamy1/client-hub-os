@@ -40,6 +40,11 @@ const VALUE_COLUMNS = [
   "inboundPhoneNumber", "callLengthInSeconds", "connectedCallLengthInSeconds",
   "hasConnected", "hasConverted", "conversionAmount", "payoutAmount", "totalCost",
   "publisherName", "callerStateProvince", "callerCity", "endCallSource", "recordingUrl",
+  // The number the caller DIALED, and Ringba's own payout verdict. Both were
+  // available on this account all along and simply never requested — see
+  // docs/media-brain/hardening-report.md.
+  "number", "numberId", "numberPoolName", "numberPoolId", "isFromNumberPool",
+  "hasPayout", "noPayoutReason",
   "tag:User:utm_content", "tag:User:utm_source", "tag:User:utm_medium",
   "tag:User:utm_campaign", "tag:User:utm_term", "tag:User:creative",
 ];
@@ -81,6 +86,12 @@ function mapCallToRow(call: any) {
     call["tag:InboundNumber:State"] || call.callerStateProvince || call.callerState || null;
   const city = call["tag:Geo:City"] || call.callerCity || null;
 
+  // The number the caller DIALED — the DID that joins to client_dids. Distinct
+  // from `callerNumber` above and from `inbound_number` below, which is the
+  // CALLER's number despite its name.
+  const dialedNumber = call["tag:DialedNumber:Number"] || call["tag:DialedNumber:NumberE164"] ||
+    call.number || null;
+
   const callId = call.inboundCallId || call.callId || `${call.callDt}-${callerNumber || "unknown"}`;
   const duration = Number(call.callLengthInSeconds || call.connectedCallLengthInSeconds || 0);
   const connected = call.hasConnected ?? (duration > 0 && !call.wasBlocked);
@@ -95,7 +106,17 @@ function mapCallToRow(call: any) {
     campaign_name: call.campaignName || null,
     target_name: call.targetName || call.buyer || null,
     caller_number: callerNumber,
-    inbound_number: call.inboundPhoneNumber || call["tag:DialedNumber:Number"] || null,
+    // `inboundPhoneNumber` ONLY. It is Ringba's "Caller ID" field. Falling back
+    // to the dialed number here was the original bug: it conflated the caller's
+    // number with the tracking number and made DID attribution impossible.
+    inbound_number: call.inboundPhoneNumber || null,
+    did: dialedNumber ? String(dialedNumber) : null,
+    did_pool_name: call.numberPoolName ? String(call.numberPoolName) : null,
+    is_from_number_pool: call.isFromNumberPool === undefined || call.isFromNumberPool === null
+      ? null
+      : !!call.isFromNumberPool,
+    has_payout: call.hasPayout === undefined || call.hasPayout === null ? null : !!call.hasPayout,
+    no_payout_reason: call.noPayoutReason ? String(call.noPayoutReason) : null,
     duration_seconds: duration,
     connected: !!connected,
     converted,
@@ -235,7 +256,7 @@ Deno.serve(async (req) => {
           for (const t of tags) {
             const type = t?.tagType, name = t?.tagName;
             if (!type || !name) continue;
-            if (["InboundNumber", "Geo", "User"].includes(String(type))) {
+            if (["InboundNumber", "Geo", "User", "DialedNumber"].includes(String(type))) {
               requestColumns.push(`tag:${type}:${name}`);
             }
           }

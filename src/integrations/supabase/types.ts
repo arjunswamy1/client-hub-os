@@ -4596,10 +4596,15 @@ export type Database = {
           connected: boolean | null
           converted: boolean | null
           created_at: string
+          did: string | null
+          did_pool_name: string | null
           duration_seconds: number | null
+          has_payout: boolean | null
           id: string
           inbound_number: string | null
+          is_from_number_pool: boolean | null
           metadata: Json | null
+          no_payout_reason: string | null
           payout: number
           revenue: number
           target_name: string | null
@@ -4613,10 +4618,15 @@ export type Database = {
           connected?: boolean | null
           converted?: boolean | null
           created_at?: string
+          did?: string | null
+          did_pool_name?: string | null
           duration_seconds?: number | null
+          has_payout?: boolean | null
           id?: string
           inbound_number?: string | null
+          is_from_number_pool?: boolean | null
           metadata?: Json | null
+          no_payout_reason?: string | null
           payout?: number
           revenue?: number
           target_name?: string | null
@@ -4630,10 +4640,15 @@ export type Database = {
           connected?: boolean | null
           converted?: boolean | null
           created_at?: string
+          did?: string | null
+          did_pool_name?: string | null
           duration_seconds?: number | null
+          has_payout?: boolean | null
           id?: string
           inbound_number?: string | null
+          is_from_number_pool?: boolean | null
           metadata?: Json | null
+          no_payout_reason?: string | null
           payout?: number
           revenue?: number
           target_name?: string | null

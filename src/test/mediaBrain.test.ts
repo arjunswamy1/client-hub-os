@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import * as engine from '@/lib/mediaBrain/engine';
 import * as decisions from '@/lib/mediaBrain/decisions';
+import { fromRingba } from '@/lib/mediaBrain/adapter';
 import { computeWindow } from '@/lib/mediaBrain/pull';
 import type { PullRow, PullWindowSuccess } from '@/lib/mediaBrain/pull';
 import { rowClass } from '@/components/mediaBrain/shared';
@@ -261,4 +262,27 @@ describe('Media Brain — planted decision cases', () => {
     // Its spend is a tracking flag, not an entity with zero calls.
     expect(res.unjoinedSpend.length).toBeGreaterThan(0);
   });
+
+  /**
+   * 14. Ringba: `did` comes from the dialed-number column. When it is absent the
+   * canonical call falls back to `inbound_number` — which on this account is the
+   * CALLER's number — and MUST flag that it did so, because a mapping match on a
+   * caller's number is a coincidence, not attribution.
+   */
+  it('flags a DID that fell back to the caller number, and does not flag a real dialed number', () => {
+    const real = fromRingba(
+      { call_id: 'c1', call_date: '2026-01-01T00:00:00Z', did: '+18884611277', inbound_number: '+15551234567', duration_seconds: 120, payout: 50, connected: true, converted: true },
+      { billableMinDurationSeconds: 60 },
+    );
+    expect(real.did).toBe('+18884611277');
+    expect(real.did_is_caller_number_fallback).toBe(false);
+
+    const fallback = fromRingba(
+      { call_id: 'c2', call_date: '2026-01-01T00:00:00Z', did: null, inbound_number: '+15551234567', duration_seconds: 120, payout: 50, connected: true, converted: true },
+      { billableMinDurationSeconds: 60 },
+    );
+    expect(fallback.did).toBe('+15551234567');
+    expect(fallback.did_is_caller_number_fallback).toBe(true);
+  });
+
 });

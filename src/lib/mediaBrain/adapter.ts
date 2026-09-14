@@ -22,6 +22,15 @@ export interface CanonicalCall {
   campaign_name: string | null;
   creative_name: string | null;
   did: string | null;
+  /**
+   * TRUE when `did` could not be read from the platform's dialed-number field and
+   * fell back to a field that holds the CALLER's number. Such a DID must never be
+   * trusted for attribution: on BuyologyIQ `ringba_calls.inbound_number` is the
+   * caller's ANI on ~96.6% of rows, so a mapping match there would attribute the
+   * call to whatever creative happens to own a coincidentally matching number.
+   * Surfaced as a named count in the pull's flags — never silent.
+   */
+  did_is_caller_number_fallback: boolean;
   duration_seconds: number | null;
   connected: boolean | null;
   /**
@@ -208,7 +217,11 @@ export const fromRingba: CallMapper = (row, opts) => {
     campaign_id: null,
     campaign_name: str(row.campaign_name),
     creative_name: null,
-    did: str(row.inbound_number),
+    // `ringba_calls.did` is the number the caller DIALED. `inbound_number` is the
+    // CALLER's number despite its name, so using it as a DID is a data-quality
+    // event, flagged rather than assumed.
+    did: str(row.did) ?? str(row.inbound_number),
+    did_is_caller_number_fallback: str(row.did) === null && str(row.inbound_number) !== null,
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
@@ -234,6 +247,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     campaign_name: str(row.campaign_name),
     creative_name: str(row.creative_name),
     did: str(row.did),
+    did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds),
@@ -260,6 +274,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     campaign_name: str(row.campaign_name),
     creative_name: str(row.creative_label),
     did: str(row.did),
+    did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
@@ -286,6 +301,7 @@ export const fromMoja: CallMapper = (row, opts) => {
     campaign_name: str(row.campaign_name),
     creative_name: str(row.utm_content),
     did: str(row.tracking_number),
+    did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
@@ -311,6 +327,7 @@ export const fromCannaball: CallMapper = (row, opts) => {
     campaign_name: str(row.campaign_name),
     creative_name: str(row.creative_name),
     did: str(row.did),
+    did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds),

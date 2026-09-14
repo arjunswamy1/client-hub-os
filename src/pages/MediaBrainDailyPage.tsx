@@ -306,14 +306,17 @@ function EntityTable({
   rows,
   rtb,
   showAdColumns,
+  allowableCostPerCall,
 }: {
   title: string;
   description: string;
   rows: ReturnType<typeof groupRows>;
   rtb: boolean;
   showAdColumns: boolean;
+  allowableCostPerCall: number | null;
 }) {
   const sorted = [...rows].sort((a, b) => (b.marginPerCall ?? -Infinity) - (a.marginPerCall ?? -Infinity));
+  const colCount = 7 + (showAdColumns ? 1 : 0) + (showAdColumns && rtb ? 1 : 0);
   return (
     <Card>
       <CardHeader>
@@ -327,6 +330,10 @@ function EntityTable({
               <TableHead>Entity</TableHead>
               <TableHead>Confidence</TableHead>
               <TableHead className="text-right">Margin / call</TableHead>
+              <TableHead className="text-right">Cost / call</TableHead>
+              <TableHead className="text-right">
+                vs allowable {allowableCostPerCall === null ? "" : fmtMoney(allowableCostPerCall)}
+              </TableHead>
               <TableHead className="text-right">Cost / billable call</TableHead>
               <TableHead className="text-right">Billable calls</TableHead>
               {showAdColumns && <TableHead className="text-right">Call rate</TableHead>}
@@ -336,7 +343,7 @@ function EntityTable({
           <TableBody>
             {sorted.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-sm text-muted-foreground">
+                <TableCell colSpan={colCount} className="text-sm text-muted-foreground">
                   No entities in this window.
                 </TableCell>
               </TableRow>
@@ -348,6 +355,18 @@ function EntityTable({
                   <ConfidenceBadge state={r.confidenceState} />
                 </TableCell>
                 <TableCell className="text-right">{fmtMoney(r.marginPerCall)}</TableCell>
+                <TableCell className="text-right">{fmtMoney(r.costPerCall)}</TableCell>
+                <TableCell className="text-right">
+                  {r.overAllowableCostPerCall === null ? (
+                    "—"
+                  ) : r.overAllowableCostPerCall ? (
+                    <Badge variant="destructive">Over allowable</Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-emerald-400 text-emerald-700 dark:text-emerald-400">
+                      Within
+                    </Badge>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">{fmtMoney(r.costPerBillableCall)}</TableCell>
                 <TableCell className="text-right">{fmtNum(r.billable_calls)}</TableCell>
                 {showAdColumns && <TableCell className="text-right">{fmtPct(r.callRate)}</TableCell>}
@@ -356,6 +375,7 @@ function EntityTable({
                 )}
               </TableRow>
             ))}
+
           </TableBody>
         </Table>
       </CardContent>

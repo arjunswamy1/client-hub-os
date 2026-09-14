@@ -158,7 +158,11 @@ export interface MappingCall extends AttributionTags {
 /** Click identifiers, in the order platforms name them. */
 export const CLICK_KEY_COLUMNS = ['gclid', 'fbclid', 'wbraid', 'gbraid', 'msclkid'];
 
-/** Every click identifier present on a raw row, read from the row or any jsonb bag on it. */
+/**
+ * Every click identifier present on a raw row, read from the row or any jsonb bag on it.
+ * An unreplaced `[GCLID]` macro literal is NOT a key — counting it would report a client
+ * as ad-level-capable on the strength of a template placeholder.
+ */
 export function readClickKeys(row: Record<string, unknown>): string[] {
   const bags: Record<string, unknown>[] = [row];
   for (const nested of ['metadata', 'raw_payload', 'tags', 'custom_tags'] as const) {
@@ -169,7 +173,9 @@ export function readClickKeys(row: Record<string, unknown>): string[] {
   for (const bag of bags) {
     for (const k of CLICK_KEY_COLUMNS) {
       const v = bag[k];
-      if (v !== null && v !== undefined && String(v).trim() !== '') found.add(k);
+      if (v === null || v === undefined || String(v).trim() === '') continue;
+      if (isMacroLiteral(v)) continue;
+      found.add(k);
     }
   }
   return [...found];

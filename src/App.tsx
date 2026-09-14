@@ -47,6 +47,7 @@ import MetaCallbackPage from "./pages/MetaCallbackPage";
 import MediaBrainIntakePage from "./pages/MediaBrainIntakePage";
 import MediaBrainDailyPage from "./pages/MediaBrainDailyPage";
 import MediaBrainWeeklyPage from "./pages/MediaBrainWeeklyPage";
+import MediaBrainMappingsPage from './pages/MediaBrainMappingsPage';
 
 
 const queryClient = new QueryClient();
@@ -155,6 +156,9 @@ function ProtectedRoutes() {
           )}
           {(isAdmin || isAccountManager) && (
             <Route path="/media-brain/:clientId/weekly" element={<MediaBrainWeeklyPage />} />
+          )}
+          {(isAdmin || isAccountManager) && (
+            <Route path="/media-brain/:clientId/mappings" element={<MediaBrainMappingsPage />} />
           )}
 
           <Route path="/settings" element={<SettingsPage />} />

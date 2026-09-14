@@ -24,7 +24,22 @@ export interface CanonicalCall {
   did: string | null;
   duration_seconds: number | null;
   connected: boolean | null;
+  /**
+   * Duration threshold met AND payout > 0 (plus the source's `converted` flag
+   * where it has one). Under STATIC this is the clean line the payout contract
+   * draws. Under RTB there is no clean billable line — use `paid` (§2, §6.3).
+   */
   billable: boolean;
+  /**
+   * Did this call earn anything at all — `payout_amount > 0`, independent of
+   * duration and of `converted`.
+   *
+   * A DIFFERENT question from `billable`, kept separately visible: under RTB
+   * "zero billable" is defined as zero PAID calls (§6.3), and under static the
+   * gap between paid and billable is the signal that the billable definition on
+   * the Economics record disagrees with what the buyer actually pays for.
+   */
+  paid: boolean;
   /** 0 for a no-bid, never null — under RTB a zero must stay in the denominator. */
   payout_amount: number;
   buyer_id: string | null;
@@ -129,6 +144,7 @@ export const fromRingba: CallMapper = (row, opts) => {
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
+    paid: payout > 0,
     payout_amount: payout,
     buyer_id: str(row.target_name),
     state: null,
@@ -152,6 +168,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds),
+    paid: payout > 0,
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
@@ -176,6 +193,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
+    paid: payout > 0,
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
@@ -200,6 +218,7 @@ export const fromMoja: CallMapper = (row, opts) => {
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
+    paid: payout > 0,
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
@@ -223,6 +242,7 @@ export const fromCannaball: CallMapper = (row, opts) => {
     duration_seconds: duration,
     connected: bool(row.connected),
     billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds),
+    paid: payout > 0,
     payout_amount: payout,
     buyer_id: null,
     state: str(row.caller_state),

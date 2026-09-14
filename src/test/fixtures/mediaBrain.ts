@@ -36,6 +36,9 @@ export const FIXTURE_ECONOMICS = {
   avgBid: 25,
 } as const;
 
+/** The only publisher this synthetic client buys. Everything else is excluded (§3). */
+export const FIXTURE_PUBLISHER = 'CPM Media';
+
 export const WINDOW = { start: '2026-03-01', end: '2026-03-14', timezone: 'America/New_York' };
 
 /** 14 consecutive ISO dates covering the window. */
@@ -51,6 +54,7 @@ export function economics(payoutMode: 'static' | 'rtb' = 'static'): ComputeEcono
     payout: FIXTURE_ECONOMICS.payout,
     avg_bid: FIXTURE_ECONOMICS.avgBid,
     billable_min_duration_seconds: FIXTURE_ECONOMICS.billableMinDurationSeconds,
+    attributed_publishers: [FIXTURE_PUBLISHER],
   };
 }
 
@@ -111,6 +115,8 @@ export interface AdSpec {
    * stop the vertical fallback from catching the call.
    */
   callCampaignName?: string;
+  /** Publisher written on this ad's calls. Defaults to the client's own publisher. */
+  publisher?: string;
   /**
    * Attribution tags planted on the call, exactly as Ringba stores them in
    * `metadata` (`tag:User:*`). This is the UTM tier's only input.
@@ -168,15 +174,18 @@ function callsFor(spec: AdSpec): Record<string, unknown>[] {
   const connected = spec.connectedCalls ?? spec.calls;
   const campaignName = spec.callCampaignName ?? CAMPAIGN;
   // Ringba keeps its user tags inside `metadata`, so that is where they go.
-  const metadata: Record<string, unknown> | undefined = spec.utm
-    ? {
-        source: 'ringba_api',
+  const metadata: Record<string, unknown> = {
+    source: 'ringba_api',
+    publisher: spec.publisher ?? FIXTURE_PUBLISHER,
+    ...(spec.utm
+      ? {
         ...(spec.utm.creativeId ? { 'tag:User:creative': spec.utm.creativeId } : {}),
         ...(spec.utm.utmContent ? { 'tag:User:utm_content': spec.utm.utmContent } : {}),
         ...(spec.utm.utmCampaign ? { 'tag:User:utm_campaign': spec.utm.utmCampaign } : {}),
         ...(spec.utm.utmSource ? { 'tag:User:utm_source': spec.utm.utmSource } : {}),
-      }
-    : undefined;
+        }
+      : {}),
+  };
   const rows: Record<string, unknown>[] = [];
   for (let i = 0; i < spec.calls; i++) {
     const isBillable = i < spec.billableCalls;

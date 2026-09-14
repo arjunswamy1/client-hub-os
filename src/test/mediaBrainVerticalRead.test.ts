@@ -15,7 +15,11 @@ import {
   assignAdToVertical,
   assignCallToVertical,
   type VerticalDefinition,
+  type VerticalEconomics,
 } from '@/lib/mediaBrain/verticalRead';
+
+/** Every fixture call is ours unless a test deliberately plants another source. */
+const OURS = 'Connect Paid Media';
 
 const WINDOW = { start: '2026-03-01', end: '2026-03-30' };
 
@@ -43,18 +47,20 @@ const VERTICALS: VerticalDefinition[] = [
   },
 ];
 
-const PLATFORM_ECO: engine.RevenueEconomics = {
+const PLATFORM_ECO: VerticalEconomics = {
   revenue_source: 'platform',
   payout: 60,
   min_payout_threshold: 1,
   billable_min_duration_seconds: 90,
+  attributed_publishers: [OURS],
 };
 
-const COMPUTED_ECO: engine.RevenueEconomics = {
+const COMPUTED_ECO: VerticalEconomics = {
   revenue_source: 'computed',
   payout: 80,
   min_payout_threshold: 1,
   billable_min_duration_seconds: 90,
+  attributed_publishers: [OURS],
 };
 
 function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall {
@@ -76,6 +82,7 @@ function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall
     payout_looks_like_cost: false,
     payout_amount: payout,
     buyer_id: null,
+    publisher: OURS,
     state: null,
     no_bid_reason: null,
     utm_campaign: null,

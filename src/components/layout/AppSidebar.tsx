@@ -2,7 +2,7 @@ import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
   Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload, Tv,
-  ClipboardList, Gauge, CalendarCheck PhoneForwarded,
+  ClipboardList, Gauge, CalendarCheck, PhoneForwarded,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {

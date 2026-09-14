@@ -118,14 +118,66 @@ describe('moja normalize — payload shapes', () => {
     expect(r.deliveryId).toBe('d-1');
   });
 
-  it('derives connected from inbound_duration when answered is absent, and records which rule fired', () => {
-    const withDuration = norm({ event: 'call.completed', call_id: 'A', inbound_duration: '61' }).row!;
-    expect(withDuration.connected).toBe(true);
-    expect(withDuration.connected_source).toBe('inbound_duration');
+  it('never derives connected from a duration: answered absent gives null with a named reason', () => {
+    // Moja calls [DURATION] the CONNECTED duration and [INBOUND_DURATION] the inbound one.
+    // If inbound duration includes ring time, `> 0` would mark every unanswered call
+    // connected and inflate connection rate — so no duration is used as a proxy at all.
+    const withDuration = norm({
+      event: 'call.completed',
+      call_id: 'A',
+      inbound_duration: '61',
+      duration: '45',
+    }).row!;
+    expect(withDuration.connected).toBeNull();
+    expect(withDuration.connected).not.toBe(true);
+    expect(withDuration.connected_source).toBe('unknown');
+    expect(withDuration.connected_unknown_reason).toContain('answered_field_absent');
 
     const withNeither = norm({ event: 'call.completed', call_id: 'B' }).row!;
-    expect(withNeither.connected).toBe(false);
-    expect(withNeither.connected_source).toBe('unknown');
+    expect(withNeither.connected).toBeNull();
+    expect(withNeither.connected).not.toBe(false);
+    expect(withNeither.connected_unknown_reason).toContain('answered_field_absent');
+
+    const answeredFalse = norm({ event: 'call.completed', call_id: 'C', answered: 'false', duration: '90' }).row!;
+    expect(answeredFalse.connected).toBe(false);
+    expect(answeredFalse.connected_source).toBe('answered_field');
+    expect(answeredFalse.connected_unknown_reason).toBeNull();
+  });
+
+  it('stores both durations faithfully and leaves which one governs billable UNKNOWN', () => {
+    const row = norm({ event: 'call.completed', call_id: 'D2', duration: '120', inbound_duration: '431' }).row!;
+    expect(row.reported_duration_seconds).toBe(120);
+    expect(row.reported_inbound_duration_seconds).toBe(431);
+    expect(row.duration_semantics).toBe('unknown');
+    const absent = norm({ event: 'call.completed', call_id: 'D3' }).row!;
+    expect(absent.reported_duration_seconds).toBeNull();
+    expect(absent.reported_inbound_duration_seconds).toBeNull();
+  });
+
+  it('keeps unmapped fields as custom tags, and reads a click key from either place', () => {
+    const fromTagBag = norm({
+      event: 'call.completed',
+      call_id: 'E1',
+      custom_tags: { gclid: 'Cj-abc', utm_content: '120210000000000009', lead_score: 7 },
+    }).row!;
+    expect(fromTagBag.gclid).toBe('Cj-abc');
+    expect(fromTagBag.utm_content).toBe('120210000000000009');
+    expect(fromTagBag.custom_tags.lead_score).toBe(7);
+
+    const topLevel = norm({
+      event: 'call.completed',
+      call_id: 'E2',
+      wbraid: 'wb-1',
+      msclkid: 'ms-1',
+      landing_page: 'https://example.com/a',
+    }).row!;
+    expect(topLevel.wbraid).toBe('wb-1');
+    expect(topLevel.msclkid).toBe('ms-1');
+    expect(topLevel.gclid).toBeNull();
+    expect(topLevel.custom_tags.landing_page).toBe('https://example.com/a');
+    // An unsubstituted macro is not a custom tag either.
+    const macro = norm({ event: 'call.completed', call_id: 'E3', some_new_field: '[SOME_NEW_FIELD]' }).row!;
+    expect(macro.custom_tags.some_new_field).toBeUndefined();
   });
 
   it('derives call_start from event_timestamp minus connected duration, treating a bare timestamp as UTC', () => {

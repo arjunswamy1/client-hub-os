@@ -26,6 +26,14 @@ import { toast } from "sonner";
 import * as engine from "@/lib/mediaBrain/engine";
 import { Notice } from "@/components/mediaBrain/shared";
 import { BillableDefinitionCheck, type BillableGovernance } from "@/components/mediaBrain/BillableDefinitionCheck";
+import { ComputedRevenueSensitivity } from "@/components/mediaBrain/ComputedRevenueSensitivity";
+
+/**
+ * The window the intake sensitivity swing is measured over — stated explicitly,
+ * never inferred (§12). Last 30 days, ending today.
+ */
+const SENSITIVITY_END = new Date().toISOString().slice(0, 10);
+const SENSITIVITY_START = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
 
 const STEPS = [
   { key: "a1", title: "A1 · Client and accounts" },

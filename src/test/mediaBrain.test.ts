@@ -214,4 +214,51 @@ describe('Media Brain — planted decision cases', () => {
     expect(row.confidenceState).not.toBe('decisive_zero');
     expect(res.breakers.some((b) => b.includes(SCENARIOS.rtbPaidNotBillable.adName))).toBe(false);
   });
+  it('11. a call carrying a Meta ad id in its UTM tags resolves at the utm_ad tier', () => {
+    const res = compute([SCENARIOS.utmAdByCreativeId]);
+    const row = rowFor(res, SCENARIOS.utmAdByCreativeId.adName);
+
+    // No DID mapping exists for this call and its campaign name matches no
+    // vertical pattern, so the UTM tier is the only thing that could have joined it.
+    expect(row.resolution).toBe('utm_ad');
+    expect(row.adLevelEligible).toBe(true);
+    expect(row.level).toBe('ad');
+    expect(row.platform_ad_id).toBe(SCENARIOS.utmAdByCreativeId.adId);
+    expect(res.resolutionCounts.utm_ad).toBe(SCENARIOS.utmAdByCreativeId.calls);
+    expect(res.resolutionCounts.did_ad).toBe(0);
+    expect(res.resolutionCounts.none).toBe(0);
+    expect(res.adLevelCalls).toBe(SCENARIOS.utmAdByCreativeId.calls);
+    expect(res.joinLevel).toBe('ad');
+  });
+
+  it('12. a call with only utm_campaign resolves at campaign level and is barred from ad-level verdicts', () => {
+    const res = compute([SCENARIOS.utmCampaignOnly]);
+    const row = res.rows[0];
+
+    expect(row.resolution).toBe('utm_campaign');
+    expect(row.level).toBe('campaign');
+    // The point of the tier split: campaign-level rows cannot carry a per-ad verdict.
+    expect(row.adLevelEligible).toBe(false);
+    expect(row.platform_ad_id).toBeNull();
+    expect(res.resolutionCounts.utm_campaign).toBe(SCENARIOS.utmCampaignOnly.calls);
+    expect(res.resolutionCounts.utm_ad).toBe(0);
+    expect(res.resolutionCounts.did_ad).toBe(0);
+    // Ad-level coverage is zero even though every call joined to something.
+    expect(res.adLevelCalls).toBe(0);
+    expect(res.joinLevel).toBe('campaign');
+    expect(res.rows.filter((r) => r.adLevelEligible)).toHaveLength(0);
+    expect(res.joinNote).toContain('excluded from ad-level verdicts');
+  });
+
+  it('13. a call with no UTM tags, no DID mapping and no vertical match lands in unjoinedCalls', () => {
+    const res = compute([SCENARIOS.noAttributionKey]);
+
+    expect(res.rows).toHaveLength(0);
+    expect(res.unjoinedCalls).toHaveLength(SCENARIOS.noAttributionKey.calls);
+    expect(res.resolutionCounts.none).toBe(SCENARIOS.noAttributionKey.calls);
+    expect(res.adLevelCalls).toBe(0);
+    expect(res.joinLevel).toBe('none');
+    // Its spend is a tracking flag, not an entity with zero calls.
+    expect(res.unjoinedSpend.length).toBeGreaterThan(0);
+  });
 });

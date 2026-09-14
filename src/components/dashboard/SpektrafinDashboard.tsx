@@ -141,7 +141,7 @@ export default function SpektrafinDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls & payout — updated {lastSync}</p>
+        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls · revenue at $16 per raw call — updated {lastSync}</p>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
@@ -152,7 +152,7 @@ export default function SpektrafinDashboard() {
         <KPI label="Spend" value={fmtMoney(overall.spend)} icon={DollarSign} accent="text-blue-500" />
         <KPI label="Calls" value={overall.calls.toLocaleString()} icon={Phone} accent="text-indigo-500" />
         <KPI label="Connected" value={overall.connected.toLocaleString()} sub={fmtPct(overall.connectRate)} icon={PhoneCall} accent="text-emerald-500" />
-        <KPI label="Paid calls" value={overall.paid.toLocaleString()} sub={`${fmtPct(overall.paidRate)} of connected`} icon={Target} />
+        <KPI label="Paid calls" value={overall.paid.toLocaleString()} sub="$16 per raw call" icon={Target} />
         <KPI label="Revenue" value={fmtMoney(overall.revenue)} sub={`RPC ${fmtMoney2(overall.rpc)}`} icon={DollarSign} accent="text-emerald-500" />
         <KPI label="Cost / call" value={overall.costPerCall > 0 ? fmtMoney2(overall.costPerCall) : "—"} sub={overall.costPerPaidCall > 0 ? `${fmtMoney2(overall.costPerPaidCall)} per paid call` : undefined} icon={Target} />
         <KPI label="Margin / call" value={overall.calls ? fmtMoney2(overall.marginPerCall) : "—"} sub={overall.revenue > 0 ? fmtPct(overall.marginPct) : undefined} icon={TrendingUp} accent={overall.marginPerCall >= 0 ? "text-emerald-500" : "text-destructive"} />
@@ -326,7 +326,7 @@ export default function SpektrafinDashboard() {
                       <td className="px-3 py-1.5 text-muted-foreground">{c.buyer_name || c.target_name || "—"}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtDuration(c.duration_seconds)}</td>
                       <td className="px-3 py-1.5 text-right">{c.connected === true ? "✓" : c.connected === false ? "—" : "?"}</td>
-                      <td className="px-3 py-1.5 text-right">{Number(c.payout || 0) > 0 ? fmtMoney2(Number(c.payout)) : "—"}</td>
+                      <td className="px-3 py-1.5 text-right">{fmtMoney2(SPEKTRAFIN_PAYOUT_PER_RAW_CALL)}</td>
                     </tr>
                   ))}
                 </tbody>

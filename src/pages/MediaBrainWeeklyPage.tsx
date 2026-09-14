@@ -116,11 +116,11 @@ export default function MediaBrainWeeklyPage() {
 
   /* ---------------- step 3 — dispositions ---------------- */
   const adsetRows = useMemo<GroupedRow[]>(
-    () => (data ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls) : []),
+    () => (data ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds) : []),
     [data],
   );
   const adRows = useMemo<GroupedRow[]>(
-    () => (data ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds.killThreshold, data.thresholds.minCalls) : []),
+    () => (data ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds) : []),
     [data],
   );
 
@@ -699,8 +699,8 @@ export default function MediaBrainWeeklyPage() {
           <CardHeader>
             <CardTitle className="text-base">Step 5 — Scale</CardTitle>
             <CardDescription>
-              All four conditions must hold, and a step is 10–20%. Judge the marginal return on the last increase, not
-              blended ROAS.
+              All four conditions must hold, and a step is {STEP_MIN_PCT}–{STEP_MAX_PCT}%. Judge the marginal return on
+              the last increase, not blended ROAS.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -755,13 +755,17 @@ export default function MediaBrainWeeklyPage() {
                       <Label className="text-sm">Step %</Label>
                       <Input
                         type="number"
-                        min={10}
-                        max={20}
+                        min={STEP_MIN_PCT}
+                        max={STEP_MAX_PCT}
                         className="w-24"
                         value={c.stepPct}
                         onChange={(e) => set({ stepPct: Number(e.target.value) })}
                       />
-                      {(c.stepPct < 10 || c.stepPct > 20) && <span className="text-xs text-destructive">A step is 10–20%.</span>}
+                      {(c.stepPct < STEP_MIN_PCT || c.stepPct > STEP_MAX_PCT) && (
+                        <span className="text-xs text-destructive">
+                          A step is {STEP_MIN_PCT}–{STEP_MAX_PCT}%.
+                        </span>
+                      )}
                       {!eligible && <span className="text-xs text-muted-foreground">Not eligible to scale yet.</span>}
                     </div>
                   </div>

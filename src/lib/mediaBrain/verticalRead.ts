@@ -429,9 +429,13 @@ export function verticalRead({
         row.confidence = 'insufficient';
       }
       row.revenueNote = row.sensitivity.note;
-      row.flags.push(
-        `UNKNOWN: billable_min_duration_seconds is assumed, not stated. It blocks ${row.blockedFigures.join(', ')}.`,
-      );
+      const named = [
+        unknownThreshold ? 'billable_min_duration_seconds is assumed, not stated' : null,
+        unknownDurationField
+          ? 'billable_duration_field is unconfirmed — the feed reports two durations and which one the buyer bills on is unknown'
+          : null,
+      ].filter(Boolean).join('; ');
+      row.flags.push(`UNKNOWN: ${named}. It blocks ${row.blockedFigures.join(', ')}.`);
     }
     return row;
 

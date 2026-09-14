@@ -150,7 +150,10 @@ export type CallMapper = (row: RawCallRow, opts: MapOptions) => MappedCall;
 function str(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
-  return s.length ? s : null;
+  // An unreplaced `[MACRO]` literal is a template placeholder, not data. Reading one as
+  // a value is how a test fire would be mistaken for a real, attributable call.
+  if (!s.length || MACRO_LITERAL_RE.test(s)) return null;
+  return s;
 }
 
 function num(v: unknown): number | null {

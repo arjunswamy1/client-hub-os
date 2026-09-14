@@ -380,7 +380,47 @@ describe('UNKNOWN duration threshold on a computed vertical', () => {
     expect(band.verdictBlocking).toBe(true);
     expect(band.note).toMatch(/crosses zero/i);
   });
+
+  describe('once the threshold is stated (removed from unknown_fields)', () => {
+    const stated = verticalRead({
+      calls,
+      metaAds,
+      verticals: VERTICALS,
+      economics: {
+        byVertical: {
+          'walk-in-tubs': {
+            ...COMPUTED_ECO,
+            unknown_fields: [],
+            billable_min_duration_seconds: 90,
+            declared_flags: ['payout assumed from client terms; not verified against platform payout data.'],
+          },
+        },
+        clientDefault: PLATFORM_ECO,
+      },
+      thresholds: { minCalls: 25, minMargin: 0.1, targetMargin: 0.2, killThreshold: 160 },
+    });
+    const statedRow = stated.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
+
+    it('renders the point estimate and drops the band, with no special case for the vertical', () => {
+      expect(statedRow.durationThresholdUnknown).toBe(false);
+      expect(statedRow.sensitivity).toBeNull();
+      expect(statedRow.blockedFigures).toEqual([]);
+      // 70 calls at or above 90s × $80.
+      expect(statedRow.billableCalls).toBe(70);
+      expect(statedRow.revenue).toBe(5600);
+      expect(statedRow.rpc).toBeCloseTo(56, 6);
+      expect(statedRow.marginPct).toBeCloseTo((5600 - 4000) / 5600, 6);
+    });
+
+    it('keeps revenue labelled computed and renders the record\'s own caveat verbatim', () => {
+      expect(statedRow.revenueSource).toBe('computed');
+      expect(statedRow.flags).toContain(
+        'payout assumed from client terms; not verified against platform payout data.',
+      );
+    });
+  });
 });
+
 
 describe('publisher attribution (§3)', () => {
   it('excludes another publisher\'s calls from every metric while counting them as excluded volume', () => {

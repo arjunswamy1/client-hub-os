@@ -380,6 +380,12 @@ export function verticalRead({
         `${split.excludedCalls} calls on this tracking campaign came from other publishers (${split.excludedByPublisher.map((e) => `${e.publisher} ${e.calls}`).join(', ')}) and are excluded from every figure here — they belong to someone else's media buying.`,
       );
     }
+    // Caveats stated on the record itself, verbatim. A confirmed contract term
+    // the platform does not corroborate still has to read as trusted, not measured.
+    for (const declared of eco.declared_flags ?? []) {
+      if (declared && declared.trim()) row.flags.push(declared.trim());
+    }
+
     if (eco.revenue_source === 'computed') {
       row.flags.push(
         'Revenue is computed from the contracted payout because the tracking platform does not expose this vertical\'s payouts. A payout we cannot see is a declared data limitation, not a zero.',

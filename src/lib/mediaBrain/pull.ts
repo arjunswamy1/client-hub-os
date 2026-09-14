@@ -22,7 +22,7 @@ import {
   type VerticalRow,
 } from './join';
 
-const CALL_TABLES: Record<string, string> = {
+export const CALL_TABLES: Record<string, string> = {
   ringba: 'ringba_calls',
   ringba_4js: 'ringba_calls_4js',
   ringfuel: 'ringfuel_calls',
@@ -31,7 +31,7 @@ const CALL_TABLES: Record<string, string> = {
   cannaball: 'cannaball_calls',
 };
 
-const CALL_DATE_COLUMN: Record<string, string> = {
+export const CALL_DATE_COLUMN: Record<string, string> = {
   ringba_calls: 'call_date',
   ringba_calls_4js: 'call_start',
   ringfuel_calls: 'call_start',

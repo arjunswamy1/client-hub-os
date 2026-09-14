@@ -255,6 +255,50 @@ The landing-page work that would close the click-ID gap is specified in
 
 
 
+## 4d. Click-key readiness — how the test call is read (added 2026-09-14)
+
+`homepromatch.net` now captures click IDs and UTMs and attaches them to the call-tracking
+script (site owner, unverified by a live delivery). The receipt panel on DAILY no longer
+asks the operator to eyeball a field list; it publishes a **verdict per key** for the ten
+names in `homepromatch-clickid-proposal.md`, read from the top level of the payload **or**
+the custom-tag bag, and one headline stating whether any **ad-level** key arrived.
+
+Four states, because three different failures otherwise collapse into "missing":
+
+| State | What it means | The fix |
+| --- | --- | --- |
+| arrived with a value | the key carries real data (value shown) | nothing — done |
+| unreplaced `[MACRO]` literal | the template references a name Moja did not substitute | ask Moja what syntax references a **custom tag** in an outgoing webhook template |
+| absent from the payload | the template does not reference it at all | add the field name to the Moja webhook payload template |
+| not expected | this client is not configured to send it | not a defect |
+
+`utm_campaign` is deliberately **not** an ad-level key: it names a campaign, and a
+campaign-level key can never carry a per-ad verdict.
+
+Our working inference, recorded as an inference: AJ's template already carries
+`"gclid": "[GCLID]"`, which returned as a literal on the test fire. Once the landing page
+supplies a custom tag of that name the same reference may resolve, in which case **no
+template change is needed**. Moja has not confirmed that. Only `[UTM_SOURCE]` is a
+confirmed system macro, so `utm_campaign`, `utm_content`, `utm_term` and `utm_medium` face
+the same custom-tag question — `utm_content` most of all, since it is the ad-level key.
+
+**A macro literal is never data.** `[GCLID]` no longer passes through string coercion in
+the adapter, and is not counted as a click key by the mapping screen; a template
+placeholder must never make a client look ad-level-capable.
+
+**Evidence clears its own UNKNOWN.** When a receipt carries an ad-level key with a real
+value, the webhook stamps `click_key_evidence_at` / `click_key_evidence_field` on the sync
+status detail and removes `ad_side_utm_capture` from that client's economics
+`unknown_fields`, replacing the ad-level-unavailable flag with a dated note of the key
+observed. The stamp is first-seen and is carried forward: a later receipt without a key
+never erases it.
+
+**Unavailable and 0% are different diagnoses.** The mappings screen derives the ceiling
+from the window every time — whether any call carries a click key or `utm_content`. No key
+anywhere means *unavailable* (no mapping can fix it). A key present with nothing joining
+means *0% coverage*, and the fault is the join: the delivered value does not match a synced
+ad id or name.
+
 
 ### Why B decides the whole integration
 

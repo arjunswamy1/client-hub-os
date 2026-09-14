@@ -16,6 +16,12 @@
 
 import { Badge } from '@/components/ui/badge';
 import type { SyncStatusRow } from '@/hooks/useMediaBrainSyncStatus';
+import {
+  clickKeyHeadline,
+  clickKeyReadiness,
+  type ClickKeyState,
+  type ClickKeyVerdict,
+} from '@/lib/mediaBrain/clickKeyReadiness';
 
 /** Sources that arrive by webhook rather than by a scheduled pull. */
 const WEBHOOK_SOURCES = new Set(['moja', 'callgrid', 'ringfuel']);
@@ -32,6 +38,10 @@ interface ReceiptDetail {
   last_delivery_id?: string | null;
   last_receipt_at?: string | null;
   last_custom_tags?: Record<string, unknown> | null;
+  /** Raw per-key values captured by the webhook, top level or custom-tag bag. */
+  last_click_keys?: Record<string, unknown> | null;
+  /** Stamped the first time a receipt carried a real ad-level click key. */
+  click_key_evidence_at?: string | null;
 }
 
 const fmt = (iso: string | null | undefined) =>
@@ -90,6 +100,20 @@ export function WebhookReceiptPanel({ rows }: { rows: SyncStatusRow[] }) {
   const isKnownTestFire = !!receiptAt && receiptAt.startsWith(KNOWN_TEST_FIRE);
   const looksLikeTest = isKnownTestFire || unreplaced.length > 0;
 
+  // Three bags, in precedence order: the per-key values the webhook captured, the
+  // custom-tag bag, then a synthesised bag of the fields that arrived as literals (so
+  // receipts recorded before per-key capture still diagnose the literal state), then a
+  // bag of every field name present, which turns "absent" into "listed but empty".
+  const literalBag: Record<string, unknown> = {};
+  for (const f of unreplaced) {
+    const leaf = f.split('.').pop()!;
+    literalBag[leaf] = `[${leaf.toUpperCase()}]`;
+  }
+  const presentBag: Record<string, unknown> = {};
+  for (const f of fields) presentBag[f.split('.').pop()!] = '';
+  const verdicts = clickKeyReadiness([detail.last_click_keys, tags, literalBag, presentBag]);
+  const headline = clickKeyHeadline(verdicts);
+
   return (
     <div className="rounded-lg border p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -127,6 +151,9 @@ export function WebhookReceiptPanel({ rows }: { rows: SyncStatusRow[] }) {
         <Pair label="Delivery id" value={detail.last_delivery_id ?? 'none sent'} />
         <Pair label="Rows written" value={String(row.rows_written ?? 0)} />
       </dl>
+
+      <ClickKeySection verdicts={verdicts} headline={headline} evidenceAt={detail.click_key_evidence_at ?? null} />
+
 
       <FieldList
         title={`Fields received (${fields.length})`}
@@ -166,6 +193,92 @@ function Pair({ label, value }: { label: string; value: string }) {
     <div className="flex gap-2">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
       <dd className="break-all font-mono">{value}</dd>
+    </div>
+  );
+}
+
+const STATE_LABEL: Record<ClickKeyState, string> = {
+  value: 'arrived with a value',
+  macro_literal: 'unreplaced [MACRO] literal',
+  absent: 'absent from the payload',
+  not_expected: 'not expected',
+};
+
+const STATE_CLASS: Record<ClickKeyState, string> = {
+  value: 'text-emerald-600 dark:text-emerald-400',
+  macro_literal: 'text-destructive',
+  absent: 'text-amber-600 dark:text-amber-400',
+  not_expected: 'text-muted-foreground',
+};
+
+/**
+ * The test's result. One headline, then a per-key verdict — because "missing" hides
+ * three different failures with three different fixes.
+ */
+function ClickKeySection({
+  verdicts,
+  headline,
+  evidenceAt,
+}: {
+  verdicts: ClickKeyVerdict[];
+  headline: ReturnType<typeof clickKeyHeadline>;
+  evidenceAt: string | null;
+}) {
+  return (
+    <div className="mt-4 rounded-md border p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Click-key readiness</p>
+
+      <p
+        className={`mt-1 text-sm font-semibold ${
+          headline.adLevelKeyArrived ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
+        }`}
+      >
+        {headline.headline}
+      </p>
+      {evidenceAt && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          First ad-level click key seen on a receipt at {fmt(evidenceAt)}.
+        </p>
+      )}
+
+      <dl className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+        {verdicts.map((v) => (
+          <div key={v.key} className="flex gap-2">
+            <dt className="shrink-0 font-mono text-muted-foreground">{v.key}</dt>
+            <dd className={`break-all ${STATE_CLASS[v.state]}`}>
+              {STATE_LABEL[v.state]}
+              {v.value ? <span className="ml-1 font-mono">{v.value}</span> : null}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground">What to do with this result</p>
+        <p>
+          <strong>Keys arrive with values</strong> — done, nothing more to do.
+        </p>
+        <p>
+          <strong>Keys still arrive as [MACRO] literals</strong> — the syntax that references a custom tag differs from
+          the system-macro syntax. Ask Moja which syntax references a custom tag in an outgoing webhook template.
+        </p>
+        <p>
+          <strong>Keys absent entirely</strong> — the template does not list them. Add the field names to the Moja
+          webhook payload template.
+        </p>
+        <p>
+          Moja said <code>gclid</code> and <code>fbclid</code> are not system macros and must be populated as custom
+          tags. The template already references <code>"gclid": "[GCLID]"</code>, which came back as a literal on the test
+          fire. The likely reading is that once the landing page supplies a custom tag of that name the same reference
+          resolves, so <strong>no template change may be needed</strong> — but that is our inference, not something Moja
+          confirmed.
+        </p>
+        <p>
+          Only <code>[UTM_SOURCE]</code> is a confirmed system macro, so <code>utm_campaign</code>,{' '}
+          <code>utm_content</code>, <code>utm_term</code> and <code>utm_medium</code> are subject to the same custom-tag
+          question — <code>utm_content</code> most of all, since it is the ad-level key.
+        </p>
+      </div>
     </div>
   );
 }

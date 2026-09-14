@@ -94,6 +94,55 @@ export function unreplacedTagFields(obj: unknown, prefix = '', depth = 0): strin
   return out;
 }
 
+/**
+ * The ten keys the landing-page capture requirement covers. A receipt records each one's
+ * RAW delivered value — literal `[GCLID]` included — because the operator's test needs to
+ * tell "referenced but unresolved" apart from "never referenced".
+ */
+export const CLICK_READINESS_KEYS = [
+  'gclid',
+  'wbraid',
+  'gbraid',
+  'fbclid',
+  'msclkid',
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+] as const;
+
+/** Keys capable of naming a SINGLE AD. `utm_campaign` names a campaign, so it is not here. */
+export const AD_LEVEL_CLICK_KEYS = ['gclid', 'wbraid', 'gbraid', 'fbclid', 'msclkid', 'utm_content'];
+
+/** Raw values for those keys, from the first bag that carries each. Macros preserved. */
+export function clickKeyRawValues(bags: unknown[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of CLICK_READINESS_KEYS) {
+    for (const bag of bags) {
+      if (!bag || typeof bag !== 'object' || Array.isArray(bag)) continue;
+      const b = bag as Record<string, unknown>;
+      if (!(key in b)) continue;
+      const v = b[key];
+      const s = v === null || v === undefined ? '' : String(v).trim();
+      if (!s) continue;
+      out[key] = s;
+      break;
+    }
+  }
+  return out;
+}
+
+/** An ad-level key with a REAL value on this delivery, or null. A `[MACRO]` is not one. */
+export function adLevelClickKeyArrived(values: Record<string, string>): string | null {
+  for (const k of AD_LEVEL_CLICK_KEYS) {
+    const v = values[k];
+    if (v && !isTagLiteral(v)) return k;
+  }
+  return null;
+}
+
+
 export type Shape = 'flat' | 'nested';
 
 export function detectShape(payload: Record<string, any>): Shape {
@@ -272,6 +321,10 @@ export interface NormalizeResult {
   reject: string | null;
   row: MojaCallRow | null;
   isConversionEvent: boolean;
+  /** Raw delivered value per click key, macros preserved, for the receipt panel. */
+  clickKeys: Record<string, string>;
+  /** The ad-level key that arrived with a real value, or null. Evidence, not a guess. */
+  adLevelClickKey: string | null;
 }
 
 export interface NormalizeOptions {
@@ -315,6 +368,9 @@ export function normalizeDelivery(
     (eventType ?? '').toLowerCase().includes('convert') ||
     toBoolOrNull(pick(src, ['converted', 'conversion', 'is_converted'])) === true;
 
+  const clickKeys = clickKeyRawValues(src);
+  const adLevelClickKey = adLevelClickKeyArrived(clickKeys);
+
   const base = {
     shape,
     fields,
@@ -323,6 +379,8 @@ export function normalizeDelivery(
     eventType,
     callId,
     isConversionEvent,
+    clickKeys,
+    adLevelClickKey,
   };
 
   // No call id → the row could never be deduplicated. Refuse it by name rather than

@@ -15,6 +15,7 @@
 
 import type { AttributionTags } from './adapter';
 import { readAttribution } from './adapter';
+import { isMacroLiteral } from './clickKeyReadiness';
 import type { DidMapping, MetaAdRow, ResolutionTier, VerticalRow } from './join';
 import { matchCreativeToAds, matchVertical, resolveCall, resolveDidMapping } from './join';
 
@@ -158,7 +159,11 @@ export interface MappingCall extends AttributionTags {
 /** Click identifiers, in the order platforms name them. */
 export const CLICK_KEY_COLUMNS = ['gclid', 'fbclid', 'wbraid', 'gbraid', 'msclkid'];
 
-/** Every click identifier present on a raw row, read from the row or any jsonb bag on it. */
+/**
+ * Every click identifier present on a raw row, read from the row or any jsonb bag on it.
+ * An unreplaced `[GCLID]` macro literal is NOT a key — counting it would report a client
+ * as ad-level-capable on the strength of a template placeholder.
+ */
 export function readClickKeys(row: Record<string, unknown>): string[] {
   const bags: Record<string, unknown>[] = [row];
   for (const nested of ['metadata', 'raw_payload', 'tags', 'custom_tags'] as const) {
@@ -169,7 +174,9 @@ export function readClickKeys(row: Record<string, unknown>): string[] {
   for (const bag of bags) {
     for (const k of CLICK_KEY_COLUMNS) {
       const v = bag[k];
-      if (v !== null && v !== undefined && String(v).trim() !== '') found.add(k);
+      if (v === null || v === undefined || String(v).trim() === '') continue;
+      if (isMacroLiteral(v)) continue;
+      found.add(k);
     }
   }
   return [...found];
@@ -180,27 +187,50 @@ export interface AdLevelAvailability {
   available: boolean;
   /** The keys actually seen: click identifiers, `utm_content`, `creative_id`. */
   keysPresent: string[];
+  /** How many calls in the window carry at least one such key. */
+  callsWithKey: number;
+  totalCalls: number;
+  /** Share of calls carrying a key — a real measurement, valid only when `available`. */
+  keyRate: number;
   /** Plain statement of the fact, for the screen to render verbatim. */
   reason: string | null;
 }
 
 /**
- * Can this client be attributed at AD level at all? A feed with no click identifier, no
- * `utm_content` and no captured creative id has no key that names a single ad — and where
- * tracking numbers are pooled the DID names a campaign, never a creative. Reporting that
- * as 0% coverage invites someone to fix it by adding mappings, which cannot work.
+ * Can this client be attributed at AD level at all? Derived from the window every time,
+ * never asserted: a feed with no click identifier, no `utm_content` and no captured
+ * creative id has no key that names a single ad — and where tracking numbers are pooled the
+ * DID names a campaign, never a creative. Reporting that as 0% coverage invites someone to
+ * fix it by adding mappings, which cannot work. The moment ONE call carries a key the
+ * ceiling stops being "unavailable" and becomes a measured percentage — a different
+ * diagnosis with a different remedy, so the two are never shown in place of each other.
  */
 export function adLevelAvailability(calls: MappingCall[]): AdLevelAvailability {
   const keys = new Set<string>();
+  let callsWithKey = 0;
   for (const c of calls) {
-    for (const k of c.click_keys ?? []) keys.add(k);
-    if (c.utm_content) keys.add('utm_content');
-    if (c.creative_id) keys.add('creative_id');
+    let has = false;
+    for (const k of c.click_keys ?? []) {
+      keys.add(k);
+      has = true;
+    }
+    if (c.utm_content) {
+      keys.add('utm_content');
+      has = true;
+    }
+    if (c.creative_id) {
+      keys.add('creative_id');
+      has = true;
+    }
+    if (has) callsWithKey++;
   }
   const keysPresent = [...keys];
   return {
     available: keysPresent.length > 0,
     keysPresent,
+    callsWithKey,
+    totalCalls: calls.length,
+    keyRate: calls.length ? callsWithKey / calls.length : 0,
     reason: keysPresent.length
       ? null
       : 'ad-level attribution unavailable — no click key in the feed. No call in this window carries a gclid, fbclid, wbraid, gbraid, msclkid, utm_content or captured creative id, so nothing identifies a single ad. Mapping tracking numbers cannot raise this: a number identifies a campaign, not a creative.',

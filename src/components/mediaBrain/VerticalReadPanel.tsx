@@ -63,7 +63,11 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
   const { read, validations, notes, totalCalls } = payload;
   const rows = [...read.rows, read.unclassified];
   const attributedCalls = rows.reduce((sum, r) => sum + r.calls, 0);
-  const metaConversionsTotal = rows.reduce((sum, r) => sum + r.metaConversions, 0);
+  // Governed only: the single event named on the instance record. Null anywhere
+  // means UNKNOWN, and no total is published at all.
+  const governed = read.conversions;
+  const metaConversionsTotal =
+    governed.state === "counted" ? rows.reduce((sum, r) => sum + (r.metaConversions ?? 0), 0) : null;
 
   return (
     <Card>
@@ -97,7 +101,12 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
                 <th className="py-2 pr-3 text-right">Cost / billable</th>
                 <th className="py-2 pr-3 text-right">Margin / call</th>
                 <th className="py-2 pr-3 text-right">Margin %</th>
-                <th className="py-2 pr-3 text-right">Meta conversions</th>
+                <th className="py-2 pr-3 text-right">
+                  Meta conversions
+                  <span className="ml-1 normal-case tracking-normal">
+                    {governed.event ? `("${governed.event}")` : "(event UNKNOWN)"}
+                  </span>
+                </th>
                 <th className="py-2 pr-3">Confidence</th>
               </tr>
             </thead>
@@ -133,12 +142,18 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
                   <td className="py-2 pr-3 text-right">{fmtMoney(row.marginPerCall)}</td>
                   <td className="py-2 pr-3 text-right">{fmtPct(row.marginPct)}</td>
                   <td className="py-2 pr-3 text-right">
-                    {fmtNum(row.metaConversions)}
-                    {row.conversionDiscrepancy !== null && row.conversionDiscrepancy !== 0 && (
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        ({row.conversionDiscrepancy > 0 ? "+" : ""}
-                        {fmtNum(row.conversionDiscrepancy)} vs our {fmtNum(row.calls)})
-                      </span>
+                    {row.metaConversions === null ? (
+                      <span className="text-muted-foreground">UNKNOWN</span>
+                    ) : (
+                      <>
+                        {fmtNum(row.metaConversions)}
+                        {row.conversionDiscrepancy !== null && row.conversionDiscrepancy !== 0 && (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({row.conversionDiscrepancy > 0 ? "+" : ""}
+                            {fmtNum(row.conversionDiscrepancy)} vs our {fmtNum(row.calls)})
+                          </span>
+                        )}
+                      </>
                     )}
                   </td>
                   <td className="py-2 pr-3">
@@ -168,17 +183,44 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
           )}
         </Notice>
 
-        <Notice tone="info" title="Reconciliation — Meta's conversions beside our attributed calls">
-          Meta reported {fmtNum(metaConversionsTotal)} conversions against the spend assigned above, and we attribute{" "}
-          {fmtNum(attributedCalls)} calls to this client's publishers. A material gap is the finding, not something to
-          reconcile away: it means either Meta is counting an action that is not a call, or calls we are not attributing.
-          {metaConversionsTotal === 0 && (
-            <p className="mt-2">
-              Meta is currently reporting zero conversions for this spend, so this line cannot validate our call count
-              at all. That is a Meta conversion-tracking gap, declared here rather than read as zero calls.
-            </p>
-          )}
-        </Notice>
+        {metaConversionsTotal === null ? (
+          <Notice tone="warn" title="Reconciliation cannot run — the governing conversion event is UNKNOWN">
+            {governed.note}
+          </Notice>
+        ) : (
+          <Notice
+            tone="info"
+            title={`Reconciliation — Meta's "${governed.event}" count beside our attributed calls`}
+          >
+            Meta reported <span className="font-medium">{fmtNum(metaConversionsTotal)}</span> conversions of the
+            governing event <span className="font-medium">{governed.event}</span> against the spend assigned above, and
+            we attribute <span className="font-medium">{fmtNum(attributedCalls)}</span> calls to this client's
+            publishers.
+            {metaConversionsTotal < attributedCalls && (
+              <p className="mt-2">
+                Meta is reporting <span className="font-medium">fewer</span> conversions than we attribute calls. For an
+                offline upload that is the expected shape — uploads match well short of 100%, so the platform count is a
+                floor rather than a census. It is the opposite of an overclaim, and it is stated here rather than
+                reconciled away.
+              </p>
+            )}
+            {metaConversionsTotal > attributedCalls && (
+              <p className="mt-2">
+                Meta is reporting <span className="font-medium">more</span> conversions than we attribute calls. Either
+                it is counting an action that is not a call, or there are calls we are not attributing. The gap is the
+                finding, not something to average out.
+              </p>
+            )}
+            {metaConversionsTotal === 0 && (
+              <p className="mt-2">
+                Meta recorded none of the governing event for this spend, so this line cannot validate our call count at
+                all. That is a zero-evidence state — either the event stopped firing or the wrong event is named — not a
+                zero.
+              </p>
+            )}
+            <p className="mt-2 text-xs">{governed.note}</p>
+          </Notice>
+        )}
 
         <div className="space-y-2 text-xs text-muted-foreground">
           <p>

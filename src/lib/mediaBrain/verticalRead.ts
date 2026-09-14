@@ -119,11 +119,23 @@ export interface VerticalReadRow {
   /** Calls on this vertical's tracking campaign that belong to another publisher. */
   excludedPublisherCalls: number;
   excludedByPublisher: { publisher: string; calls: number }[];
-  /** Meta's own reported conversions for the spend assigned here. Reconciliation only. */
-  metaConversions: number;
   /**
-   * Meta's conversions minus our attributed calls. A material gap is the story,
-   * not something to reconcile away (§6 Operating Procedures).
+   * Meta's own count of the GOVERNING conversion event for the spend assigned
+   * here — read from `media_brain_platform_conversions`, filtered to the event
+   * named on the instance record. Reconciliation only, never revenue.
+   *
+   * Null means UNKNOWN: no governing event is recorded, so there is no governed
+   * count. The raw `conversions` column on the ad tables is never substituted —
+   * it holds whatever the sync happened to write, across many event names, and a
+   * sum of event names counts the same call more than once.
+   */
+  metaConversions: number | null;
+  /** The event the count above is filtered to. Null when UNKNOWN. */
+  metaConversionEvent: string | null;
+  /**
+   * Meta's governing-event count minus our attributed calls. A material gap is
+   * the story, not something to reconcile away (§6 Operating Procedures).
+   * Null whenever the governing event is UNKNOWN.
    */
   conversionDiscrepancy: number | null;
   /** How publisher scoping was answered for this vertical, and by whom (§3b). */
@@ -163,9 +175,41 @@ export interface VerticalReadResult {
     byPublisher: { publisher: string; calls: number }[];
     note: string;
   };
+  /**
+   * How the platform-conversion column above was governed. `counted` means the
+   * instance names an event and the counts are filtered to it; `unknown_event`
+   * means no event is named, so no count is published at all.
+   */
+  conversions: {
+    state: 'counted' | 'unknown_event';
+    event: string | null;
+    /** Named outputs the UNKNOWN blocks (§1). Empty when counted. */
+    blocks: readonly string[];
+    note: string;
+  };
   /** Always rendered beside the read, so the reader knows why they are here. */
   note: string;
 }
+
+/**
+ * Meta's own conversion counts, already governed: the single event named on
+ * `media_brain_instances.meta_conversion_event`, read out of
+ * `media_brain_platform_conversions` per ad. The ungoverned `conversions`
+ * column on `ad_creatives` / `ad_sets` / `ad_campaigns` must never reach here.
+ */
+export interface GovernedConversions {
+  /** The event named on the instance record. Null = UNKNOWN, and nothing counts. */
+  event: string | null;
+  /** Governing-event counts keyed by `platform_ad_id`. */
+  countByAdRef: Record<string, number>;
+}
+
+/** What an UNKNOWN governing event blocks on this read (§1). */
+export const CONVERSION_UNKNOWN_BLOCKS = [
+  'the platform-conversion column',
+  'the reconciliation against our attributed calls',
+  'the fragmentation check',
+] as const;
 
 /* ---------------- pattern matching ---------------- */
 
@@ -291,7 +335,8 @@ function emptyRow(vertical_id: string, label: string): VerticalReadRow {
     publisherScopingRecheck: null,
     dedicatedCampaignContradiction: null,
     platformSplit: [],
-    metaConversions: 0,
+    metaConversions: null,
+    metaConversionEvent: null,
     conversionDiscrepancy: null,
     flags: [],
     resolution: null,
@@ -307,6 +352,11 @@ export interface VerticalReadInput {
   thresholds: VerticalReadThresholds;
   /** Share of calls resolved at ad level, shown beside the read. */
   adLevelPct?: number | null;
+  /**
+   * The governed platform-conversion counts. Omitted or `event: null` means no
+   * governing event is recorded, and no conversion figure is published.
+   */
+  governedConversions?: GovernedConversions | null;
 }
 
 export function verticalRead({
@@ -316,6 +366,7 @@ export function verticalRead({
   economics,
   thresholds,
   adLevelPct,
+  governedConversions,
 }: VerticalReadInput): VerticalReadResult {
   const callsByVertical = new Map<string, CanonicalCall[]>();
   const unclassifiedCalls: CanonicalCall[] = [];
@@ -340,10 +391,20 @@ export function verticalRead({
   const mixedCampaigns = findMixedCampaigns(metaAds, verticals);
   const unclassifiedAdNames = new Set<string>();
 
+  // The governing event, or nothing. There is no third option: the ungoverned
+  // `conversions` column on the ad tables is not read here at any point.
+  const governingEvent = governedConversions?.event?.trim() || null;
+  const governedCount = (ad: MetaAdRow): number => {
+    if (!governingEvent) return 0;
+    const ref = ad.platform_ad_id ?? '';
+    const c = governedConversions?.countByAdRef[ref];
+    return typeof c === 'number' && Number.isFinite(c) ? c : 0;
+  };
+
   for (const ad of metaAds) {
     const id = assignAdToVertical(ad, verticals, mixedCampaigns);
     const spend = Number.isFinite(ad.spend) ? (ad.spend as number) : 0;
-    const conversions = Number.isFinite(ad.conversions) ? (ad.conversions as number) : 0;
+    const conversions = governedCount(ad);
     if (!id) {
       unclassifiedSpend += spend;
       unclassifiedConversions += conversions;
@@ -395,8 +456,14 @@ export function verticalRead({
     row.publisherScopingRecheck = engine.publisherScopingRecheck(scopingSource);
     row.dedicatedCampaignContradiction = engine.dedicatedCampaignContradiction(scopingSource, allBucket);
     row.platformSplit = engine.platformSplit(split.attributed);
-    row.metaConversions = conversionsByVertical.get(v.vertical_id) ?? 0;
-    row.conversionDiscrepancy = row.metaConversions - row.calls;
+    row.metaConversionEvent = governingEvent;
+    row.metaConversions = governingEvent ? conversionsByVertical.get(v.vertical_id) ?? 0 : null;
+    row.conversionDiscrepancy = row.metaConversions === null ? null : row.metaConversions - row.calls;
+    if (!governingEvent) {
+      row.flags.push(
+        `UNKNOWN: no governing Meta conversion event is recorded on this client's instance record, so no platform conversion count is published here. It blocks ${CONVERSION_UNKNOWN_BLOCKS.join(', ')}. The raw conversions column on the ad tables is deliberately not substituted — it holds several event names at once and summing them counts the same call more than once.`,
+      );
+    }
 
     const revenue = resolved.revenue;
     row.rpc = revenue === null ? null : engine.rpc(revenue, row.calls);
@@ -515,8 +582,9 @@ export function verticalRead({
   unclassified.calls = unclassifiedSplit.attributed.length;
   unclassified.excludedPublisherCalls = unclassifiedSplit.excludedCalls;
   unclassified.excludedByPublisher = unclassifiedSplit.excludedByPublisher;
-  unclassified.metaConversions = unclassifiedConversions;
-  unclassified.conversionDiscrepancy = unclassifiedConversions - unclassified.calls;
+  unclassified.metaConversionEvent = governingEvent;
+  unclassified.metaConversions = governingEvent ? unclassifiedConversions : null;
+  unclassified.conversionDiscrepancy = governingEvent ? unclassifiedConversions - unclassified.calls : null;
   const unclassifiedResolved = engine.resolveRevenue(
     economics.clientDefault,
     unclassifiedSplit.attributed.map(toRevenueRow),
@@ -568,6 +636,14 @@ export function verticalRead({
       note: excludedCalls
         ? `${excludedCalls} calls from ${excludedByPublisher.length} other publisher${excludedByPublisher.length === 1 ? '' : 's'} are excluded from every figure above (${excludedByPublisher.map((e) => `${e.publisher} ${e.calls}`).join(', ')}). Nothing is lost: the client's tracking campaigns received them, but they came from traffic this client's media buying did not pay for, so dividing them into our spend would credit our media with someone else's calls.`
         : 'Every call in the window came from an attributed publisher.',
+    },
+    conversions: {
+      state: governingEvent ? 'counted' : 'unknown_event',
+      event: governingEvent,
+      blocks: governingEvent ? [] : CONVERSION_UNKNOWN_BLOCKS,
+      note: governingEvent
+        ? `Platform conversions are counted as the single governing event "${governingEvent}", named on this client's instance record and read from the stored per-ad breakdown. No other event is added in, and the ungoverned conversions column on the ad tables is never read.`
+        : `UNKNOWN — no governing Meta conversion event is recorded on this client's instance record, so no platform conversion count is published. It blocks ${CONVERSION_UNKNOWN_BLOCKS.join(', ')}. Summing the account's event names would count the same call more than once, so nothing is published until one event is named.`,
     },
     note:
       'This is a vertical read, not an ad-level decision. Cut, hold and scale verdicts are ad-level rules and are deliberately not shown here — a vertical row blends dozens of ads, and blending hides the differences a verdict acts on.' +

@@ -439,10 +439,11 @@ describe('publisher attribution (§3)', () => {
     );
     const read = verticalRead({
       calls: [...ours, ...theirs],
-      metaAds: [ad({ platform_ad_id: 'a1', ad_name: 'WalkinTub Static', campaign_name: 'Tubs', spend: 800, conversions: 3 })],
+      metaAds: [ad({ platform_ad_id: 'a1', ad_name: 'WalkinTub Static', campaign_name: 'Tubs', spend: 800 })],
       verticals: VERTICALS,
       economics: { byVertical: { 'walk-in-tubs': COMPUTED_ECO }, clientDefault: PLATFORM_ECO },
       thresholds: THRESHOLDS,
+      governedConversions: { event: RINGBA_EVENT, countByAdRef: { a1: 3 } },
     });
 
     const tubs = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;

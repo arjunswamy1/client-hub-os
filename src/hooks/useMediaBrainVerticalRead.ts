@@ -66,16 +66,26 @@ export function useMediaBrainVerticalRead(
     queryKey: ['media-brain-vertical-read', clientId, start, end],
     enabled: !!clientId && !!start && !!end,
     queryFn: async () => {
-      const [ecoRes, vertRes] = await Promise.all([
+      const [ecoRes, vertRes, instRes] = await Promise.all([
         supabase.from('media_brain_economics').select('*').eq('client_id', clientId!),
         supabase
           .from('client_verticals')
           .select('vertical_id, label, emoji, meta_patterns, ringba_patterns, ringba_exact_match, position')
           .eq('client_id', clientId!)
           .order('position'),
+        // The governing conversion event lives on the instance record and nowhere
+        // else. No event → no conversion figure, per §1.
+        supabase
+          .from('media_brain_instances')
+          .select('meta_conversion_event, computed_at')
+          .eq('client_id', clientId!)
+          .order('computed_at', { ascending: false })
+          .limit(1),
       ]);
       if (ecoRes.error) return { error: `Economics lookup failed: ${ecoRes.error.message}` };
       if (vertRes.error) return { error: `Verticals lookup failed: ${vertRes.error.message}` };
+      if (instRes.error) return { error: `Instance lookup failed: ${instRes.error.message}` };
+      const governingEvent = (instRes.data?.[0]?.meta_conversion_event as string | null) ?? null;
 
       const economicsRows = (ecoRes.data ?? []) as unknown as EconomicsRow[];
       const verticals = (vertRes.data ?? []) as unknown as VerticalDefinition[];
@@ -105,7 +115,7 @@ export function useMediaBrainVerticalRead(
       }
       const dateCol = CALL_DATE_COLUMN[table];
 
-      const [callsRes, adsRes] = await Promise.all([
+      const [callsRes, adsRes, convRes] = await Promise.all([
         supabase
           .from(table as never)
           .select('*')
@@ -113,9 +123,27 @@ export function useMediaBrainVerticalRead(
           .gte(dateCol, `${start}T00:00:00`)
           .lte(dateCol, `${end}T23:59:59.999`),
         supabase.from('ad_creatives').select('*').eq('client_id', clientId!),
+        // Governed conversions only: one event, ad level, inside the window.
+        governingEvent
+          ? supabase
+              .from('media_brain_platform_conversions')
+              .select('entity_ref, count')
+              .eq('client_id', clientId!)
+              .eq('platform', 'meta')
+              .eq('entity_level', 'ad')
+              .eq('event_name', governingEvent)
+              .gte('date', start)
+              .lte('date', end)
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (callsRes.error) return { error: `Calls query failed: ${callsRes.error.message}` };
       if (adsRes.error) return { error: `Meta creatives query failed: ${adsRes.error.message}` };
+      if (convRes.error) return { error: `Platform conversions query failed: ${convRes.error.message}` };
+
+      const countByAdRef: Record<string, number> = {};
+      for (const r of (convRes.data ?? []) as { entity_ref: string; count: number | null }[]) {
+        countByAdRef[r.entity_ref] = (countByAdRef[r.entity_ref] ?? 0) + (r.count ?? 0);
+      }
 
       const rawCalls = (callsRes.data ?? []) as Record<string, unknown>[];
       // §: an empty pull is a failure, not a zero.
@@ -177,6 +205,7 @@ export function useMediaBrainVerticalRead(
         economics: { byVertical, clientDefault },
         thresholds: { minCalls: null, minMargin: null, targetMargin: null, killThreshold: null },
         adLevelPct: adLevelPct ?? null,
+        governedConversions: { event: governingEvent, countByAdRef },
       });
 
       // Intake 3a — per vertical, in both directions.

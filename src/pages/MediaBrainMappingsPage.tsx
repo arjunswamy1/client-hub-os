@@ -174,6 +174,7 @@ export default function MediaBrainMappingsPage() {
     () => (d ? dm.computeCoverage(d.calls, d.mappings, d.metaAds, d.verticals) : null),
     [d],
   );
+  const adLevel = useMemo(() => (d ? dm.adLevelAvailability(d.calls) : null), [d]);
   const didStats = useMemo(() => (d ? dm.aggregateDids(d.calls, d.mappings) : []), [d]);
   const unmappedStats = useMemo(() => didStats.filter((s) => !s.mapped), [didStats]);
   const callerDiag = useMemo(() => dm.callerNumberDiagnosis(didStats), [didStats]);

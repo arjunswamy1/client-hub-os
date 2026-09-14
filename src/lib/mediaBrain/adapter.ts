@@ -9,6 +9,7 @@
 
 import * as engine from './engine';
 import type { RevenueSource } from './engine';
+import { MACRO_LITERAL_RE } from './clickKeyReadiness';
 
 /** Canonical call shape every rule in the framework reads. @see 01_Decision_Engine.md §3 */
 export interface CanonicalCall {

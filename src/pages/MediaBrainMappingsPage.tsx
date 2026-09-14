@@ -291,7 +291,7 @@ export default function MediaBrainMappingsPage() {
   if (dataQ.error) return <Notice tone="danger" title="The pull failed">{(dataQ.error as Error).message}</Notice>;
   if (!d || !coverage) return null;
 
-  const pct = coverage.realPathPct;
+  const pct = coverage.adLevelPct;
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -323,7 +323,8 @@ export default function MediaBrainMappingsPage() {
               <div>
                 <p className="text-4xl font-semibold tabular-nums">{fmtPct(pct)}</p>
                 <p className="text-xs text-muted-foreground">
-                  of calls resolve on the real path (DID → mapping → creative → Meta ad)
+                  of calls resolve to a single Meta ad — by UTM tag on the call, or by DID → mapping → creative. Only
+                  these support per-ad decisions.
                 </p>
               </div>
               <Badge variant={coverage.ready ? "default" : "destructive"}>
@@ -333,10 +334,14 @@ export default function MediaBrainMappingsPage() {
             <Progress value={pct === null ? 0 : Math.min(100, pct * 100)} className="mt-3" />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-4">
+          {/* Each tier counted separately. A campaign-level resolution is NOT an
+              ad-level one, so they are never added together. */}
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {[
               { label: "Total calls", n: coverage.totalCalls, p: null as number | null },
-              { label: "Real path", n: coverage.realPath, p: coverage.realPathPct },
+              { label: "Ad level — UTM tag", n: coverage.utmAd, p: coverage.utmAdPct },
+              { label: "Ad level — DID path", n: coverage.didAd, p: coverage.didAdPct },
+              { label: "Campaign level only", n: coverage.utmCampaign, p: coverage.utmCampaignPct },
               { label: "Vertical fallback only", n: coverage.verticalFallback, p: coverage.verticalFallbackPct },
               { label: "Resolve to nothing", n: coverage.unresolved, p: coverage.unresolvedPct },
             ].map((c) => (
@@ -348,13 +353,22 @@ export default function MediaBrainMappingsPage() {
             ))}
           </div>
 
+          {coverage.utmCampaign > 0 && (
+            <Notice tone="warn" title="Campaign-level calls cannot carry a per-ad verdict">
+              {fmtNum(coverage.utmCampaign)} calls resolve only to a Meta campaign, through their utm_campaign tag. Those
+              rows give margin per campaign and nothing finer — cut, hold and scale decisions per ad, and graduation per
+              angle, all need a single ad per row. They are excluded from the headline number above on purpose.
+            </Notice>
+          )}
+
           {!coverage.ready && (
             <Notice tone="danger" title="This client is not ready for a Media Brain pilot">
-              Below 80% real-path coverage, most calls cannot be tied to the ad that produced them, so no margin or
+              Below 80% ad-level coverage, most calls cannot be tied to the ad that produced them, so no margin or
               angle comparison on the daily and weekly screens means anything. Mapping the DIDs below is what moves this
               number — each mapping you save recomputes it immediately.
             </Notice>
           )}
+
 
           {callerDiag.share !== null && callerDiag.share >= 0.5 && (
             <Notice tone="danger" title="The DID column holds caller numbers, not tracking numbers">

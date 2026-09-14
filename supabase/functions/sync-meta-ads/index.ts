@@ -543,7 +543,7 @@ function formatCTA(cta: string): string {
 }
 
 async function fetchInsights(accountId: string, accessToken: string, since: string, until: string, level: string, extraFields = "") {
-  const fields = `${extraFields}spend,impressions,clicks,actions,action_values`;
+  const fields = `${extraFields}spend,impressions,clicks,actions,action_values,conversions,conversion_values`;
   let allData: any[] = [];
   let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/insights?fields=${fields}&time_range={"since":"${since}","until":"${until}"}&time_increment=1&level=${level}&access_token=${accessToken}&limit=500`;
 
@@ -610,6 +610,19 @@ function formatMetaObjective(objective: string): string {
 }
 
 const PURCHASE_ACTIONS = ["purchase", "offsite_conversion.fb_pixel_purchase"];
+
+/**
+ * Call-driven accounts record no purchase. Meta's `conversions` field carries the
+ * offline/Ringba custom conversion — on Easy Bath Renovation it is
+ * `offsite_conversion.fb_pixel_custom.RingbaConversion`. Tried in order; a match
+ * here wins over the purchase list, which stays for e-commerce accounts.
+ * Never inferred: only these named action types count.
+ */
+const CALL_CONVERSION_ACTIONS = [
+  "offsite_conversion.fb_pixel_custom.RingbaConversion",
+  "contact_total",
+  "contact_website",
+];
 const ADD_TO_CART_ACTIONS = ["add_to_cart", "omni_add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"];
 
 function extractMetrics(row: any) {
@@ -617,6 +630,20 @@ function extractMetrics(row: any) {
   const impressions = parseInt(row.impressions || "0");
   const clicks = parseInt(row.clicks || "0");
   let conversions = 0, revenue = 0, addToCart = 0;
+
+  // Call conversions first — a call-driven account has no purchase action at all.
+  if (Array.isArray(row.conversions)) {
+    for (const wanted of CALL_CONVERSION_ACTIONS) {
+      const hit = row.conversions.find((c: any) => c.action_type === wanted);
+      if (hit) { conversions = parseInt(hit.value || "0"); break; }
+    }
+  }
+  if (revenue === 0 && Array.isArray(row.conversion_values)) {
+    for (const wanted of CALL_CONVERSION_ACTIONS) {
+      const hit = row.conversion_values.find((c: any) => c.action_type === wanted);
+      if (hit) { revenue = parseFloat(hit.value || "0"); break; }
+    }
+  }
 
   if (row.actions) {
     for (const a of row.actions) {

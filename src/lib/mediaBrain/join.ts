@@ -293,13 +293,16 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
     const vertical = verticals.find((v) => v.vertical_id === row.entity_ref);
     if (!vertical) continue;
     for (const ad of metaAds) {
+      if (consumedRows.has(ad)) continue;
       const name = norm(ad.campaign_name);
-      const hit = (vertical.meta_patterns ?? []).some((p) => {
-        const np = norm(p);
-        return np && name.includes(np);
-      });
+      const hit =
+        !!name &&
+        (vertical.meta_patterns ?? []).some((p) => {
+          const np = norm(p);
+          return !!np && name.includes(np);
+        });
       if (!hit) continue;
-      touchedAdRefs.add(adRef(ad));
+      consumedRows.add(ad);
       row.spend += Number(ad.spend ?? 0);
       row.impressions += Number(ad.impressions ?? 0);
       row.clicks += Number(ad.clicks ?? 0);
@@ -307,9 +310,11 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
   }
 
   // Meta spend with no call records: a tracking flag, not a zero. These rows are
-  // deliberately NOT emitted as entities with 0 calls.
+  // deliberately NOT emitted as entities with 0 calls. Rows are checked by
+  // identity, so a sibling period row of a joined ad still surfaces here if its
+  // spend was not consumed — and so does a row with no usable identifier.
   const unjoinedSpend = metaAds
-    .filter((a) => !touchedAdRefs.has(adRef(a)) && Number(a.spend ?? 0) > 0)
+    .filter((a) => !consumedRows.has(a) && Number(a.spend ?? 0) > 0)
     .map((a) => ({ entity: a.ad_name ?? a.campaign_name ?? 'Unnamed Meta entity', spend: Number(a.spend ?? 0) }));
 
   let joinLevel: JoinLevel = 'none';

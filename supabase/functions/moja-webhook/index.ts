@@ -59,6 +59,10 @@ interface Receipt {
    * credential are redacted anyway; the shared secret never travels in the body.
    */
   customTags?: Record<string, unknown> | null;
+  /** Raw value per click key, macro literals preserved, for the readiness verdict. */
+  clickKeys?: Record<string, string> | null;
+  /** The ad-level click key that arrived with a REAL value on this delivery, or null. */
+  adLevelClickKey?: string | null;
   shape?: string;
   eventType?: string | null;
   error?: string;
@@ -68,10 +72,24 @@ interface Receipt {
  * One row per (source, client_id). UNIQUE treats NULLs as distinct in Postgres, so the
  * unresolved-client case is updated by hand rather than upserted — otherwise every bad
  * delivery would pile up a new row.
+ *
+ * `click_key_evidence_at` is a first-seen stamp, so it is carried forward from whatever
+ * the row already held; a later receipt without a key must not erase the evidence that an
+ * earlier one had it.
  */
 async function recordReceipt(supabase: any, r: Receipt) {
   const now = new Date().toISOString();
   const succeeded = r.validation === 'ok';
+
+  const query = supabase.from('media_brain_sync_status').select('id, detail').eq('source', 'moja');
+  const { data: existing } = await (r.clientId
+    ? query.eq('client_id', r.clientId)
+    : query.is('client_id', null)
+  ).maybeSingle();
+
+  const priorEvidence = (existing?.detail ?? {}).click_key_evidence_at ?? null;
+  const priorKey = (existing?.detail ?? {}).click_key_evidence_field ?? null;
+
   const row = {
     source: 'moja',
     client_id: r.clientId,
@@ -88,28 +106,57 @@ async function recordReceipt(supabase: any, r: Receipt) {
       last_event_type: r.eventType ?? null,
       last_delivery_id: r.deliveryId,
       last_custom_tags: redactCredentialish(r.customTags ?? null),
+      last_click_keys: r.clickKeys ?? null,
+      last_ad_level_click_key: r.adLevelClickKey ?? null,
+      click_key_evidence_at: r.adLevelClickKey ? priorEvidence ?? now : priorEvidence,
+      click_key_evidence_field: r.adLevelClickKey ?? priorKey,
       last_receipt_at: now,
     },
   };
 
-  if (r.clientId) {
-    const { error } = await supabase
-      .from('media_brain_sync_status')
-      .upsert(row, { onConflict: 'source,client_id' });
-    if (error) console.error(JSON.stringify({ event: 'moja_status_write_failed', error: error.message }));
-    return;
-  }
-
-  const { data: existing } = await supabase
-    .from('media_brain_sync_status')
-    .select('id')
-    .eq('source', 'moja')
-    .is('client_id', null)
-    .maybeSingle();
   const { error } = existing
     ? await supabase.from('media_brain_sync_status').update(row).eq('id', existing.id)
     : await supabase.from('media_brain_sync_status').insert(row);
   if (error) console.error(JSON.stringify({ event: 'moja_status_write_failed', error: error.message }));
+}
+
+/**
+ * Evidence clears its own UNKNOWN. The `ad_side_utm_capture` unknown and the
+ * ad-level-unavailable flag exist because nothing in the feed named an ad; a receipt
+ * carrying a real click key is the proof they were waiting for, so they clear on arrival
+ * rather than waiting for somebody to remember. Nothing else on the record is touched.
+ */
+async function stampClickKeyEvidence(supabase: any, clientId: string, key: string) {
+  const { data: rows, error } = await supabase
+    .from('media_brain_economics')
+    .select('id, unknown_fields, billable_filters')
+    .eq('client_id', clientId);
+  if (error || !rows?.length) return;
+
+  const stamp = new Date().toISOString();
+  for (const row of rows) {
+    const unknowns: string[] = Array.isArray(row.unknown_fields) ? row.unknown_fields : [];
+    const filters = (row.billable_filters ?? {}) as Record<string, unknown>;
+    const flags: string[] = Array.isArray(filters.flags) ? (filters.flags as string[]) : [];
+
+    const nextUnknowns = unknowns.filter((u) => u !== 'ad_side_utm_capture');
+    const nextFlags = flags.filter((f) => !/ad-level attribution unavailable|no click key/i.test(f));
+    const note = `ad-level click key observed on a live delivery (${key}) at ${stamp} — ad_side_utm_capture cleared on evidence.`;
+    if (!nextFlags.includes(note)) nextFlags.push(note);
+
+    if (nextUnknowns.length === unknowns.length && nextFlags.length === flags.length + 1 && flags.includes(note)) {
+      continue;
+    }
+
+    const { error: upErr } = await supabase
+      .from('media_brain_economics')
+      .update({
+        unknown_fields: nextUnknowns,
+        billable_filters: { ...filters, flags: nextFlags, click_key_evidence_at: stamp, click_key_evidence_field: key },
+      })
+      .eq('id', row.id);
+    if (upErr) console.error(JSON.stringify({ event: 'moja_click_evidence_write_failed', error: upErr.message }));
+  }
 }
 
 Deno.serve(async (req) => {

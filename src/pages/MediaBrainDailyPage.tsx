@@ -57,6 +57,9 @@ interface Breaker {
 export default function MediaBrainDailyPage() {
   const { clientId } = useParams<{ clientId: string }>();
   const gate = useMediaBrainGate(clientId);
+  // Data-delivery breakers do NOT wait on a confirmed window: a source that is not
+  // delivering is the same class of emergency as tracking broken (§3 breaker 1).
+  const syncStatus = useMediaBrainSyncStatus(clientId);
   const [confirmed, setConfirmed] = useState<ConfirmedWindow | null>(null);
 
   // Never auto-pull on mount: the pull waits on a confirmed window.
@@ -171,6 +174,60 @@ export default function MediaBrainDailyPage() {
       </div>
 
       <StaleWarning instance={instance} />
+
+      {/* Data delivery — same class as "tracking broken". Rendered before the window is
+          confirmed, because a source that is not arriving invalidates everything below. */}
+      {syncStatus.data && (
+        <div
+          className={`rounded-lg border-2 p-4 ${
+            deliveryBreakers.length > 0
+              ? "border-destructive bg-destructive/10"
+              : "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
+          }`}
+        >
+          <p className="flex items-center gap-2 text-base font-semibold">
+            {deliveryBreakers.length > 0 ? (
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+            ) : (
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+            )}
+            {deliveryBreakers.length > 0
+              ? `Data not arriving — ${deliveryBreakers.length} ${
+                  deliveryBreakers.length === 1 ? "source" : "sources"
+                } failing`
+              : "Every data source delivered inside the review window"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Judged against a {REVIEW_WINDOW_HOURS}-hour review window. "Never delivered" and "stopped delivering" are
+            different problems with different fixes and are never merged. Propose-only — nothing here reconnects or
+            re-runs anything.
+          </p>
+          {deliveryBreakers.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm">
+              {deliveryBreakers.map((b) => (
+                <li key={`${b.source}-${b.state}`} className="flex gap-2">
+                  <Badge variant="destructive" className="mt-0.5 h-fit shrink-0 uppercase">
+                    {b.state === "never_run" ? "never delivered" : b.state === "stale" ? "stopped delivering" : "error"}
+                  </Badge>
+                  <span>
+                    <span className="text-muted-foreground">{b.evidence}</span>
+                    <span className="mt-1 block border-l-2 border-current/30 pl-2 text-xs">
+                      <span className="font-medium uppercase tracking-wide">Recommended action · </span>
+                      {b.action}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {syncStatus.data.length === 0
+                ? "No sources are registered for this client yet, so delivery cannot be judged either way."
+                : `${syncStatus.data.length} ${syncStatus.data.length === 1 ? "source" : "sources"} tracked.`}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Circuit-breaker banner sits above everything, always visible. */}
       {data?.ok && (

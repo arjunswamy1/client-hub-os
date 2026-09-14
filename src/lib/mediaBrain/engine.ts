@@ -504,3 +504,256 @@ export function payoutDistribution(payouts: Num[] | null | undefined): PayoutDis
     count,
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * §2 / §3 — Revenue: platform-reported vs computed
+ *
+ * A payout field is not automatically revenue, and a payout field we cannot
+ * see is not zero revenue.
+ *
+ * `platform` — the tracking platform reports real payouts. A call is billable
+ * when it is long enough AND its payout is at or above the client's
+ * `min_payout_threshold`, and revenue is the sum of those payouts. The
+ * threshold exists because some syncs record telco COST in the payout field:
+ * a $0.05 "payout" on a 14-second call is a carrier charge, not revenue.
+ *
+ * `computed` — the payouts are real but invisible to our access (BuyologyIQ's
+ * Walk-In Tubs pays $80 per billable call and Ringba reports $0.00). That is a
+ * DECLARED DATA LIMITATION, not a zero to be believed. Billable is decided by
+ * duration alone and revenue is `payout × billable calls`. The platform payout
+ * field is ignored entirely — reading it would report a real product as a total
+ * loss.
+ *
+ * This selection lives here ONCE. No page, query or hook re-derives it.
+ * @see docs/media-brain/01_Decision_Engine.md §2, §3
+ * ------------------------------------------------------------------ */
+
+/** Where a vertical's revenue comes from. @see 01_Decision_Engine.md §2 */
+export type RevenueSource = 'platform' | 'computed';
+
+/** The economics fields the revenue rule reads, per vertical. */
+export interface RevenueEconomics {
+  revenue_source: RevenueSource | string | null;
+  /** Contracted payout per billable call. Required when the source is `computed`. */
+  payout: Num;
+  /** Smallest payout that counts as revenue rather than telco cost. */
+  min_payout_threshold: Num;
+  billable_min_duration_seconds: Num;
+}
+
+/** Framework default for the revenue threshold — mirrors the column default. */
+export const MIN_PAYOUT_THRESHOLD_DEFAULT = 1.0;
+
+/** Normalise the stored value; anything unrecognised is treated as `platform`. */
+export function revenueSourceOf(eco: Pick<RevenueEconomics, 'revenue_source'>): RevenueSource {
+  return eco.revenue_source === 'computed' ? 'computed' : 'platform';
+}
+
+/** The threshold actually applied, never left undefined. */
+export function minPayoutThreshold(eco: Pick<RevenueEconomics, 'min_payout_threshold'>): number {
+  return ok(eco.min_payout_threshold) ? eco.min_payout_threshold : MIN_PAYOUT_THRESHOLD_DEFAULT;
+}
+
+/**
+ * Is this payout real revenue, or telco cost sitting in the payout field?
+ * @see docs/media-brain/01_Decision_Engine.md §2
+ */
+export function payoutIsRevenue(payout: Num, threshold: Num): boolean {
+  if (!ok(payout)) return false;
+  return payout >= (ok(threshold) ? threshold : MIN_PAYOUT_THRESHOLD_DEFAULT);
+}
+
+/** The minimum a call needs to be judged billable. Both mappers and reads use this. */
+export interface BillableCallInput {
+  duration_seconds: Num;
+  payout_amount: Num;
+  /** The source's own conversion flag, where the table has one. */
+  converted?: boolean | null;
+}
+
+/**
+ * THE billable definition, stated once.
+ *
+ * `computed` → duration alone, because the payout field carries nothing we can
+ * read. `platform` → duration AND a payout at or above the revenue threshold.
+ * Returns false when the duration threshold is unknown — never guessed (§3).
+ * @see docs/media-brain/01_Decision_Engine.md §2, §3
+ */
+export function isBillableCall(eco: RevenueEconomics, call: BillableCallInput): boolean {
+  const minDuration = eco.billable_min_duration_seconds;
+  if (!ok(minDuration)) return false;
+  if (!ok(call.duration_seconds)) return false;
+  if (call.duration_seconds < minDuration) return false;
+  if (revenueSourceOf(eco) === 'computed') return true;
+  if (call.converted === false) return false;
+  return payoutIsRevenue(call.payout_amount, minPayoutThreshold(eco));
+}
+
+export interface ResolvedRevenue {
+  source: RevenueSource;
+  /** Null when the source is `computed` and no contracted payout is recorded. */
+  revenue: number | null;
+  /** Calls meeting the billable definition for this revenue source. */
+  billableCalls: number;
+  /** Calls with any payout above zero — including sub-threshold telco noise. */
+  paidCalls: number;
+  /** Calls whose payout clears the revenue threshold. */
+  qualifyingPayoutCalls: number;
+  /** Non-zero payouts BELOW the threshold — the telco-cost tail. */
+  subThresholdPayoutCalls: number;
+  /** Plain-language statement of where the number came from. Always rendered. */
+  note: string;
+}
+
+/**
+ * Resolve a set of calls into revenue plus its provenance. The ONLY place
+ * revenue is decided. Rows carry their own `billable` where a mapper already
+ * applied `isBillableCall` with the same economics; otherwise it is derived here.
+ * @see docs/media-brain/01_Decision_Engine.md §2, §3
+ */
+export function resolveRevenue(
+  eco: RevenueEconomics,
+  rows: (BillableCallInput & { billable?: boolean })[],
+): ResolvedRevenue {
+  const source = revenueSourceOf(eco);
+  const threshold = minPayoutThreshold(eco);
+  let billableCalls = 0;
+  let paidCalls = 0;
+  let qualifyingPayoutCalls = 0;
+  let subThresholdPayoutCalls = 0;
+  let platformRevenue = 0;
+
+  for (const row of rows) {
+    const billable = typeof row.billable === 'boolean' ? row.billable : isBillableCall(eco, row);
+    if (billable) billableCalls += 1;
+    const payout = ok(row.payout_amount) ? row.payout_amount : 0;
+    if (payout > 0) paidCalls += 1;
+    if (payoutIsRevenue(payout, threshold)) {
+      qualifyingPayoutCalls += 1;
+      platformRevenue += payout;
+    } else if (payout > 0) {
+      subThresholdPayoutCalls += 1;
+    }
+  }
+
+  if (source === 'computed') {
+    const payout = eco.payout;
+    return {
+      source,
+      revenue: ok(payout) ? payout * billableCalls : null,
+      billableCalls,
+      paidCalls,
+      qualifyingPayoutCalls,
+      subThresholdPayoutCalls,
+      note: ok(payout)
+        ? `Computed: the tracking platform does not expose this vertical's payouts, so revenue is the contracted $${payout.toFixed(2)} × ${billableCalls} billable calls. The platform payout field is ignored here — an invisible payout is a declared data limitation, not a zero.`
+        : 'Computed revenue was requested but no contracted payout is recorded, so revenue is unavailable. It is not zero — re-run intake and supply the payout.',
+    };
+  }
+
+  return {
+    source,
+    revenue: platformRevenue,
+    billableCalls,
+    paidCalls,
+    qualifyingPayoutCalls,
+    subThresholdPayoutCalls,
+    note:
+      `Platform: revenue is the sum of the ${qualifyingPayoutCalls} payouts at or above $${threshold.toFixed(2)}.` +
+      (subThresholdPayoutCalls
+        ? ` ${subThresholdPayoutCalls} further calls carry a non-zero payout below that threshold; those are excluded as telco cost recorded in the payout field, not revenue.`
+        : ''),
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Intake 3a — does the stated billable definition agree with the data?
+ * ------------------------------------------------------------------ */
+
+/** Above this, intake blocks and the operator must choose which definition governs. */
+export const BILLABLE_DISAGREEMENT_LIMIT = 0.1;
+
+export interface BillableAgreementResult {
+  totalCalls: number;
+  /** Long enough to be billable by the stated definition, but never paid. */
+  billableByDefinitionUnpaid: number;
+  /** Paid a real payout, but not billable by the stated definition. */
+  paidNotBillableByDefinition: number;
+  /** Both directions combined, over total calls. Null when there are no calls. */
+  disagreementPct: number | null;
+  /** True above BILLABLE_DISAGREEMENT_LIMIT — intake must not compute thresholds. */
+  blocks: boolean;
+  /** True when the payout side could not be checked because it is not visible. */
+  durationSideOnly: boolean;
+  note: string;
+}
+
+/**
+ * Compare the STATED billable definition against what the platform's data
+ * actually did over the window, in BOTH directions. One-directional checks miss
+ * the more expensive error: calls the buyer paid for that our definition throws
+ * away.
+ *
+ * Where `revenue_source = 'computed'` the platform payouts are not visible, so
+ * only the duration side is validated and the check says so rather than
+ * reporting perfect agreement.
+ * @see docs/media-brain/02_Client_Intake.md Part A
+ */
+export function validateBillableDefinition(
+  eco: RevenueEconomics,
+  rows: BillableCallInput[],
+): BillableAgreementResult {
+  const source = revenueSourceOf(eco);
+  const threshold = minPayoutThreshold(eco);
+  const minDuration = eco.billable_min_duration_seconds;
+  const totalCalls = rows.length;
+
+  if (!ok(minDuration)) {
+    return {
+      totalCalls,
+      billableByDefinitionUnpaid: 0,
+      paidNotBillableByDefinition: 0,
+      disagreementPct: null,
+      blocks: true,
+      durationSideOnly: source === 'computed',
+      note: 'No billable duration threshold is stated, so the definition cannot be compared against the data at all. Supply it before any threshold is computed.',
+    };
+  }
+
+  if (source === 'computed') {
+    const longEnough = rows.filter((r) => ok(r.duration_seconds) && r.duration_seconds >= minDuration).length;
+    return {
+      totalCalls,
+      billableByDefinitionUnpaid: 0,
+      paidNotBillableByDefinition: 0,
+      disagreementPct: null,
+      blocks: false,
+      durationSideOnly: true,
+      note: `Platform payouts are not visible for this vertical, so only the duration side was validated: ${longEnough} of ${totalCalls} calls reach ${minDuration}s. The payout side cannot be checked and is declared unvalidated rather than reported as agreement.`,
+    };
+  }
+
+  let billableByDefinitionUnpaid = 0;
+  let paidNotBillableByDefinition = 0;
+  for (const r of rows) {
+    const longEnough = ok(r.duration_seconds) && r.duration_seconds >= minDuration;
+    const paid = payoutIsRevenue(r.payout_amount, threshold);
+    if (longEnough && !paid) billableByDefinitionUnpaid += 1;
+    if (paid && !longEnough) paidNotBillableByDefinition += 1;
+  }
+  const disagreementPct = divide(billableByDefinitionUnpaid + paidNotBillableByDefinition, totalCalls);
+  const blocks = disagreementPct !== null && disagreementPct > BILLABLE_DISAGREEMENT_LIMIT;
+  return {
+    totalCalls,
+    billableByDefinitionUnpaid,
+    paidNotBillableByDefinition,
+    disagreementPct,
+    blocks,
+    durationSideOnly: false,
+    note:
+      `Of ${totalCalls} calls, ${billableByDefinitionUnpaid} are billable by the stated definition but were never paid, and ${paidNotBillableByDefinition} were paid but fall outside it.` +
+      (blocks
+        ? ` That is ${((disagreementPct as number) * 100).toFixed(1)}% disagreement, above the ${BILLABLE_DISAGREEMENT_LIMIT * 100}% limit — choose which definition governs before any threshold is computed.`
+        : ' Within the 10% limit, so the stated definition may govern.'),
+  };
+}

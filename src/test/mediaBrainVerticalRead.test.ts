@@ -20,6 +20,7 @@ import {
 
 /** Every fixture call is ours unless a test deliberately plants another source. */
 const OURS = 'Connect Paid Media';
+const RINGBA_EVENT = 'offsite_conversion.fb_pixel_custom.RingbaConversion';
 
 const WINDOW = { start: '2026-03-01', end: '2026-03-30' };
 
@@ -567,7 +568,6 @@ describe('publisher scoping on the vertical read (§3b)', () => {
  * read counts one named event or publishes nothing.
  */
 describe('governed platform conversions', () => {
-  const RINGBA_EVENT = 'offsite_conversion.fb_pixel_custom.RingbaConversion';
   const ads = [
     ad({ platform_ad_id: 'tub1', ad_name: 'Tub_Static_3', campaign_name: 'Tubs', spend: 1000 }),
     ad({ platform_ad_id: 'bath1', ad_name: 'Bath_CB_Walk', campaign_name: 'Bath', spend: 500 }),

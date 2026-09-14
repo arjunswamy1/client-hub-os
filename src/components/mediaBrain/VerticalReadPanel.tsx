@@ -62,6 +62,8 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
 
   const { read, validations, notes, totalCalls } = payload;
   const rows = [...read.rows, read.unclassified];
+  const attributedCalls = rows.reduce((sum, r) => sum + r.calls, 0);
+  const metaConversionsTotal = rows.reduce((sum, r) => sum + r.metaConversions, 0);
 
   return (
     <Card>
@@ -95,6 +97,7 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
                 <th className="py-2 pr-3 text-right">Cost / billable</th>
                 <th className="py-2 pr-3 text-right">Margin / call</th>
                 <th className="py-2 pr-3 text-right">Margin %</th>
+                <th className="py-2 pr-3 text-right">Meta conversions</th>
                 <th className="py-2 pr-3">Confidence</th>
               </tr>
             </thead>
@@ -129,6 +132,15 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
                   <td className="py-2 pr-3 text-right">{fmtMoney(row.costPerBillableCall)}</td>
                   <td className="py-2 pr-3 text-right">{fmtMoney(row.marginPerCall)}</td>
                   <td className="py-2 pr-3 text-right">{fmtPct(row.marginPct)}</td>
+                  <td className="py-2 pr-3 text-right">
+                    {fmtNum(row.metaConversions)}
+                    {row.conversionDiscrepancy !== null && row.conversionDiscrepancy !== 0 && (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        ({row.conversionDiscrepancy > 0 ? "+" : ""}
+                        {fmtNum(row.conversionDiscrepancy)} vs our {fmtNum(row.calls)})
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 pr-3">
                     <ConfidenceBadge state={row.confidence} />
                   </td>
@@ -138,9 +150,39 @@ export function VerticalReadPanel({ clientId, start, end, adLevelPct }: Props) {
           </table>
         </div>
 
+        <Notice
+          tone={read.excluded.calls ? "warn" : "info"}
+          title={
+            read.excluded.calls
+              ? `${fmtNum(read.excluded.calls)} calls from ${read.excluded.byPublisher.length} other publisher${read.excluded.byPublisher.length === 1 ? "" : "s"} excluded`
+              : "Every call came from an attributed publisher"
+          }
+        >
+          {read.excluded.note}
+          {read.excluded.calls > 0 && (
+            <p className="mt-2">
+              Attributed to this client: <span className="font-medium">{fmtNum(attributedCalls)} calls</span>. On the
+              tracking campaigns overall: <span className="font-medium">{fmtNum(attributedCalls + read.excluded.calls)} calls</span>.
+              Both are true; only the first may be divided into this client's spend.
+            </p>
+          )}
+        </Notice>
+
+        <Notice tone="info" title="Reconciliation — Meta's conversions beside our attributed calls">
+          Meta reported {fmtNum(metaConversionsTotal)} conversions against the spend assigned above, and we attribute{" "}
+          {fmtNum(attributedCalls)} calls to this client's publishers. A material gap is the finding, not something to
+          reconcile away: it means either Meta is counting an action that is not a call, or calls we are not attributing.
+          {metaConversionsTotal === 0 && (
+            <p className="mt-2">
+              Meta is currently reporting zero conversions for this spend, so this line cannot validate our call count
+              at all. That is a Meta conversion-tracking gap, declared here rather than read as zero calls.
+            </p>
+          )}
+        </Notice>
+
         <div className="space-y-2 text-xs text-muted-foreground">
           <p>
-            {fmtNum(totalCalls)} calls in the window.
+            {fmtNum(totalCalls)} attributed calls in the window.
             {adLevelPct !== null && adLevelPct !== undefined
               ? ` Ad-level attribution covers ${fmtPct(adLevelPct)} of them.`
               : ""}

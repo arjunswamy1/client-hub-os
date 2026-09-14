@@ -55,11 +55,18 @@ From Layer 0 intake and the Layer 1 economics file.
 
 Every call tracking platform names its fields differently. Rather than writing rules against one vendor's schema, the logic reads canonical names and each platform gets a small mapping.
 
-`call_id` · `timestamp` · `ad_id` · `adset_id` · `campaign_id` · `duration_seconds` · `billable` · `payout_amount` · `buyer_id` · `state` · `no_bid_reason`
+`call_id` · `timestamp` · `ad_id` · `adset_id` · `campaign_id` · `duration_seconds` · `connected` · `billable` · `paid` · `payout_amount` · `buyer_id` · `state` · `no_bid_reason`
+
+Plus the **attribution tags**, read off the call itself and never derived from anything else:
+
+`utm_campaign` · `utm_content` · `utm_source` · `utm_term` · `utm_medium` · `creative_id`
+
+`creative_id` is the Meta ad id where the tracking platform captured it (Ringba stores it as `tag:User:creative`). On accounts that pass UTMs into call tracking these tags are the only ad-level key available, because `ad_id` is null on every call table and some accounts never capture a tracking number either. Each platform keeps them somewhere different — Ringba in `metadata` as `tag:User:*`, Moja in real columns, RingFuel and Cannaball in `raw_payload` — and one reader handles all of them, so the join and the coverage meter can never see different values.
 
 `{tracking_platform}` is captured at intake and determines which mapping loads. Change platforms, change only the mapping — never the rules.
 
-Fields with no source get named as missing, not substituted. Buyer capacity often has no API endpoint; it's a manual field or an inference, never a guess dressed as data.
+Fields with no source get named as missing, not substituted. Buyer capacity often has no API endpoint; it's a manual field or an inference, never a guess dressed as data. A missing attribution tag is an unresolved call, not a guessed match.
+
 
 ## 4. How much data is enough
 

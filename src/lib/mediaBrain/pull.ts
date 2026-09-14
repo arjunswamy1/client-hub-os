@@ -101,6 +101,12 @@ export interface ComputeEconomics {
   revenue_source?: string | null;
   /** Smallest payout counted as revenue rather than telco cost. */
   min_payout_threshold?: number | null;
+  /**
+   * The publishers whose calls belong to THIS client's media buying. Every metric
+   * filters on it. No default: an unconfigured list stops the pull (§3).
+   * @see engine.partitionByPublisher
+   */
+  attributed_publishers?: (string | null)[] | null;
 }
 
 /** The instance thresholds a computation reads. Sourced from `media_brain_instances`. */
@@ -176,6 +182,16 @@ export interface PullWindowSuccess {
    * are excluded from revenue and named here; stored rows are never rewritten.
    */
   payoutLooksLikeCostCalls: number;
+  /**
+   * Calls from publishers NOT attributed to this client, excluded from every
+   * metric and reported prominently. The tracking campaign total and our
+   * attributable total are different numbers and both are true (§3).
+   */
+  excludedPublisherCalls: number;
+  excludedByPublisher: { publisher: string; calls: number }[];
+  publisherNote: string;
+  /** Publishers whose calls this pull counted as ours. */
+  attributedPublishers: string[];
   /** How revenue was resolved for this window, in plain language. */
   revenueNote: string;
   /** Call ids whose billable status is undetermined — surface, never hide. */
@@ -316,11 +332,29 @@ export function computeWindow({
     };
   }
 
-  const { calls, missingBillableDefinition } = mapCalls(rawCalls, mapper, {
+  // §3 — publisher attribution is required before any metric exists. No default.
+  if (!engine.publisherAttributionConfigured(economics.attributed_publishers)) {
+    return {
+      ok: false,
+      error:
+        'Publisher attribution is not configured on the Economics record, so every margin figure would include other traffic sources\' calls. A tracking campaign receives calls from every publisher pointed at it; attributing all of them to our spend is the same error as mixing denominators. State attributed_publishers at intake — the framework does not default to all publishers.',
+    };
+  }
+
+  const { calls: allCalls, missingBillableDefinition } = mapCalls(rawCalls, mapper, {
     billableMinDurationSeconds: economics.billable_min_duration_seconds ?? null,
     revenueSource: economics.revenue_source ?? 'platform',
     minPayoutThreshold: economics.min_payout_threshold ?? null,
   });
+
+  const publisherSplit = engine.partitionByPublisher(allCalls, economics.attributed_publishers);
+  const calls = publisherSplit.attributed;
+  if (calls.length === 0) {
+    return {
+      ok: false,
+      error: `Of ${allCalls.length} calls in ${start} to ${end} (${timezone}), none came from an attributed publisher. ${publisherSplit.note} There is nothing here to measure against this client's spend — check the publisher list and the routing before reading anything into it.`,
+    };
+  }
 
   const join = joinCallsToMeta({
     calls,
@@ -401,6 +435,9 @@ export function computeWindow({
   );
 
   const breakers: string[] = [];
+  if (publisherSplit.excludedCalls) {
+    breakers.push(`Publisher attribution: ${publisherSplit.note}`);
+  }
   if (join.unjoinedSpend.length) {
     breakers.push(
       `Tracking flag: ${join.unjoinedSpend.length} Meta entities spent $${sum(join.unjoinedSpend.map((u) => u.spend)).toFixed(2)} with no joined call records. Treated as a tracking failure, not as zero calls.`,
@@ -488,6 +525,12 @@ export function computeWindow({
     adLevelCalls: join.adLevelCalls,
     didCallerNumberFallbackCalls: didFallbackCalls.length,
     payoutLooksLikeCostCalls: payoutLooksLikeCost.length,
+    excludedPublisherCalls: publisherSplit.excludedCalls,
+    excludedByPublisher: publisherSplit.excludedByPublisher,
+    publisherNote: publisherSplit.note,
+    attributedPublishers: (economics.attributed_publishers ?? []).filter(
+      (p): p is string => typeof p === 'string' && p.trim().length > 0,
+    ),
     revenueNote: windowRevenue.note,
     missingBillableDefinition,
     breakers,

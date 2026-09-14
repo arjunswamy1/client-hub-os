@@ -48,6 +48,12 @@ export interface VerticalDefinition {
 /** Economics plus its provenance: was the payout confirmed, what is UNKNOWN. */
 export type VerticalEconomics = RevenueEconomics & {
   payout_confirmed?: boolean | null;
+  /**
+   * Publishers whose calls belong to this client's media buying. Calls from any
+   * other publisher are excluded from every figure on the row and counted as
+   * excluded volume instead. @see engine.partitionByPublisher
+   */
+  attributed_publishers?: (string | null)[] | null;
   /** Field names declared UNKNOWN — assumed, not stated. @see engine.isUnknownField */
   unknown_fields?: string[] | null;
 };
@@ -94,6 +100,16 @@ export interface VerticalReadRow {
    * `computed` vertical. Never alongside a point estimate.
    */
   sensitivity: SensitivityBand | null;
+  /** Calls on this vertical's tracking campaign that belong to another publisher. */
+  excludedPublisherCalls: number;
+  excludedByPublisher: { publisher: string; calls: number }[];
+  /** Meta's own reported conversions for the spend assigned here. Reconciliation only. */
+  metaConversions: number;
+  /**
+   * Meta's conversions minus our attributed calls. A material gap is the story,
+   * not something to reconcile away (§6 Operating Procedures).
+   */
+  conversionDiscrepancy: number | null;
   /** Named data caveats — unconfirmed payouts, zero-payout campaigns, and so on. */
   flags: string[];
   resolution: ResolvedRevenue | null;
@@ -110,6 +126,16 @@ export interface VerticalReadResult {
   unclassifiedAdNames: string[];
   /** Ringba campaign names on calls that matched no vertical. */
   unclassifiedCallCampaigns: string[];
+  /**
+   * Volume excluded because it came from a publisher this client does not buy.
+   * Reported prominently: the tracking campaign total and our attributable total
+   * are different numbers and both are true.
+   */
+  excluded: {
+    calls: number;
+    byPublisher: { publisher: string; calls: number }[];
+    note: string;
+  };
   /** Always rendered beside the read, so the reader knows why they are here. */
   note: string;
 }
@@ -232,6 +258,10 @@ function emptyRow(vertical_id: string, label: string): VerticalReadRow {
     durationThresholdUnknown: false,
     blockedFigures: [],
     sensitivity: null,
+    excludedPublisherCalls: 0,
+    excludedByPublisher: [],
+    metaConversions: 0,
+    conversionDiscrepancy: null,
     flags: [],
     resolution: null,
   };
@@ -273,25 +303,36 @@ export function verticalRead({
   }
 
   const spendByVertical = new Map<string, number>();
+  const conversionsByVertical = new Map<string, number>();
   let unclassifiedSpend = 0;
+  let unclassifiedConversions = 0;
   const mixedCampaigns = findMixedCampaigns(metaAds, verticals);
   const unclassifiedAdNames = new Set<string>();
 
   for (const ad of metaAds) {
     const id = assignAdToVertical(ad, verticals, mixedCampaigns);
     const spend = Number.isFinite(ad.spend) ? (ad.spend as number) : 0;
+    const conversions = Number.isFinite(ad.conversions) ? (ad.conversions as number) : 0;
     if (!id) {
       unclassifiedSpend += spend;
+      unclassifiedConversions += conversions;
       if (ad.ad_name) unclassifiedAdNames.add(ad.ad_name);
       continue;
     }
     spendByVertical.set(id, (spendByVertical.get(id) ?? 0) + spend);
+    conversionsByVertical.set(id, (conversionsByVertical.get(id) ?? 0) + conversions);
   }
 
   const rows = verticals.map((v) => {
     const eco = economics.byVertical[v.vertical_id] ?? economics.clientDefault;
-    const bucket = callsByVertical.get(v.vertical_id) ?? [];
+    const allBucket = callsByVertical.get(v.vertical_id) ?? [];
     const spend = spendByVertical.get(v.vertical_id) ?? 0;
+    // §3 — only calls from publishers this client actually buys may reach a
+    // metric. Everything else belongs to another buyer's media and is counted as
+    // excluded volume, never divided into our spend.
+    const publisherList = eco.attributed_publishers ?? economics.clientDefault.attributed_publishers;
+    const split = engine.partitionByPublisher(allBucket, publisherList);
+    const bucket = split.attributed;
     // Strip each call's stored `billable`: it was derived from the CLIENT-level
     // economics, and this vertical may bill differently. The vertical's own
     // economics decide, in the engine.
@@ -306,6 +347,10 @@ export function verticalRead({
     row.revenueSource = resolved.source;
     row.revenueNote = resolved.note;
     row.resolution = resolved;
+    row.excludedPublisherCalls = split.excludedCalls;
+    row.excludedByPublisher = split.excludedByPublisher;
+    row.metaConversions = conversionsByVertical.get(v.vertical_id) ?? 0;
+    row.conversionDiscrepancy = row.metaConversions - row.calls;
 
     const revenue = resolved.revenue;
     row.rpc = revenue === null ? null : engine.rpc(revenue, row.calls);
@@ -323,6 +368,11 @@ export function verticalRead({
       thresholds.killThreshold,
     );
 
+    if (split.excludedCalls) {
+      row.flags.push(
+        `${split.excludedCalls} calls on this tracking campaign came from other publishers (${split.excludedByPublisher.map((e) => `${e.publisher} ${e.calls}`).join(', ')}) and are excluded from every figure here — they belong to someone else's media buying.`,
+      );
+    }
     if (eco.revenue_source === 'computed') {
       row.flags.push(
         'Revenue is computed from the contracted payout because the tracking platform does not expose this vertical\'s payouts. A payout we cannot see is a declared data limitation, not a zero.',
@@ -368,10 +418,21 @@ export function verticalRead({
 
   });
 
+  const unclassifiedSplit = engine.partitionByPublisher(
+    unclassifiedCalls,
+    economics.clientDefault.attributed_publishers,
+  );
   const unclassified = emptyRow('unclassified', 'Unclassified');
   unclassified.spend = unclassifiedSpend;
-  unclassified.calls = unclassifiedCalls.length;
-  const unclassifiedResolved = engine.resolveRevenue(economics.clientDefault, unclassifiedCalls.map(toRevenueRow));
+  unclassified.calls = unclassifiedSplit.attributed.length;
+  unclassified.excludedPublisherCalls = unclassifiedSplit.excludedCalls;
+  unclassified.excludedByPublisher = unclassifiedSplit.excludedByPublisher;
+  unclassified.metaConversions = unclassifiedConversions;
+  unclassified.conversionDiscrepancy = unclassifiedConversions - unclassified.calls;
+  const unclassifiedResolved = engine.resolveRevenue(
+    economics.clientDefault,
+    unclassifiedSplit.attributed.map(toRevenueRow),
+  );
   unclassified.paidCalls = unclassifiedResolved.paidCalls;
   unclassified.billableCalls = unclassifiedResolved.billableCalls;
   unclassified.revenue = unclassifiedResolved.revenue;
@@ -390,6 +451,17 @@ export function verticalRead({
   );
   unclassified.resolution = unclassifiedResolved;
 
+  // The excluded total across the whole read, so nobody reads a smaller call
+  // count as lost data.
+  const excludedCounts = new Map<string, number>();
+  for (const r of [...rows, unclassified]) {
+    for (const e of r.excludedByPublisher) excludedCounts.set(e.publisher, (excludedCounts.get(e.publisher) ?? 0) + e.calls);
+  }
+  const excludedByPublisher = [...excludedCounts.entries()]
+    .map(([publisher, c]) => ({ publisher, calls: c }))
+    .sort((a, b) => b.calls - a.calls);
+  const excludedCalls = excludedByPublisher.reduce((sum, e) => sum + e.calls, 0);
+
   const coverage =
     adLevelPct === null || adLevelPct === undefined
       ? ''
@@ -401,6 +473,13 @@ export function verticalRead({
     mixedCampaigns: [...mixedCampaigns],
     unclassifiedAdNames: [...unclassifiedAdNames],
     unclassifiedCallCampaigns: [...unclassifiedCallCampaigns],
+    excluded: {
+      calls: excludedCalls,
+      byPublisher: excludedByPublisher,
+      note: excludedCalls
+        ? `${excludedCalls} calls from ${excludedByPublisher.length} other publisher${excludedByPublisher.length === 1 ? '' : 's'} are excluded from every figure above (${excludedByPublisher.map((e) => `${e.publisher} ${e.calls}`).join(', ')}). Nothing is lost: the client's tracking campaigns received them, but they came from traffic this client's media buying did not pay for, so dividing them into our spend would credit our media with someone else's calls.`
+        : 'Every call in the window came from an attributed publisher.',
+    },
     note:
       'This is a vertical read, not an ad-level decision. Cut, hold and scale verdicts are ad-level rules and are deliberately not shown here — a vertical row blends dozens of ads, and blending hides the differences a verdict acts on.' +
       coverage,

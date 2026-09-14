@@ -14,10 +14,13 @@ Deno.serve(async (req) => {
 
   let bodyClientId: string | null = null;
   let bodyDaysBack: number | null = null;
+  // Read-only: report every action_type this account actually records. Writes nothing.
+  let diagnoseActions = false;
   try {
     const body = await req.json();
     bodyClientId = body?.client_id || body?.clientId || null;
     bodyDaysBack = body?.days_back || null;
+    diagnoseActions = body?.diagnose_actions === true;
   } catch { /* no body */ }
 
   let userId: string | null = null;
@@ -79,6 +82,45 @@ Deno.serve(async (req) => {
       success: false, records_synced: 0,
       message: "No Meta connections have a selected ad account."
     }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // ── DIAGNOSTIC (read-only) ────────────────────────────────────────────────
+  // Which conversion events does this account actually record? Reports the full
+  // action_type menu with values so no allowlist is guessed. Never writes.
+  if (diagnoseActions) {
+    const days = bodyDaysBack || 30;
+    const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const until = new Date().toISOString().slice(0, 10);
+    const out: any[] = [];
+    for (const conn of validConnections) {
+      const syncAccounts = (conn.metadata as any)?.sync_ad_accounts;
+      const sel = conn.selected_ad_account as any;
+      const accts = (Array.isArray(syncAccounts) && syncAccounts.length > 0)
+        ? syncAccounts
+        : (sel?.id ? [sel] : ((conn.metadata as any)?.ad_accounts || []).slice(0, 1));
+      for (const acct of accts) {
+        const url = `https://graph.facebook.com/v21.0/${acct.id}/insights?fields=spend,clicks,actions,action_values,conversions,conversion_values&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&access_token=${conn.access_token}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        const row = json?.data?.[0] || {};
+        out.push({
+          client_id: conn.client_id,
+          ad_account: acct.id,
+          ad_account_name: acct.name ?? null,
+          window: { since, until },
+          spend: row.spend ?? null,
+          clicks: row.clicks ?? null,
+          actions: row.actions ?? null,
+          action_values: row.action_values ?? null,
+          conversions_field: row.conversions ?? null,
+          conversion_values_field: row.conversion_values ?? null,
+          error: json?.error ?? null,
+        });
+      }
+    }
+    return new Response(JSON.stringify({ diagnostic: true, wrote_nothing: true, accounts: out }, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -501,7 +543,7 @@ function formatCTA(cta: string): string {
 }
 
 async function fetchInsights(accountId: string, accessToken: string, since: string, until: string, level: string, extraFields = "") {
-  const fields = `${extraFields}spend,impressions,clicks,actions,action_values`;
+  const fields = `${extraFields}spend,impressions,clicks,actions,action_values,conversions,conversion_values`;
   let allData: any[] = [];
   let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/insights?fields=${fields}&time_range={"since":"${since}","until":"${until}"}&time_increment=1&level=${level}&access_token=${accessToken}&limit=500`;
 
@@ -568,6 +610,19 @@ function formatMetaObjective(objective: string): string {
 }
 
 const PURCHASE_ACTIONS = ["purchase", "offsite_conversion.fb_pixel_purchase"];
+
+/**
+ * Call-driven accounts record no purchase. Meta's `conversions` field carries the
+ * offline/Ringba custom conversion — on Easy Bath Renovation it is
+ * `offsite_conversion.fb_pixel_custom.RingbaConversion`. Tried in order; a match
+ * here wins over the purchase list, which stays for e-commerce accounts.
+ * Never inferred: only these named action types count.
+ */
+const CALL_CONVERSION_ACTIONS = [
+  "offsite_conversion.fb_pixel_custom.RingbaConversion",
+  "contact_total",
+  "contact_website",
+];
 const ADD_TO_CART_ACTIONS = ["add_to_cart", "omni_add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"];
 
 function extractMetrics(row: any) {
@@ -575,6 +630,20 @@ function extractMetrics(row: any) {
   const impressions = parseInt(row.impressions || "0");
   const clicks = parseInt(row.clicks || "0");
   let conversions = 0, revenue = 0, addToCart = 0;
+
+  // Call conversions first — a call-driven account has no purchase action at all.
+  if (Array.isArray(row.conversions)) {
+    for (const wanted of CALL_CONVERSION_ACTIONS) {
+      const hit = row.conversions.find((c: any) => c.action_type === wanted);
+      if (hit) { conversions = parseInt(hit.value || "0"); break; }
+    }
+  }
+  if (revenue === 0 && Array.isArray(row.conversion_values)) {
+    for (const wanted of CALL_CONVERSION_ACTIONS) {
+      const hit = row.conversion_values.find((c: any) => c.action_type === wanted);
+      if (hit) { revenue = parseFloat(hit.value || "0"); break; }
+    }
+  }
 
   if (row.actions) {
     for (const a of row.actions) {

@@ -814,10 +814,22 @@ export interface SensitivityBand {
   marginPctHigh: number | null;
   /** True when the band spans both profit and loss. */
   crossesZero: boolean;
-  /** True whenever the band crosses zero — no verdict may be drawn from it. */
+  /**
+   * Which way the band points. `negative` — every plausible threshold loses
+   * money; `positive` — every one makes money; `mixed` — it crosses zero.
+   */
+  direction: 'positive' | 'negative' | 'mixed' | 'undrawable';
+  /**
+   * True when the DIRECTION is established even though the MAGNITUDE is not — an
+   * entirely negative or entirely positive band. The UNKNOWN still forbids
+   * quoting a figure, but it no longer forbids a verdict (§8).
+   */
+  directionEstablished: boolean;
+  /** True ONLY when the band crosses zero. Direction unknown → no verdict. */
   verdictBlocking: boolean;
   note: string;
 }
+
 
 /**
  * The revenue/margin band across plausible duration thresholds. Renders INSTEAD
@@ -869,11 +881,33 @@ export function revenueSensitivity(
   const marginPctLow = margins.length ? Math.min(...margins) : null;
   const marginPctHigh = margins.length ? Math.max(...margins) : null;
   const crossesZero = marginPctLow !== null && marginPctHigh !== null && marginPctLow < 0 && marginPctHigh > 0;
+  const drawable = marginPctLow !== null && marginPctHigh !== null;
+  const direction: SensitivityBand['direction'] = !drawable
+    ? 'undrawable'
+    : crossesZero
+      ? 'mixed'
+      : marginPctHigh! < 0
+        ? 'negative'
+        : 'positive';
+  // §8 — an UNKNOWN suppresses the FIGURE, not automatically the verdict. Where
+  // every plausible threshold lands on the same side of zero the direction is
+  // established and a verdict may be drawn; only a band spanning both sides
+  // leaves the direction itself unknown.
+  const directionEstablished = direction === 'negative' || direction === 'positive';
 
   const range =
     revenueLow === null || revenueHigh === null
       ? 'The band cannot be drawn because no contracted payout is recorded — supply it at intake.'
       : `Across ${thresholds[0]}s to ${thresholds[thresholds.length - 1]}s, revenue runs $${revenueLow.toFixed(2)} to $${revenueHigh.toFixed(2)} and margin runs ${(marginPctLow! * 100).toFixed(1)}% to ${(marginPctHigh! * 100).toFixed(1)}%.`;
+
+  const directionNote =
+    direction === 'mixed'
+      ? ' THE RANGE CROSSES ZERO: on the same window this vertical is either clearly profitable or losing money, depending entirely on a contract term nobody has supplied. No verdict may be drawn until it is.'
+      : direction === 'negative'
+        ? ' THE RANGE IS NEGATIVE THROUGHOUT: every plausible threshold loses money, so the DIRECTION is established even though the magnitude is not. The UNKNOWN blocks quoting a figure; it does not block acting on a loss.'
+        : direction === 'positive'
+          ? ' The range is positive throughout: every plausible threshold clears breakeven, so the direction is established even though the magnitude is not.'
+          : '';
 
   return {
     points,
@@ -882,11 +916,100 @@ export function revenueSensitivity(
     marginPctLow,
     marginPctHigh,
     crossesZero,
+    direction,
+    directionEstablished,
     verdictBlocking: crossesZero,
     note:
       `The billable duration threshold is UNKNOWN — assumed, not stated in any contract — and on a ${source} vertical it is the revenue. No point estimate is shown, only this range. ${range}` +
-      (crossesZero
-        ? ' THE RANGE CROSSES ZERO: on the same 30 days this vertical is either clearly profitable or losing money, depending entirely on a contract term nobody has supplied. No verdict may be drawn until it is.'
-        : ''),
+      directionNote,
+  };
+}
+
+
+/* ------------------------------------------------------------------ *
+ * §3 — PUBLISHER ATTRIBUTION
+ *
+ * A tracking-platform campaign receives calls from every traffic source pointed
+ * at it, not only from the media we buy. On BuyologyIQ the `Walk In tubs`
+ * campaign took 1,144 calls in 30 days from six publishers; exactly 79 of them
+ * came from Connect Paid Media. Dividing all 1,144 calls into our spend is the
+ * same class of error as mixing denominators: it credits our media with someone
+ * else's calls.
+ *
+ * So `attributed_publishers` on the Economics record is the definitive list of
+ * publishers whose calls belong to this client's media buying, and EVERY metric,
+ * verdict, vertical read and coverage figure filters on it. A call from any other
+ * publisher is excluded from margin entirely and reported as excluded volume, so
+ * the client's campaign total and our attributable total stay visibly different
+ * numbers.
+ *
+ * There is NO default. An unconfigured list stops the pull — defaulting to "all
+ * publishers" is precisely what produced the wrong read.
+ * @see docs/media-brain/01_Decision_Engine.md §3
+ * ------------------------------------------------------------------ */
+
+/** Label used where a call carries no publisher at all. Never treated as ours. */
+export const PUBLISHER_NOT_RECORDED = '(no publisher recorded)';
+
+/** Has the operator stated whose calls these are? No list means no pull (§3). */
+export function publisherAttributionConfigured(list: (string | null)[] | null | undefined): boolean {
+  return !!list && list.some((p) => typeof p === 'string' && p.trim().length > 0);
+}
+
+/**
+ * Does this call belong to our media buying? Exact match on the trimmed,
+ * case-folded publisher name. A missing publisher is never assumed to be ours.
+ */
+export function isAttributedPublisher(
+  publisher: string | null | undefined,
+  list: (string | null)[] | null | undefined,
+): boolean {
+  if (!publisher || !publisherAttributionConfigured(list)) return false;
+  const p = publisher.trim().toLowerCase();
+  return (list ?? []).some((l) => typeof l === 'string' && l.trim().toLowerCase() === p);
+}
+
+export interface PublisherPartition<T> {
+  /** Calls from a publisher on the list. The ONLY calls any metric may read. */
+  attributed: T[];
+  /** Calls belonging to someone else's media buying. Counted, never metered. */
+  excluded: T[];
+  excludedCalls: number;
+  excludedByPublisher: { publisher: string; calls: number }[];
+  note: string;
+}
+
+/**
+ * Split calls into ours and everyone else's. The excluded side is reported
+ * prominently rather than dropped — the system is not losing data, it is
+ * declining to attribute other sources' calls to our spend.
+ */
+export function partitionByPublisher<T extends { publisher: string | null }>(
+  calls: T[],
+  list: (string | null)[] | null | undefined,
+): PublisherPartition<T> {
+  const attributed: T[] = [];
+  const excluded: T[] = [];
+  const counts = new Map<string, number>();
+  for (const call of calls) {
+    if (isAttributedPublisher(call.publisher, list)) {
+      attributed.push(call);
+      continue;
+    }
+    excluded.push(call);
+    const key = call.publisher?.trim() || PUBLISHER_NOT_RECORDED;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const excludedByPublisher = [...counts.entries()]
+    .map(([publisher, c]) => ({ publisher, calls: c }))
+    .sort((a, b) => b.calls - a.calls);
+  return {
+    attributed,
+    excluded,
+    excludedCalls: excluded.length,
+    excludedByPublisher,
+    note: excluded.length
+      ? `${excluded.length} of ${calls.length} calls came from ${excludedByPublisher.length} publisher${excludedByPublisher.length === 1 ? '' : 's'} not attributed to this client's media buying (${excludedByPublisher.map((e) => `${e.publisher} ${e.calls}`).join(', ')}). They are excluded from every metric and reported here: the tracking campaign total and our attributable total are different numbers and both are true.`
+      : `All ${calls.length} calls came from attributed publishers.`,
   };
 }

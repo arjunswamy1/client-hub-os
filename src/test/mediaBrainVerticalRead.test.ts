@@ -15,7 +15,11 @@ import {
   assignAdToVertical,
   assignCallToVertical,
   type VerticalDefinition,
+  type VerticalEconomics,
 } from '@/lib/mediaBrain/verticalRead';
+
+/** Every fixture call is ours unless a test deliberately plants another source. */
+const OURS = 'Connect Paid Media';
 
 const WINDOW = { start: '2026-03-01', end: '2026-03-30' };
 
@@ -43,18 +47,20 @@ const VERTICALS: VerticalDefinition[] = [
   },
 ];
 
-const PLATFORM_ECO: engine.RevenueEconomics = {
+const PLATFORM_ECO: VerticalEconomics = {
   revenue_source: 'platform',
   payout: 60,
   min_payout_threshold: 1,
   billable_min_duration_seconds: 90,
+  attributed_publishers: [OURS],
 };
 
-const COMPUTED_ECO: engine.RevenueEconomics = {
+const COMPUTED_ECO: VerticalEconomics = {
   revenue_source: 'computed',
   payout: 80,
   min_payout_threshold: 1,
   billable_min_duration_seconds: 90,
+  attributed_publishers: [OURS],
 };
 
 function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall {
@@ -76,6 +82,7 @@ function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall
     payout_looks_like_cost: false,
     payout_amount: payout,
     buyer_id: null,
+    publisher: OURS,
     state: null,
     no_bid_reason: null,
     utm_campaign: null,
@@ -372,5 +379,80 @@ describe('UNKNOWN duration threshold on a computed vertical', () => {
     expect(band.crossesZero).toBe(true);
     expect(band.verdictBlocking).toBe(true);
     expect(band.note).toMatch(/crosses zero/i);
+  });
+});
+
+describe('publisher attribution (§3)', () => {
+  it('excludes another publisher\'s calls from every metric while counting them as excluded volume', () => {
+    // Same tracking campaign, two traffic sources: 10 of ours, 40 someone else's.
+    const ours = Array.from({ length: 10 }, (_, i) =>
+      call({ call_id: `ours-${i}`, campaign_name: 'Walk In tubs', duration_seconds: 200, publisher: OURS }),
+    );
+    const theirs = Array.from({ length: 40 }, (_, i) =>
+      call({ call_id: `theirs-${i}`, campaign_name: 'Walk In tubs', duration_seconds: 200, publisher: 'BIQ' }),
+    );
+    const read = verticalRead({
+      calls: [...ours, ...theirs],
+      metaAds: [ad({ platform_ad_id: 'a1', ad_name: 'WalkinTub Static', campaign_name: 'Tubs', spend: 800, conversions: 3 })],
+      verticals: VERTICALS,
+      economics: { byVertical: { 'walk-in-tubs': COMPUTED_ECO }, clientDefault: PLATFORM_ECO },
+      thresholds: THRESHOLDS,
+    });
+
+    const tubs = read.rows.find((r) => r.vertical_id === 'walk-in-tubs')!;
+    // Metrics see only our 10 calls.
+    expect(tubs.calls).toBe(10);
+    expect(tubs.excludedPublisherCalls).toBe(40);
+    expect(tubs.excludedByPublisher).toEqual([{ publisher: 'BIQ', calls: 40 }]);
+    // Cost per call is our spend over OUR calls — $80, not $16.
+    expect(tubs.costPerCall).toBeCloseTo(80, 6);
+    // And the excluded volume is reported, not lost.
+    expect(read.excluded.calls).toBe(40);
+    expect(read.excluded.byPublisher).toEqual([{ publisher: 'BIQ', calls: 40 }]);
+    // Reconciliation line: Meta's conversions beside our attributed calls.
+    expect(tubs.metaConversions).toBe(3);
+    expect(tubs.conversionDiscrepancy).toBe(-7);
+  });
+
+  it('never treats a call with no publisher recorded as ours', () => {
+    const split = engine.partitionByPublisher(
+      [{ publisher: null }, { publisher: OURS }, { publisher: 'squeeze media group ss' }],
+      [OURS, 'Squeeze Media Group SS'],
+    );
+    expect(split.attributed).toHaveLength(2); // exact match is case-insensitive
+    expect(split.excludedByPublisher).toEqual([{ publisher: engine.PUBLISHER_NOT_RECORDED, calls: 1 }]);
+  });
+});
+
+describe('sensitivity band direction (§8)', () => {
+  const spend = 6000;
+  const eco = { ...COMPUTED_ECO, payout: 80 };
+
+  it('permits a verdict when the band is negative throughout', () => {
+    // 79 calls, only 42 reaching 90s: at $80 a call this loses money at every
+    // plausible threshold, so the DIRECTION is established.
+    const rows = [
+      ...Array.from({ length: 42 }, () => ({ duration_seconds: 200, payout_amount: 0 })),
+      ...Array.from({ length: 37 }, () => ({ duration_seconds: 20, payout_amount: 0 })),
+    ];
+    const band = engine.revenueSensitivity(eco, rows, spend);
+    expect(band.marginPctHigh).toBeLessThan(0);
+    expect(band.direction).toBe('negative');
+    expect(band.crossesZero).toBe(false);
+    expect(band.directionEstablished).toBe(true);
+    expect(band.verdictBlocking).toBe(false);
+    expect(band.note).toContain('NEGATIVE THROUGHOUT');
+  });
+
+  it('blocks a verdict when the band crosses zero', () => {
+    const rows = [
+      ...Array.from({ length: 40 }, () => ({ duration_seconds: 320, payout_amount: 0 })),
+      ...Array.from({ length: 60 }, () => ({ duration_seconds: 40, payout_amount: 0 })),
+    ];
+    const band = engine.revenueSensitivity(eco, rows, 4000);
+    expect(band.crossesZero).toBe(true);
+    expect(band.direction).toBe('mixed');
+    expect(band.directionEstablished).toBe(false);
+    expect(band.verdictBlocking).toBe(true);
   });
 });

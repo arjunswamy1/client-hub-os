@@ -286,3 +286,52 @@ describe('Media Brain — planted decision cases', () => {
   });
 
 });
+
+describe('publisher attribution stops and filters the pull (§3)', () => {
+  it('returns ok: false when attributed_publishers is empty — never defaults to all publishers', () => {
+    const f = buildFixture([SCENARIOS.graduationCandidate]);
+    const res = computeWindow({
+      calls: f.calls,
+      metaAds: f.metaAds,
+      didMappings: f.didMappings,
+      verticals: f.verticals,
+      instance: instance(),
+      economics: { ...economics(), attributed_publishers: [] },
+      window: f.window,
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok === false) expect(res.error).toContain('Publisher attribution is not configured');
+  });
+
+  it('excludes another publisher\'s calls from every metric and counts them as excluded volume', () => {
+    const f = buildFixture([
+      SCENARIOS.graduationCandidate,
+      {
+        ...SCENARIOS.graduationCandidate,
+        adId: 'ad-other-publisher',
+        adName: 'Angle Other Publisher',
+        did: '8005559999',
+        spend: 0,
+        publisher: 'Squeeze Media Group SS',
+      },
+    ]);
+    const res = computeWindow({
+      calls: f.calls,
+      metaAds: f.metaAds,
+      didMappings: f.didMappings,
+      verticals: f.verticals,
+      instance: instance(),
+      economics: economics(),
+      window: f.window,
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok !== true) return;
+    // Only our publisher's 100 calls are metered.
+    expect(res.totals.calls).toBe(SCENARIOS.graduationCandidate.calls);
+    expect(res.excludedPublisherCalls).toBe(SCENARIOS.graduationCandidate.calls);
+    expect(res.excludedByPublisher).toEqual([
+      { publisher: 'Squeeze Media Group SS', calls: SCENARIOS.graduationCandidate.calls },
+    ]);
+    expect(res.breakers.some((b) => b.includes('Publisher attribution'))).toBe(true);
+  });
+});

@@ -101,6 +101,23 @@ The adapter also carries two named data-quality flags, because both would otherw
 - `did_is_caller_number_fallback` — the canonical `did` fell back to `inbound_number` because no dialed number was captured. On accounts where `inbound_number` holds the *caller's* number, that fallback would attribute a call to whatever mapping happened to match, so it is counted in the pull's flags rather than trusted.
 - `payout_looks_like_cost` — a non-zero payout below `{min_payout_threshold}` and exactly equal to the recorded total cost (§2). Excluded from revenue and counted by name.
 
+### Publisher attribution — a required dimension
+
+A call tracking campaign belongs to the *client*, not to us. The same campaign commonly receives traffic from several publishers — the client's own buying, other agencies, affiliate partners, live-transfer vendors — and every one of those calls lands in the same call table. Attributing all of them to our spend is the same class of error as mixing denominators: it inflates our call counts and our revenue against a cost side that only covers our own media.
+
+So `publisher` is canonical, read off the call (`metadata->>'publisher'` on Ringba; the equivalent field where another platform has one), and `{attributed_publishers}` on the Economics record — per vertical, or client-level as the default — names the publishers whose calls belong to this client's media buying.
+
+**Every metric, verdict, vertical read and coverage figure filters on it.** A call from a publisher outside the list is excluded from margin entirely and reported as excluded volume, so the client's campaign total and our attributable total are both visible and neither is mistaken for the other.
+
+- Matching is exact on the trimmed, case-folded name. No prefix or fuzzy matching — publisher names are contractual labels, and a near-match is somebody else.
+- A call with **no publisher recorded** is never assumed to be ours. It is excluded and counted under `(no publisher recorded)`.
+- **An unconfigured list stops the pull.** Where `{attributed_publishers}` is null or empty the pull returns `ok: false`: "publisher attribution not configured — every margin figure would include other sources' calls." There is deliberately no "all publishers" default, because that default is what produced a wrong read on the pilot: 2,417 calls in the window, of which 119 were ours.
+- Where filtering leaves zero attributed calls the pull also stops. That is a configuration or tagging failure, not a zero.
+
+A vertical whose traffic is entirely another publisher's is not a vertical we operate. It gets no Economics record and is retired for that client, with the reason recorded.
+
+**Meta conversion reconciliation.** Where the account records an offline or call conversion, the vertical read prints Meta's reported conversions beside our attributed call count and shows the gap. Per §6 of Operating Procedures a material disagreement is flagged, never reconciled silently — if Meta reports 300 conversions and we attribute 79 calls, that gap is the finding. Zero conversions against real spend is declared as a conversion-tracking gap on the account, not read as zero performance.
+
 **Dialed numbers may be pooled.** Where a tracking number sits in a number pool it rotates across visitors, so one number carries several creatives and DID → creative is invalid. DID → campaign stays stable, so a pooled DID is a reliable **vertical** key and never an ad-level one; the join marks it accordingly and ad-level verdicts are withheld from it.
 
 

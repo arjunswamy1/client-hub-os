@@ -850,8 +850,11 @@ export default function MediaBrainIntakePage() {
                   contradicts by more than 10% produces numbers that look authoritative and are not.
                 </Notice>
               )}
+              {/* §1 — the operator sees the swing before they state the threshold. */}
+              <ComputedRevenueSensitivity clientId={clientId} start={SENSITIVITY_START} end={SENSITIVITY_END} />
             </div>
           )}
+
 
           {current.key === "b" && computed && !billableCheckBlocking && (
             <div className="space-y-3">

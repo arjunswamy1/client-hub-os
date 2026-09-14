@@ -7,6 +7,9 @@
  * @see docs/media-brain/01_Decision_Engine.md §3
  */
 
+import * as engine from './engine';
+import type { RevenueSource } from './engine';
+
 /** Canonical call shape every rule in the framework reads. @see 01_Decision_Engine.md §3 */
 export interface CanonicalCall {
   call_id: string;
@@ -107,6 +110,15 @@ export interface MapOptions {
    * not substituted.
    */
   billableMinDurationSeconds: number | null;
+  /**
+   * `platform` (default) — a call is billable only when its payout clears
+   * `minPayoutThreshold`. `computed` — the platform's payouts are not visible to
+   * us, so billable is duration alone and the payout field is ignored.
+   * @see engine.isBillableCall
+   */
+  revenueSource?: RevenueSource | string | null;
+  /** Smallest payout that counts as revenue rather than telco cost. */
+  minPayoutThreshold?: number | null;
 }
 
 export type CallMapper = (row: RawCallRow, opts: MapOptions) => CanonicalCall;
@@ -147,22 +159,56 @@ function payoutAmount(...candidates: unknown[]): number {
 }
 
 /**
- * Derive `billable`: duration >= threshold AND payout > 0, plus the source's
- * explicit `converted` flag where the table has one.
- * Returns false when the threshold is unknown — never guessed.
- * @see docs/media-brain/01_Decision_Engine.md §3
+ * Derive `billable` by delegating to `engine.isBillableCall` — the billable
+ * definition lives in the engine exactly once, so no mapper can drift from it.
+ * Returns false when the duration threshold is unknown — never guessed.
+ * @see docs/media-brain/01_Decision_Engine.md §2, §3
  */
 function deriveBillable(
   durationSeconds: number | null,
   payout: number,
-  minDuration: number | null,
+  opts: MapOptions,
   converted?: boolean | null,
 ): boolean {
-  if (minDuration === null || minDuration === undefined) return false;
-  if (durationSeconds === null) return false;
+  return engine.isBillableCall(
+    {
+      revenue_source: opts.revenueSource ?? 'platform',
+      payout: null,
+      min_payout_threshold: opts.minPayoutThreshold ?? null,
+      billable_min_duration_seconds: opts.billableMinDurationSeconds,
+    },
+    { duration_seconds: durationSeconds, payout_amount: payout, converted },
+  );
+}
+
+/**
+ * The call's telco cost, wherever the table keeps it. Read, never derived.
+ */
+function readTotalCost(row: RawCallRow): number | null {
+  const bags: Record<string, unknown>[] = [row];
+  for (const nested of ['metadata', 'raw_payload', 'tags'] as const) {
+    const v = row[nested];
+    if (v && typeof v === 'object' && !Array.isArray(v)) bags.push(v as Record<string, unknown>);
+  }
+  for (const bag of bags) {
+    for (const k of ['total_cost', 'totalCost']) {
+      const n = num(bag[k]);
+      if (n !== null) return n;
+    }
+  }
+  return null;
+}
+
+/**
+ * Does this payout look like telco cost that the sync recorded as revenue?
+ * Non-zero, below the revenue threshold, and exactly equal to the call's own
+ * total cost. Flagged, never silently kept or silently dropped.
+ */
+function looksLikeCost(row: RawCallRow, payout: number, opts: MapOptions): boolean {
   if (payout <= 0) return false;
-  if (converted === false) return false;
-  return durationSeconds >= minDuration;
+  if (engine.payoutIsRevenue(payout, opts.minPayoutThreshold ?? null)) return false;
+  const cost = readTotalCost(row);
+  return cost !== null && Math.abs(cost - payout) < 0.0001;
 }
 
 /**
@@ -234,8 +280,9 @@ export const fromRingba: CallMapper = (row, opts) => {
     did_is_caller_number_fallback: str(row.did) === null && str(row.inbound_number) !== null,
     duration_seconds: duration,
     connected: bool(row.connected),
-    billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
+    billable: deriveBillable(duration, payout, opts, converted),
     paid: payout > 0,
+    payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.target_name),
     state: null,
@@ -260,8 +307,9 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
-    billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds),
+    billable: deriveBillable(duration, payout, opts),
     paid: payout > 0,
+    payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
@@ -287,8 +335,9 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
-    billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
+    billable: deriveBillable(duration, payout, opts, converted),
     paid: payout > 0,
+    payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
@@ -314,8 +363,9 @@ export const fromMoja: CallMapper = (row, opts) => {
     did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
-    billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds, converted),
+    billable: deriveBillable(duration, payout, opts, converted),
     paid: payout > 0,
+    payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: str(row.buyer_name),
     state: str(row.caller_state),
@@ -340,8 +390,9 @@ export const fromCannaball: CallMapper = (row, opts) => {
     did_is_caller_number_fallback: false,
     duration_seconds: duration,
     connected: bool(row.connected),
-    billable: deriveBillable(duration, payout, opts.billableMinDurationSeconds),
+    billable: deriveBillable(duration, payout, opts),
     paid: payout > 0,
+    payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
     buyer_id: null,
     state: str(row.caller_state),

@@ -39,7 +39,14 @@ import {
 interface Breaker {
   fired: boolean;
   title: string;
+  /** What was observed. */
   evidence: string;
+  /**
+   * What to do about it — stated, structured, and rendered on its own line.
+   * ALWAYS a recommendation the account manager carries out in Meta. This page
+   * executes nothing (§3).
+   */
+  action: string;
 }
 
 export default function MediaBrainDailyPage() {
@@ -86,6 +93,8 @@ export default function MediaBrainDailyPage() {
               data.unjoinedSpend.reduce((s, u) => s + u.spend, 0),
             )} with no joined call records; ${data.unjoinedCalls.length} calls with no ad mapping. Unjoined spend is a tracking flag, not a zero.`
           : "Every spending entity joined to call records, and every call mapped to an entity.",
+      action:
+        "Pause all spend for this client and alert the account team. Spend is accruing against call data that is not arriving; nothing downstream can be read until the join is fixed.",
     });
 
     const zeroNow = data.totals.payoutDistribution?.zeroRate ?? null;
@@ -101,8 +110,10 @@ export default function MediaBrainDailyPage() {
             : zeroBase === null
               ? `No-bid rate ${fmtPct(zeroNow)} in the window. Trailing 14-day baseline unavailable, so a spike cannot be confirmed or ruled out.`
               : `No-bid rate ${fmtPct(zeroNow)} against a trailing 14-day baseline of ${fmtPct(zeroBase)}${
-                  spike ? " — an abrupt spike. Check buyer status and rate limiting today." : "."
+                  spike ? " — an abrupt spike." : "."
                 }`,
+        action:
+          "Pause the affected ad sets and alert the client. This is a routing conversation, not a media one — check buyer status and rate limiting today.",
       });
     } else {
       breakers.push({
@@ -110,19 +121,32 @@ export default function MediaBrainDailyPage() {
         title: "Buyer down or at capacity",
         evidence:
           data.totals.billableCalls === 0 && data.totals.calls > 0
-            ? `${fmtNum(data.totals.calls)} calls and zero billable — check buyer status and capacity today.`
+            ? `${fmtNum(data.totals.calls)} calls and zero billable.`
             : `${fmtNum(data.totals.billableCalls)} billable of ${fmtNum(data.totals.calls)} calls.`,
+        action:
+          "Pause the affected ad sets and alert the client. This is a routing conversation, not a media one — check buyer status and capacity today.",
       });
     }
 
     const decisive = data.rows.filter((r) => r.confidenceState === "decisive_zero");
+    // Under RTB "zero billable" means zero PAID calls — payout is continuous
+    // there, so billable has no clean line (§2, §6.3).
+    const zeroLabel = data.payoutMode === "rtb" ? "paid calls" : "billable calls";
     breakers.push({
       fired: decisive.length > 0,
-      title: `Ad past the kill threshold (${fmtMoney(data.thresholds.killThreshold)}) with zero billable calls`,
+      title: `Ad past the kill threshold (${fmtMoney(data.thresholds.killThreshold)}) with zero ${zeroLabel}`,
       evidence:
         decisive.length > 0
-          ? decisive.map((r) => `${r.entity_name} — ${fmtMoney(r.spend)} spent, 0 billable`).join(" · ")
-          : "No entity past 2× payout at zero billable calls.",
+          ? decisive.map((r) => `${r.entity_name} — ${fmtMoney(r.spend)} spent, 0 ${zeroLabel}`).join(" · ")
+          : `No entity past 2× payout at zero ${zeroLabel}.`,
+      action:
+        decisive.length > 0
+          ? `Propose pausing ${decisive.length === 1 ? "this ad" : "these ads"} — ${decisive
+              .map((r) => r.entity_name)
+              .join(", ")}. §6.3 makes this the decisive verdict; it does not wait for the ${fmtNum(
+              data.thresholds.minCalls,
+            )}-call confidence bar.`
+          : `If one fires, the action is to propose pausing that ad. §6.3 makes it the decisive verdict — it does not wait for {min_calls}.`,
     });
   }
 
@@ -156,6 +180,10 @@ export default function MediaBrainDailyPage() {
             {anyFired ? <AlertTriangle className="h-5 w-5 text-destructive" /> : <ShieldCheck className="h-5 w-5 text-emerald-600" />}
             {anyFired ? "Circuit breaker fired — act today" : "No circuit breakers — nothing needs action today"}
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Every action below is a recommendation for the account manager to carry out in Meta. This page executes
+            nothing — no pauses, no budget changes, no creative swaps, and no control here does anything to the account.
+          </p>
           <ul className="mt-3 space-y-2 text-sm">
             {breakers.map((b) => (
               <li key={b.title} className="flex gap-2">
@@ -165,6 +193,12 @@ export default function MediaBrainDailyPage() {
                 <span>
                   <span className="font-medium">{b.title}.</span>{" "}
                   <span className="text-muted-foreground">{b.evidence}</span>
+                  {/* The remedy is a separate line from the evidence, and is
+                      always a recommendation — this page changes nothing. */}
+                  <span className="mt-1 block border-l-2 border-current/30 pl-2 text-xs">
+                    <span className="font-medium uppercase tracking-wide">Recommended action · </span>
+                    {b.action}
+                  </span>
                 </span>
               </li>
             ))}
@@ -246,6 +280,19 @@ export default function MediaBrainDailyPage() {
               <Stat label="Spend" value={fmtMoney(data.totals.spend)} />
               <Stat label="Calls" value={fmtNum(data.totals.calls)} />
               <Stat label="Billable calls" value={fmtNum(data.totals.billableCalls)} />
+              {data.payoutMode === "rtb" ? (
+                <Stat
+                  label="Paid calls"
+                  value={fmtNum(data.totals.paidCalls)}
+                  hint="Calls with a payout above zero. Under RTB this is what the kill rule counts — billable has no clean line here."
+                />
+              ) : (
+                <Stat
+                  label="Paid but not billable"
+                  value={fmtNum(data.totals.paidNotBillableCalls)}
+                  hint="Should be ~0 under a static payout. A real count means the recorded billable definition disagrees with what the buyer is paying for."
+                />
+              )}
               <Stat label="Profit" value={fmtMoney(data.totals.profit)} />
               <Stat label="Margin %" value={fmtPct(data.totals.marginPct)} />
               <Stat
@@ -333,7 +380,7 @@ function EntityTable({
   allowableCostPerCall: number | null;
 }) {
   const sorted = [...rows].sort((a, b) => (b.marginPerCall ?? -Infinity) - (a.marginPerCall ?? -Infinity));
-  const colCount = 7 + (showAdColumns ? 1 : 0) + (showAdColumns && rtb ? 1 : 0);
+  const colCount = 7 + (rtb ? 1 : 0) + (showAdColumns ? 1 : 0) + (showAdColumns && rtb ? 1 : 0);
   return (
     <Card>
       <CardHeader>
@@ -353,6 +400,7 @@ function EntityTable({
               </TableHead>
               <TableHead className="text-right">Cost / billable call</TableHead>
               <TableHead className="text-right">Billable calls</TableHead>
+              {rtb && <TableHead className="text-right">Paid calls</TableHead>}
               {showAdColumns && <TableHead className="text-right">Call rate</TableHead>}
               {showAdColumns && rtb && <TableHead className="text-right">Median duration</TableHead>}
             </TableRow>
@@ -386,6 +434,7 @@ function EntityTable({
                 </TableCell>
                 <TableCell className="text-right">{fmtMoney(r.costPerBillableCall)}</TableCell>
                 <TableCell className="text-right">{fmtNum(r.billable_calls)}</TableCell>
+                {rtb && <TableCell className="text-right">{fmtNum(r.paid_calls)}</TableCell>}
                 {showAdColumns && <TableCell className="text-right">{fmtPct(r.callRate)}</TableCell>}
                 {showAdColumns && rtb && (
                   <TableCell className="text-right">{fmtSeconds(r.medianDurationSeconds)}</TableCell>

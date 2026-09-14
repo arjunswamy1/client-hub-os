@@ -13,8 +13,10 @@
  * @see docs/media-brain/03_Operating_Procedures.md §2
  */
 
-import type { DidMapping, MetaAdRow, VerticalRow } from './join';
-import { matchCreativeToAds, matchVertical, resolveDidMapping } from './join';
+import type { AttributionTags } from './adapter';
+import { readAttribution } from './adapter';
+import type { DidMapping, MetaAdRow, ResolutionTier, VerticalRow } from './join';
+import { matchCreativeToAds, matchVertical, resolveCall, resolveDidMapping } from './join';
 
 /* ------------------------------------------------------------------ *
  * Where each call table keeps its DID, and what else is on the row.

@@ -69,6 +69,17 @@ export interface JoinedEntityRow {
   calls: number;
   connected_calls: number;
   billable_calls: number;
+  /**
+   * Calls that earned anything at all (`payout_amount > 0`). Under RTB this is
+   * what "zero billable" means for the kill rule (§6.3) — payout is continuous
+   * there, so there is no clean billable line.
+   */
+  paid_calls: number;
+  /**
+   * Paid but NOT billable. Under static this should be ~0; a non-trivial count
+   * means the billable definition disagrees with what the buyer is paying for.
+   */
+  paid_not_billable_calls: number;
   revenue: number;
   /** Payouts of every call, zeros INCLUDED — needed for the RTB median. */
   payouts: number[];
@@ -119,6 +130,8 @@ function emptyRow(base: Partial<JoinedEntityRow> & { level: JoinLevel; entity_re
     calls: 0,
     connected_calls: 0,
     billable_calls: 0,
+    paid_calls: 0,
+    paid_not_billable_calls: 0,
     revenue: 0,
     payouts: [],
     durations: [],
@@ -277,6 +290,8 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
     row.calls += 1;
     if (call.connected) row.connected_calls += 1;
     if (call.billable) row.billable_calls += 1;
+    if (call.paid) row.paid_calls += 1;
+    if (call.paid && !call.billable) row.paid_not_billable_calls += 1;
     row.revenue += call.payout_amount;
     // Zeros are included deliberately: a no-bid is real data under RTB.
     row.payouts.push(call.payout_amount);

@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { LinkIcon, Loader2, CheckCircle2, KeyRound } from 'lucide-react';
 import { GoogleAdsIcon, MetaIcon, SlackIcon, TeamsIcon, GmailIcon, FathomIcon, GoogleDriveIcon } from '@/components/icons/BrandIcons';
 import { GoogleAdsAccountPicker } from '@/components/settings/GoogleAdsAccountPicker';
+import { MetaSyncAccountsPicker } from '@/components/settings/MetaSyncAccountsPicker';
 import { toast } from 'sonner';
 
 type Integration = {
@@ -257,6 +258,10 @@ export default function SettingsPage() {
 
       {isAdmin && activeClient && connectedPlatforms.has('google') && (
         <GoogleAdsAccountPicker clientId={activeClient.id} />
+      )}
+
+      {isAdmin && activeClient && connectedPlatforms.has('meta') && (
+        <MetaSyncAccountsPicker clientId={activeClient.id} />
       )}
     </div>
   );

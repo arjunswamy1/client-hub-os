@@ -14,10 +14,13 @@ Deno.serve(async (req) => {
 
   let bodyClientId: string | null = null;
   let bodyDaysBack: number | null = null;
+  // Read-only: report every action_type this account actually records. Writes nothing.
+  let diagnoseActions = false;
   try {
     const body = await req.json();
     bodyClientId = body?.client_id || body?.clientId || null;
     bodyDaysBack = body?.days_back || null;
+    diagnoseActions = body?.diagnose_actions === true;
   } catch { /* no body */ }
 
   let userId: string | null = null;

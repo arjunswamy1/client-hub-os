@@ -83,6 +83,13 @@ Plus the **attribution tags**, read off the call itself and never derived from a
 
 Fields with no source get named as missing, not substituted. Buyer capacity often has no API endpoint; it's a manual field or an inference, never a guess dressed as data. A missing attribution tag is an unresolved call, not a guessed match.
 
+The adapter also carries two named data-quality flags, because both would otherwise be silent:
+
+- `did_is_caller_number_fallback` — the canonical `did` fell back to `inbound_number` because no dialed number was captured. On accounts where `inbound_number` holds the *caller's* number, that fallback would attribute a call to whatever mapping happened to match, so it is counted in the pull's flags rather than trusted.
+- `payout_looks_like_cost` — a non-zero payout below `{min_payout_threshold}` and exactly equal to the recorded total cost (§2). Excluded from revenue and counted by name.
+
+**Dialed numbers may be pooled.** Where a tracking number sits in a number pool it rotates across visitors, so one number carries several creatives and DID → creative is invalid. DID → campaign stays stable, so a pooled DID is a reliable **vertical** key and never an ad-level one; the join marks it accordingly and ad-level verdicts are withheld from it.
+
 
 ## 4. How much data is enough
 

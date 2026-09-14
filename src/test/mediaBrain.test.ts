@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import * as engine from '@/lib/mediaBrain/engine';
 import * as decisions from '@/lib/mediaBrain/decisions';
+import { fromRingba } from '@/lib/mediaBrain/adapter';
 import { computeWindow } from '@/lib/mediaBrain/pull';
 import type { PullRow, PullWindowSuccess } from '@/lib/mediaBrain/pull';
 import { rowClass } from '@/components/mediaBrain/shared';

@@ -212,6 +212,23 @@ export default function MediaBrainDailyPage() {
             </Notice>
           )}
 
+          {/* Flags raised by the pull itself — including economics drift against
+              the stored instance thresholds, and rows over the allowable cost. */}
+          {data.breakers.length > 0 && (
+            <Notice tone="warn" title="Flags raised by this pull">
+              <ul className="list-disc space-y-1 pl-5">
+                {data.breakers.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+              <div className="mt-3">
+                <Button asChild size="sm" variant="outline">
+                  <a href={`/media-brain/${clientId}/intake`}>Re-run intake</a>
+                </Button>
+              </div>
+            </Notice>
+          )}
+
           <Notice tone="info" title={`Join resolved at ${data.joinLevel} level`}>
             {data.joinNote}
           </Notice>

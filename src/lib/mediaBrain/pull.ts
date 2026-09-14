@@ -92,6 +92,15 @@ export interface ComputeEconomics {
   payout: number | null;
   avg_bid: number | null;
   billable_min_duration_seconds: number | null;
+  /**
+   * `platform` — revenue is the sum of payouts at or above
+   * `min_payout_threshold`. `computed` — the platform's payouts are not visible,
+   * so revenue is `payout × billable calls` and the payout field is ignored.
+   * @see engine.resolveRevenue
+   */
+  revenue_source?: string | null;
+  /** Smallest payout counted as revenue rather than telco cost. */
+  min_payout_threshold?: number | null;
 }
 
 /** The instance thresholds a computation reads. Sourced from `media_brain_instances`. */
@@ -161,6 +170,14 @@ export interface PullWindowSuccess {
    * number was recorded. Reported as a named count; never resolved silently.
    */
   didCallerNumberFallbackCalls: number;
+  /**
+   * Calls whose payout is non-zero, below the revenue threshold, and exactly
+   * equal to their own telco cost — a sync that recorded cost as revenue. They
+   * are excluded from revenue and named here; stored rows are never rewritten.
+   */
+  payoutLooksLikeCostCalls: number;
+  /** How revenue was resolved for this window, in plain language. */
+  revenueNote: string;
   /** Call ids whose billable status is undetermined — surface, never hide. */
   missingBillableDefinition: string[];
   /** Circuit breakers raised by the pull itself (§ Circuit breakers). */
@@ -298,6 +315,8 @@ export function computeWindow({
 
   const { calls, missingBillableDefinition } = mapCalls(rawCalls, mapper, {
     billableMinDurationSeconds: economics.billable_min_duration_seconds ?? null,
+    revenueSource: economics.revenue_source ?? 'platform',
+    minPayoutThreshold: economics.min_payout_threshold ?? null,
   });
 
   const join = joinCallsToMeta({
@@ -306,6 +325,12 @@ export function computeWindow({
     metaAds,
     verticals,
     window: { start, end },
+    revenue: {
+      revenue_source: economics.revenue_source ?? 'platform',
+      payout: economics.payout,
+      min_payout_threshold: economics.min_payout_threshold ?? null,
+      billable_min_duration_seconds: economics.billable_min_duration_seconds ?? null,
+    },
   });
 
   /* --------------------------------------------------------------
@@ -361,6 +386,17 @@ export function computeWindow({
 
   const allPayouts = join.rows.flatMap((r) => r.payouts);
 
+  const payoutLooksLikeCost = calls.filter((c) => c.payout_looks_like_cost);
+  const windowRevenue = engine.resolveRevenue(
+    {
+      revenue_source: economics.revenue_source ?? 'platform',
+      payout: economics.payout,
+      min_payout_threshold: economics.min_payout_threshold ?? null,
+      billable_min_duration_seconds: economics.billable_min_duration_seconds ?? null,
+    },
+    calls,
+  );
+
   const breakers: string[] = [];
   if (join.unjoinedSpend.length) {
     breakers.push(
@@ -371,6 +407,11 @@ export function computeWindow({
   if (didFallbackCalls.length) {
     breakers.push(
       `Data quality: ${didFallbackCalls.length} of ${calls.length} calls have no dialed number recorded, so their DID fell back to the caller's own number. Any DID mapping those calls match is a coincidence, not attribution — they are counted here rather than resolved silently.`,
+    );
+  }
+  if (payoutLooksLikeCost.length) {
+    breakers.push(
+      `Data quality: ${payoutLooksLikeCost.length} of ${calls.length} calls carry a payout below the $${(economics.min_payout_threshold ?? engine.MIN_PAYOUT_THRESHOLD_DEFAULT).toFixed(2)} revenue threshold that exactly equals the call's own telco cost. That is cost recorded in the payout field, not revenue, so it is excluded from revenue here — stored rows are left untouched.`,
     );
   }
   if (missingBillableDefinition.length) {
@@ -443,6 +484,8 @@ export function computeWindow({
     resolutionCounts: join.resolutionCounts,
     adLevelCalls: join.adLevelCalls,
     didCallerNumberFallbackCalls: didFallbackCalls.length,
+    payoutLooksLikeCostCalls: payoutLooksLikeCost.length,
+    revenueNote: windowRevenue.note,
     missingBillableDefinition,
     breakers,
   };

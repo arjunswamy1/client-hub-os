@@ -16,6 +16,12 @@
 
 import { Badge } from '@/components/ui/badge';
 import type { SyncStatusRow } from '@/hooks/useMediaBrainSyncStatus';
+import {
+  clickKeyHeadline,
+  clickKeyReadiness,
+  type ClickKeyState,
+  type ClickKeyVerdict,
+} from '@/lib/mediaBrain/clickKeyReadiness';
 
 /** Sources that arrive by webhook rather than by a scheduled pull. */
 const WEBHOOK_SOURCES = new Set(['moja', 'callgrid', 'ringfuel']);
@@ -32,6 +38,10 @@ interface ReceiptDetail {
   last_delivery_id?: string | null;
   last_receipt_at?: string | null;
   last_custom_tags?: Record<string, unknown> | null;
+  /** Raw per-key values captured by the webhook, top level or custom-tag bag. */
+  last_click_keys?: Record<string, unknown> | null;
+  /** Stamped the first time a receipt carried a real ad-level click key. */
+  click_key_evidence_at?: string | null;
 }
 
 const fmt = (iso: string | null | undefined) =>

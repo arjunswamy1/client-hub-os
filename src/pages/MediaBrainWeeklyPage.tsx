@@ -178,12 +178,18 @@ export default function MediaBrainWeeklyPage() {
     return out;
   }, [data, instance, entities, adRows, rtb]);
 
-  const undecided = entities.filter(({ level, row }) => {
+  /**
+   * §6.4 — nothing carries forward unstated. A missing disposition, a missing
+   * verdict, or a hold without evidence + review date all count as undecided.
+   * Re-used verbatim at save time; never computed twice from different rules.
+   */
+  const undecidedEntities = entities.filter(({ level, row }) => {
     const d = dispositions[`${level}:${row.groupKey}`];
-    if (!d || !d.verdict) return true;
-    if (d.verdict === "hold" && (!d.awaiting.trim() || !d.reviewDate)) return true;
+    if (!d?.verdict) return true;
+    if (d?.verdict === "hold" && (!d?.awaiting?.trim() || !d?.reviewDate)) return true;
     return false;
-  }).length;
+  });
+  const undecided = undecidedEntities.length;
 
   /* ---------------- step 4/5 ---------------- */
   const [graduated, setGraduated] = useState<Record<string, boolean>>({});

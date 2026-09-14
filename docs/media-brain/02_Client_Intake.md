@@ -22,6 +22,14 @@ You are running client intake for the ConnectPay media buying framework. Read `L
 - **Meta conversion event this account optimises toward** — free text, e.g. "call initiated", "call connected", "CAPI qualified call". This is what Meta's learning phase counts, and it is the numerator of the fragmentation check. UNKNOWN is an acceptable answer; the fragmentation check then does not run, and billable calls are never substituted for it.
 - Expected weekly count of that Meta conversion event
 
+**A1b. Publisher attribution — asked per vertical, and required**
+
+- Which **publishers** in the call tracking platform carry *this client's* traffic that *we* buy? List the exact publisher names as the platform spells them.
+- Which publishers on the same campaign belong to someone else — the client's in-house buying, other agencies, affiliates, live-transfer vendors?
+- Is any vertical entirely another publisher's traffic? If so it is retired for this client rather than reported: there is no spend of ours behind it.
+
+There is **no default**. An unanswered publisher list stops every pull for that client (Decision Engine §3), because the alternative is quoting margin on other buyers' calls. Report the excluded volume alongside the attributed total so the client's campaign figures and ours are both visible.
+
 **A2. Payout economics**
 
 - Payout mode: static or RTB?

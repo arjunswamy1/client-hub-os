@@ -202,11 +202,11 @@ Please confirm each of these is included, or tell us the field name you use.
 | **`publisher_name`** / traffic source | We must exclude other buyers' traffic from our margin. Without it every figure includes calls we did not pay for. This has already produced one badly wrong read on another account. | `publisher_name` |
 | **`tracking_number`** — the number *dialed*, distinct from the caller | Our only per-campaign key. It must be the tracking DID, not the caller's ANI; another provider conflated the two and it took a full audit to find. | `tracking_number` |
 | **`caller_id`** — the caller's own number | Kept separately, never used as the tracking number. | `caller_number` |
-| **`is_from_number_pool`** / `number_pool_name` | A pooled number rotates between visitors, so it identifies a campaign, not a creative. We must know which numbers are pooled before trusting any per-creative claim. | *(needs adding)* |
+| **`is_from_number_pool`** / `number_pool_name` | A pooled number rotates between visitors, so it identifies a campaign, not a creative. We must know which numbers are pooled before trusting any per-creative claim. | `number_pool` |
 | **`duration` and `inbound_duration`** separately | Total versus connected talk time. Billable is judged on one of them and we must know which. | `duration_seconds`, `inbound_duration_seconds` |
-| **`payout` and `revenue`** separately, plus `has_payout` and `no_payout_reason` | A zero payout with a stated reason is diagnosable; a zero with no reason is not. Never fold telco cost into the payout field. | `payout`, `revenue`, *(reason needs adding)* |
+| **`payout` and `revenue`** separately, plus `has_payout` and `no_payout_reason` | A zero payout with a stated reason is diagnosable; a zero with no reason is not. Never fold telco cost into the payout field. | `payout`, `revenue`, `no_payout_reason` |
 | **UTM tags** — `source`, `campaign`, `content`, `term` | Our only ad-level attribution key where numbers are pooled. | `utm_*` |
-| **Click IDs** — `gclid`, `wbraid`, `gbraid`, `fbclid`, `msclkid` | The reliable join to ad-platform spend, better than UTM. Please pass through whatever the landing page captured. | *(needs adding)* |
+| **Click IDs** — `gclid`, `wbraid`, `gbraid`, `fbclid`, `msclkid` | The reliable join to ad-platform spend, better than UTM. Please pass through whatever the landing page captured. | `gclid`, `fbclid` |
 | **`buyer_name` / `target_name`** | Buyer-down diagnosis; a routing problem is not a media problem. | `buyer_name`, `target_name` |
 | **`campaign_id`** as well as the name | Names get edited, ids do not. | `campaign_id` |
 | **`event` / `event_type`** | Tells us whether this is a per-call or conversion-only feed. | `event_type` |

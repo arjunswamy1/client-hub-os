@@ -58,10 +58,11 @@ export function useSpektrafinCalls() {
           "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url",
         )
         .eq("client_id", SPEKTRAFIN_CLIENT_ID)
-        .gte("call_start", `${from}T00:00:00Z`)
-        .lte("call_start", `${to}T23:59:59Z`)
+        .gte("call_start", startTs)
+        .lte("call_start", endTs)
         .order("call_start", { ascending: false })
-        .limit(5000);
+        .limit(20000);
+
       if (error) throw error;
       return (data || []) as unknown as SpektrafinCall[];
     },

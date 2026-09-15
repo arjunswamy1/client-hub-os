@@ -2651,6 +2651,7 @@ export type Database = {
           drive_wip_folder_id: string | null
           due_date: string | null
           estimated_hours: number | null
+          final_assets_url: string | null
           funnel_stage: string | null
           id: string
           key_message: string | null
@@ -2659,6 +2660,7 @@ export type Database = {
           objective: string | null
           platforms: string[] | null
           priority: string
+          raw_footage_url: string | null
           reference_assets: Json | null
           scheduled_date: string | null
           sizes: Json | null
@@ -2690,6 +2692,7 @@ export type Database = {
           drive_wip_folder_id?: string | null
           due_date?: string | null
           estimated_hours?: number | null
+          final_assets_url?: string | null
           funnel_stage?: string | null
           id?: string
           key_message?: string | null
@@ -2698,6 +2701,7 @@ export type Database = {
           objective?: string | null
           platforms?: string[] | null
           priority?: string
+          raw_footage_url?: string | null
           reference_assets?: Json | null
           scheduled_date?: string | null
           sizes?: Json | null
@@ -2729,6 +2733,7 @@ export type Database = {
           drive_wip_folder_id?: string | null
           due_date?: string | null
           estimated_hours?: number | null
+          final_assets_url?: string | null
           funnel_stage?: string | null
           id?: string
           key_message?: string | null
@@ -2737,6 +2742,7 @@ export type Database = {
           objective?: string | null
           platforms?: string[] | null
           priority?: string
+          raw_footage_url?: string | null
           reference_assets?: Json | null
           scheduled_date?: string | null
           sizes?: Json | null

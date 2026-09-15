@@ -33,6 +33,8 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
     assigned_to_id: brief.assigned_to_id || '',
     client_id: brief.client_id || '',
     notes: brief.notes || '',
+    raw_footage_url: brief.raw_footage_url || '',
+    final_assets_url: brief.final_assets_url || '',
   });
 
   // Reset form when brief changes
@@ -47,6 +49,8 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
       assigned_to_id: brief.assigned_to_id || '',
       client_id: brief.client_id || '',
       notes: brief.notes || '',
+      raw_footage_url: brief.raw_footage_url || '',
+      final_assets_url: brief.final_assets_url || '',
     });
   }, [brief]);
 
@@ -124,6 +128,8 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
         assigned_to_id: form.assigned_to_id || null,
         client_id: form.client_id || null,
         notes: form.notes || null,
+        raw_footage_url: form.raw_footage_url.trim() || null,
+        final_assets_url: form.final_assets_url.trim() || null,
         reference_assets: refs as any,
       } as any).eq('id', brief.id);
       if (error) throw error;
@@ -229,6 +235,17 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
               value={form.notes}
               onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
             />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Raw footage link</Label>
+              <Input value={form.raw_footage_url} onChange={(e) => setForm(f => ({ ...f, raw_footage_url: e.target.value }))} placeholder="Drive folder with raw footage..." />
+            </div>
+            <div>
+              <Label>Final assets link</Label>
+              <Input value={form.final_assets_url} onChange={(e) => setForm(f => ({ ...f, final_assets_url: e.target.value }))} placeholder="Where finished assets go..." />
+            </div>
           </div>
 
           <div>

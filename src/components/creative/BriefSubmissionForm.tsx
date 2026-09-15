@@ -28,6 +28,8 @@ interface BriefFormData {
   num_concepts: number;
   description: string;
   reference_urls: string;
+  raw_footage_url: string;
+  final_assets_url: string;
   due_date: string;
   priority: string;
   custom_width: string;
@@ -53,6 +55,7 @@ interface UploadedReference {
 const INITIAL_FORM: BriefFormData = {
   title: '', client_id: '', format: '', platforms: [], sizes: [],
   num_concepts: 1, description: '', reference_urls: '',
+  raw_footage_url: '', final_assets_url: '',
   due_date: '', priority: 'medium', custom_width: '', custom_height: '',
 };
 
@@ -189,6 +192,8 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
         num_concepts: form.num_concepts,
         objective: form.description || null,
         reference_assets: references,
+        raw_footage_url: form.raw_footage_url.trim() || null,
+        final_assets_url: form.final_assets_url.trim() || null,
         due_date: form.due_date || null,
         priority: form.priority,
         assigned_to_id: assignedTo,
@@ -345,6 +350,17 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
           <div className="space-y-2">
             <Label>Links (one per line)</Label>
             <Textarea value={form.reference_urls} onChange={e => set('reference_urls', e.target.value)} rows={2} placeholder="Drive folders, competitor ads, Figma..." />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Raw footage link</Label>
+              <Input value={form.raw_footage_url} onChange={e => set('raw_footage_url', e.target.value)} placeholder="Drive folder with raw footage..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Final assets link</Label>
+              <Input value={form.final_assets_url} onChange={e => set('final_assets_url', e.target.value)} placeholder="Where finished assets go..." />
+            </div>
           </div>
 
           <div className="space-y-2">

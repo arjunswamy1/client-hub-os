@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Download, Pencil, Paperclip, Trash2 } from 'lucide-react';
+import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Download, Pencil, Paperclip, Trash2, Film, FolderOutput } from 'lucide-react';
 import { format } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
@@ -329,6 +329,27 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
             )}
 
             {brief.notes && <InfoBlock label="Notes" text={brief.notes} />}
+
+            {/* Raw footage + final assets links */}
+            {(brief.raw_footage_url || brief.final_assets_url) && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {brief.raw_footage_url && (
+                  <a href={brief.raw_footage_url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-primary hover:bg-accent transition-colors">
+                    <Film className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate"><span className="font-medium">Raw footage</span> — {brief.raw_footage_url}</span>
+                  </a>
+                )}
+                {brief.final_assets_url && (
+                  <a href={brief.final_assets_url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-primary hover:bg-accent transition-colors">
+                    <FolderOutput className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate"><span className="font-medium">Final assets</span> — {brief.final_assets_url}</span>
+                  </a>
+                )}
+              </div>
+            )}
+
 
             {/* Reference assets */}
             <div>

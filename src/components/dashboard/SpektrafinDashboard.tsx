@@ -10,7 +10,12 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import SpektrafinSetup from "./SpektrafinSetup";
-import { useSpektrafinCalls, useSpektrafinRokuSpend, SpektrafinCall } from "@/hooks/useSpektrafinData";
+import {
+  useSpektrafinCalls,
+  useSpektrafinRokuSpend,
+  useSpektrafinRokuFreshness,
+  SpektrafinCall,
+} from "@/hooks/useSpektrafinData";
 
 const fmtMoney = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
 const fmtMoney2 = (n: number) => (n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`);
@@ -75,6 +80,7 @@ function KPI({ label, value, sub, icon: Icon, accent }: any) {
 export default function SpektrafinDashboard() {
   const { data: calls = [], isLoading, dataUpdatedAt, refetch: refetchCalls } = useSpektrafinCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useSpektrafinRokuSpend();
+  const { data: rokuFreshness, refetch: refetchFreshness } = useSpektrafinRokuFreshness();
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + r.spend, 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);

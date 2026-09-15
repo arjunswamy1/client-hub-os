@@ -148,7 +148,7 @@ export default function SpektrafinDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls · revenue at $16 per raw call — updated {lastSync}</p>
+        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — updated {lastSync}</p>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh

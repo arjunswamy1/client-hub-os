@@ -46,9 +46,10 @@ export interface SpektrafinCall {
 
 /** RingFuel is the source of truth for Spektrafin calls and payouts. */
 export function useSpektrafinCalls() {
-  const { from, to } = useDates();
+  const { startTs, endTs } = useDates();
   return useQuery({
-    queryKey: ["spektrafin-calls", from, to],
+    queryKey: ["spektrafin-calls", startTs, endTs],
+
     refetchInterval: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase

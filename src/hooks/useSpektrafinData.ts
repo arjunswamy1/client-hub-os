@@ -5,13 +5,22 @@ import { format } from "date-fns";
 
 export const SPEKTRAFIN_CLIENT_ID = "6386d309-519a-415d-9480-70c9c6d64436";
 
+/** Spektrafin (and RingFuel reporting) runs on America/Puerto_Rico, a fixed UTC-4 with no DST. */
+export const SPEKTRAFIN_TZ_OFFSET = "-04:00";
+
 function useDates() {
   const { dateRange } = useDateRange();
+  const from = format(dateRange.from, "yyyy-MM-dd");
+  const to = format(dateRange.to, "yyyy-MM-dd");
   return {
-    from: format(dateRange.from, "yyyy-MM-dd"),
-    to: format(dateRange.to, "yyyy-MM-dd"),
+    from,
+    to,
+    // Local-day boundaries so counts line up with RingFuel's own reporting
+    startTs: `${from}T00:00:00${SPEKTRAFIN_TZ_OFFSET}`,
+    endTs: `${to}T23:59:59${SPEKTRAFIN_TZ_OFFSET}`,
   };
 }
+
 
 export interface SpektrafinCall {
   id: string;

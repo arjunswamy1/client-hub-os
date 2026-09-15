@@ -24,6 +24,13 @@ const fmtDuration = (s: number) => {
 /** Spektrafin payout terms (client-confirmed 2026-09-14): $16 per raw call — every call pays. */
 export const SPEKTRAFIN_PAYOUT_PER_RAW_CALL = 16;
 
+/** RingFuel reports in America/Puerto_Rico (fixed UTC-4), so days are bucketed there too. */
+const PR_OFFSET_MS = 4 * 60 * 60 * 1000;
+const prShift = (iso: string) => new Date(new Date(iso).getTime() - PR_OFFSET_MS);
+const prDay = (iso: string) => prShift(iso).toISOString().slice(0, 10);
+const prTime = (iso: string) => format(prShift(iso), "MMM d, HH:mm");
+
+
 function aggregate(calls: SpektrafinCall[], spend: number) {
   const total = calls.length;
   const connected = calls.filter((c) => c.connected === true).length;

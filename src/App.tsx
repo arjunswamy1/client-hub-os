@@ -31,6 +31,7 @@ import OnboardingPage from "./pages/OnboardingPage";
 import DemoPage from "./pages/DemoPage";
 import DemoDashboardPage from "./pages/DemoDashboardPage";
 import SignupPage from "./pages/SignupPage";
+import JoinPage from "./pages/JoinPage";
 import ClientPortalPage from "./pages/ClientPortalPage";
 import UnsubscribePage from "./pages/UnsubscribePage";
 import ProductionPage from "./pages/ProductionPage";
@@ -188,6 +189,7 @@ const App = () => (
             <Route path="/demo" element={<DemoPage />} />
             <Route path="/demo/dashboard" element={<DemoDashboardPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route path="/join/:token" element={<JoinPage />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route path="/talent-apply" element={<TalentApplyPage />} />
             <Route path="/onboarding/:token" element={<OnboardingPage />} />

@@ -44,6 +44,9 @@ export interface SpektrafinCall {
   recording_url: string | null;
 }
 
+/** The server caps every response at 1,000 rows — page through the full window. */
+const PAGE_SIZE = 1000;
+
 /** RingFuel is the source of truth for Spektrafin calls and payouts. */
 export function useSpektrafinCalls() {
   const { startTs, endTs } = useDates();
@@ -52,19 +55,24 @@ export function useSpektrafinCalls() {
 
     refetchInterval: 5 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("ringfuel_calls")
-        .select(
-          "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url",
-        )
-        .eq("client_id", SPEKTRAFIN_CLIENT_ID)
-        .gte("call_start", startTs)
-        .lte("call_start", endTs)
-        .order("call_start", { ascending: false })
-        .limit(20000);
+      const rows: SpektrafinCall[] = [];
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from("ringfuel_calls")
+          .select(
+            "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url",
+          )
+          .eq("client_id", SPEKTRAFIN_CLIENT_ID)
+          .gte("call_start", startTs)
+          .lte("call_start", endTs)
+          .order("call_start", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
 
-      if (error) throw error;
-      return (data || []) as unknown as SpektrafinCall[];
+        if (error) throw error;
+        rows.push(...((data || []) as unknown as SpektrafinCall[]));
+        if (!data || data.length < PAGE_SIZE) break;
+      }
+      return rows;
     },
   });
 }
@@ -86,16 +94,21 @@ export function useSpektrafinRokuSpend() {
     queryKey: ["spektrafin-roku-spend", from, to],
     refetchInterval: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("roku_daily_metrics")
-        .select("date, entity_uid, entity_name, campaign_name, spend, impressions, video_completions")
-        .eq("client_id", SPEKTRAFIN_CLIENT_ID)
-        .eq("entity", "campaign")
-        .gte("date", from)
-        .lte("date", to)
-        .limit(20000);
-      if (error) throw error;
-      return ((data || []) as any[]).map((r) => ({
+      const raw: any[] = [];
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from("roku_daily_metrics")
+          .select("date, entity_uid, entity_name, campaign_name, spend, impressions, video_completions")
+          .eq("client_id", SPEKTRAFIN_CLIENT_ID)
+          .eq("entity", "campaign")
+          .gte("date", from)
+          .lte("date", to)
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) throw error;
+        raw.push(...(data || []));
+        if (!data || data.length < PAGE_SIZE) break;
+      }
+      return raw.map((r) => ({
         date: r.date,
         entity_uid: r.entity_uid,
         entity_name: r.entity_name ?? null,

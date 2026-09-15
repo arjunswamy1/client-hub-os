@@ -5,13 +5,22 @@ import { format } from "date-fns";
 
 export const SPEKTRAFIN_CLIENT_ID = "6386d309-519a-415d-9480-70c9c6d64436";
 
+/** Spektrafin (and RingFuel reporting) runs on America/Puerto_Rico, a fixed UTC-4 with no DST. */
+export const SPEKTRAFIN_TZ_OFFSET = "-04:00";
+
 function useDates() {
   const { dateRange } = useDateRange();
+  const from = format(dateRange.from, "yyyy-MM-dd");
+  const to = format(dateRange.to, "yyyy-MM-dd");
   return {
-    from: format(dateRange.from, "yyyy-MM-dd"),
-    to: format(dateRange.to, "yyyy-MM-dd"),
+    from,
+    to,
+    // Local-day boundaries so counts line up with RingFuel's own reporting
+    startTs: `${from}T00:00:00${SPEKTRAFIN_TZ_OFFSET}`,
+    endTs: `${to}T23:59:59${SPEKTRAFIN_TZ_OFFSET}`,
   };
 }
+
 
 export interface SpektrafinCall {
   id: string;
@@ -37,9 +46,10 @@ export interface SpektrafinCall {
 
 /** RingFuel is the source of truth for Spektrafin calls and payouts. */
 export function useSpektrafinCalls() {
-  const { from, to } = useDates();
+  const { startTs, endTs } = useDates();
   return useQuery({
-    queryKey: ["spektrafin-calls", from, to],
+    queryKey: ["spektrafin-calls", startTs, endTs],
+
     refetchInterval: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -48,10 +58,11 @@ export function useSpektrafinCalls() {
           "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url",
         )
         .eq("client_id", SPEKTRAFIN_CLIENT_ID)
-        .gte("call_start", `${from}T00:00:00Z`)
-        .lte("call_start", `${to}T23:59:59Z`)
+        .gte("call_start", startTs)
+        .lte("call_start", endTs)
         .order("call_start", { ascending: false })
-        .limit(5000);
+        .limit(20000);
+
       if (error) throw error;
       return (data || []) as unknown as SpektrafinCall[];
     },

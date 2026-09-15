@@ -24,6 +24,13 @@ const fmtDuration = (s: number) => {
 /** Spektrafin payout terms (client-confirmed 2026-09-14): $16 per raw call — every call pays. */
 export const SPEKTRAFIN_PAYOUT_PER_RAW_CALL = 16;
 
+/** RingFuel reports in America/Puerto_Rico (fixed UTC-4), so days are bucketed there too. */
+const PR_OFFSET_MS = 4 * 60 * 60 * 1000;
+const prShift = (iso: string) => new Date(new Date(iso).getTime() - PR_OFFSET_MS);
+const prDay = (iso: string) => prShift(iso).toISOString().slice(0, 10);
+const prTime = (iso: string) => format(prShift(iso), "MMM d, HH:mm");
+
+
 function aggregate(calls: SpektrafinCall[], spend: number) {
   const total = calls.length;
   const connected = calls.filter((c) => c.connected === true).length;
@@ -101,7 +108,7 @@ export default function SpektrafinDashboard() {
     const byDate = new Map<string, { calls: number; paid: number; spend: number; revenue: number }>();
     const row = (d: string) => byDate.get(d) ?? { calls: 0, paid: 0, spend: 0, revenue: 0 };
     for (const c of calls) {
-      const d = c.call_start.slice(0, 10);
+      const d = prDay(c.call_start);
       const r = row(d);
       r.calls += 1;
       r.paid += 1; // every raw call pays
@@ -141,7 +148,7 @@ export default function SpektrafinDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls · revenue at $16 per raw call — updated {lastSync}</p>
+        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — updated {lastSync}</p>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
@@ -318,7 +325,7 @@ export default function SpektrafinDashboard() {
                     </td></tr>
                   ) : calls.slice(0, 500).map((c) => (
                     <tr key={c.id} className="border-t hover:bg-muted/30">
-                      <td className="px-3 py-1.5 whitespace-nowrap">{format(new Date(c.call_start), "MMM d, HH:mm")}</td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">{prTime(c.call_start)}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{c.did || "—"}</td>
                       <td className="px-3 py-1.5">{c.creative_label || "—"}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{c.caller_number || "—"}</td>

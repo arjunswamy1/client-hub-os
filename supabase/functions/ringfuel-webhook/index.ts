@@ -85,14 +85,24 @@ Deno.serve(async (req) => {
   }
 
   // RingFuel may nest the call object
-  const call = payload?.call ?? payload?.data ?? payload;
+  const rawCall = payload?.call ?? payload?.data ?? payload;
+  // RingFuel's real payload is camelCase at the top level and carries a flat `tags`
+  // object with snake_case detail (caller_state, connected_duration, ...). Merge both,
+  // top-level winning, so a single `pick` list can read either shape.
+  const tags = rawCall?.tags && typeof rawCall.tags === 'object' && !Array.isArray(rawCall.tags)
+    ? rawCall.tags as Record<string, any>
+    : {};
+  const call: Record<string, any> = { ...tags, ...rawCall };
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const did = pick<string>(call, ['did', 'tracking_number', 'to', 'to_number', 'dnis', 'number']) ?? null;
+  const did = pick<string>(call, [
+    'did', 'dialedNumber', 'dialed_number', 'number_called', 'tracking_number',
+    'to', 'to_number', 'dnis', 'number',
+  ]) ?? null;
   const campaign_id = pick<string>(call, ['campaign_id', 'campaignId']) ?? null;
 
   // Resolve client: explicit query param wins, else DID lookup, else campaign lookup.
@@ -129,9 +139,16 @@ Deno.serve(async (req) => {
   );
 
   const connection_duration_seconds = toInt(
-    pick(call, ['connection_duration', 'talk_time', 'talk_duration', 'billable_duration', 'connected_duration'])
+    pick(call, [
+      'connection_duration', 'connected_duration', 'connected_call_length',
+      'talk_time', 'talk_duration', 'billable_duration',
+    ])
   );
-  const duration_seconds = toInt(pick(call, ['duration', 'call_duration', 'duration_seconds', 'total_duration']));
+  const duration_seconds = toInt(pick(call, [
+    'duration', 'durationSeconds', 'duration_seconds', 'call_duration',
+    'total_call_length', 'total_duration',
+  ]));
+
 
   const row = {
     client_id,
@@ -140,21 +157,24 @@ Deno.serve(async (req) => {
     campaign_id,
     campaign_name: pick<string>(call, ['campaign_name', 'campaign', 'campaignName']) ?? null,
     did,
-    caller_number: pick<string>(call, ['caller', 'caller_number', 'from', 'from_number', 'ani']) ?? null,
-    caller_state: pick<string>(call, ['caller_state', 'state', 'from_state']) ?? null,
-    caller_city: pick<string>(call, ['caller_city', 'city', 'from_city']) ?? null,
-    creative_label: pick<string>(call, ['creative', 'creative_label', 'creative_name', 'sub_id', 'subid', 'tag']) ?? null,
-    call_start: toIso(pick(call, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at'])),
+    caller_number: pick<string>(call, [
+      'callerNumber', 'caller_number_e164', 'caller_id', 'caller', 'caller_number',
+      'from', 'from_number', 'ani',
+    ]) ?? null,
+    caller_state: pick<string>(call, ['caller_state', 'callerState', 'state', 'from_state']) ?? null,
+    caller_city: pick<string>(call, ['caller_city', 'callerCity', 'city', 'from_city']) ?? null,
+    creative_label: pick<string>(call, ['creative', 'creative_label', 'creative_name', 'sub_id', 'subid']) ?? null,
+    call_start: toIso(pick(call, ['call_start', 'iso_date', 'started_at', 'start_time', 'timestamp', 'created_at'])),
     duration_seconds,
     connection_duration_seconds,
     connected: toBool(pick(call, ['connected', 'answered', 'is_connected'])) || connection_duration_seconds > 0,
-    converted: toBool(pick(call, ['converted', 'conversion', 'is_converted'])),
-    payout: toNumber(pick(call, ['payout', 'payout_amount', 'cost'])),
+    converted: toBool(pick(call, ['isConverted', 'converted', 'conversion', 'is_converted'])),
+    payout: toNumber(pick(call, ['payout', 'payoutAmount', 'payout_amount'])),
     revenue: toNumber(pick(call, ['revenue', 'amount', 'price', 'bid_amount'])),
-    disposition: pick<string>(call, ['disposition', 'status', 'result', 'end_reason']) ?? null,
-    recording_url: pick<string>(call, ['recording_url', 'recording', 'audio_url']) ?? null,
-    buyer_name: pick<string>(call, ['buyer', 'buyer_name']) ?? null,
-    target_name: pick<string>(call, ['target', 'target_name']) ?? null,
+    disposition: pick<string>(call, ['disposition', 'status', 'call_status', 'result', 'end_reason', 'endReason']) ?? null,
+    recording_url: pick<string>(call, ['recording_url', 'recordingUrl', 'recording', 'audio_url']) ?? null,
+    buyer_name: pick<string>(call, ['buyerName', 'buyer', 'buyer_name']) ?? null,
+    target_name: pick<string>(call, ['targetName', 'target', 'target_name']) ?? null,
     raw_payload: payload,
   };
 

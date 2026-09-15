@@ -85,7 +85,14 @@ Deno.serve(async (req) => {
   }
 
   // RingFuel may nest the call object
-  const call = payload?.call ?? payload?.data ?? payload;
+  const rawCall = payload?.call ?? payload?.data ?? payload;
+  // RingFuel's real payload is camelCase at the top level and carries a flat `tags`
+  // object with snake_case detail (caller_state, connected_duration, ...). Merge both,
+  // top-level winning, so a single `pick` list can read either shape.
+  const tags = rawCall?.tags && typeof rawCall.tags === 'object' && !Array.isArray(rawCall.tags)
+    ? rawCall.tags as Record<string, any>
+    : {};
+  const call: Record<string, any> = { ...tags, ...rawCall };
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,

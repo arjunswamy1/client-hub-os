@@ -139,9 +139,16 @@ Deno.serve(async (req) => {
   );
 
   const connection_duration_seconds = toInt(
-    pick(call, ['connection_duration', 'talk_time', 'talk_duration', 'billable_duration', 'connected_duration'])
+    pick(call, [
+      'connection_duration', 'connected_duration', 'connected_call_length',
+      'talk_time', 'talk_duration', 'billable_duration',
+    ])
   );
-  const duration_seconds = toInt(pick(call, ['duration', 'call_duration', 'duration_seconds', 'total_duration']));
+  const duration_seconds = toInt(pick(call, [
+    'duration', 'durationSeconds', 'duration_seconds', 'call_duration',
+    'total_call_length', 'total_duration',
+  ]));
+
 
   const row = {
     client_id,

@@ -325,7 +325,7 @@ export default function SpektrafinDashboard() {
                     </td></tr>
                   ) : calls.slice(0, 500).map((c) => (
                     <tr key={c.id} className="border-t hover:bg-muted/30">
-                      <td className="px-3 py-1.5 whitespace-nowrap">{format(new Date(c.call_start), "MMM d, HH:mm")}</td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">{prTime(c.call_start)}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{c.did || "—"}</td>
                       <td className="px-3 py-1.5">{c.creative_label || "—"}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{c.caller_number || "—"}</td>

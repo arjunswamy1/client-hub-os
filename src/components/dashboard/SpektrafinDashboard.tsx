@@ -108,7 +108,7 @@ export default function SpektrafinDashboard() {
     const byDate = new Map<string, { calls: number; paid: number; spend: number; revenue: number }>();
     const row = (d: string) => byDate.get(d) ?? { calls: 0, paid: 0, spend: 0, revenue: 0 };
     for (const c of calls) {
-      const d = c.call_start.slice(0, 10);
+      const d = prDay(c.call_start);
       const r = row(d);
       r.calls += 1;
       r.paid += 1; // every raw call pays

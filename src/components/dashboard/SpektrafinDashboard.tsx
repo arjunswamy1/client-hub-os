@@ -144,12 +144,17 @@ export default function SpektrafinDashboard() {
   }, [calls]);
 
   const lastSync = dataUpdatedAt ? `${Math.round((Date.now() - dataUpdatedAt) / 60000)} min ago` : "—";
+  const spendAge = rokuFreshness?.last_synced_at
+    ? `${Math.round((Date.now() - new Date(rokuFreshness.last_synced_at).getTime()) / 60000)} min ago`
+    : "never pulled";
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — updated {lastSync}</p>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); }}>
+        <p className="text-xs text-muted-foreground">
+          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — screen updated {lastSync}
+        </p>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>

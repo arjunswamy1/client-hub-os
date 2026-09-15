@@ -137,6 +137,28 @@ export function useSpektrafinNumbers() {
   });
 }
 
+/**
+ * When Roku spend was last pulled. Distinct from the browser's own query time —
+ * Roku revises same-day spend upward through the day, so freshness of the pull
+ * is what tells you whether today's cost per call can be trusted.
+ */
+export function useSpektrafinRokuFreshness() {
+  return useQuery({
+    queryKey: ["spektrafin-roku-freshness"],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_connections")
+        .select("last_synced_at, status, sync_error")
+        .eq("platform", "roku")
+        .eq("client_id", SPEKTRAFIN_CLIENT_ID)
+        .maybeSingle();
+      if (error) throw error;
+      return (data ?? null) as { last_synced_at: string | null; status: string | null; sync_error: string | null } | null;
+    },
+  });
+}
+
 export function useSyncSpektrafinRoku() {
   const qc = useQueryClient();
   return async (days = 7) => {

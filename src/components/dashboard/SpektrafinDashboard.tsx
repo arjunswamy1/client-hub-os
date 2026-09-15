@@ -10,7 +10,12 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import SpektrafinSetup from "./SpektrafinSetup";
-import { useSpektrafinCalls, useSpektrafinRokuSpend, SpektrafinCall } from "@/hooks/useSpektrafinData";
+import {
+  useSpektrafinCalls,
+  useSpektrafinRokuSpend,
+  useSpektrafinRokuFreshness,
+  SpektrafinCall,
+} from "@/hooks/useSpektrafinData";
 
 const fmtMoney = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
 const fmtMoney2 = (n: number) => (n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`);
@@ -75,6 +80,7 @@ function KPI({ label, value, sub, icon: Icon, accent }: any) {
 export default function SpektrafinDashboard() {
   const { data: calls = [], isLoading, dataUpdatedAt, refetch: refetchCalls } = useSpektrafinCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useSpektrafinRokuSpend();
+  const { data: rokuFreshness, refetch: refetchFreshness } = useSpektrafinRokuFreshness();
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + r.spend, 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);
@@ -144,12 +150,17 @@ export default function SpektrafinDashboard() {
   }, [calls]);
 
   const lastSync = dataUpdatedAt ? `${Math.round((Date.now() - dataUpdatedAt) / 60000)} min ago` : "—";
+  const spendAge = rokuFreshness?.last_synced_at
+    ? `${Math.round((Date.now() - new Date(rokuFreshness.last_synced_at).getTime()) / 60000)} min ago`
+    : "never pulled";
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Roku spend · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — updated {lastSync}</p>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); }}>
+        <p className="text-xs text-muted-foreground">
+          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — screen updated {lastSync}
+        </p>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>

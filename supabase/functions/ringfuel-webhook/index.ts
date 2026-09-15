@@ -99,7 +99,10 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const did = pick<string>(call, ['did', 'tracking_number', 'to', 'to_number', 'dnis', 'number']) ?? null;
+  const did = pick<string>(call, [
+    'did', 'dialedNumber', 'dialed_number', 'number_called', 'tracking_number',
+    'to', 'to_number', 'dnis', 'number',
+  ]) ?? null;
   const campaign_id = pick<string>(call, ['campaign_id', 'campaignId']) ?? null;
 
   // Resolve client: explicit query param wins, else DID lookup, else campaign lookup.

@@ -94,16 +94,21 @@ export function useSpektrafinRokuSpend() {
     queryKey: ["spektrafin-roku-spend", from, to],
     refetchInterval: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("roku_daily_metrics")
-        .select("date, entity_uid, entity_name, campaign_name, spend, impressions, video_completions")
-        .eq("client_id", SPEKTRAFIN_CLIENT_ID)
-        .eq("entity", "campaign")
-        .gte("date", from)
-        .lte("date", to)
-        .limit(20000);
-      if (error) throw error;
-      return ((data || []) as any[]).map((r) => ({
+      const raw: any[] = [];
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from("roku_daily_metrics")
+          .select("date, entity_uid, entity_name, campaign_name, spend, impressions, video_completions")
+          .eq("client_id", SPEKTRAFIN_CLIENT_ID)
+          .eq("entity", "campaign")
+          .gte("date", from)
+          .lte("date", to)
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) throw error;
+        raw.push(...(data || []));
+        if (!data || data.length < PAGE_SIZE) break;
+      }
+      return raw.map((r) => ({
         date: r.date,
         entity_uid: r.entity_uid,
         entity_name: r.entity_name ?? null,

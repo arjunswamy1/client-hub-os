@@ -206,3 +206,30 @@ describe('margin is deliberately absent', () => {
     expect(Object.keys(DEFAULT_LOCATION_SCORING_CONFIG).some((k) => /margin/i.test(k))).toBe(false);
   });
 });
+
+describe('parity with the python reference implementation', () => {
+  // Produced by: python3 scripts/media-brain/score_locations.py --input loc.csv
+  //   --id-col zip --volume-col total_calls --success-col accepted
+  //   --value-col avg_payout --hard-fail-col no_coverage
+  const EXPECTED: [string, number, number, string][] = [
+    ['33101', 0.9064102564102565, 1.0, 'Launch'],
+    ['33102', 0.8469230769230771, 0.9230769230769231, 'Launch'],
+    ['33103', 0.8007692307692308, 0.8461538461538461, 'Expand'],
+    ['99999', 0.7692307692307693, 0.7692307692307693, 'Expand'],
+    ['33104', 0.7346153846153847, 0.6923076923076923, 'Hold'],
+    ['33112', 0.27871794871794875, 0.07692307692307693, 'Hold'],
+  ];
+
+  it('reproduces the same scores, percentiles and tiers', () => {
+    const res = scoreLocations(LOCATION_FIXTURE);
+    for (const [id, score, pct, tier] of EXPECTED) {
+      const row = res.all.find((r) => r.id === id)!;
+      expect(row.score).toBeCloseTo(score, 12);
+      expect(row.scorePercentile).toBeCloseTo(pct, 12);
+      expect(row.tier).toBe(tier);
+    }
+    expect(res.counts.scored).toBe(13);
+    expect(res.counts.excluded).toBe(2);
+    expect(res.counts.launchQualifying).toBe(2);
+  });
+});

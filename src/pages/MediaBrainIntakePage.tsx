@@ -666,12 +666,22 @@ export default function MediaBrainIntakePage() {
                 </>
               ) : (
                 <>
-                  <Notice
-                    tone="info"
-                    title="Enter each confirmed RTB term, or mark it Unknown"
-                  >
-                    The Unknown switch beside a field counts as a complete answer and lets the intake continue without assuming a value.
+                  <Notice tone="info" title="RTB: the terms are measured, not quoted">
+                    The auction sets the payout call by call, so nobody can state one up front. Measure the terms from
+                    this client&apos;s live calls below and apply them — the measurement and its window are saved with
+                    the intake. Where no calls exist yet, mark each field Unknown; the Unknown switch counts as a
+                    complete answer and lets the intake continue without assuming a value.
                   </Notice>
+                  <RtbObservedTermsPanel
+                    clientId={clientId!}
+                    trackingPlatform={form.tracking_platform}
+                    actionableGap={
+                      form.unknown.actionable_gap_pct || form.nums.actionable_gap_pct === ""
+                        ? null
+                        : Number(form.nums.actionable_gap_pct) / 100
+                    }
+                    onApply={applyRtbMeasurement}
+                  />
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <div>
                       <p className="text-sm font-medium">Campaign currently active in the tracking platform?</p>

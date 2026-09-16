@@ -49,13 +49,24 @@ Also ask which **platform signal** the call carries. Platform is read from `utm_
 - Payout per billable call
 - What makes a call billable — duration threshold, plus any product or buyer filters
 
-*If RTB:*
+*If RTB — the terms are MEASURED, not quoted:*
 
-- Is the campaign currently active in the call tracking platform? → **If yes, pull the real data** — actual bid distribution, realized RPC, duration distribution, no-bid rate. Use observed values over quoted ones, and note where they disagree.
-- Bid range the buyer quotes (e.g. $10–45)
-- Stated average bid
-- Duration range payout scales across (e.g. 20–180 seconds)
-- Minimum duration for any payout at all
+The auction sets the payout call by call, so no stated payout exists to record. **Measure from the client's own tracking-platform calls over a confirmed window** (§12 — start, end, timezone, never inferred) and record the measurement with the intake:
+
+| Term | How it is measured |
+| --- | --- |
+| Observed RPC | Sum of payouts ÷ **total** calls — no-bid losses stay visible (non-negotiable #1) |
+| Average winning bid | Sum of payouts ÷ **paid** calls — what the auction pays when it pays |
+| Bid floor / ceiling | Lowest and highest single payout observed |
+| Duration range payout scales across | Duration range of paid calls |
+| Minimum duration for any payout | Shortest call that was paid |
+| Paid rate | Paid calls ÷ total calls |
+
+The two denominators answer different questions and are reported separately; neither replaces the other. The window is judged against `{min_calls}` at the RTB setting (35 at a 0.57 gap) — below it the measured terms render and are labelled **provisional**, not hidden and not trusted. Where the buyer also quoted a range, record it as a note and flag disagreement; the observed value governs. Where no calls exist yet, every RTB field is marked UNKNOWN — nothing is filled with a quote dressed as a measurement.
+
+Measurement at intake precedes publisher scoping, so it covers every call the platform stored for the client in the window; re-measure after scoping is set where the feed carries other publishers.
+
+Implementation: `src/lib/mediaBrain/rtbObserved.ts` (the single place these are computed), surfaced in intake step A2.
 
 **A2b. Billable definition validation — required for any client with live data**
 

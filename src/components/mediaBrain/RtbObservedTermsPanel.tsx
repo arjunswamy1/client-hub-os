@@ -63,7 +63,7 @@ export function RtbObservedTermsPanel({
 
   if (!trackingPlatform) {
     return (
-      <Notice tone="warning" title="Choose the call tracking platform first">
+      <Notice tone="warn" title="Choose the call tracking platform first">
         Under RTB the payout terms are measured from live calls, so the intake needs to know which platform reports
         them. Go back to A1 and select it.
       </Notice>
@@ -72,7 +72,7 @@ export function RtbObservedTermsPanel({
 
   if (!source) {
     return (
-      <Notice tone="warning" title="No stored call feed for this platform yet">
+      <Notice tone="warn" title="No stored call feed for this platform yet">
         RTB terms have to be measured from real calls, and nothing from this platform is stored here. Connect the feed
         first, or mark each RTB field Unknown and record what the buyer said in the notes.
       </Notice>
@@ -180,7 +180,7 @@ export function RtbObservedTermsPanel({
             )}
           </div>
 
-          <Notice tone={result.sufficiency.sufficient ? "info" : "warning"} title="Confidence in this window">
+          <Notice tone={result.sufficiency.sufficient ? "ok" : "warn"} title="Confidence in this window">
             {result.sufficiency.note}
           </Notice>
 

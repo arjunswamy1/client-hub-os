@@ -33,8 +33,10 @@ Always read the client's Instance file before running any command. **A command r
 
 1. `INTAKE` → produces the Economics and Instance files
 2. Read the Meta account's naming convention; record the parsing rule in the Instance file
-3. Build campaigns — testing CBO, angle count from the intake's computed maximum, 100% of budget on testing
-4. Begin `DAILY`
+3. `LOCATIONS` (`05_Location_Scoring.md`) → the ranked, tiered, budget-sized target list. Location targeting is the hardest constraint in a pay-per-call launch: buyer coverage and payout are both geographic, and a location the network cannot monetise is not fixable with creative or budget. Decide it here, then build everything else around it.
+4. Build campaigns — testing CBO, angle count from the intake's computed maximum, 100% of budget on testing, targeting the launch list from step 3
+5. Begin `DAILY`
+
 
 **Ongoing**
 

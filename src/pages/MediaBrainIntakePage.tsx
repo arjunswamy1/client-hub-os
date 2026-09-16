@@ -1019,6 +1019,20 @@ export default function MediaBrainIntakePage() {
         </CardContent>
       </Card>
 
+      {STEPS[step + 1]?.key === "b" && !partAComplete && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+          <p className="font-medium">Still needed before this can compute ({missing.length}):</p>
+          <ul className="mt-1 list-disc pl-5">
+            {missing.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            Anything the client has not confirmed: switch that field to Unknown instead of leaving it blank.
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <Button variant="outline" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Back

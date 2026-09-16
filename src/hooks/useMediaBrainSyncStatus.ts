@@ -10,7 +10,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-export type SyncSource = 'ringba' | 'moja' | 'meta' | 'google' | 'roku' | 'callgrid';
+export type SyncSource = 'ringba' | 'moja' | 'meta' | 'google' | 'roku' | 'callgrid' | 'context_wispr';
 export type SyncStatusValue = 'ok' | 'error' | 'stale' | 'never_run';
 
 export interface SyncStatusRow {
@@ -46,6 +46,9 @@ const SOURCE_LABEL: Record<SyncSource, string> = {
   google: 'Google Ads',
   roku: 'Roku',
   callgrid: 'CallGrid',
+  // A context feed that silently stops updating is the same class of defect as a
+  // broken ad sync, and harder to notice because nothing errors.
+  context_wispr: 'Wispr meeting notes',
 };
 
 const fmtStamp = (iso: string | null) => (iso ? new Date(iso).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'never');

@@ -131,6 +131,36 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Read-only raw probe: one record exactly as Ringba returns it, to debug
+    // account-specific response shapes. Writes nothing.
+    if (new URL(req.url).searchParams.get("raw") === "1") {
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(start.getDate() - 3);
+      const res = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`, {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${RINGBA_API_TOKEN}`,
+          "Content-Type": "application/json;charset=UTF-8",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          reportStart: start.toISOString(),
+          reportEnd: end.toISOString(),
+          size: 2,
+          offset: 0,
+          valueColumns: [
+            "campaignName", "publisherName", "callLengthInSeconds", "hasConnected",
+            "hasConverted", "payoutAmount", "number", "inboundPhoneNumber",
+          ].map((c) => ({ column: c })),
+        }),
+      });
+      const text = await res.text();
+      return new Response(JSON.stringify({ status: res.status, body_head: text.substring(0, 4000) }, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Read-only diagnostic: full column + tag menu for this account.
     if (new URL(req.url).searchParams.get("diagnose") === "1") {
       const auth = { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" };

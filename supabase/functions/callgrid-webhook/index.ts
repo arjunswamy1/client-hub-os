@@ -1,10 +1,36 @@
-// CallGrid → Cannaball webhook receiver.
+// CallGrid → client call receiver.
 // Public endpoint (verify_jwt is false by default on Lovable-managed functions).
 // Auth: shared secret in header `x-callgrid-secret` matching CALLGRID_WEBHOOK_SECRET.
+//
+// Multi-client: pass `?client_id=<uuid>` so each CallGrid account writes to its own
+// client. The id is validated against `clients` — an unknown id is rejected rather
+// than defaulted, so a mistyped URL can never silently file another client's calls.
+// With no `client_id` the endpoint keeps its original Cannaball behaviour so the
+// existing CallGrid configuration keeps working unchanged.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 
 const CANNABALL_CLIENT_ID = 'a1dabea1-5518-4c7f-a29d-23739cb52f9b';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * CallGrid nests forwarded URL parameters under a container on some accounts.
+ * The attribution reader walks one level of `raw_payload`, so lift those keys to
+ * the top of the stored payload — copied, never renamed or invented.
+ */
+function flattenTagBags(payload: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = { ...payload };
+  for (const key of ['tags', 'custom', 'custom_tags', 'variables', 'params', 'query']) {
+    const bag = payload?.[key];
+    if (bag && typeof bag === 'object' && !Array.isArray(bag)) {
+      for (const [k, v] of Object.entries(bag)) {
+        if (out[k] === undefined) out[k] = v;
+      }
+    }
+  }
+  return out;
+}
+
 
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
   for (const k of keys) {

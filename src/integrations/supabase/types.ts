@@ -2475,6 +2475,7 @@ export type Database = {
           metadata: Json | null
           occurred_at: string
           participants: string[] | null
+          search_vector: unknown
           source: string
           source_id: string | null
           title: string | null
@@ -2489,6 +2490,7 @@ export type Database = {
           metadata?: Json | null
           occurred_at?: string
           participants?: string[] | null
+          search_vector?: unknown
           source: string
           source_id?: string | null
           title?: string | null
@@ -2503,6 +2505,7 @@ export type Database = {
           metadata?: Json | null
           occurred_at?: string
           participants?: string[] | null
+          search_vector?: unknown
           source?: string
           source_id?: string | null
           title?: string | null

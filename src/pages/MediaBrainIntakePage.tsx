@@ -81,6 +81,13 @@ type NumField =
 
 interface FormState {
   vertical: string;
+  /**
+   * The client_verticals key this intake belongs to. Economics rows are unique
+   * per (client, vertical), with a NULL vertical_id meaning "client default" —
+   * so a named vertical MUST carry its id, or the second vertical collides with
+   * the first on the client-default row.
+   */
+  vertical_id: string | null;
   platforms: string;
   ad_account_ids: string;
   tracking_platform: string;
@@ -134,6 +141,7 @@ const emptyUnknown = (): Record<NumField, boolean> =>
 
 const initialForm: FormState = {
   vertical: "",
+  vertical_id: null,
   platforms: "",
   ad_account_ids: "",
   tracking_platform: "",
@@ -208,6 +216,20 @@ export default function MediaBrainIntakePage() {
         .maybeSingle();
       if (error) throw error;
       return data;
+    },
+    enabled: !!clientId,
+  });
+
+  const { data: verticals } = useQuery({
+    queryKey: ["mb-intake-verticals", clientId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("client_verticals")
+        .select("vertical_id, label, position")
+        .eq("client_id", clientId!)
+        .order("position");
+      if (error) throw error;
+      return data ?? [];
     },
     enabled: !!clientId,
   });
@@ -458,8 +480,25 @@ export default function MediaBrainIntakePage() {
   }, [partAComplete, form, unknownFields]);
 
   /* ---------------- Part C — save ---------------- */
+  /**
+   * §9: the Instance thresholds anchor on the client's own margin targets and
+   * actionable gap. A missing one cannot be defaulted, so the save is blocked
+   * with those fields named rather than failing in the database.
+   */
+  const saveBlockers = useMemo(() => {
+    const b: string[] = [];
+    if (numVal("target_margin_pct") === null) b.push("Target margin %");
+    if (numVal("min_margin_pct") === null) b.push("Minimum margin % (the floor)");
+    if (numVal("actionable_gap_pct") === null) b.push("Actionable gap % between angles");
+    return b;
+  }, [form]);
+
   const handleSave = async () => {
     if (!clientId || !computed || billableCheckBlocking) return;
+    if (saveBlockers.length) {
+      toast.error(`These must carry a real number before the record can be saved: ${saveBlockers.join(", ")}.`);
+      return;
+    }
     setSaving(true);
     try {
       if (existingInstance) {
@@ -469,11 +508,22 @@ export default function MediaBrainIntakePage() {
           .eq("id", existingInstance.id);
       }
 
-      const { data: eco, error: ecoErr } = await supabase
+      /* One Economics row per (client, vertical) — a re-run replaces it in place
+         instead of colliding with the row the previous run wrote. */
+      const existingEcoQuery = supabase
         .from("media_brain_economics")
-        .insert({
+        .select("id")
+        .eq("client_id", clientId);
+      const { data: existingEco, error: existingEcoErr } = await (form.vertical_id
+        ? existingEcoQuery.eq("vertical_id", form.vertical_id)
+        : existingEcoQuery.is("vertical_id", null)
+      ).maybeSingle();
+      if (existingEcoErr) throw existingEcoErr;
+
+      const economicsRow = {
           client_id: clientId,
           vertical: form.vertical.trim() || null,
+          vertical_id: form.vertical_id,
           platforms: toList(form.platforms),
           ad_account_ids: toList(form.ad_account_ids),
           tracking_platform: form.tracking_platform,
@@ -508,9 +558,16 @@ export default function MediaBrainIntakePage() {
           routing_mode: "recommend_only",
           unknown_fields: unknownFields.length ? unknownFields : null,
           last_reviewed_at: new Date().toISOString(),
-        })
-        .select("id")
-        .single();
+      };
+
+      const { data: eco, error: ecoErr } = existingEco
+        ? await supabase
+            .from("media_brain_economics")
+            .update(economicsRow)
+            .eq("id", existingEco.id)
+            .select("id")
+            .single()
+        : await supabase.from("media_brain_economics").insert(economicsRow).select("id").single();
       if (ecoErr) throw ecoErr;
 
       const { error: instErr } = await supabase.from("media_brain_instances").insert({
@@ -538,13 +595,22 @@ export default function MediaBrainIntakePage() {
         computed_at: new Date().toISOString(),
         is_stale: false,
       });
-      if (instErr) throw instErr;
+      if (instErr) {
+        /* Never leave an Economics row with no Instance behind it — that row would
+           block the next save and stands for a threshold set that never computed. */
+        if (!existingEco) await supabase.from("media_brain_economics").delete().eq("id", eco.id);
+        throw instErr;
+      }
 
       queryClient.invalidateQueries({ queryKey: ["mb-intake-instance", clientId] });
       setSaved(true);
       toast.success("Economics and Instance records saved");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed");
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Save failed";
+      toast.error(message, { duration: 12000 });
     } finally {
       setSaving(false);
     }
@@ -628,9 +694,37 @@ export default function MediaBrainIntakePage() {
         <CardContent className="space-y-5">
           {current.key === "a1" && (
             <>
-              <Field label="Vertical">
-                <Input value={form.vertical} onChange={(e) => set("vertical", e.target.value)} placeholder="e.g. Final Expense" />
+              <Field
+                label="Vertical"
+                hint="One intake per vertical. Each vertical keeps its own payout terms; the client default applies where a vertical has none of its own."
+              >
+                <Select
+                  value={form.vertical_id ?? (form.vertical ? "__default__" : "")}
+                  onValueChange={(v) => {
+                    if (v === "__default__") {
+                      setForm((f) => ({ ...f, vertical_id: null, vertical: "Client default" }));
+                      return;
+                    }
+                    const picked = verticals?.find((x) => x.vertical_id === v);
+                    setForm((f) => ({ ...f, vertical_id: v, vertical: picked?.label ?? v }));
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select vertical" /></SelectTrigger>
+                  <SelectContent>
+                    {(verticals ?? []).map((v) => (
+                      <SelectItem key={v.vertical_id} value={v.vertical_id}>
+                        {v.label}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__default__">Client default (applies to every vertical)</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
+              {(verticals ?? []).length === 0 && (
+                <Notice tone="warn" title="No verticals set up for this client yet">
+                  Add them under the client&apos;s settings, or save this intake as the client default.
+                </Notice>
+              )}
               <Field label="Platforms active now, and any planned later" hint="Comma separated">
                 <Input value={form.platforms} onChange={(e) => set("platforms", e.target.value)} placeholder="Meta, Roku" />
               </Field>
@@ -1072,10 +1166,18 @@ export default function MediaBrainIntakePage() {
                   Economics and Instance records saved for {client.name}.
                 </div>
               ) : (
-                <Button onClick={handleSave} disabled={saving || billableCheckBlocking}>
+                <>
+                  {saveBlockers.length > 0 && (
+                    <Notice tone="warn" title="These cannot be saved as Unknown">
+                      Every threshold is anchored on them, so there is nothing to compute without a number:{" "}
+                      {saveBlockers.join(", ")}. Open A8 · Margin targets and enter each one.
+                    </Notice>
+                  )}
+                <Button onClick={handleSave} disabled={saving || billableCheckBlocking || saveBlockers.length > 0}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Economics + Instance
                 </Button>
+                </>
               )}
             </div>
           )}

@@ -6424,6 +6424,7 @@ export type Database = {
           is_active: boolean
           name: string
           role: string
+          slack_user_id: string | null
           updated_at: string
           user_id: string | null
         }
@@ -6435,6 +6436,7 @@ export type Database = {
           is_active?: boolean
           name: string
           role: string
+          slack_user_id?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -6446,6 +6448,7 @@ export type Database = {
           is_active?: boolean
           name?: string
           role?: string
+          slack_user_id?: string | null
           updated_at?: string
           user_id?: string | null
         }

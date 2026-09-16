@@ -66,6 +66,6 @@ Creative production. Compliance review. Platforms other than Meta, until a clien
 
 ## Status
 
-Built: 01, 02, 03. Not built: 04.
+Built: 01, 02, 03, 05. Not built: 04.
 
 Unverified: the volume tier boundaries, and whether the two per-client files should stay separate. Both get revisited after the first client runs.

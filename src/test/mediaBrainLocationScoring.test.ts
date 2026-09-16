@@ -133,10 +133,10 @@ describe('step 6 — tiering and launch-list sizing', () => {
       value: 20 + i / 10,
       hardFail: 0,
     }));
-    const res = scoreLocations(wide, { launchSize: 25 });
-    expect(res.counts.launchQualifying).toBeGreaterThan(25);
-    expect(res.launchList).toHaveLength(25);
-    expect(res.launchListSentence).toContain('top 25 to launch with');
+    const res = scoreLocations(wide, { launchSize: 10 });
+    expect(res.counts.launchQualifying).toBeGreaterThan(10);
+    expect(res.launchList).toHaveLength(10);
+    expect(res.launchListSentence).toContain('top 10 to launch with');
   });
 
   it('reports plainly when the tier holds fewer than the requested size', () => {

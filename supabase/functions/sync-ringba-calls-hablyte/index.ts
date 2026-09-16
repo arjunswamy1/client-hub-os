@@ -156,6 +156,51 @@ Deno.serve(async (req) => {
         }),
       });
       const text = await res.text();
+      if (new URL(req.url).searchParams.get("probe") === "1") {
+        // Probe every candidate column one at a time and report which this
+        // token's role may read.
+        const candidates = [
+          "campaignName", "campaignId", "publisherName", "publisherId", "targetName", "targetNumber",
+          "buyer", "inboundPhoneNumber", "number", "numberId", "numberPoolName", "numberPoolId",
+          "isFromNumberPool", "callLengthInSeconds", "connectedCallLengthInSeconds",
+          "hasConnected", "hasConverted", "conversionAmount", "payoutAmount", "totalCost",
+          "callerStateProvince", "callerCity", "endCallSource", "recordingUrl",
+          "hasPayout", "noPayoutReason", "callDt", "inboundCallId",
+        ];
+        const results: Record<string, string> = {};
+        for (const col of candidates) {
+          try {
+            const r = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`, {
+              method: "POST",
+              headers: {
+                Authorization: `Token ${RINGBA_API_TOKEN}`,
+                "Content-Type": "application/json;charset=UTF-8",
+                Accept: "application/json",
+              },
+              body: JSON.stringify({
+                reportStart: start.toISOString(),
+                reportEnd: end.toISOString(),
+                size: 1,
+                offset: 0,
+                valueColumns: [{ column: col }],
+              }),
+            });
+            const t = await r.text();
+            if (r.ok) {
+              const j = JSON.parse(t);
+              const rec = j?.report?.records?.[0];
+              results[col] = rec ? `OK value=${JSON.stringify(rec[col]).substring(0, 60)}` : "OK (no rows)";
+            } else {
+              results[col] = `${r.status} ${t.substring(0, 120)}`;
+            }
+          } catch (e) {
+            results[col] = `err ${e instanceof Error ? e.message : e}`;
+          }
+        }
+        return new Response(JSON.stringify({ probe: true, results }, null, 2), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ status: res.status, body_head: text.substring(0, 4000) }, null, 2), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

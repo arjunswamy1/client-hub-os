@@ -25,6 +25,9 @@ import {
   syncBreakers,
   useMediaBrainSyncStatus,
 } from "@/hooks/useMediaBrainSyncStatus";
+// A context feed that quietly stops updating is the same class of defect as a broken
+// ad sync, so it is judged by the same breaker rather than a separate surface.
+import { useContextSyncStatus } from "@/hooks/useContextSyncStatus";
 import {
   ConfidenceBadge,
   GateBlock,

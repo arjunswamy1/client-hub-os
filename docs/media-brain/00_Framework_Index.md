@@ -13,6 +13,8 @@ Media buying decision system for pay-per-call at Connect Paid Media.
 | `01_Decision_Engine.md` | Every rule. Metric hierarchy, confidence model, cut/hold/scale logic, graduation gates, diagnostic tree, circuit breakers, margin benchmarks. Static and RTB. | Any question involving a threshold, formula, or whether to cut, hold, or scale |
 | `02_Client_Intake.md` | Prompt, run once per client. Collects variables, computes thresholds, outputs the client's two files. | Onboarding a client, or re-running after economics change |
 | `03_Operating_Procedures.md` | Commands, the shared data pull spec, daily / weekly / monthly routines, failure handling. | Running any review, pulling any data |
+| `05_Location_Scoring.md` | Location (ZIP/city/DMA) scoring: canonical column roles, hard excludes, the confidence gate, the blended percentile score, tiering, launch-list sizing. Explicitly carries **no margin input** and its confidence gate is **not** `{min_calls}`. | Choosing or revising geographic targeting — always before campaigns are built |
+
 | `04_Client_Deck_Template.md` | Weekly deck structure and client-facing language. *(Not built.)* | Producing the client report |
 | `Doctrine_Meta_Algorithm.md` | How Meta's system behaves — auction, learning phase, attribution, Advantage+, fatigue mechanics. | Diagnosing *why* Meta is behaving a certain way |
 

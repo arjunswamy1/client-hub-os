@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
   const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
 
   const row: Record<string, unknown> = {
-    client_id: CANNABALL_CLIENT_ID,
+    client_id: clientId,
     call_id,
     caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani']) ?? null,
     did: didDigits || rawDid,
@@ -180,17 +180,13 @@ Deno.serve(async (req) => {
     raw_payload: payload,
   };
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
-
   // Fill creative/campaign from the DID assignment grid when CallGrid doesn't send them
   if (didDigits && (!row.creative_name || !row.campaign_name)) {
     const { data: dids } = await supabase
       .from('client_dids')
       .select('did, did_formatted, creative_name, campaign_name')
-      .eq('client_id', CANNABALL_CLIENT_ID);
+      .eq('client_id', clientId);
+
     const match = (dids || []).find((d: any) => {
       const a = String(d.did || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
       const b = String(d.did_formatted || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');

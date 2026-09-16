@@ -291,7 +291,7 @@ export default function MediaBrainIntakePage() {
     } else {
       need("bid_floor", "Bid floor");
       need("bid_ceiling", "Bid ceiling");
-      need("avg_bid", "Stated average bid");
+      need("avg_bid", "Average winning bid");
       need("duration_min_seconds", "Duration range minimum");
       need("duration_max_seconds", "Duration range maximum");
       need("billable_min_duration_seconds", "Minimum duration for any payout");
@@ -724,7 +724,7 @@ export default function MediaBrainIntakePage() {
                     <Switch checked={form.rtb_live} onCheckedChange={(v) => set("rtb_live", v)} />
                   </div>
                   {form.rtb_live && (
-                    <Field label="Observed RPC from live data ($)">
+                    <Field label="Observed RPC from live data ($) — total payouts ÷ total calls">
                       <Input value={form.observed_rpc} onChange={(e) => set("observed_rpc", e.target.value)} inputMode="decimal" />
                     </Field>
                   )}
@@ -732,13 +732,13 @@ export default function MediaBrainIntakePage() {
                     <NumberField label="Bid floor ($)" field="bid_floor" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                     <NumberField label="Bid ceiling ($)" field="bid_ceiling" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   </div>
-                  <NumberField label="Stated average bid ($)" field="avg_bid" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
+                  <NumberField label="Average winning bid ($) — measured on paid calls" field="avg_bid" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <NumberField label="Duration range minimum (seconds)" field="duration_min_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                     <NumberField label="Duration range maximum (seconds)" field="duration_max_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   </div>
                   <NumberField label="Minimum duration for any payout (seconds)" field="billable_min_duration_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
-                  <Field label="Notes on what the buyer quoted">
+                  <Field label="Notes on the measurement, or on what the buyer quoted">
                     <Textarea value={form.quoted_avg_bid_note} onChange={(e) => set("quoted_avg_bid_note", e.target.value)} rows={2} />
                   </Field>
                 </>

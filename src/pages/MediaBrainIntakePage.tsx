@@ -220,6 +220,20 @@ export default function MediaBrainIntakePage() {
     enabled: !!clientId,
   });
 
+  const { data: verticals } = useQuery({
+    queryKey: ["mb-intake-verticals", clientId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("client_verticals")
+        .select("vertical_id, label, position")
+        .eq("client_id", clientId!)
+        .order("position");
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!clientId,
+  });
+
   const allowed = isAdmin || isAccountManager;
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -466,8 +480,25 @@ export default function MediaBrainIntakePage() {
   }, [partAComplete, form, unknownFields]);
 
   /* ---------------- Part C — save ---------------- */
+  /**
+   * §9: the Instance thresholds anchor on the client's own margin targets and
+   * actionable gap. A missing one cannot be defaulted, so the save is blocked
+   * with those fields named rather than failing in the database.
+   */
+  const saveBlockers = useMemo(() => {
+    const b: string[] = [];
+    if (numVal("target_margin_pct") === null) b.push("Target margin %");
+    if (numVal("min_margin_pct") === null) b.push("Minimum margin % (the floor)");
+    if (numVal("actionable_gap_pct") === null) b.push("Actionable gap % between angles");
+    return b;
+  }, [form]);
+
   const handleSave = async () => {
     if (!clientId || !computed || billableCheckBlocking) return;
+    if (saveBlockers.length) {
+      toast.error(`These must carry a real number before the record can be saved: ${saveBlockers.join(", ")}.`);
+      return;
+    }
     setSaving(true);
     try {
       if (existingInstance) {
@@ -477,9 +508,19 @@ export default function MediaBrainIntakePage() {
           .eq("id", existingInstance.id);
       }
 
-      const { data: eco, error: ecoErr } = await supabase
+      /* One Economics row per (client, vertical) — a re-run replaces it in place
+         instead of colliding with the row the previous run wrote. */
+      const existingEcoQuery = supabase
         .from("media_brain_economics")
-        .insert({
+        .select("id")
+        .eq("client_id", clientId);
+      const { data: existingEco, error: existingEcoErr } = await (form.vertical_id
+        ? existingEcoQuery.eq("vertical_id", form.vertical_id)
+        : existingEcoQuery.is("vertical_id", null)
+      ).maybeSingle();
+      if (existingEcoErr) throw existingEcoErr;
+
+      const economicsRow = {
           client_id: clientId,
           vertical: form.vertical.trim() || null,
           vertical_id: form.vertical_id,
@@ -517,9 +558,16 @@ export default function MediaBrainIntakePage() {
           routing_mode: "recommend_only",
           unknown_fields: unknownFields.length ? unknownFields : null,
           last_reviewed_at: new Date().toISOString(),
-        })
-        .select("id")
-        .single();
+      };
+
+      const { data: eco, error: ecoErr } = existingEco
+        ? await supabase
+            .from("media_brain_economics")
+            .update(economicsRow)
+            .eq("id", existingEco.id)
+            .select("id")
+            .single()
+        : await supabase.from("media_brain_economics").insert(economicsRow).select("id").single();
       if (ecoErr) throw ecoErr;
 
       const { error: instErr } = await supabase.from("media_brain_instances").insert({
@@ -547,13 +595,22 @@ export default function MediaBrainIntakePage() {
         computed_at: new Date().toISOString(),
         is_stale: false,
       });
-      if (instErr) throw instErr;
+      if (instErr) {
+        /* Never leave an Economics row with no Instance behind it — that row would
+           block the next save and stands for a threshold set that never computed. */
+        if (!existingEco) await supabase.from("media_brain_economics").delete().eq("id", eco.id);
+        throw instErr;
+      }
 
       queryClient.invalidateQueries({ queryKey: ["mb-intake-instance", clientId] });
       setSaved(true);
       toast.success("Economics and Instance records saved");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed");
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Save failed";
+      toast.error(message, { duration: 12000 });
     } finally {
       setSaving(false);
     }

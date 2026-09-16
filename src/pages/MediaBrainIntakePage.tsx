@@ -654,6 +654,10 @@ export default function MediaBrainIntakePage() {
               </Field>
               {form.payout_mode === "static" ? (
                 <>
+                  <Notice tone="info" title="Static: the buyer's stated terms are the record">
+                    A fixed payout and a billable definition exist before a single call runs, so they are entered here
+                    as the client confirmed them. Anything unconfirmed is marked Unknown, never filled with a guess.
+                  </Notice>
                   <NumberField label="Payout per billable call ($)" field="payout" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   <NumberField label="Billable duration threshold (seconds)" field="billable_min_duration_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   <Field label="Product or buyer filters that affect billability">

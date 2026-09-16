@@ -180,23 +180,44 @@ Deno.serve(async (req) => {
     raw_payload: payload,
   };
 
-  // Fill creative/campaign from the DID assignment grid when CallGrid doesn't send them
-  if (didDigits && (!row.creative_name || !row.campaign_name)) {
-    const { data: dids } = await supabase
+  // Account separation guard. Each CallGrid account posts to its own `client_id`.
+  // If the dialed number is registered to a DIFFERENT client, the URL is pointed at
+  // the wrong account: reject rather than file one client's call under another.
+  // Numbers that belong to nobody yet are accepted (unmapped DIDs are normal).
+  if (didDigits) {
+    const { data: allDids } = await supabase
       .from('client_dids')
-      .select('did, did_formatted, creative_name, campaign_name')
-      .eq('client_id', clientId);
+      .select('client_id, did, did_formatted, creative_name, campaign_name');
 
-    const match = (dids || []).find((d: any) => {
-      const a = String(d.did || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-      const b = String(d.did_formatted || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-      return a === didDigits || b === didDigits;
-    });
-    if (match) {
-      row.creative_name = row.creative_name || match.creative_name || null;
-      row.campaign_name = row.campaign_name || match.campaign_name || null;
+    const norm = (v: unknown) => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const owners = (allDids || []).filter(
+      (d: any) => norm(d.did) === didDigits || norm(d.did_formatted) === didDigits,
+    );
+
+    if (owners.length > 0 && !owners.some((d: any) => d.client_id === clientId)) {
+      console.error('callgrid-webhook DID ownership mismatch', { didDigits, clientId });
+      return new Response(
+        JSON.stringify({
+          error: 'Number belongs to a different client',
+          details: `Dialed number ${didDigits} is registered to another client. Check the client_id on this CallGrid postback URL.`,
+          did: didDigits,
+          posted_to_client_id: clientId,
+          registered_client_id: owners[0].client_id,
+        }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Fill creative/campaign from this client's DID assignment grid when CallGrid doesn't send them
+    if (!row.creative_name || !row.campaign_name) {
+      const match = owners.find((d: any) => d.client_id === clientId);
+      if (match) {
+        row.creative_name = row.creative_name || (match as any).creative_name || null;
+        row.campaign_name = row.campaign_name || (match as any).campaign_name || null;
+      }
     }
   }
+
 
   const { error } = await supabase
     .from('cannaball_calls')

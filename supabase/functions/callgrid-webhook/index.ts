@@ -84,6 +84,38 @@ Deno.serve(async (req) => {
     });
   }
 
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  // Which client these calls belong to. Validated, never guessed.
+  const requestedClientId = url.searchParams.get('client_id');
+  let clientId = CANNABALL_CLIENT_ID;
+  if (requestedClientId) {
+    if (!UUID_RE.test(requestedClientId)) {
+      return new Response(JSON.stringify({ error: 'client_id must be a uuid' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const { data: client, error: clientError } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('id', requestedClientId)
+      .maybeSingle();
+    if (clientError) {
+      return new Response(JSON.stringify({ error: 'Client lookup failed', details: clientError.message }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!client) {
+      return new Response(JSON.stringify({ error: 'Unknown client_id' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    clientId = client.id;
+  }
+
   let payload: any = {};
   try {
     const ct = req.headers.get('content-type') || '';
@@ -101,6 +133,15 @@ Deno.serve(async (req) => {
       status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+
+  // Some CallGrid setups pass the ad tags on the URL rather than in the body.
+  // Body values win; query values only fill what the body left absent.
+  for (const [k, v] of url.searchParams.entries()) {
+    if (k === 'secret' || k === 'client_id') continue;
+    if (payload[k] === undefined || payload[k] === '') payload[k] = v;
+  }
+  payload = flattenTagBags(payload);
+
 
   // Map common CallGrid field names (docs vary; we're permissive).
   const call_id = String(

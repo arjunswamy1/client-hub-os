@@ -226,6 +226,39 @@ export default function MediaBrainIntakePage() {
       nums: { ...f.nums, [field]: f.unknown[field] ? f.nums[field] : "" },
     }));
 
+  /**
+   * RTB only: fill the payout fields from what the tracking platform actually
+   * paid over the confirmed window, and keep the provenance line with them.
+   * Only measured values are written; a null stays a null (nothing is inferred).
+   */
+  const applyRtbMeasurement = useCallback((m: RtbMeasurement) => {
+    const t = m.terms;
+    setForm((f) => {
+      const nums = { ...f.nums };
+      const unknown = { ...f.unknown };
+      const put = (field: NumField, value: number | null) => {
+        if (value === null) return;
+        nums[field] = String(value);
+        unknown[field] = false;
+      };
+      put("bid_floor", t.bidFloor);
+      put("bid_ceiling", t.bidCeiling);
+      put("avg_bid", t.avgWinningBid);
+      put("duration_min_seconds", t.paidDurationMinSeconds);
+      put("duration_max_seconds", t.paidDurationMaxSeconds);
+      put("billable_min_duration_seconds", t.minDurationWithPayout);
+      return {
+        ...f,
+        nums,
+        unknown,
+        rtb_live: true,
+        observed_rpc: t.observedRpc === null ? f.observed_rpc : String(t.observedRpc),
+        quoted_avg_bid_note: [f.quoted_avg_bid_note.trim(), m.note].filter(Boolean).join("\n"),
+      };
+    });
+    toast.success(`Measured terms applied from ${m.sourceLabel}, ${m.start} to ${m.end}.`);
+  }, []);
+
   const numVal = (field: NumField): number | null => {
     if (form.unknown[field]) return null;
     const raw = form.nums[field];

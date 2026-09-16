@@ -172,7 +172,7 @@ async function persist(admin: any, clientId: string, rows: string[][]) {
     const date = normDate(r[iDate] ?? "");
     const hour = normHour(r[iHour] ?? "");
     if (!date || hour === null) continue;
-    const station = stationFromCampaign(iCamp >= 0 ? r[iCamp] ?? "" : "", "CT14");
+    const station = stationFromCampaign(iCamp >= 0 ? r[iCamp] ?? "" : "", "CT20");
     const key = `${date}|${hour}|${station}`;
     const cur = hourlyMap.get(key) ?? {
       client_id: clientId, date, hour, station_code: station,

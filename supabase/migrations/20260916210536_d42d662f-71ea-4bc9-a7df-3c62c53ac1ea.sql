@@ -1,0 +1,1 @@
+UPDATE public.team_members SET user_id = '4e386ba3-f936-4be0-8bfc-114f01f88a72', is_active = true WHERE id = '84267455-138d-4ca3-be78-4be2c1f3601d'; UPDATE public.team_invites SET redeemed_at = now() WHERE token = 'c50a573f-33a0-4de8-ad75-6dae580e259e' AND redeemed_at IS NULL;

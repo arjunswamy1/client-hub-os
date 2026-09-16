@@ -1,10 +1,36 @@
-// CallGrid → Cannaball webhook receiver.
+// CallGrid → client call receiver.
 // Public endpoint (verify_jwt is false by default on Lovable-managed functions).
 // Auth: shared secret in header `x-callgrid-secret` matching CALLGRID_WEBHOOK_SECRET.
+//
+// Multi-client: pass `?client_id=<uuid>` so each CallGrid account writes to its own
+// client. The id is validated against `clients` — an unknown id is rejected rather
+// than defaulted, so a mistyped URL can never silently file another client's calls.
+// With no `client_id` the endpoint keeps its original Cannaball behaviour so the
+// existing CallGrid configuration keeps working unchanged.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 
 const CANNABALL_CLIENT_ID = 'a1dabea1-5518-4c7f-a29d-23739cb52f9b';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * CallGrid nests forwarded URL parameters under a container on some accounts.
+ * The attribution reader walks one level of `raw_payload`, so lift those keys to
+ * the top of the stored payload — copied, never renamed or invented.
+ */
+function flattenTagBags(payload: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = { ...payload };
+  for (const key of ['tags', 'custom', 'custom_tags', 'variables', 'params', 'query']) {
+    const bag = payload?.[key];
+    if (bag && typeof bag === 'object' && !Array.isArray(bag)) {
+      for (const [k, v] of Object.entries(bag)) {
+        if (out[k] === undefined) out[k] = v;
+      }
+    }
+  }
+  return out;
+}
+
 
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
   for (const k of keys) {
@@ -58,6 +84,38 @@ Deno.serve(async (req) => {
     });
   }
 
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  // Which client these calls belong to. Validated, never guessed.
+  const requestedClientId = url.searchParams.get('client_id');
+  let clientId = CANNABALL_CLIENT_ID;
+  if (requestedClientId) {
+    if (!UUID_RE.test(requestedClientId)) {
+      return new Response(JSON.stringify({ error: 'client_id must be a uuid' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const { data: client, error: clientError } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('id', requestedClientId)
+      .maybeSingle();
+    if (clientError) {
+      return new Response(JSON.stringify({ error: 'Client lookup failed', details: clientError.message }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!client) {
+      return new Response(JSON.stringify({ error: 'Unknown client_id' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    clientId = client.id;
+  }
+
   let payload: any = {};
   try {
     const ct = req.headers.get('content-type') || '';
@@ -75,6 +133,15 @@ Deno.serve(async (req) => {
       status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+
+  // Some CallGrid setups pass the ad tags on the URL rather than in the body.
+  // Body values win; query values only fill what the body left absent.
+  for (const [k, v] of url.searchParams.entries()) {
+    if (k === 'secret' || k === 'client_id') continue;
+    if (payload[k] === undefined || payload[k] === '') payload[k] = v;
+  }
+  payload = flattenTagBags(payload);
+
 
   // Map common CallGrid field names (docs vary; we're permissive).
   const call_id = String(
@@ -95,7 +162,7 @@ Deno.serve(async (req) => {
   const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
 
   const row: Record<string, unknown> = {
-    client_id: CANNABALL_CLIENT_ID,
+    client_id: clientId,
     call_id,
     caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani']) ?? null,
     did: didDigits || rawDid,
@@ -113,17 +180,13 @@ Deno.serve(async (req) => {
     raw_payload: payload,
   };
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
-
   // Fill creative/campaign from the DID assignment grid when CallGrid doesn't send them
   if (didDigits && (!row.creative_name || !row.campaign_name)) {
     const { data: dids } = await supabase
       .from('client_dids')
       .select('did, did_formatted, creative_name, campaign_name')
-      .eq('client_id', CANNABALL_CLIENT_ID);
+      .eq('client_id', clientId);
+
     const match = (dids || []).find((d: any) => {
       const a = String(d.did || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
       const b = String(d.did_formatted || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
@@ -146,7 +209,25 @@ Deno.serve(async (req) => {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true, call_id }), {
-    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+  // Echo back what was actually read, so a CallGrid test call shows immediately
+  // whether the ad tags and the payout arrived — no silent blanks.
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      call_id,
+      client_id: clientId,
+      received: {
+        did: row.did ?? null,
+        duration_seconds,
+        connection_duration_seconds,
+        payout: row.payout,
+        utm_source: pick(payload, ['utm_source', 'utmSource']) ?? null,
+        utm_campaign: pick(payload, ['utm_campaign', 'utmCampaign']) ?? null,
+        utm_content: pick(payload, ['utm_content', 'utmContent']) ?? null,
+        creative_id: pick(payload, ['creative_id', 'ad_id', 'platform_ad_id']) ?? null,
+      },
+    }),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
+
 });

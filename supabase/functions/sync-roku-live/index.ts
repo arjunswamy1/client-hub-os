@@ -91,8 +91,8 @@ const numAt = (v: any, i: number) => {
   return isFinite(n) ? n : 0;
 };
 
-/** Jacuzzi station code lives inside the campaign name, e.g. "... CT-14 ...". */
-function stationFromCampaign(name: string, fallback = "CT14") {
+/** Jacuzzi station code lives inside the campaign name, e.g. "... CT-20 ...". */
+function stationFromCampaign(name: string, fallback = "CT20") {
   const m = (name || "").toUpperCase().match(/CT\s?-?(\d{2})/);
   return m ? `CT${m[1]}` : fallback;
 }

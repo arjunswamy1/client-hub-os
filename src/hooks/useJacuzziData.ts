@@ -5,11 +5,12 @@ import { format } from "date-fns";
 
 export const JACUZZI_CLIENT_ID = "dc25f274-20f4-4650-b0cc-654073b925f4";
 
-/** Stations we get paid against. CT14 is the live Roku campaign. */
-export const JACUZZI_STATIONS = ["CT14", "CT13", "CT12", "CT26"] as const;
+/** Stations we get paid against. CT20 is the live Roku campaign. */
+export const JACUZZI_STATIONS = ["CT20", "CT14", "CT13", "CT12", "CT26"] as const;
 
 export const STATION_NOTES: Record<string, string> = {
-  CT14: "Main Roku campaign",
+  CT20: "Main Roku campaign",
+  CT14: "Former main Roku campaign (retired Sep 2026)",
   CT13: "Affiliate station (unused) — QR scans re-attributed to CT14",
   CT12: "Legacy AI Digital flight",
   CT26: "Bonus calls — residual media",

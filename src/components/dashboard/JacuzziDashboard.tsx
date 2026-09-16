@@ -598,8 +598,8 @@ export default function JacuzziDashboard() {
               </table>
             </div>
             <p className="border-t border-border p-3 text-xs text-muted-foreground">
-              Click any station row to drill the whole dashboard into it (click again to remove). QR scans tagged
-              CT13 are re-attributed to CT14 — the CT14 creative carried the wrong QR code.
+               Click any station row to drill the whole dashboard into it (click again to remove). CT20 is the live
+               Roku campaign; QR scans tagged CT13 are re-attributed to CT14 — the CT14 creative carried the wrong QR code.
             </p>
           </Card>
         </TabsContent>
@@ -671,8 +671,8 @@ export default function JacuzziDashboard() {
               <p className="text-sm font-medium">Import the client's recognized-lead sheet</p>
               <p className="text-xs text-muted-foreground">
                 Copy the rows straight out of the Jacuzzi TM export (including the header row) and paste below.
-                Calls and QR scans are detected automatically, CT13 QR scans roll into CT14, and payout is stamped
-                from the rate in effect on each date. Re-pasting the same sheet updates rather than duplicates.
+                Calls and QR scans are detected automatically (CT20 is the live station; CT13 QR scans roll into
+                CT14), and payout is stamped from the rate in effect on each date. Re-pasting the same sheet updates rather than duplicates.
               </p>
             </div>
             <Textarea

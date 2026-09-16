@@ -2,7 +2,7 @@ import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
   Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload, Tv,
-  ClipboardList, Gauge, CalendarCheck, PhoneForwarded,
+  ClipboardList, Gauge, CalendarCheck, PhoneForwarded, MapPin,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -104,6 +104,7 @@ export function AppSidebar() {
                   { title: 'Daily', url: `/media-brain/${activeClient.id}/daily`, icon: Gauge },
                   { title: 'Weekly Review', url: `/media-brain/${activeClient.id}/weekly`, icon: CalendarCheck },
                   { title: 'DID Mappings', url: `/media-brain/${activeClient.id}/mappings`, icon: PhoneForwarded },
+                  { title: 'Location Scoring', url: `/media-brain/${activeClient.id}/locations`, icon: MapPin },
                 ].map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild size="sm">

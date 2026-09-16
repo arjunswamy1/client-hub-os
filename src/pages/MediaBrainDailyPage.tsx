@@ -25,6 +25,9 @@ import {
   syncBreakers,
   useMediaBrainSyncStatus,
 } from "@/hooks/useMediaBrainSyncStatus";
+// A context feed that quietly stops updating is the same class of defect as a broken
+// ad sync, so it is judged by the same breaker rather than a separate surface.
+import { useContextSyncStatus } from "@/hooks/useContextSyncStatus";
 import {
   ConfidenceBadge,
   GateBlock,
@@ -61,6 +64,7 @@ export default function MediaBrainDailyPage() {
   // Data-delivery breakers do NOT wait on a confirmed window: a source that is not
   // delivering is the same class of emergency as tracking broken (§3 breaker 1).
   const syncStatus = useMediaBrainSyncStatus(clientId);
+  const contextSync = useContextSyncStatus(clientId);
   const [confirmed, setConfirmed] = useState<ConfirmedWindow | null>(null);
 
   // Never auto-pull on mount: the pull waits on a confirmed window.
@@ -159,7 +163,8 @@ export default function MediaBrainDailyPage() {
     });
   }
 
-  const deliveryBreakers = syncBreakers(syncStatus.data ?? []);
+  const deliverySources = [...(syncStatus.data ?? []), ...(contextSync.data ? [contextSync.data] : [])];
+  const deliveryBreakers = syncBreakers(deliverySources);
   const anyFired = breakers.some((b) => b.fired);
   const adsetRows = data?.ok ? groupRows(data.rows, "adset", data.payoutMode, data.thresholds) : [];
   const adRows = data?.ok ? groupRows(data.rows, "ad", data.payoutMode, data.thresholds) : [];
@@ -223,9 +228,9 @@ export default function MediaBrainDailyPage() {
             </ul>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">
-              {syncStatus.data.length === 0
+              {deliverySources.length === 0
                 ? "No sources are registered for this client yet, so delivery cannot be judged either way."
-                : `${syncStatus.data.length} ${syncStatus.data.length === 1 ? "source" : "sources"} tracked.`}
+                : `${deliverySources.length} ${deliverySources.length === 1 ? "source" : "sources"} tracked, including the meeting-notes feed.`}
             </p>
           )}
         </div>

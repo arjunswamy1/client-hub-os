@@ -27,6 +27,7 @@ import * as engine from "@/lib/mediaBrain/engine";
 import { Notice } from "@/components/mediaBrain/shared";
 import { BillableDefinitionCheck, type BillableGovernance } from "@/components/mediaBrain/BillableDefinitionCheck";
 import { ComputedRevenueSensitivity } from "@/components/mediaBrain/ComputedRevenueSensitivity";
+import { RtbObservedTermsPanel, type RtbMeasurement } from "@/components/mediaBrain/RtbObservedTermsPanel";
 
 /**
  * The window the intake sensitivity swing is measured over — stated explicitly,
@@ -226,6 +227,39 @@ export default function MediaBrainIntakePage() {
       nums: { ...f.nums, [field]: f.unknown[field] ? f.nums[field] : "" },
     }));
 
+  /**
+   * RTB only: fill the payout fields from what the tracking platform actually
+   * paid over the confirmed window, and keep the provenance line with them.
+   * Only measured values are written; a null stays a null (nothing is inferred).
+   */
+  const applyRtbMeasurement = useCallback((m: RtbMeasurement) => {
+    const t = m.terms;
+    setForm((f) => {
+      const nums = { ...f.nums };
+      const unknown = { ...f.unknown };
+      const put = (field: NumField, value: number | null) => {
+        if (value === null) return;
+        nums[field] = String(value);
+        unknown[field] = false;
+      };
+      put("bid_floor", t.bidFloor);
+      put("bid_ceiling", t.bidCeiling);
+      put("avg_bid", t.avgWinningBid);
+      put("duration_min_seconds", t.paidDurationMinSeconds);
+      put("duration_max_seconds", t.paidDurationMaxSeconds);
+      put("billable_min_duration_seconds", t.minDurationWithPayout);
+      return {
+        ...f,
+        nums,
+        unknown,
+        rtb_live: true,
+        observed_rpc: t.observedRpc === null ? f.observed_rpc : String(t.observedRpc),
+        quoted_avg_bid_note: [f.quoted_avg_bid_note.trim(), m.note].filter(Boolean).join("\n"),
+      };
+    });
+    toast.success(`Measured terms applied from ${m.sourceLabel}, ${m.start} to ${m.end}.`);
+  }, []);
+
   const numVal = (field: NumField): number | null => {
     if (form.unknown[field]) return null;
     const raw = form.nums[field];
@@ -257,7 +291,7 @@ export default function MediaBrainIntakePage() {
     } else {
       need("bid_floor", "Bid floor");
       need("bid_ceiling", "Bid ceiling");
-      need("avg_bid", "Stated average bid");
+      need("avg_bid", "Average winning bid");
       need("duration_min_seconds", "Duration range minimum");
       need("duration_max_seconds", "Duration range maximum");
       need("billable_min_duration_seconds", "Minimum duration for any payout");
@@ -654,6 +688,10 @@ export default function MediaBrainIntakePage() {
               </Field>
               {form.payout_mode === "static" ? (
                 <>
+                  <Notice tone="info" title="Static: the buyer's stated terms are the record">
+                    A fixed payout and a billable definition exist before a single call runs, so they are entered here
+                    as the client confirmed them. Anything unconfirmed is marked Unknown, never filled with a guess.
+                  </Notice>
                   <NumberField label="Payout per billable call ($)" field="payout" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   <NumberField label="Billable duration threshold (seconds)" field="billable_min_duration_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   <Field label="Product or buyer filters that affect billability">
@@ -662,12 +700,22 @@ export default function MediaBrainIntakePage() {
                 </>
               ) : (
                 <>
-                  <Notice
-                    tone="info"
-                    title="Enter each confirmed RTB term, or mark it Unknown"
-                  >
-                    The Unknown switch beside a field counts as a complete answer and lets the intake continue without assuming a value.
+                  <Notice tone="info" title="RTB: the terms are measured, not quoted">
+                    The auction sets the payout call by call, so nobody can state one up front. Measure the terms from
+                    this client&apos;s live calls below and apply them — the measurement and its window are saved with
+                    the intake. Where no calls exist yet, mark each field Unknown; the Unknown switch counts as a
+                    complete answer and lets the intake continue without assuming a value.
                   </Notice>
+                  <RtbObservedTermsPanel
+                    clientId={clientId!}
+                    trackingPlatform={form.tracking_platform}
+                    actionableGap={
+                      form.unknown.actionable_gap_pct || form.nums.actionable_gap_pct === ""
+                        ? null
+                        : Number(form.nums.actionable_gap_pct) / 100
+                    }
+                    onApply={applyRtbMeasurement}
+                  />
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <div>
                       <p className="text-sm font-medium">Campaign currently active in the tracking platform?</p>
@@ -676,7 +724,7 @@ export default function MediaBrainIntakePage() {
                     <Switch checked={form.rtb_live} onCheckedChange={(v) => set("rtb_live", v)} />
                   </div>
                   {form.rtb_live && (
-                    <Field label="Observed RPC from live data ($)">
+                    <Field label="Observed RPC from live data ($) — total payouts ÷ total calls">
                       <Input value={form.observed_rpc} onChange={(e) => set("observed_rpc", e.target.value)} inputMode="decimal" />
                     </Field>
                   )}
@@ -684,13 +732,13 @@ export default function MediaBrainIntakePage() {
                     <NumberField label="Bid floor ($)" field="bid_floor" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                     <NumberField label="Bid ceiling ($)" field="bid_ceiling" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   </div>
-                  <NumberField label="Stated average bid ($)" field="avg_bid" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
+                  <NumberField label="Average winning bid ($) — measured on paid calls" field="avg_bid" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <NumberField label="Duration range minimum (seconds)" field="duration_min_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                     <NumberField label="Duration range maximum (seconds)" field="duration_max_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
                   </div>
                   <NumberField label="Minimum duration for any payout (seconds)" field="billable_min_duration_seconds" form={form} setNum={setNum} toggleUnknown={toggleUnknown} />
-                  <Field label="Notes on what the buyer quoted">
+                  <Field label="Notes on the measurement, or on what the buyer quoted">
                     <Textarea value={form.quoted_avg_bid_note} onChange={(e) => set("quoted_avg_bid_note", e.target.value)} rows={2} />
                   </Field>
                 </>

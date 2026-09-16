@@ -81,6 +81,13 @@ type NumField =
 
 interface FormState {
   vertical: string;
+  /**
+   * The client_verticals key this intake belongs to. Economics rows are unique
+   * per (client, vertical), with a NULL vertical_id meaning "client default" —
+   * so a named vertical MUST carry its id, or the second vertical collides with
+   * the first on the client-default row.
+   */
+  vertical_id: string | null;
   platforms: string;
   ad_account_ids: string;
   tracking_platform: string;
@@ -134,6 +141,7 @@ const emptyUnknown = (): Record<NumField, boolean> =>
 
 const initialForm: FormState = {
   vertical: "",
+  vertical_id: null,
   platforms: "",
   ad_account_ids: "",
   tracking_platform: "",
@@ -474,6 +482,7 @@ export default function MediaBrainIntakePage() {
         .insert({
           client_id: clientId,
           vertical: form.vertical.trim() || null,
+          vertical_id: form.vertical_id,
           platforms: toList(form.platforms),
           ad_account_ids: toList(form.ad_account_ids),
           tracking_platform: form.tracking_platform,
@@ -628,9 +637,37 @@ export default function MediaBrainIntakePage() {
         <CardContent className="space-y-5">
           {current.key === "a1" && (
             <>
-              <Field label="Vertical">
-                <Input value={form.vertical} onChange={(e) => set("vertical", e.target.value)} placeholder="e.g. Final Expense" />
+              <Field
+                label="Vertical"
+                hint="One intake per vertical. Each vertical keeps its own payout terms; the client default applies where a vertical has none of its own."
+              >
+                <Select
+                  value={form.vertical_id ?? (form.vertical ? "__default__" : "")}
+                  onValueChange={(v) => {
+                    if (v === "__default__") {
+                      setForm((f) => ({ ...f, vertical_id: null, vertical: "Client default" }));
+                      return;
+                    }
+                    const picked = verticals?.find((x) => x.vertical_id === v);
+                    setForm((f) => ({ ...f, vertical_id: v, vertical: picked?.label ?? v }));
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select vertical" /></SelectTrigger>
+                  <SelectContent>
+                    {(verticals ?? []).map((v) => (
+                      <SelectItem key={v.vertical_id} value={v.vertical_id}>
+                        {v.label}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__default__">Client default (applies to every vertical)</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
+              {(verticals ?? []).length === 0 && (
+                <Notice tone="warn" title="No verticals set up for this client yet">
+                  Add them under the client&apos;s settings, or save this intake as the client default.
+                </Notice>
+              )}
               <Field label="Platforms active now, and any planned later" hint="Comma separated">
                 <Input value={form.platforms} onChange={(e) => set("platforms", e.target.value)} placeholder="Meta, Roku" />
               </Field>

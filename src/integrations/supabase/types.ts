@@ -2467,7 +2467,7 @@ export type Database = {
       }
       context_items: {
         Row: {
-          client_id: string
+          client_id: string | null
           content: string | null
           content_type: string
           created_at: string
@@ -2478,9 +2478,10 @@ export type Database = {
           source: string
           source_id: string | null
           title: string | null
+          updated_at: string
         }
         Insert: {
-          client_id: string
+          client_id?: string | null
           content?: string | null
           content_type: string
           created_at?: string
@@ -2491,9 +2492,10 @@ export type Database = {
           source: string
           source_id?: string | null
           title?: string | null
+          updated_at?: string
         }
         Update: {
-          client_id?: string
+          client_id?: string | null
           content?: string | null
           content_type?: string
           created_at?: string
@@ -2504,6 +2506,7 @@ export type Database = {
           source?: string
           source_id?: string | null
           title?: string | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -2517,7 +2520,7 @@ export type Database = {
       }
       context_sync_log: {
         Row: {
-          client_id: string
+          client_id: string | null
           created_at: string
           error_message: string | null
           id: string
@@ -2527,7 +2530,7 @@ export type Database = {
           status: string
         }
         Insert: {
-          client_id: string
+          client_id?: string | null
           created_at?: string
           error_message?: string | null
           id?: string
@@ -2537,7 +2540,7 @@ export type Database = {
           status?: string
         }
         Update: {
-          client_id?: string
+          client_id?: string | null
           created_at?: string
           error_message?: string | null
           id?: string

@@ -60,16 +60,29 @@ describe('step 3 — hard excludes happen before scoring', () => {
 
 describe('step 4 — the confidence gate', () => {
   it('never lets a 2-event, 100%-success location reach Launch', () => {
-    const res = scoreLocations(LOCATION_FIXTURE);
+    // Ten deep, ordinary locations plus one thin sample engineered to top the
+    // score outright: perfect success and the highest payout in the file.
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        id: `1000${i}`,
+        volume: 100,
+        success: 50,
+        value: 20 + i,
+        hardFail: 0,
+      })),
+      { id: '99999', volume: 2, success: 2, value: 1000, hardFail: 0 },
+    ];
+    const res = scoreLocations(rows);
     const fluke = res.all.find((r) => r.id === '99999')!;
     expect(fluke.excluded).toBe(false);
     expect(fluke.confidence).toBe('low');
-    expect(fluke.scorePercentile).toBeGreaterThanOrEqual(DEFAULT_LOCATION_SCORING_CONFIG.launchTierPct);
-    expect(fluke.tier).not.toBe('Launch');
+    expect(fluke.scorePercentile).toBe(1);
+    expect(fluke.tier).toBe('Expand');
     expect(fluke.confidenceCapped).toBe(true);
     expect(res.launchList.map((r) => r.id)).not.toContain('99999');
     expect(res.launchList.every((r) => r.confidence !== 'low')).toBe(true);
   });
+
 
   it('bands on volume, not on score', () => {
     const cfg = DEFAULT_LOCATION_SCORING_CONFIG;

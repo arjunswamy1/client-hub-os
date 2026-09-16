@@ -1166,10 +1166,18 @@ export default function MediaBrainIntakePage() {
                   Economics and Instance records saved for {client.name}.
                 </div>
               ) : (
-                <Button onClick={handleSave} disabled={saving || billableCheckBlocking}>
+                <>
+                  {saveBlockers.length > 0 && (
+                    <Notice tone="warn" title="These cannot be saved as Unknown">
+                      Every threshold is anchored on them, so there is nothing to compute without a number:{" "}
+                      {saveBlockers.join(", ")}. Open A8 · Margin targets and enter each one.
+                    </Notice>
+                  )}
+                <Button onClick={handleSave} disabled={saving || billableCheckBlocking || saveBlockers.length > 0}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Economics + Instance
                 </Button>
+                </>
               )}
             </div>
           )}

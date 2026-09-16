@@ -131,6 +131,81 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Read-only raw probe: one record exactly as Ringba returns it, to debug
+    // account-specific response shapes. Writes nothing.
+    if (new URL(req.url).searchParams.get("raw") === "1") {
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(start.getDate() - 3);
+      const res = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`, {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${RINGBA_API_TOKEN}`,
+          "Content-Type": "application/json;charset=UTF-8",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          reportStart: start.toISOString(),
+          reportEnd: end.toISOString(),
+          size: 2,
+          offset: 0,
+          valueColumns: [
+            "campaignName", "publisherName", "callLengthInSeconds", "hasConnected",
+            "hasConverted", "payoutAmount", "number", "inboundPhoneNumber",
+          ].map((c) => ({ column: c })),
+        }),
+      });
+      const text = await res.text();
+      if (new URL(req.url).searchParams.get("probe") === "1") {
+        // Probe every candidate column one at a time and report which this
+        // token's role may read.
+        const candidates = [
+          "campaignName", "campaignId", "publisherName", "publisherId", "targetName", "targetNumber",
+          "buyer", "inboundPhoneNumber", "number", "numberId", "numberPoolName", "numberPoolId",
+          "isFromNumberPool", "callLengthInSeconds", "connectedCallLengthInSeconds",
+          "hasConnected", "hasConverted", "conversionAmount", "payoutAmount", "totalCost",
+          "callerStateProvince", "callerCity", "endCallSource", "recordingUrl",
+          "hasPayout", "noPayoutReason", "callDt", "inboundCallId",
+        ];
+        const results: Record<string, string> = {};
+        for (const col of candidates) {
+          try {
+            const r = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/calllogs`, {
+              method: "POST",
+              headers: {
+                Authorization: `Token ${RINGBA_API_TOKEN}`,
+                "Content-Type": "application/json;charset=UTF-8",
+                Accept: "application/json",
+              },
+              body: JSON.stringify({
+                reportStart: start.toISOString(),
+                reportEnd: end.toISOString(),
+                size: 1,
+                offset: 0,
+                valueColumns: [{ column: col }],
+              }),
+            });
+            const t = await r.text();
+            if (r.ok) {
+              const j = JSON.parse(t);
+              const rec = j?.report?.records?.[0];
+              results[col] = rec ? `OK value=${JSON.stringify(rec[col]).substring(0, 60)}` : "OK (no rows)";
+            } else {
+              results[col] = `${r.status} ${t.substring(0, 120)}`;
+            }
+          } catch (e) {
+            results[col] = `err ${e instanceof Error ? e.message : e}`;
+          }
+        }
+        return new Response(JSON.stringify({ probe: true, results }, null, 2), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ status: res.status, body_head: text.substring(0, 4000) }, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Read-only diagnostic: full column + tag menu for this account.
     if (new URL(req.url).searchParams.get("diagnose") === "1") {
       const auth = { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" };

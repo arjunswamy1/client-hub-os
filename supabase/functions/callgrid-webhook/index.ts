@@ -209,7 +209,25 @@ Deno.serve(async (req) => {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true, call_id }), {
-    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+  // Echo back what was actually read, so a CallGrid test call shows immediately
+  // whether the ad tags and the payout arrived — no silent blanks.
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      call_id,
+      client_id: clientId,
+      received: {
+        did: row.did ?? null,
+        duration_seconds,
+        connection_duration_seconds,
+        payout: row.payout,
+        utm_source: pick(payload, ['utm_source', 'utmSource']) ?? null,
+        utm_campaign: pick(payload, ['utm_campaign', 'utmCampaign']) ?? null,
+        utm_content: pick(payload, ['utm_content', 'utmContent']) ?? null,
+        creative_id: pick(payload, ['creative_id', 'ad_id', 'platform_ad_id']) ?? null,
+      },
+    }),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
+
 });

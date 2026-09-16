@@ -4084,6 +4084,242 @@ export type Database = {
           },
         ]
       }
+      media_brain_location_score_runs: {
+        Row: {
+          budget_daily: number | null
+          client_id: string
+          confidence_high: number
+          confidence_min: number
+          created_at: string
+          created_by: string | null
+          expand_tier_pct: number
+          hard_fail_col: string | null
+          hard_fail_rate_max: number
+          id: string
+          id_col: string
+          launch_list_size: number
+          launch_qualifying: number
+          launch_size: number
+          launch_tier_pct: number
+          locations_excluded: number
+          locations_scored: number
+          locations_total: number
+          min_success_rate: number
+          notes: string | null
+          payout_mode: string | null
+          publisher_scoping_note: string | null
+          run_at: string
+          source: string
+          source_label: string | null
+          success_col: string
+          updated_at: string
+          value_col: string | null
+          volume_col: string
+          weight_redistribution_note: string | null
+          weight_success: number
+          weight_value: number
+          weight_volume: number
+        }
+        Insert: {
+          budget_daily?: number | null
+          client_id: string
+          confidence_high: number
+          confidence_min: number
+          created_at?: string
+          created_by?: string | null
+          expand_tier_pct: number
+          hard_fail_col?: string | null
+          hard_fail_rate_max: number
+          id?: string
+          id_col: string
+          launch_list_size?: number
+          launch_qualifying?: number
+          launch_size: number
+          launch_tier_pct: number
+          locations_excluded?: number
+          locations_scored?: number
+          locations_total?: number
+          min_success_rate: number
+          notes?: string | null
+          payout_mode?: string | null
+          publisher_scoping_note?: string | null
+          run_at?: string
+          source: string
+          source_label?: string | null
+          success_col: string
+          updated_at?: string
+          value_col?: string | null
+          volume_col: string
+          weight_redistribution_note?: string | null
+          weight_success: number
+          weight_value: number
+          weight_volume: number
+        }
+        Update: {
+          budget_daily?: number | null
+          client_id?: string
+          confidence_high?: number
+          confidence_min?: number
+          created_at?: string
+          created_by?: string | null
+          expand_tier_pct?: number
+          hard_fail_col?: string | null
+          hard_fail_rate_max?: number
+          id?: string
+          id_col?: string
+          launch_list_size?: number
+          launch_qualifying?: number
+          launch_size?: number
+          launch_tier_pct?: number
+          locations_excluded?: number
+          locations_scored?: number
+          locations_total?: number
+          min_success_rate?: number
+          notes?: string | null
+          payout_mode?: string | null
+          publisher_scoping_note?: string | null
+          run_at?: string
+          source?: string
+          source_label?: string | null
+          success_col?: string
+          updated_at?: string
+          value_col?: string | null
+          volume_col?: string
+          weight_redistribution_note?: string | null
+          weight_success?: number
+          weight_value?: number
+          weight_volume?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_location_score_runs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_brain_location_scores: {
+        Row: {
+          client_id: string
+          confidence: string | null
+          confidence_high: number
+          confidence_min: number
+          created_at: string
+          exclude_reason: string | null
+          excluded: boolean
+          hard_fail: number | null
+          hard_fail_col: string | null
+          hard_fail_rate: number | null
+          hard_fail_rate_max: number
+          id: string
+          id_col: string
+          in_launch_list: boolean
+          location_id: string
+          min_success_rate: number
+          run_at: string
+          run_id: string
+          score: number | null
+          score_percentile: number | null
+          source: string
+          success: number
+          success_col: string
+          success_rate: number | null
+          tier: string | null
+          value: number | null
+          value_col: string | null
+          volume: number
+          volume_col: string
+          weight_success: number
+          weight_value: number
+          weight_volume: number
+        }
+        Insert: {
+          client_id: string
+          confidence?: string | null
+          confidence_high: number
+          confidence_min: number
+          created_at?: string
+          exclude_reason?: string | null
+          excluded?: boolean
+          hard_fail?: number | null
+          hard_fail_col?: string | null
+          hard_fail_rate?: number | null
+          hard_fail_rate_max: number
+          id?: string
+          id_col: string
+          in_launch_list?: boolean
+          location_id: string
+          min_success_rate: number
+          run_at?: string
+          run_id: string
+          score?: number | null
+          score_percentile?: number | null
+          source: string
+          success?: number
+          success_col: string
+          success_rate?: number | null
+          tier?: string | null
+          value?: number | null
+          value_col?: string | null
+          volume?: number
+          volume_col: string
+          weight_success: number
+          weight_value: number
+          weight_volume: number
+        }
+        Update: {
+          client_id?: string
+          confidence?: string | null
+          confidence_high?: number
+          confidence_min?: number
+          created_at?: string
+          exclude_reason?: string | null
+          excluded?: boolean
+          hard_fail?: number | null
+          hard_fail_col?: string | null
+          hard_fail_rate?: number | null
+          hard_fail_rate_max?: number
+          id?: string
+          id_col?: string
+          in_launch_list?: boolean
+          location_id?: string
+          min_success_rate?: number
+          run_at?: string
+          run_id?: string
+          score?: number | null
+          score_percentile?: number | null
+          source?: string
+          success?: number
+          success_col?: string
+          success_rate?: number | null
+          tier?: string | null
+          value?: number | null
+          value_col?: string | null
+          volume?: number
+          volume_col?: string
+          weight_success?: number
+          weight_value?: number
+          weight_volume?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_brain_location_scores_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "media_brain_location_scores_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "media_brain_location_score_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       media_brain_platform_conversions: {
         Row: {
           client_id: string

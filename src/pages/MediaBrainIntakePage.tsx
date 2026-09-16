@@ -662,6 +662,12 @@ export default function MediaBrainIntakePage() {
                 </>
               ) : (
                 <>
+                  <Notice
+                    tone="info"
+                    title="Enter each confirmed RTB term, or mark it Unknown"
+                  >
+                    The Unknown switch beside a field counts as a complete answer and lets the intake continue without assuming a value.
+                  </Notice>
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <div>
                       <p className="text-sm font-medium">Campaign currently active in the tracking platform?</p>
@@ -801,6 +807,21 @@ export default function MediaBrainIntakePage() {
                   <p className="mt-2 text-xs text-muted-foreground">
                     Mark a number Unknown if it genuinely isn't available — that is recorded, not assumed.
                   </p>
+                  {missing.some((item) =>
+                    [
+                      "Bid floor",
+                      "Bid ceiling",
+                      "Stated average bid",
+                      "Duration range minimum",
+                      "Duration range maximum",
+                      "Minimum duration for any payout",
+                    ].includes(item),
+                  ) && (
+                    <Button className="mt-3" size="sm" variant="outline" onClick={() => setStep(1)}>
+                      Review payout fields
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               )}
             </>

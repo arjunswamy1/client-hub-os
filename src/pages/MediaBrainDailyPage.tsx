@@ -228,9 +228,9 @@ export default function MediaBrainDailyPage() {
             </ul>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">
-              {syncStatus.data.length === 0
+              {deliverySources.length === 0
                 ? "No sources are registered for this client yet, so delivery cannot be judged either way."
-                : `${syncStatus.data.length} ${syncStatus.data.length === 1 ? "source" : "sources"} tracked.`}
+                : `${deliverySources.length} ${deliverySources.length === 1 ? "source" : "sources"} tracked, including the meeting-notes feed.`}
             </p>
           )}
         </div>

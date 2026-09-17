@@ -203,31 +203,49 @@ Deno.serve(async (req) => {
         return jsonResp({ synced: 0, tasks_created: 0, message: 'No mapped channels' });
       }
 
-      // Load team members for task assignment matching
+      // Load team members: names for task assignment, slack_user_id for the
+      // authoritative "is this person CPM?" check.
       const { data: teamMembers } = await supabase
         .from('team_members')
-        .select('id, name, email')
+        .select('id, name, email, slack_user_id')
         .eq('is_active', true);
+
+      // Primary check: the Slack user id recorded on the team member row.
+      const cpmSlackIds = new Set(
+        (teamMembers || []).map((tm: any) => tm.slack_user_id).filter(Boolean)
+      );
 
       let totalSynced = 0;
       const allMessages: { channel: string; context: string; text: string; user: string; ts: string }[] = [];
       const userCache: Record<string, string> = {};
+      const cpmCache: Record<string, boolean> = {};
 
       for (const mapping of mappings) {
+        // is_external is NEVER consulted here — it gates posting only. Reading
+        // client-facing (externally shared) channels is the point of this sync.
         const messages = await fetchChannelMessages(slackToken, mapping.channel_id, mapping.last_synced_ts);
         if (messages.length === 0) continue;
 
         const contextItems: any[] = [];
+        const channelContext = CHANNEL_CONTEXT[mapping.channel_name] || `#${mapping.channel_name}`;
 
-        for (const msg of messages) {
-          if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave' || msg.subtype === 'bot_message') continue;
-          if (!msg.text || msg.text.trim() === '') continue;
+        const buildItem = async (msg: any, isThreadReply: boolean) => {
+          if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave' || msg.subtype === 'bot_message') return;
+          if (!msg.text || msg.text.trim() === '') return;
 
           const userName = await resolveUserName(slackToken, msg.user, userCache);
           const occurredAt = new Date(parseFloat(msg.ts) * 1000).toISOString();
           const resolvedText = await resolveUserMentions(slackToken, msg.text, userCache);
 
-          const channelContext = CHANNEL_CONTEXT[mapping.channel_name] || `#${mapping.channel_name}`;
+          const isCpmAuthor = await isCpmSlackUser(slackToken, msg.user, cpmSlackIds, cpmCache);
+          const messageClass = classifyMessage({ text: resolvedText, isCpmAuthor });
+
+          // Permalinks are only fetched for the classes a human will be shown,
+          // to keep this inside Slack's Tier 3 budget.
+          let permalink: string | null = null;
+          if (messageClass === 'client_question' || messageClass === 'escalation' || messageClass === 'client_request') {
+            permalink = await getPermalink(slackToken, mapping.channel_id, msg.ts);
+          }
 
           contextItems.push({
             client_id,
@@ -244,6 +262,11 @@ Deno.serve(async (req) => {
               channel_context: channelContext,
               slack_ts: msg.ts,
               thread_ts: msg.thread_ts || null,
+              is_thread_reply: isThreadReply,
+              slack_user_id: msg.user || null,
+              is_cpm_author: isCpmAuthor,
+              message_class: messageClass,
+              permalink,
               reactions: msg.reactions || [],
             },
           });
@@ -256,8 +279,23 @@ Deno.serve(async (req) => {
             user: userName,
             ts: occurredAt,
           });
+        };
 
+        for (const msg of messages) {
+          await buildItem(msg, false);
+
+          // Threaded replies are where the answers live. Every reply becomes its
+          // own row, deduped by the same source_id scheme.
+          const replyCount = Number(msg.reply_count || 0);
+          if (msg.thread_ts && replyCount > 0) {
+            const replies = await fetchThreadReplies(slackToken, mapping.channel_id, msg.thread_ts);
+            for (const reply of replies) {
+              if (reply.ts === msg.ts) continue; // parent is already stored
+              await buildItem(reply, true);
+            }
+          }
         }
+
 
         // The cursor may only advance to the timestamp of the LAST SUCCESSFULLY
         // STORED message. A failed insert used to burn the cursor, which is how

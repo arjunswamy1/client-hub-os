@@ -119,6 +119,19 @@ function mapCallToRow(call: any) {
       recording_url: call.recordingUrl || null,
       connected_seconds: Number(call.connectedCallLengthInSeconds || 0),
       total_cost: Number(call.totalCost || 0),
+      // RTB bidding record. Kept raw and separate from payout/revenue: a bid is
+      // what a buyer offered, never what was earned.
+      bid_amount: call.bidAmount ?? null,
+      winning_bid: call.winningBid ?? call.ringTreeWinningBid ?? null,
+      winning_bid_target: call.ringTreeWinningBidTargetName ?? null,
+      ping_total_bid_amount: call.pingTotalBidAmount ?? null,
+      avg_ping_tree_bid: call.avgPingTreeBidAmount ?? null,
+      winning_bid_call_accepted: call.winningBidCallAccepted ?? null,
+      winning_bid_call_rejected: call.winningBidCallRejected ?? null,
+      no_conversion_reason: call.noConversionReason ?? null,
+      block_reason: call.blockReason ?? null,
+      was_blocked: call.wasBlocked ?? null,
+      buyer_conversion_amount: call.buyerConversionAmount ?? null,
       ...collectTags(call),
     },
   };

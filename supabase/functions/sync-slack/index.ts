@@ -1,6 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
+import { classifyMessage } from "../_shared/slack-message-class.ts";
+
+// A first sync on a channel with no cursor is capped so it can never pull an
+// entire multi-year history in one run.
+const INITIAL_BACKFILL_DAYS = 90;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -198,31 +203,49 @@ Deno.serve(async (req) => {
         return jsonResp({ synced: 0, tasks_created: 0, message: 'No mapped channels' });
       }
 
-      // Load team members for task assignment matching
+      // Load team members: names for task assignment, slack_user_id for the
+      // authoritative "is this person CPM?" check.
       const { data: teamMembers } = await supabase
         .from('team_members')
-        .select('id, name, email')
+        .select('id, name, email, slack_user_id')
         .eq('is_active', true);
+
+      // Primary check: the Slack user id recorded on the team member row.
+      const cpmSlackIds = new Set(
+        (teamMembers || []).map((tm: any) => tm.slack_user_id).filter(Boolean)
+      );
 
       let totalSynced = 0;
       const allMessages: { channel: string; context: string; text: string; user: string; ts: string }[] = [];
       const userCache: Record<string, string> = {};
+      const cpmCache: Record<string, boolean> = {};
 
       for (const mapping of mappings) {
+        // is_external is NEVER consulted here — it gates posting only. Reading
+        // client-facing (externally shared) channels is the point of this sync.
         const messages = await fetchChannelMessages(slackToken, mapping.channel_id, mapping.last_synced_ts);
         if (messages.length === 0) continue;
 
         const contextItems: any[] = [];
+        const channelContext = CHANNEL_CONTEXT[mapping.channel_name] || `#${mapping.channel_name}`;
 
-        for (const msg of messages) {
-          if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave' || msg.subtype === 'bot_message') continue;
-          if (!msg.text || msg.text.trim() === '') continue;
+        const buildItem = async (msg: any, isThreadReply: boolean) => {
+          if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave' || msg.subtype === 'bot_message') return;
+          if (!msg.text || msg.text.trim() === '') return;
 
           const userName = await resolveUserName(slackToken, msg.user, userCache);
           const occurredAt = new Date(parseFloat(msg.ts) * 1000).toISOString();
           const resolvedText = await resolveUserMentions(slackToken, msg.text, userCache);
 
-          const channelContext = CHANNEL_CONTEXT[mapping.channel_name] || `#${mapping.channel_name}`;
+          const isCpmAuthor = await isCpmSlackUser(slackToken, msg.user, cpmSlackIds, cpmCache);
+          const messageClass = classifyMessage({ text: resolvedText, isCpmAuthor });
+
+          // Permalinks are only fetched for the classes a human will be shown,
+          // to keep this inside Slack's Tier 3 budget.
+          let permalink: string | null = null;
+          if (messageClass === 'client_question' || messageClass === 'escalation' || messageClass === 'client_request') {
+            permalink = await getPermalink(slackToken, mapping.channel_id, msg.ts);
+          }
 
           contextItems.push({
             client_id,
@@ -239,6 +262,11 @@ Deno.serve(async (req) => {
               channel_context: channelContext,
               slack_ts: msg.ts,
               thread_ts: msg.thread_ts || null,
+              is_thread_reply: isThreadReply,
+              slack_user_id: msg.user || null,
+              is_cpm_author: isCpmAuthor,
+              message_class: messageClass,
+              permalink,
               reactions: msg.reactions || [],
             },
           });
@@ -251,8 +279,23 @@ Deno.serve(async (req) => {
             user: userName,
             ts: occurredAt,
           });
+        };
 
+        for (const msg of messages) {
+          await buildItem(msg, false);
+
+          // Threaded replies are where the answers live. Every reply becomes its
+          // own row, deduped by the same source_id scheme.
+          const replyCount = Number(msg.reply_count || 0);
+          if (msg.thread_ts && replyCount > 0) {
+            const replies = await fetchThreadReplies(slackToken, mapping.channel_id, msg.thread_ts);
+            for (const reply of replies) {
+              if (reply.ts === msg.ts) continue; // parent is already stored
+              await buildItem(reply, true);
+            }
+          }
         }
+
 
         // The cursor may only advance to the timestamp of the LAST SUCCESSFULLY
         // STORED message. A failed insert used to burn the cursor, which is how
@@ -275,7 +318,11 @@ Deno.serve(async (req) => {
               continue;
             }
             totalSynced += 1;
-            if (contiguous) lastStoredTs = item.metadata.slack_ts as string;
+            // Only top-level (history) messages may move the cursor — a reply's
+            // ts must never carry the cursor past unread channel messages.
+            if (contiguous && !item.metadata.is_thread_reply) {
+              lastStoredTs = item.metadata.slack_ts as string;
+            }
           }
 
           if (lastStoredTs) {
@@ -500,24 +547,112 @@ async function listBotChannels(token: string) {
   return channels;
 }
 
+// Every read goes through here so 429s are honoured instead of failing the run.
+// Slack sends Retry-After (seconds); conversations.replies and chat.getPermalink
+// are Tier 3, so a small pause is also taken between calls by the callers.
+async function slackRead(token: string, method: string, params: URLSearchParams, attempt = 0): Promise<any> {
+  const res = await fetch(`https://slack.com/api/${method}?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (res.status === 429 && attempt < 5) {
+    const retryAfter = Number(res.headers.get('Retry-After') || '2');
+    const waitMs = Math.min(Math.max(retryAfter, 1), 60) * 1000;
+    console.warn(`Slack ${method} rate-limited, waiting ${waitMs}ms (attempt ${attempt + 1})`);
+    await sleep(waitMs);
+    return slackRead(token, method, params, attempt + 1);
+  }
+
+  const data = await res.json().catch(() => ({ ok: false, error: 'non_json_response' }));
+  if (!data.ok && data.error === 'ratelimited' && attempt < 5) {
+    await sleep(2000 * (attempt + 1));
+    return slackRead(token, method, params, attempt + 1);
+  }
+  return data;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function fetchChannelMessages(token: string, channelId: string, oldest?: string | null) {
   const messages: any[] = [];
   let cursor = '';
   const params = new URLSearchParams({ channel: channelId, limit: '200' });
-  if (oldest) params.set('oldest', oldest);
+  // No cursor yet = first sync on this channel: cap the backfill so a newly
+  // enabled channel cannot pull years of history in one run.
+  const effectiveOldest = oldest
+    || String(Math.floor((Date.now() - INITIAL_BACKFILL_DAYS * 86400000) / 1000));
+  params.set('oldest', effectiveOldest);
 
   do {
     if (cursor) params.set('cursor', cursor);
-    const res = await fetch(`https://slack.com/api/conversations.history?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    if (!data.ok) break;
+    const data = await slackRead(token, 'conversations.history', params);
+    if (!data.ok) {
+      console.error(`conversations.history failed for ${channelId}:`, data.error);
+      break;
+    }
     messages.push(...(data.messages || []));
     cursor = data.response_metadata?.next_cursor || '';
   } while (cursor);
 
   return messages;
+}
+
+async function fetchThreadReplies(token: string, channelId: string, threadTs: string) {
+  const replies: any[] = [];
+  let cursor = '';
+  const params = new URLSearchParams({ channel: channelId, ts: threadTs, limit: '200' });
+
+  do {
+    if (cursor) params.set('cursor', cursor);
+    const data = await slackRead(token, 'conversations.replies', params);
+    if (!data.ok) {
+      console.error(`conversations.replies failed for ${channelId}/${threadTs}:`, data.error);
+      break;
+    }
+    replies.push(...(data.messages || []));
+    cursor = data.response_metadata?.next_cursor || '';
+    // Tier 3 courtesy pause between pages / threads.
+    await sleep(1100);
+  } while (cursor);
+
+  return replies;
+}
+
+async function getPermalink(token: string, channelId: string, ts: string): Promise<string | null> {
+  const data = await slackRead(token, 'chat.getPermalink', new URLSearchParams({ channel: channelId, message_ts: ts }));
+  if (!data.ok) {
+    console.warn('chat.getPermalink failed:', data.error);
+    return null;
+  }
+  return data.permalink || null;
+}
+
+// "CPM-authored" rule, in order:
+//   1. the Slack user id is on an active team_members row (primary, 9 of 10 today)
+//   2. otherwise users.info reports an @connectpaidmedia.com email
+//   3. anyone matching neither is treated as client-side
+// Display names are never used.
+async function isCpmSlackUser(
+  token: string,
+  userId: string | undefined,
+  cpmSlackIds: Set<string>,
+  cache: Record<string, boolean>
+): Promise<boolean> {
+  if (!userId) return false;
+  if (cpmSlackIds.has(userId)) return true;
+  if (userId in cache) return cache[userId];
+
+  let result = false;
+  const data = await slackRead(token, 'users.info', new URLSearchParams({ user: userId }));
+  if (data.ok && data.user) {
+    const email = (data.user.profile?.email || '').toLowerCase();
+    // A workspace member without a visible email stays client-side: fail closed.
+    result = email.endsWith('@connectpaidmedia.com');
+  } else {
+    console.warn('users.info failed for CPM check, treating as client-side:', userId, data.error);
+  }
+  cache[userId] = result;
+  return result;
 }
 
 async function resolveUserName(token: string, userId: string, cache: Record<string, string>): Promise<string> {

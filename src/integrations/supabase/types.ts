@@ -7282,7 +7282,29 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      slack_unanswered_client_questions: {
+        Row: {
+          age_working_hours: number | null
+          asked_at: string | null
+          author: string | null
+          channel_id: string | null
+          channel_name: string | null
+          client_id: string | null
+          client_name: string | null
+          id: string | null
+          permalink: string | null
+          question: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_items_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       compute_tech_cost: {
@@ -7330,6 +7352,10 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      working_hours_between: {
+        Args: { p_end: string; p_start: string }
+        Returns: number
       }
     }
     Enums: {

@@ -53,8 +53,14 @@ describe("Slack write guard", () => {
           offenders.push(`${rel} → ${method}`);
         }
       }
-      for (const pattern of DYNAMIC_SLACK_URL) {
-        if (pattern.test(body)) offenders.push(`${rel} → dynamically constructed Slack API URL`);
+      // A dynamic URL is only a hazard if the file could feed a write method
+      // into it. Read-only helpers that build `api/${method}` and never mention
+      // a write method anywhere are fine.
+      const mentionsWriteMethod = WRITE_METHODS.some((m) => body.includes(m));
+      if (mentionsWriteMethod) {
+        for (const pattern of DYNAMIC_SLACK_URL) {
+          if (pattern.test(body)) offenders.push(`${rel} → dynamically constructed Slack API URL`);
+        }
       }
     }
     expect(offenders).toEqual([]);

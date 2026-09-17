@@ -2,10 +2,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
 import { classifyMessage } from "../_shared/slack-message-class.ts";
+import type { MessageClass } from "../_shared/slack-message-class.ts";
+import { classifyBatchWithAi, AI_BATCH_SIZE } from "../_shared/slack-classify-ai.ts";
 
 // A first sync on a channel with no cursor is capped so it can never pull an
 // entire multi-year history in one run.
 const INITIAL_BACKFILL_DAYS = 90;
+
+// A thread stays "open" (and therefore re-polled for late replies) while its
+// parent is this recent, or for as long as it holds an unanswered question.
+const OPEN_THREAD_DAYS = 14;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

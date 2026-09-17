@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
       let threadPolls = 0;
       const allMessages: { channel: string; context: string; text: string; user: string; ts: string }[] = [];
       const userCache: Record<string, string> = {};
-      const cpmCache: Record<string, string | null> = {};
+      const cpmCache: Record<string, boolean> = {};
 
       for (const mapping of mappings) {
         // is_external is NEVER consulted here — it gates posting only. Reading
@@ -750,14 +750,16 @@ async function getPermalink(token: string, channelId: string, ts: string): Promi
 }
 
 // "CPM-authored" rule, in order:
-//   1. the Slack user id is on an active team_members row (primary, 9 of 10 today)
-//   2. otherwise users.info reports an @connectpaidmedia.com email
-//   3. anyone matching neither is treated as client-side
+//   1. the Slack user id is on an ACTIVE team_members row (primary)
+//   2. otherwise users.info reports an email that matches an active team member
+//      — any domain, so contractor AMs (e.g. @flamingowl.co) count as CPM
+//   3. anyone matching neither is treated as client-side (fail closed)
 // Display names are never used.
 async function isCpmSlackUser(
   token: string,
   userId: string | undefined,
   cpmSlackIds: Set<string>,
+  cpmEmails: Set<string>,
   cache: Record<string, boolean>
 ): Promise<boolean> {
   if (!userId) return false;
@@ -769,12 +771,27 @@ async function isCpmSlackUser(
   if (data.ok && data.user) {
     const email = (data.user.profile?.email || '').toLowerCase();
     // A workspace member without a visible email stays client-side: fail closed.
-    result = email.endsWith('@connectpaidmedia.com');
+    result = email !== '' && cpmEmails.has(email);
   } else {
     console.warn('users.info failed for CPM check, treating as client-side:', userId, data.error);
   }
   cache[userId] = result;
   return result;
+}
+
+// Surrounding thread text for the classifier: the parent and earlier replies, so
+// the model can see whether a question is rhetorical or already answered.
+function threadContextFor(
+  all: { key: string; threadRoot: string | null; msg: any; userName: string; text: string }[],
+  target: { key: string; threadRoot: string | null; msg: any },
+): string | undefined {
+  const root = target.msg.thread_ts || target.msg.ts;
+  const earlier = all
+    .filter((p) => (p.msg.thread_ts || p.msg.ts) === root && Number(p.key) < Number(target.key))
+    .sort((a, b) => Number(a.key) - Number(b.key))
+    .slice(-5);
+  if (earlier.length === 0) return undefined;
+  return earlier.map((p) => `${p.userName}: ${p.text.slice(0, 240)}`).join(' | ');
 }
 
 async function resolveUserName(token: string, userId: string, cache: Record<string, string>): Promise<string> {

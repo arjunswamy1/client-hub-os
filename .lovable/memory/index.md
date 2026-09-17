@@ -12,3 +12,4 @@ Billy.com = lead-gen client with vertical filtering + Ringba call tracking.
 - [Development phases](mem://features/phases) — All phases and completion status
 - [DB schema](mem://features/db-schema) — Core tables, RLS patterns
 - [Team roles](mem://features/team-roles) — Role-based access control
+- [Hablyte setup](mem://features/hablyte) — Publisher "You" scoping, click-to-call means no UTM, campaign-level reads only

@@ -547,24 +547,112 @@ async function listBotChannels(token: string) {
   return channels;
 }
 
+// Every read goes through here so 429s are honoured instead of failing the run.
+// Slack sends Retry-After (seconds); conversations.replies and chat.getPermalink
+// are Tier 3, so a small pause is also taken between calls by the callers.
+async function slackRead(token: string, method: string, params: URLSearchParams, attempt = 0): Promise<any> {
+  const res = await fetch(`https://slack.com/api/${method}?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (res.status === 429 && attempt < 5) {
+    const retryAfter = Number(res.headers.get('Retry-After') || '2');
+    const waitMs = Math.min(Math.max(retryAfter, 1), 60) * 1000;
+    console.warn(`Slack ${method} rate-limited, waiting ${waitMs}ms (attempt ${attempt + 1})`);
+    await sleep(waitMs);
+    return slackRead(token, method, params, attempt + 1);
+  }
+
+  const data = await res.json().catch(() => ({ ok: false, error: 'non_json_response' }));
+  if (!data.ok && data.error === 'ratelimited' && attempt < 5) {
+    await sleep(2000 * (attempt + 1));
+    return slackRead(token, method, params, attempt + 1);
+  }
+  return data;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function fetchChannelMessages(token: string, channelId: string, oldest?: string | null) {
   const messages: any[] = [];
   let cursor = '';
   const params = new URLSearchParams({ channel: channelId, limit: '200' });
-  if (oldest) params.set('oldest', oldest);
+  // No cursor yet = first sync on this channel: cap the backfill so a newly
+  // enabled channel cannot pull years of history in one run.
+  const effectiveOldest = oldest
+    || String(Math.floor((Date.now() - INITIAL_BACKFILL_DAYS * 86400000) / 1000));
+  params.set('oldest', effectiveOldest);
 
   do {
     if (cursor) params.set('cursor', cursor);
-    const res = await fetch(`https://slack.com/api/conversations.history?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    if (!data.ok) break;
+    const data = await slackRead(token, 'conversations.history', params);
+    if (!data.ok) {
+      console.error(`conversations.history failed for ${channelId}:`, data.error);
+      break;
+    }
     messages.push(...(data.messages || []));
     cursor = data.response_metadata?.next_cursor || '';
   } while (cursor);
 
   return messages;
+}
+
+async function fetchThreadReplies(token: string, channelId: string, threadTs: string) {
+  const replies: any[] = [];
+  let cursor = '';
+  const params = new URLSearchParams({ channel: channelId, ts: threadTs, limit: '200' });
+
+  do {
+    if (cursor) params.set('cursor', cursor);
+    const data = await slackRead(token, 'conversations.replies', params);
+    if (!data.ok) {
+      console.error(`conversations.replies failed for ${channelId}/${threadTs}:`, data.error);
+      break;
+    }
+    replies.push(...(data.messages || []));
+    cursor = data.response_metadata?.next_cursor || '';
+    // Tier 3 courtesy pause between pages / threads.
+    await sleep(1100);
+  } while (cursor);
+
+  return replies;
+}
+
+async function getPermalink(token: string, channelId: string, ts: string): Promise<string | null> {
+  const data = await slackRead(token, 'chat.getPermalink', new URLSearchParams({ channel: channelId, message_ts: ts }));
+  if (!data.ok) {
+    console.warn('chat.getPermalink failed:', data.error);
+    return null;
+  }
+  return data.permalink || null;
+}
+
+// "CPM-authored" rule, in order:
+//   1. the Slack user id is on an active team_members row (primary, 9 of 10 today)
+//   2. otherwise users.info reports an @connectpaidmedia.com email
+//   3. anyone matching neither is treated as client-side
+// Display names are never used.
+async function isCpmSlackUser(
+  token: string,
+  userId: string | undefined,
+  cpmSlackIds: Set<string>,
+  cache: Record<string, boolean>
+): Promise<boolean> {
+  if (!userId) return false;
+  if (cpmSlackIds.has(userId)) return true;
+  if (userId in cache) return cache[userId];
+
+  let result = false;
+  const data = await slackRead(token, 'users.info', new URLSearchParams({ user: userId }));
+  if (data.ok && data.user) {
+    const email = (data.user.profile?.email || '').toLowerCase();
+    // A workspace member without a visible email stays client-side: fail closed.
+    result = email.endsWith('@connectpaidmedia.com');
+  } else {
+    console.warn('users.info failed for CPM check, treating as client-side:', userId, data.error);
+  }
+  cache[userId] = result;
+  return result;
 }
 
 async function resolveUserName(token: string, userId: string, cache: Record<string, string>): Promise<string> {

@@ -226,6 +226,43 @@ Deno.serve(async (req) => {
   }
 
 
+  // CallGrid fires multiple events per call (Call Initiated, Call Billable, …).
+  // Each event lands on the same (client_id, call_id) row: merge, never overwrite.
+  // A later event that omits a field must not blank what an earlier one delivered.
+  const mergeStr = (next: unknown, prev: unknown) =>
+    next !== null && next !== undefined && next !== '' ? next : (prev ?? null);
+  const mergeNum = (next: number, prev: unknown) => (next > 0 ? next : Number(prev) || 0);
+
+  const { data: existing } = await supabase
+    .from('cannaball_calls')
+    .select('*')
+    .eq('client_id', clientId)
+    .eq('call_id', call_id)
+    .maybeSingle();
+
+  if (existing) {
+    row.caller_number = mergeStr(row.caller_number, existing.caller_number);
+    row.did = mergeStr(row.did, existing.did);
+    row.caller_state = mergeStr(row.caller_state, existing.caller_state);
+    row.caller_city = mergeStr(row.caller_city, existing.caller_city);
+    row.caller_zip = mergeStr(row.caller_zip, existing.caller_zip);
+    row.caller_area_code = mergeStr(row.caller_area_code, existing.caller_area_code);
+    // Call Initiated fires first and carries the true start time; keep it.
+    row.call_start = existing.call_start ?? row.call_start;
+    row.duration_seconds = mergeNum(duration_seconds, existing.duration_seconds);
+    row.connection_duration_seconds = mergeNum(
+      connection_duration_seconds, existing.connection_duration_seconds,
+    );
+    row.connected = Boolean(existing.connected) || row.connected;
+    // The Billable event is the one that usually carries payout; a non-zero wins.
+    row.payout = mergeNum(toNumber(row.payout), existing.payout);
+    row.disposition = mergeStr(row.disposition, existing.disposition);
+    row.campaign_name = mergeStr(row.campaign_name, existing.campaign_name);
+    row.creative_name = mergeStr(row.creative_name, existing.creative_name);
+    row.recording_url = mergeStr(row.recording_url, existing.recording_url);
+    row.raw_payload = { ...((existing.raw_payload as Record<string, any>) ?? {}), ...payload };
+  }
+
   const { error } = await supabase
     .from('cannaball_calls')
     .upsert(row, { onConflict: 'client_id,call_id' });

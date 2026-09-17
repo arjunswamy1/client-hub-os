@@ -21,6 +21,15 @@ const WRITE_METHODS = [
 const ALLOWED = ["supabase/functions/_shared/slack-post.ts"];
 
 /**
+ * Files allowed to build a Slack API URL dynamically. Only read-only helpers
+ * belong here — the posting helper and sync-slack's `slackRead` wrapper.
+ */
+const DYNAMIC_URL_ALLOWED = [
+  "supabase/functions/_shared/slack-post.ts",
+  "supabase/functions/sync-slack/index.ts",
+];
+
+/**
  * A dynamically built method name (`api/${m}`) hides the literal, so also flag
  * any Slack API URL whose method segment is an interpolation or concatenation.
  */
@@ -53,11 +62,9 @@ describe("Slack write guard", () => {
           offenders.push(`${rel} → ${method}`);
         }
       }
-      // A dynamic URL is only a hazard if the file could feed a write method
-      // into it. Read-only helpers that build `api/${method}` and never mention
-      // a write method anywhere are fine.
-      const mentionsWriteMethod = WRITE_METHODS.some((m) => body.includes(m));
-      if (mentionsWriteMethod) {
+      // Unconditional: a dynamically built method name hides the literal, so any
+      // file outside the explicit allowlist is an offender.
+      if (!DYNAMIC_URL_ALLOWED.includes(rel)) {
         for (const pattern of DYNAMIC_SLACK_URL) {
           if (pattern.test(body)) offenders.push(`${rel} → dynamically constructed Slack API URL`);
         }

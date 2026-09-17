@@ -2,10 +2,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
 import { classifyMessage } from "../_shared/slack-message-class.ts";
+import type { MessageClass } from "../_shared/slack-message-class.ts";
+import { classifyBatchWithAi, AI_BATCH_SIZE } from "../_shared/slack-classify-ai.ts";
 
 // A first sync on a channel with no cursor is capped so it can never pull an
 // entire multi-year history in one run.
 const INITIAL_BACKFILL_DAYS = 90;
+
+// A thread stays "open" (and therefore re-polled for late replies) while its
+// parent is this recent, or for as long as it holds an unanswered question.
+const OPEN_THREAD_DAYS = 14;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -210,12 +216,18 @@ Deno.serve(async (req) => {
         .select('id, name, email, slack_user_id')
         .eq('is_active', true);
 
-      // Primary check: the Slack user id recorded on the team member row.
+      // "CPM" = anyone on an ACTIVE team_members row, matched by Slack user id or
+      // by email — regardless of email domain (contractor AMs on other domains
+      // are CPM too). Unmatched stays client-side.
       const cpmSlackIds = new Set(
         (teamMembers || []).map((tm: any) => tm.slack_user_id).filter(Boolean)
       );
+      const cpmEmails = new Set(
+        (teamMembers || []).map((tm: any) => (tm.email || '').toLowerCase()).filter(Boolean)
+      );
 
       let totalSynced = 0;
+      let threadPolls = 0;
       const allMessages: { channel: string; context: string; text: string; user: string; ts: string }[] = [];
       const userCache: Record<string, string> = {};
       const cpmCache: Record<string, boolean> = {};
@@ -224,78 +236,172 @@ Deno.serve(async (req) => {
         // is_external is NEVER consulted here — it gates posting only. Reading
         // client-facing (externally shared) channels is the point of this sync.
         const messages = await fetchChannelMessages(slackToken, mapping.channel_id, mapping.last_synced_ts);
-        if (messages.length === 0) continue;
 
-        const contextItems: any[] = [];
         const channelContext = CHANNEL_CONTEXT[mapping.channel_name] || `#${mapping.channel_name}`;
 
-        const buildItem = async (msg: any, isThreadReply: boolean) => {
+        interface Pending {
+          msg: any;
+          isThreadReply: boolean;
+          threadRoot: string | null;
+        }
+        const pending: Pending[] = [];
+        const seenTs = new Set<string>();
+
+        const addPending = (msg: any, isThreadReply: boolean) => {
           if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave' || msg.subtype === 'bot_message') return;
           if (!msg.text || msg.text.trim() === '') return;
+          if (seenTs.has(msg.ts)) return;
+          seenTs.add(msg.ts);
+          pending.push({ msg, isThreadReply, threadRoot: msg.thread_ts || null });
+        };
 
-          const userName = await resolveUserName(slackToken, msg.user, userCache);
-          const occurredAt = new Date(parseFloat(msg.ts) * 1000).toISOString();
-          const resolvedText = await resolveUserMentions(slackToken, msg.text, userCache);
+        // Threads seen in this history page, with Slack's own latest_reply so an
+        // unchanged thread can be skipped without an API call.
+        const seenThreads = new Map<string, { parent_occurred_at: string; latest_reply: string | null }>();
 
-          const isCpmAuthor = await isCpmSlackUser(slackToken, msg.user, cpmSlackIds, cpmCache);
-          const messageClass = classifyMessage({ text: resolvedText, isCpmAuthor });
+        for (const msg of messages) {
+          addPending(msg, false);
+          if (msg.thread_ts && Number(msg.reply_count || 0) > 0) {
+            seenThreads.set(msg.thread_ts, {
+              parent_occurred_at: new Date(parseFloat(msg.thread_ts) * 1000).toISOString(),
+              latest_reply: msg.latest_reply || null,
+            });
+          }
+        }
 
-          // Permalinks are only fetched for the classes a human will be shown,
-          // to keep this inside Slack's Tier 3 budget.
+        for (const [threadTs, info] of seenThreads) {
+          await supabase.from('slack_threads').upsert({
+            client_id,
+            channel_id: mapping.channel_id,
+            thread_ts: threadTs,
+            parent_occurred_at: info.parent_occurred_at,
+          }, { onConflict: 'channel_id,thread_ts' });
+        }
+
+        // A thread is OPEN when its parent is within 14 days OR it still holds an
+        // unanswered client_question of any age. Open threads are re-polled no
+        // matter where last_synced_ts sits — Slack omits non-broadcast thread
+        // replies from conversations.history, so a next-day answer would
+        // otherwise never be ingested and the question would nag forever.
+        const openCutoff = new Date(Date.now() - OPEN_THREAD_DAYS * 86400000).toISOString();
+        const { data: openThreads } = await supabase
+          .from('slack_threads')
+          .select('id, thread_ts, last_reply_ts, parent_occurred_at, has_unanswered_question')
+          .eq('channel_id', mapping.channel_id)
+          .or(`parent_occurred_at.gte.${openCutoff},has_unanswered_question.is.true`);
+
+        const polledThreads: { id: string; thread_ts: string }[] = [];
+
+        for (const t of (openThreads || []) as any[]) {
+          const fresh = seenThreads.get(t.thread_ts);
+          // Unchanged since the last poll → no call.
+          if (fresh && fresh.latest_reply && t.last_reply_ts && fresh.latest_reply === t.last_reply_ts) continue;
+
+          const replies = await fetchThreadReplies(slackToken, mapping.channel_id, t.thread_ts);
+          threadPolls += 1;
+          if (replies.length === 0) continue;
+
+          let maxTs: string | null = t.last_reply_ts || null;
+          for (const reply of replies) {
+            // The parent may predate our first sync; store it, but never let its
+            // old ts move the cursor — hence isThreadReply = true.
+            addPending(reply, true);
+            if (reply.ts !== t.thread_ts && (!maxTs || Number(reply.ts) > Number(maxTs))) maxTs = reply.ts;
+          }
+
+          await supabase.from('slack_threads').update({
+            last_reply_ts: maxTs,
+            last_polled_at: new Date().toISOString(),
+          }).eq('id', t.id);
+          polledThreads.push({ id: t.id, thread_ts: t.thread_ts });
+        }
+
+        if (pending.length === 0) continue;
+
+        // ── Resolve author + text once, then classify ──
+        interface Prepared extends Pending {
+          key: string;
+          userName: string;
+          text: string;
+          isCpmAuthor: boolean;
+          heuristic: MessageClass;
+          finalClass: MessageClass;
+          classifiedBy: 'llm' | 'heuristic';
+        }
+        const prepared: Prepared[] = [];
+
+        for (const p of pending) {
+          const userName = await resolveUserName(slackToken, p.msg.user, userCache);
+          const text = await resolveUserMentions(slackToken, p.msg.text, userCache);
+          const isCpmAuthor = await isCpmSlackUser(slackToken, p.msg.user, cpmSlackIds, cpmEmails, cpmCache);
+          const heuristic = classifyMessage({ text, isCpmAuthor });
+          prepared.push({
+            ...p, key: p.msg.ts, userName, text, isCpmAuthor,
+            heuristic, finalClass: heuristic, classifiedBy: 'heuristic',
+          });
+        }
+
+        // Cheap pre-filter: CPM authors and obvious noise never cost a model call.
+        const needsAi = prepared.filter((p) => !p.isCpmAuthor && p.heuristic !== 'noise');
+        for (let i = 0; i < needsAi.length; i += AI_BATCH_SIZE) {
+          const batch = needsAi.slice(i, i + AI_BATCH_SIZE);
+          const answers = await classifyBatchWithAi(batch.map((p) => ({
+            key: p.key,
+            author: p.userName,
+            isCpmAuthor: p.isCpmAuthor,
+            text: p.text,
+            threadContext: threadContextFor(prepared, p),
+          })), LOVABLE_API_KEY);
+          // A failed batch keeps the regex verdict — never drops the message.
+          if (!answers) continue;
+          for (const p of batch) {
+            const cls = answers[p.key];
+            if (cls) { p.finalClass = cls; p.classifiedBy = 'llm'; }
+          }
+        }
+
+        const contextItems: any[] = [];
+        for (const p of prepared) {
+          // Permalinks only for the classes a human will be shown (Tier 3 budget).
           let permalink: string | null = null;
-          if (messageClass === 'client_question' || messageClass === 'escalation' || messageClass === 'client_request') {
-            permalink = await getPermalink(slackToken, mapping.channel_id, msg.ts);
+          if (p.finalClass === 'client_question' || p.finalClass === 'escalation' || p.finalClass === 'client_request') {
+            permalink = await getPermalink(slackToken, mapping.channel_id, p.msg.ts);
           }
 
           contextItems.push({
             client_id,
             source: 'slack',
-            source_id: `slack_${mapping.channel_id}_${msg.ts}`,
+            source_id: `slack_${mapping.channel_id}_${p.msg.ts}`,
             content_type: 'message',
             title: `#${mapping.channel_name}`,
-            content: resolvedText,
-            occurred_at: occurredAt,
-            participants: [userName],
+            content: p.text,
+            occurred_at: new Date(parseFloat(p.msg.ts) * 1000).toISOString(),
+            participants: [p.userName],
             metadata: {
               channel_id: mapping.channel_id,
               channel_name: mapping.channel_name,
               channel_context: channelContext,
-              slack_ts: msg.ts,
-              thread_ts: msg.thread_ts || null,
-              is_thread_reply: isThreadReply,
-              slack_user_id: msg.user || null,
-              is_cpm_author: isCpmAuthor,
-              message_class: messageClass,
+              slack_ts: p.msg.ts,
+              thread_ts: p.msg.thread_ts || null,
+              is_thread_reply: p.isThreadReply,
+              slack_user_id: p.msg.user || null,
+              is_cpm_author: p.isCpmAuthor,
+              message_class: p.finalClass,
+              classified_by: p.classifiedBy,
+              heuristic_class: p.heuristic,
               permalink,
-              reactions: msg.reactions || [],
+              reactions: p.msg.reactions || [],
             },
           });
 
-          // Collect for AI analysis
           allMessages.push({
             channel: mapping.channel_name,
             context: channelContext,
-            text: resolvedText,
-            user: userName,
-            ts: occurredAt,
+            text: p.text,
+            user: p.userName,
+            ts: new Date(parseFloat(p.msg.ts) * 1000).toISOString(),
           });
-        };
-
-        for (const msg of messages) {
-          await buildItem(msg, false);
-
-          // Threaded replies are where the answers live. Every reply becomes its
-          // own row, deduped by the same source_id scheme.
-          const replyCount = Number(msg.reply_count || 0);
-          if (msg.thread_ts && replyCount > 0) {
-            const replies = await fetchThreadReplies(slackToken, mapping.channel_id, msg.thread_ts);
-            for (const reply of replies) {
-              if (reply.ts === msg.ts) continue; // parent is already stored
-              await buildItem(reply, true);
-            }
-          }
         }
-
 
         // The cursor may only advance to the timestamp of the LAST SUCCESSFULLY
         // STORED message. A failed insert used to burn the cursor, which is how
@@ -325,11 +431,27 @@ Deno.serve(async (req) => {
             }
           }
 
-          if (lastStoredTs) {
+          if (lastStoredTs && (!mapping.last_synced_ts || Number(lastStoredTs) > Number(mapping.last_synced_ts))) {
             await supabase.from('slack_channel_mappings')
               .update({ last_synced_ts: lastStoredTs, updated_at: new Date().toISOString() })
               .eq('id', mapping.id);
           }
+        }
+
+        // Does each polled thread still hold an unanswered client question?
+        // Computed over the freshly fetched full thread, so an in-thread answer
+        // closes it and the thread stops being re-polled once it ages out.
+        for (const t of polledThreads) {
+          const inThread = prepared
+            .filter((p) => (p.msg.thread_ts || p.msg.ts) === t.thread_ts)
+            .sort((a, b) => Number(a.key) - Number(b.key));
+          const lastQuestion = [...inThread].reverse().find((p) => p.finalClass === 'client_question');
+          const unanswered = !!lastQuestion && !inThread.some(
+            (p) => p.isCpmAuthor && Number(p.key) > Number(lastQuestion.key)
+          );
+          await supabase.from('slack_threads')
+            .update({ has_unanswered_question: unanswered })
+            .eq('id', t.id);
         }
       }
 
@@ -435,7 +557,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      return jsonResp({ synced: totalSynced, tasks_created: tasksCreated, summary });
+      return jsonResp({ synced: totalSynced, thread_polls: threadPolls, tasks_created: tasksCreated, summary });
     }
 
     return jsonResp({ error: 'Unknown action' }, 400);
@@ -628,14 +750,16 @@ async function getPermalink(token: string, channelId: string, ts: string): Promi
 }
 
 // "CPM-authored" rule, in order:
-//   1. the Slack user id is on an active team_members row (primary, 9 of 10 today)
-//   2. otherwise users.info reports an @connectpaidmedia.com email
-//   3. anyone matching neither is treated as client-side
+//   1. the Slack user id is on an ACTIVE team_members row (primary)
+//   2. otherwise users.info reports an email that matches an active team member
+//      — any domain, so contractor AMs (e.g. @flamingowl.co) count as CPM
+//   3. anyone matching neither is treated as client-side (fail closed)
 // Display names are never used.
 async function isCpmSlackUser(
   token: string,
   userId: string | undefined,
   cpmSlackIds: Set<string>,
+  cpmEmails: Set<string>,
   cache: Record<string, boolean>
 ): Promise<boolean> {
   if (!userId) return false;
@@ -647,12 +771,27 @@ async function isCpmSlackUser(
   if (data.ok && data.user) {
     const email = (data.user.profile?.email || '').toLowerCase();
     // A workspace member without a visible email stays client-side: fail closed.
-    result = email.endsWith('@connectpaidmedia.com');
+    result = email !== '' && cpmEmails.has(email);
   } else {
     console.warn('users.info failed for CPM check, treating as client-side:', userId, data.error);
   }
   cache[userId] = result;
   return result;
+}
+
+// Surrounding thread text for the classifier: the parent and earlier replies, so
+// the model can see whether a question is rhetorical or already answered.
+function threadContextFor(
+  all: { key: string; threadRoot: string | null; msg: any; userName: string; text: string }[],
+  target: { key: string; threadRoot: string | null; msg: any },
+): string | undefined {
+  const root = target.msg.thread_ts || target.msg.ts;
+  const earlier = all
+    .filter((p) => (p.msg.thread_ts || p.msg.ts) === root && Number(p.key) < Number(target.key))
+    .sort((a, b) => Number(a.key) - Number(b.key))
+    .slice(-5);
+  if (earlier.length === 0) return undefined;
+  return earlier.map((p) => `${p.userName}: ${p.text.slice(0, 240)}`).join(' | ');
 }
 
 async function resolveUserName(token: string, userId: string, cache: Record<string, string>): Promise<string> {

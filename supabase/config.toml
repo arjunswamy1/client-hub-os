@@ -19,3 +19,5 @@ project_id = "bmwjwsxfpzzruitevnmx"
     verify_jwt = false
   [functions.slack-token-refresh]
     verify_jwt = false
+  [functions.extract-meeting-tasks]
+    verify_jwt = false

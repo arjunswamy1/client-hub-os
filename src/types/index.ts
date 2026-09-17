@@ -43,7 +43,8 @@ export interface ClientAssignment {
 
 export interface Task {
   id: string;
-  client_id: string;
+  /** Null for agency-lane tasks (no client), visible to admins and AMs only. */
+  client_id: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;

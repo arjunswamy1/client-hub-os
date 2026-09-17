@@ -41,8 +41,11 @@ export function classifyMessage({ text, isCpmAuthor }: ClassifyInput): MessageCl
   if (SCHEDULING.test(t) && !/\?/.test(t)) return 'noise';
 
   if (ESCALATION.test(t)) return 'escalation';
-  if (REQUEST.test(t)) return 'client_request';
+  // An explicit ask ("please", "can you") is a request even when phrased as a
+  // question; anything else interrogative is a question.
+  if (EXPLICIT_ASK.test(t)) return 'client_request';
   if (/\?/.test(t) || QUESTION_WORD.test(t)) return 'client_question';
+  if (REQUEST.test(t)) return 'client_request';
   if (CLAIM_NUMBER.test(t) && CLAIM_VOICE.test(t)) return 'client_claim';
   return 'noise';
 }

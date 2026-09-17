@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/anthropic.ts";
 import { logAiUsage } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
-import { postToSlack, SlackRefusedError } from "../_shared/slack-post.ts";
+import { postToSlack, canPostToChannel, SlackRefusedError } from "../_shared/slack-post.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -1163,7 +1163,8 @@ async function processSlackMessage(event: any) {
       }
       directMessageVerified.add(event.channel);
     } else if (!(await canPostToChannel(event.channel))) {
-      await postToSlack({ channel: event.channel, text: PENDING_REPLY_TEXT, threadTs: replyThreadTs });
+      // Unmapped, unclassified or external (client) channel: stay silent. No
+      // write is attempted, so no junk refusal row is written either.
       console.warn('Slack reply suppressed by channel guard before processing:', event.channel);
       return;
     }

@@ -260,6 +260,7 @@ Deno.serve(async (req) => {
         if (contextItems.length > 0) {
           contextItems.sort((a, b) => Number(a.metadata.slack_ts) - Number(b.metadata.slack_ts));
           let lastStoredTs: string | null = null;
+          let contiguous = true;
 
           for (const item of contextItems) {
             const { error: insertError } = await supabase
@@ -267,11 +268,14 @@ Deno.serve(async (req) => {
               .upsert(item, { onConflict: 'source_id' });
 
             if (insertError) {
+              // Skip the poison message and keep going, but freeze the cursor at
+              // the last CONTIGUOUS success so nothing after it is lost.
               console.error(`Insert error for #${mapping.channel_name} @ ${item.metadata.slack_ts}:`, insertError);
-              break; // stop here; the cursor stays at the last success
+              contiguous = false;
+              continue;
             }
             totalSynced += 1;
-            lastStoredTs = item.metadata.slack_ts as string;
+            if (contiguous) lastStoredTs = item.metadata.slack_ts as string;
           }
 
           if (lastStoredTs) {

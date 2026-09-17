@@ -66,8 +66,13 @@ function toIso(v: unknown): string {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const expected = Deno.env.get('CALLGRID_WEBHOOK_SECRET');
-  if (!expected) {
+  // Either account's shared secret is accepted — each CallGrid account holds its own,
+  // and client separation is enforced by client_id + registered DID, not by the token.
+  const expectedSecrets = [
+    Deno.env.get('CALLGRID_WEBHOOK_SECRET'),
+    Deno.env.get('CALLGRID_WEBHOOK_SECRET_PPC'),
+  ].filter(Boolean) as string[];
+  if (expectedSecrets.length === 0) {
     return new Response(JSON.stringify({ error: 'Server not configured' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

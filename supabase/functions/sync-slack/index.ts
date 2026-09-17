@@ -45,10 +45,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Service-role callers (ops / scheduled runs) are trusted; anyone else must
-    // be a signed-in user.
+    // Service-role callers and single-use cron nonces (ops / scheduled runs) are
+    // trusted; anyone else must be a signed-in user.
     const bearer = authHeader.replace('Bearer ', '').trim();
-    const isServiceCall = bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    let isServiceCall = bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    const cronNonce = req.headers.get('x-cron-nonce') || '';
+    if (!isServiceCall && /^[0-9a-f-]{36}$/i.test(cronNonce)) {
+      const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { data: nonceRow } = await admin
+        .from('cron_invocation_tokens')
+        .delete()
+        .eq('token', cronNonce)
+        .gt('created_at', new Date(Date.now() - 5 * 60000).toISOString())
+        .select('token')
+        .maybeSingle();
+      isServiceCall = !!nonceRow;
+    }
 
     if (!isServiceCall) {
       const supabaseUser = createClient(

@@ -37,11 +37,10 @@ const VALUE_COLUMNS = [
   "number", "numberId", "numberPoolName", "numberPoolId", "isFromNumberPool",
   "hasPayout", "noPayoutReason",
   // RTB bid diagnostics — under a ring tree, "not sold" has to be readable as
-  // "nobody bid" versus "won but rejected", per state and per buyer.
-  "bidAmount", "winningBid", "pingTotalBidAmount", "avgPingTreeBidAmount",
-  "ringTreeWinningBid", "ringTreeWinningBidTargetName",
-  "winningBidCallAccepted", "winningBidCallRejected",
-  "noConversionReason", "blockReason", "wasBlocked", "buyerConversionAmount",
+  // "nobody bid" versus "won but rejected". Kept to a handful: the request has a
+  // practical column budget and the Geo/InboundNumber tags (state, city, dialed
+  // number) must never be crowded out by these.
+  "winningBid", "ringTreeWinningBidTargetName", "noConversionReason", "blockReason",
   "tag:User:utm_content", "tag:User:utm_source", "tag:User:utm_medium",
   "tag:User:utm_campaign", "tag:User:utm_term", "tag:User:creative",
 ];

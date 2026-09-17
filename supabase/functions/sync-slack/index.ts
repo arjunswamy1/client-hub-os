@@ -39,16 +39,11 @@ Deno.serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     // Service-role callers and single-use cron nonces (ops / scheduled runs) are
     // trusted; anyone else must be a signed-in user.
-    const bearer = authHeader.replace('Bearer ', '').trim();
-    let isServiceCall = bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const bearer = (authHeader || '').replace('Bearer ', '').trim();
+    let isServiceCall = bearer !== '' && bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     const cronNonce = req.headers.get('x-cron-nonce') || '';
     if (!isServiceCall && /^[0-9a-f-]{36}$/i.test(cronNonce)) {
@@ -61,6 +56,12 @@ Deno.serve(async (req) => {
         .select('token')
         .maybeSingle();
       isServiceCall = !!nonceRow;
+    }
+
+    if (!isServiceCall && !authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (!isServiceCall) {

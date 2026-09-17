@@ -3,9 +3,13 @@
 // chosen weekday/hour, is single-flighted with a database lease, and is
 // idempotent per period key. Can also be called with a user JWT for a test send.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { AIBlockedError, generatePlan, planBlocks, postSlack, type OptimizerPlan } from '../_shared/optimizer-ai.ts';
 import { buildJacuzziBriefs, buildRRMBriefs, lastNDays, type BriefInput } from '../_shared/report-payloads.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-nonce',
+};
 
 const HUB_URL = 'https://hub.connectpaidmedia.com';
 const BUYOLOGY_CLIENT_ID = 'b3d600f5-5d6b-4378-aa96-b395c05e9297';

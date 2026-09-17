@@ -2,11 +2,17 @@
 //
 // The rotating bot token expires every 12 hours, and previously it was only
 // refreshed when a human messaged the bot. Anything running on a schedule after
-// a quiet night found a dead token. This runs every 6 hours via pg_cron using
-// the project's existing `cron_invocation_tokens` nonce pattern.
+// a quiet night found a dead token. pg_cron calls this every 6 hours and
+// authenticates with the vault-held service-role key bearer, matching
+// 20260916223623_*.sql. The `cron_invocation_tokens` nonce path below is kept
+// as an alternative for callers that use it.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { getValidBotTokenDetailed } from '../_shared/slack-token.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-nonce',
+};
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

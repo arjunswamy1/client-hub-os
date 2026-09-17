@@ -173,6 +173,8 @@ Deno.serve(async (req) => {
     did: didDigits || rawDid,
     caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state']) ?? null,
     caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city']) ?? null,
+    caller_zip: pick<string>(payload, ['caller_zip', 'zip', 'zip_code', 'postal_code', 'caller_postal']) ?? null,
+    caller_area_code: pick<string>(payload, ['caller_area_code', 'area_code', 'npa']) ?? null,
     call_start: toIso(pick(payload, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at'])),
     duration_seconds,
     connected,

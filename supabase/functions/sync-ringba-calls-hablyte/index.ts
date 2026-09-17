@@ -206,6 +206,30 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Read-only diagnostic: buyer / target availability, including the geographic
+    // filters and hours each buyer accepts. Answers "which states will this buyer
+    // take?" from Ringba itself rather than from a claim. Writes nothing.
+    if (new URL(req.url).searchParams.get("buyers") === "1") {
+      const auth = { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" };
+      const out: Record<string, unknown> = { diagnostic: true, wrote_nothing: true };
+      const paths = [
+        "targets", "buyers", "campaigns",
+        "targets/counts", "targetgroups", "numbers",
+      ];
+      for (const p of paths) {
+        try {
+          const r = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/${p}`, { headers: auth });
+          const t = await r.text();
+          out[p] = r.ok ? JSON.parse(t) : `${r.status} ${t.substring(0, 300)}`;
+        } catch (e) {
+          out[p] = `err ${e instanceof Error ? e.message : e}`;
+        }
+      }
+      return new Response(JSON.stringify(out, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Read-only diagnostic: full column + tag menu for this account.
     if (new URL(req.url).searchParams.get("diagnose") === "1") {
       const auth = { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" };

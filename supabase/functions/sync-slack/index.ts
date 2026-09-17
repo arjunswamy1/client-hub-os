@@ -557,7 +557,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      return jsonResp({ synced: totalSynced, tasks_created: tasksCreated, summary });
+      return jsonResp({ synced: totalSynced, thread_polls: threadPolls, tasks_created: tasksCreated, summary });
     }
 
     return jsonResp({ error: 'Unknown action' }, 400);

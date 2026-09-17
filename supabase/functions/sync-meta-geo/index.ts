@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
         let url =
           `https://graph.facebook.com/v21.0/${acct.id}/insights` +
           `?level=campaign&breakdowns=region&time_increment=1&limit=500` +
-          `&fields=campaign_id,campaign_name,spend,impressions,clicks,region,country` +
+          `&fields=campaign_id,campaign_name,spend,impressions,clicks` +
           `&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}` +
           `&access_token=${conn.access_token}`;
 

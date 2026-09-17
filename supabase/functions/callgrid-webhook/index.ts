@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
   const provided = req.headers.get('x-callgrid-secret')
     || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
     || url.searchParams.get('secret');
-  if (provided !== expected) {
+  if (!provided || !expectedSecrets.includes(provided)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

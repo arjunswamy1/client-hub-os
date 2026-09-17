@@ -172,3 +172,60 @@ export function useHablyteMetaFreshness() {
     },
   });
 }
+
+/** US state name (Meta's `region`) → two-letter code (Ringba's caller state). */
+const STATE_CODES: Record<string, string> = {
+  Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR", California: "CA", Colorado: "CO",
+  Connecticut: "CT", Delaware: "DE", "District of Columbia": "DC", Florida: "FL", Georgia: "GA",
+  Hawaii: "HI", Idaho: "ID", Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS", Kentucky: "KY",
+  Louisiana: "LA", Maine: "ME", Maryland: "MD", Massachusetts: "MA", Michigan: "MI", Minnesota: "MN",
+  Mississippi: "MS", Missouri: "MO", Montana: "MT", Nebraska: "NE", Nevada: "NV",
+  "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+  "North Carolina": "NC", "North Dakota": "ND", Ohio: "OH", Oklahoma: "OK", Oregon: "OR",
+  Pennsylvania: "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD",
+  Tennessee: "TN", Texas: "TX", Utah: "UT", Vermont: "VT", Virginia: "VA", Washington: "WA",
+  "West Virginia": "WV", Wisconsin: "WI", Wyoming: "WY", "Puerto Rico": "PR",
+};
+
+export function stateCode(region: string | null | undefined): string {
+  if (!region) return "Unknown";
+  return STATE_CODES[region] ?? region;
+}
+
+export interface HablyteGeoSpendRow {
+  date: string;
+  region: string;
+  campaign_name: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+}
+
+/**
+ * Meta spend per state. This is delivery geography — where the impression served —
+ * which is a different measurement from the caller's state on a call. They are shown
+ * side by side, never treated as one field.
+ */
+export function useHablyteGeoSpend() {
+  const { from, to } = useWindow();
+  return useQuery({
+    queryKey: ["hablyte-geo-spend", from, to],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const rows: HablyteGeoSpendRow[] = [];
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from("meta_geo_metrics")
+          .select("date, region, campaign_name, spend, impressions, clicks")
+          .eq("client_id", HABLYTE_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) throw error;
+        rows.push(...((data || []) as unknown as HablyteGeoSpendRow[]));
+        if (!data || data.length < PAGE_SIZE) break;
+      }
+      return rows;
+    },
+  });
+}

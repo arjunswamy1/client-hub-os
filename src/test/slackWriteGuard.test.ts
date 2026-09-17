@@ -21,6 +21,15 @@ const WRITE_METHODS = [
 const ALLOWED = ["supabase/functions/_shared/slack-post.ts"];
 
 /**
+ * Files allowed to build a Slack API URL dynamically. Only read-only helpers
+ * belong here — the posting helper and sync-slack's `slackRead` wrapper.
+ */
+const DYNAMIC_URL_ALLOWED = [
+  "supabase/functions/_shared/slack-post.ts",
+  "supabase/functions/sync-slack/index.ts",
+];
+
+/**
  * A dynamically built method name (`api/${m}`) hides the literal, so also flag
  * any Slack API URL whose method segment is an interpolation or concatenation.
  */

@@ -6075,9 +6075,16 @@ export type Database = {
         Row: {
           channel_id: string
           channel_name: string
+          channel_purpose: string | null
+          classified_at: string | null
           client_id: string
           created_at: string
           id: string
+          is_ext_shared: boolean | null
+          is_external: boolean
+          is_org_shared: boolean | null
+          is_private: boolean | null
+          is_shared: boolean | null
           last_synced_ts: string | null
           sync_enabled: boolean
           updated_at: string
@@ -6085,9 +6092,16 @@ export type Database = {
         Insert: {
           channel_id: string
           channel_name: string
+          channel_purpose?: string | null
+          classified_at?: string | null
           client_id: string
           created_at?: string
           id?: string
+          is_ext_shared?: boolean | null
+          is_external?: boolean
+          is_org_shared?: boolean | null
+          is_private?: boolean | null
+          is_shared?: boolean | null
           last_synced_ts?: string | null
           sync_enabled?: boolean
           updated_at?: string
@@ -6095,9 +6109,16 @@ export type Database = {
         Update: {
           channel_id?: string
           channel_name?: string
+          channel_purpose?: string | null
+          classified_at?: string | null
           client_id?: string
           created_at?: string
           id?: string
+          is_ext_shared?: boolean | null
+          is_external?: boolean
+          is_org_shared?: boolean | null
+          is_private?: boolean | null
+          is_shared?: boolean | null
           last_synced_ts?: string | null
           sync_enabled?: boolean
           updated_at?: string
@@ -6111,6 +6132,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      slack_post_refusals: {
+        Row: {
+          channel_id: string
+          channel_name: string | null
+          created_at: string
+          detail: Json | null
+          id: string
+          method: string
+          reason: string
+        }
+        Insert: {
+          channel_id: string
+          channel_name?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          method: string
+          reason: string
+        }
+        Update: {
+          channel_id?: string
+          channel_name?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          method?: string
+          reason?: string
+        }
+        Relationships: []
+      }
+      slack_token_refresh_log: {
+        Row: {
+          created_at: string
+          detail: string | null
+          expires_at: string | null
+          id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: string | null
+          expires_at?: string | null
+          id?: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          detail?: string | null
+          expires_at?: string | null
+          id?: string
+          status?: string
+        }
+        Relationships: []
       }
       slack_tokens: {
         Row: {

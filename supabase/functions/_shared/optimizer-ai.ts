@@ -1,4 +1,5 @@
 // Shared helpers for generating AI optimization briefs and delivering them to Slack.
+import { postToSlack } from './slack-post.ts';
 
 export interface OptimizerPlan {
   summary?: string;
@@ -164,18 +165,12 @@ export function planBlocks(opts: {
   return blocks;
 }
 
-/** Post a Block Kit message with the workspace bot token. Throws with Slack's error. */
-export async function postSlack(token: string, channel: string, text: string, blocks: unknown[]): Promise<string> {
-  const res = await fetch('https://slack.com/api/chat.postMessage', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ channel, text, blocks, unfurl_links: false }),
-  });
-  const body = await res.text();
-  let data: any = {};
-  try { data = JSON.parse(body); } catch { /* non-JSON */ }
-  if (!res.ok || !data.ok) {
-    throw new Error(`Slack chat.postMessage failed [${res.status}]: ${data.error || body.slice(0, 200)}`);
-  }
-  return data.ts as string;
+/**
+ * Post a Block Kit brief. Delegates to the single guarded Slack writer, which
+ * owns the token and the fail-closed channel allowlist. Throws on refusal or
+ * Slack error so the caller records it against the schedule row.
+ */
+export async function postSlack(channel: string, text: string, blocks: unknown[]): Promise<string> {
+  const out = await postToSlack({ channel, text, blocks, throwOnRefusal: true, throwOnError: true });
+  return out.ts || '';
 }

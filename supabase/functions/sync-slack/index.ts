@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
+import { getValidBotToken } from "../_shared/slack-token.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -58,15 +59,62 @@ Deno.serve(async (req) => {
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-    const slackToken = Deno.env.get('SLACK_BOT_TOKEN');
-    if (!slackToken) {
-      return new Response(JSON.stringify({ error: 'SLACK_BOT_TOKEN not configured' }), {
+    // One token path for the whole project: the rotating token in slack_tokens.
+    // No fallback to the static env var — a stale token is the bug being fixed.
+    let slackToken: string;
+    try {
+      slackToken = await getValidBotToken();
+    } catch (e) {
+      console.error('sync-slack: no usable Slack token —', e);
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'No Slack token' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const body = await req.json().catch(() => ({}));
     const { action = 'sync', client_id, channel_id, channel_name } = body;
+
+    // ──── CLASSIFY CHANNELS ────
+    // Records the flags Slack itself reports. Channel names are never used to
+    // infer internal vs external. A channel the bot is not a member of is left
+    // untouched, so it stays external (the safe default) and unpostable.
+    if (action === 'classify_channels') {
+      const channels = await listBotChannels(slackToken);
+      const byId = new Map(channels.map((c: any) => [c.id, c]));
+
+      const { data: rows } = await supabase
+        .from('slack_channel_mappings')
+        .select('id, channel_id, channel_name');
+
+      const classified: any[] = [];
+      const notMember: string[] = [];
+
+      for (const row of rows || []) {
+        const ch: any = byId.get(row.channel_id);
+        if (!ch) { notMember.push(row.channel_name); continue; }
+        const isExternal = (ch.is_ext_shared === true) || (ch.is_org_shared === true);
+        await supabase.from('slack_channel_mappings').update({
+          channel_name: ch.name,
+          is_private: ch.is_private ?? null,
+          is_shared: ch.is_shared ?? null,
+          is_ext_shared: ch.is_ext_shared ?? null,
+          is_org_shared: ch.is_org_shared ?? null,
+          is_external: isExternal,
+          classified_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', row.id);
+        classified.push({ channel: ch.name, channel_id: ch.id, is_external: isExternal,
+          is_private: ch.is_private, is_shared: ch.is_shared,
+          is_ext_shared: ch.is_ext_shared, is_org_shared: ch.is_org_shared });
+      }
+
+      const unmapped = channels
+        .filter((c: any) => !(rows || []).some((r: any) => r.channel_id === c.id))
+        .map((c: any) => ({ channel: c.name, channel_id: c.id,
+          is_ext_shared: c.is_ext_shared, is_org_shared: c.is_org_shared }));
+
+      return jsonResp({ classified, bot_not_member: notMember, unmapped_bot_channels: unmapped });
+    }
 
     // ──── LIST CHANNELS ────
     if (action === 'list_channels') {
@@ -143,8 +191,7 @@ Deno.serve(async (req) => {
         const messages = await fetchChannelMessages(slackToken, mapping.channel_id, mapping.last_synced_ts);
         if (messages.length === 0) continue;
 
-        const contextItems = [];
-        let latestTs = mapping.last_synced_ts || '0';
+        const contextItems: any[] = [];
 
         for (const msg of messages) {
           if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave' || msg.subtype === 'bot_message') continue;
@@ -184,23 +231,33 @@ Deno.serve(async (req) => {
             ts: occurredAt,
           });
 
-          if (msg.ts > latestTs) latestTs = msg.ts;
         }
 
+        // The cursor may only advance to the timestamp of the LAST SUCCESSFULLY
+        // STORED message. A failed insert used to burn the cursor, which is how
+        // messages got read and permanently skipped.
         if (contextItems.length > 0) {
-          const { error: insertError } = await supabase
-            .from('context_items')
-            .upsert(contextItems, { onConflict: 'source_id' });
+          contextItems.sort((a, b) => Number(a.metadata.slack_ts) - Number(b.metadata.slack_ts));
+          let lastStoredTs: string | null = null;
 
-          if (insertError) {
-            console.error(`Insert error for #${mapping.channel_name}:`, insertError);
-          } else {
-            totalSynced += contextItems.length;
+          for (const item of contextItems) {
+            const { error: insertError } = await supabase
+              .from('context_items')
+              .upsert(item, { onConflict: 'source_id' });
+
+            if (insertError) {
+              console.error(`Insert error for #${mapping.channel_name} @ ${item.metadata.slack_ts}:`, insertError);
+              break; // stop here; the cursor stays at the last success
+            }
+            totalSynced += 1;
+            lastStoredTs = item.metadata.slack_ts as string;
           }
 
-          await supabase.from('slack_channel_mappings')
-            .update({ last_synced_ts: latestTs, updated_at: new Date().toISOString() })
-            .eq('id', mapping.id);
+          if (lastStoredTs) {
+            await supabase.from('slack_channel_mappings')
+              .update({ last_synced_ts: lastStoredTs, updated_at: new Date().toISOString() })
+              .eq('id', mapping.id);
+          }
         }
       }
 
@@ -402,7 +459,15 @@ async function listBotChannels(token: string) {
     if (!data.ok) break;
     for (const ch of data.channels || []) {
       if (ch.is_member) {
-        channels.push({ id: ch.id, name: ch.name, is_private: ch.is_private, topic: ch.topic?.value || '' });
+        channels.push({
+          id: ch.id,
+          name: ch.name,
+          is_private: ch.is_private,
+          is_shared: ch.is_shared,
+          is_ext_shared: ch.is_ext_shared,
+          is_org_shared: ch.is_org_shared,
+          topic: ch.topic?.value || '',
+        });
       }
     }
     cursor = data.response_metadata?.next_cursor || '';
@@ -443,7 +508,11 @@ async function resolveUserName(token: string, userId: string, cache: Record<stri
       cache[userId] = name;
       return name;
     }
-  } catch {}
+  } catch (e) {
+    console.warn('users.info failed, storing raw user id:', userId, e);
+  }
+  // Degrade gracefully: the raw Slack user id is stored rather than failing the
+  // whole message insert.
   cache[userId] = userId;
   return userId;
 }

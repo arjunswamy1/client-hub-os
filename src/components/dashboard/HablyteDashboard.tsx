@@ -158,6 +158,19 @@ export default function HablyteDashboard() {
       .sort((a, b) => b.calls - a.calls);
   }, [calls]);
 
+  /** Caller state — the read that tests a "the geography was wrong" explanation. */
+  const byState = useMemo(() => {
+    const map = new Map<string, HablyteCall[]>();
+    for (const c of calls) {
+      const st = ((c.metadata as Record<string, unknown> | null)?.state as string) || "Unknown";
+      if (!map.has(st)) map.set(st, []);
+      map.get(st)!.push(c);
+    }
+    return [...map.entries()]
+      .map(([state, items]) => ({ state, ...agg(items, 0) }))
+      .sort((a, b) => b.calls - a.calls);
+  }, [calls]);
+
   const trend = useMemo(() => {
     const byDate = new Map<string, { date: string; calls: number; paid: number; spend: number; revenue: number }>();
     const row = (d: string) => byDate.get(d) ?? { date: d, calls: 0, paid: 0, spend: 0, revenue: 0 };
@@ -242,6 +255,7 @@ export default function HablyteDashboard() {
             <TabsTrigger value="verticals" className="text-xs">Verticals</TabsTrigger>
             <TabsTrigger value="meta" className="text-xs">Meta campaigns</TabsTrigger>
             <TabsTrigger value="ringba" className="text-xs">Ringba campaigns</TabsTrigger>
+            <TabsTrigger value="states" className="text-xs">States</TabsTrigger>
             <TabsTrigger value="trend" className="text-xs">Trend</TabsTrigger>
             <TabsTrigger value="calls" className="text-xs">Call log</TabsTrigger>
           </TabsList>
@@ -363,6 +377,46 @@ export default function HablyteDashboard() {
                 )}
               </tbody>
             </table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="states">
+          <Card className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="p-3 text-left">Caller state</th>
+                  <th className="p-3 text-right">Calls</th>
+                  <th className="p-3 text-right">Connected</th>
+                  <th className="p-3 text-right">Sold</th>
+                  <th className="p-3 text-right">Sold rate</th>
+                  <th className="p-3 text-right">Revenue</th>
+                  <th className="p-3 text-right">RPC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byState.map((r) => (
+                  <tr key={r.state} className="border-b last:border-0">
+                    <td className="p-3 font-medium">{r.state}</td>
+                    <td className="p-3 text-right">{r.calls.toLocaleString()}</td>
+                    <td className="p-3 text-right">{pct(r.connectRate)}</td>
+                    <td className="p-3 text-right">{r.paid.toLocaleString()}</td>
+                    <td className="p-3 text-right">{pct(r.paidRate)}</td>
+                    <td className="p-3 text-right">{money(r.revenue)}</td>
+                    <td className="p-3 text-right">{money2(r.rpc)}</td>
+                  </tr>
+                ))}
+                {byState.length === 0 && (
+                  <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No calls in this window.</td></tr>
+                )}
+              </tbody>
+            </table>
+            <p className="p-3 text-xs text-muted-foreground">
+              Buyer state acceptance is set per buyer in Ringba. Instar's static auto target accepts 22 states
+              (AK, CT, GA, KY, MD, ME, MI, MN, MS, MT, NC, NH, OK, OR, PA, RI, TX, UT, VA, VT, WV, WY) and
+              excludes NY and NJ — but the bidding buyers do take both, so a state outside one buyer's list is
+              not automatically unsellable.
+            </p>
           </Card>
         </TabsContent>
 

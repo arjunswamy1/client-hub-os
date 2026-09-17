@@ -318,7 +318,11 @@ Deno.serve(async (req) => {
               continue;
             }
             totalSynced += 1;
-            if (contiguous) lastStoredTs = item.metadata.slack_ts as string;
+            // Only top-level (history) messages may move the cursor — a reply's
+            // ts must never carry the cursor past unread channel messages.
+            if (contiguous && !item.metadata.is_thread_reply) {
+              lastStoredTs = item.metadata.slack_ts as string;
+            }
           }
 
           if (lastStoredTs) {

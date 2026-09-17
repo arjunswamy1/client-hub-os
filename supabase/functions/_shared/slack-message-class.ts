@@ -27,6 +27,9 @@ const QUESTION_WORD = /^(?:\s*)(?:who|what|when|where|why|how|which|is|are|was|w
 const CLAIM_NUMBER = /(?:\$\s?\d|\d+\s?%|\b\d{2,}\b|\b\d+(?:\.\d+)?\s*(?:calls?|leads?|conversions?|clicks?|cpl|cpa|roas|sales?|hours?)\b)/i;
 const CLAIM_VOICE = /\b(?:we|we'?re|our|us|i|i'?m|my|showing|shows|showed|seeing|saw|got|received|only|just)\b/i;
 
+// An unambiguous ask, which outranks a question mark.
+const EXPLICIT_ASK = /(?:\bplease\b|\bcan you\b|\bcould you\b|\bwould you\b|\bcan we\b|\bneed (?:you )?to\b|\bwe need\b|\bi need\b|\bsend (?:me|us|over)\b|\blet'?s\b|\bmake sure\b|\bhold off\b|\bturn (?:off|on)\b|\bpause\b)/i;
+
 export interface ClassifyInput {
   text: string;
   isCpmAuthor: boolean;

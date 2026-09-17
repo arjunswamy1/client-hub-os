@@ -4504,6 +4504,62 @@ export type Database = {
           },
         ]
       }
+      meta_geo_metrics: {
+        Row: {
+          campaign_name: string | null
+          clicks: number
+          client_id: string
+          country: string | null
+          created_at: string
+          date: string
+          id: string
+          impressions: number
+          platform_campaign_id: string | null
+          raw: Json | null
+          region: string
+          spend: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_name?: string | null
+          clicks?: number
+          client_id: string
+          country?: string | null
+          created_at?: string
+          date: string
+          id?: string
+          impressions?: number
+          platform_campaign_id?: string | null
+          raw?: Json | null
+          region: string
+          spend?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_name?: string | null
+          clicks?: number
+          client_id?: string
+          country?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          impressions?: number
+          platform_campaign_id?: string | null
+          raw?: Json | null
+          region?: string
+          spend?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_geo_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_push_log: {
         Row: {
           action: string

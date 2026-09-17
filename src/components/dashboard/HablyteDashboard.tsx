@@ -12,6 +12,8 @@ import {
   useHablyteMetaSpend,
   useHablyteMetaFreshness,
   useHablytePublishers,
+  useHablyteGeoSpend,
+  stateCode,
   verticalForCampaign,
   HABLYTE_VERTICALS,
   HablyteVertical,
@@ -96,6 +98,7 @@ export default function HablyteDashboard() {
   const { data: spendRows = [] } = useHablyteMetaSpend();
   const { data: freshness } = useHablyteMetaFreshness();
   const { data: publishers = [] } = useHablytePublishers();
+  const { data: geoSpend = [] } = useHablyteGeoSpend();
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + (r.spend || 0), 0), [spendRows]);
   const totalClicks = useMemo(() => spendRows.reduce((s, r) => s + (r.clicks || 0), 0), [spendRows]);
@@ -158,18 +161,36 @@ export default function HablyteDashboard() {
       .sort((a, b) => b.calls - a.calls);
   }, [calls]);
 
-  /** Caller state — the read that tests a "the geography was wrong" explanation. */
+  /**
+   * State profitability: Meta's delivery spend per state against the calls that came
+   * from that state. Two separate measurements — Meta reports where the impression
+   * served, Ringba reports where the caller was — so a state can carry spend with no
+   * calls, and that gap is itself the finding.
+   */
   const byState = useMemo(() => {
-    const map = new Map<string, HablyteCall[]>();
+    const callMap = new Map<string, HablyteCall[]>();
     for (const c of calls) {
       const st = ((c.metadata as Record<string, unknown> | null)?.state as string) || "Unknown";
-      if (!map.has(st)) map.set(st, []);
-      map.get(st)!.push(c);
+      if (!callMap.has(st)) callMap.set(st, []);
+      callMap.get(st)!.push(c);
     }
-    return [...map.entries()]
-      .map(([state, items]) => ({ state, ...agg(items, 0) }))
-      .sort((a, b) => b.calls - a.calls);
-  }, [calls]);
+    const spendMap = new Map<string, { spend: number; impressions: number; clicks: number }>();
+    for (const r of geoSpend) {
+      const st = stateCode(r.region);
+      const cur = spendMap.get(st) ?? { spend: 0, impressions: 0, clicks: 0 };
+      cur.spend += r.spend || 0;
+      cur.impressions += r.impressions || 0;
+      cur.clicks += r.clicks || 0;
+      spendMap.set(st, cur);
+    }
+    const states = new Set<string>([...callMap.keys(), ...spendMap.keys()]);
+    return [...states]
+      .map((state) => {
+        const sp = spendMap.get(state) ?? { spend: 0, impressions: 0, clicks: 0 };
+        return { state, ...agg(callMap.get(state) || [], sp.spend, sp.clicks, sp.impressions) };
+      })
+      .sort((a, b) => b.spend - a.spend || b.calls - a.calls);
+  }, [calls, geoSpend]);
 
   const trend = useMemo(() => {
     const byDate = new Map<string, { date: string; calls: number; paid: number; spend: number; revenue: number }>();
@@ -385,37 +406,50 @@ export default function HablyteDashboard() {
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="p-3 text-left">Caller state</th>
+                  <th className="p-3 text-left">State</th>
+                  <th className="p-3 text-right">Meta spend</th>
+                  <th className="p-3 text-right">Clicks</th>
                   <th className="p-3 text-right">Calls</th>
-                  <th className="p-3 text-right">Connected</th>
+                  <th className="p-3 text-right">Call rate</th>
                   <th className="p-3 text-right">Sold</th>
-                  <th className="p-3 text-right">Sold rate</th>
                   <th className="p-3 text-right">Revenue</th>
-                  <th className="p-3 text-right">RPC</th>
+                  <th className="p-3 text-right">Cost / call</th>
+                  <th className="p-3 text-right">Profit</th>
                 </tr>
               </thead>
               <tbody>
                 {byState.map((r) => (
                   <tr key={r.state} className="border-b last:border-0">
-                    <td className="p-3 font-medium">{r.state}</td>
+                    <td className="p-3 font-medium">
+                      {r.state}
+                      {r.spend > 0 && r.calls === 0 && (
+                        <Badge variant="outline" className="ml-2 text-[10px]">spend, no calls</Badge>
+                      )}
+                      {r.spend === 0 && r.calls > 0 && (
+                        <Badge variant="outline" className="ml-2 text-[10px]">calls, no spend</Badge>
+                      )}
+                    </td>
+                    <td className="p-3 text-right">{money2(r.spend)}</td>
+                    <td className="p-3 text-right">{r.clicks.toLocaleString()}</td>
                     <td className="p-3 text-right">{r.calls.toLocaleString()}</td>
-                    <td className="p-3 text-right">{pct(r.connectRate)}</td>
+                    <td className="p-3 text-right">{r.clicks ? pct(r.calls / r.clicks) : "—"}</td>
                     <td className="p-3 text-right">{r.paid.toLocaleString()}</td>
-                    <td className="p-3 text-right">{pct(r.paidRate)}</td>
-                    <td className="p-3 text-right">{money(r.revenue)}</td>
-                    <td className="p-3 text-right">{money2(r.rpc)}</td>
+                    <td className="p-3 text-right">{money2(r.revenue)}</td>
+                    <td className="p-3 text-right">{r.calls ? money2(r.costPerCall) : "—"}</td>
+                    <td className={`p-3 text-right ${r.profit < 0 ? "text-destructive" : ""}`}>{money2(r.profit)}</td>
                   </tr>
                 ))}
                 {byState.length === 0 && (
-                  <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No calls in this window.</td></tr>
+                  <tr><td colSpan={9} className="p-6 text-center text-muted-foreground">No spend or calls in this window.</td></tr>
                 )}
               </tbody>
             </table>
             <p className="p-3 text-xs text-muted-foreground">
-              Buyer state acceptance is set per buyer in Ringba. Instar's static auto target accepts 22 states
-              (AK, CT, GA, KY, MD, ME, MI, MN, MS, MT, NC, NH, OK, OR, PA, RI, TX, UT, VA, VT, WV, WY) and
-              excludes NY and NJ — but the bidding buyers do take both, so a state outside one buyer's list is
-              not automatically unsellable.
+              Meta spend is delivery geography — where the ad served. Call state is where the caller was. They are
+              two measurements, so a state can show spend with no calls. Buyer acceptance is set per buyer in
+              Ringba: Instar's static auto target accepts 22 states (AK, CT, GA, KY, MD, ME, MI, MN, MS, MT, NC,
+              NH, OK, OR, PA, RI, TX, UT, VA, VT, WV, WY) and excludes NY and NJ, while the bidding buyers do take
+              both — so a state outside one buyer's list is not automatically unsellable.
             </p>
           </Card>
         </TabsContent>

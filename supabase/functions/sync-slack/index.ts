@@ -259,6 +259,14 @@ Deno.serve(async (req) => {
         // unchanged thread can be skipped without an API call.
         const seenThreads = new Map<string, { parent_occurred_at: string; latest_reply: string | null }>();
 
+        // Candidate thread roots: every top-level message from the last 7 days,
+        // whether or not it has replies yet. Without this, a question posted with
+        // no replies is never tracked, the cursor moves past it, and a next-day
+        // in-thread answer can never be ingested.
+        const ROOT_CANDIDATE_DAYS = 7;
+        const rootCutoffTs = (Date.now() - ROOT_CANDIDATE_DAYS * 86400000) / 1000;
+        const rootCandidates = new Map<string, string>(); // ts → parent_occurred_at
+
         for (const msg of messages) {
           addPending(msg, false);
           if (msg.thread_ts && Number(msg.reply_count || 0) > 0) {
@@ -266,6 +274,10 @@ Deno.serve(async (req) => {
               parent_occurred_at: new Date(parseFloat(msg.thread_ts) * 1000).toISOString(),
               latest_reply: msg.latest_reply || null,
             });
+          }
+          const isTopLevel = !msg.thread_ts || msg.thread_ts === msg.ts;
+          if (isTopLevel && parseFloat(msg.ts) >= rootCutoffTs) {
+            rootCandidates.set(msg.ts, new Date(parseFloat(msg.ts) * 1000).toISOString());
           }
         }
 
@@ -278,6 +290,16 @@ Deno.serve(async (req) => {
           }, { onConflict: 'channel_id,thread_ts' });
         }
 
+        for (const [ts, occurredAt] of rootCandidates) {
+          if (seenThreads.has(ts)) continue;
+          await supabase.from('slack_threads').upsert({
+            client_id,
+            channel_id: mapping.channel_id,
+            thread_ts: ts,
+            parent_occurred_at: occurredAt,
+          }, { onConflict: 'channel_id,thread_ts' });
+        }
+
         // A thread is OPEN when its parent is within 14 days OR it still holds an
         // unanswered client_question of any age. Open threads are re-polled no
         // matter where last_synced_ts sits — Slack omits non-broadcast thread
@@ -286,7 +308,7 @@ Deno.serve(async (req) => {
         const openCutoff = new Date(Date.now() - OPEN_THREAD_DAYS * 86400000).toISOString();
         const { data: openThreads } = await supabase
           .from('slack_threads')
-          .select('id, thread_ts, last_reply_ts, parent_occurred_at, has_unanswered_question')
+          .select('id, thread_ts, last_reply_ts, last_polled_at, parent_occurred_at, has_unanswered_question')
           .eq('channel_id', mapping.channel_id)
           .or(`parent_occurred_at.gte.${openCutoff},has_unanswered_question.is.true`);
 
@@ -296,10 +318,16 @@ Deno.serve(async (req) => {
           const fresh = seenThreads.get(t.thread_ts);
           // Unchanged since the last poll → no call.
           if (fresh && fresh.latest_reply && t.last_reply_ts && fresh.latest_reply === t.last_reply_ts) continue;
+          // Root seen in this very run with no replies at all → nothing to poll.
+          if (!t.last_polled_at && rootCandidates.has(t.thread_ts) && !fresh) {
+            await supabase.from('slack_threads')
+              .update({ last_polled_at: new Date().toISOString() })
+              .eq('id', t.id);
+            continue;
+          }
 
           const replies = await fetchThreadReplies(slackToken, mapping.channel_id, t.thread_ts);
           threadPolls += 1;
-          if (replies.length === 0) continue;
 
           let maxTs: string | null = t.last_reply_ts || null;
           for (const reply of replies) {
@@ -313,10 +341,12 @@ Deno.serve(async (req) => {
             last_reply_ts: maxTs,
             last_polled_at: new Date().toISOString(),
           }).eq('id', t.id);
+          // Polled even when empty, so has_unanswered_question is recomputed and
+          // a stale-open thread can close instead of leaking API calls forever.
           polledThreads.push({ id: t.id, thread_ts: t.thread_ts });
         }
 
-        if (pending.length === 0) continue;
+
 
         // ── Resolve author + text once, then classify ──
         interface Prepared extends Pending {
@@ -359,6 +389,23 @@ Deno.serve(async (req) => {
             if (cls) { p.finalClass = cls; p.classifiedBy = 'llm'; }
           }
         }
+
+        // Every top-level client_question becomes a tracked thread root of ANY
+        // age, so a late in-thread answer is always picked up and the question
+        // stops being reported as unanswered.
+        for (const p of prepared) {
+          if (p.finalClass !== 'client_question') continue;
+          if (p.isThreadReply) continue;
+          const rootTs = p.msg.thread_ts || p.msg.ts;
+          await supabase.from('slack_threads').upsert({
+            client_id,
+            channel_id: mapping.channel_id,
+            thread_ts: rootTs,
+            parent_occurred_at: new Date(parseFloat(rootTs) * 1000).toISOString(),
+            has_unanswered_question: true,
+          }, { onConflict: 'channel_id,thread_ts' });
+        }
+
 
         const contextItems: any[] = [];
         for (const p of prepared) {
@@ -414,7 +461,7 @@ Deno.serve(async (req) => {
           for (const item of contextItems) {
             const { error: insertError } = await supabase
               .from('context_items')
-              .upsert(item, { onConflict: 'source_id' });
+              .upsert(item, { onConflict: 'source,source_id' });
 
             if (insertError) {
               // Skip the poison message and keep going, but freeze the cursor at
@@ -439,21 +486,32 @@ Deno.serve(async (req) => {
         }
 
         // Does each polled thread still hold an unanswered client question?
-        // Computed over the freshly fetched full thread, so an in-thread answer
-        // closes it and the thread stops being re-polled once it ages out.
+        // Recomputed from STORED rows, so it also runs for threads that returned
+        // nothing new — a thread flagged once would otherwise stay open and be
+        // re-polled on every sync forever.
         for (const t of polledThreads) {
-          const inThread = prepared
-            .filter((p) => (p.msg.thread_ts || p.msg.ts) === t.thread_ts)
-            .sort((a, b) => Number(a.key) - Number(b.key));
-          const lastQuestion = [...inThread].reverse().find((p) => p.finalClass === 'client_question');
-          const unanswered = !!lastQuestion && !inThread.some(
-            (p) => p.isCpmAuthor && Number(p.key) > Number(lastQuestion.key)
+          const { data: threadRows } = await supabase
+            .from('context_items')
+            .select('metadata')
+            .eq('client_id', client_id)
+            .eq('source', 'slack')
+            .or(`metadata->>thread_ts.eq.${t.thread_ts},metadata->>slack_ts.eq.${t.thread_ts}`);
+
+          const rows = (threadRows || [])
+            .map((r: any) => r.metadata)
+            .filter((m: any) => m && m.channel_id === mapping.channel_id && m.slack_ts)
+            .sort((a: any, b: any) => Number(a.slack_ts) - Number(b.slack_ts));
+
+          const lastQuestion = [...rows].reverse().find((m: any) => m.message_class === 'client_question');
+          const unanswered = !!lastQuestion && !rows.some(
+            (m: any) => m.is_cpm_author && Number(m.slack_ts) > Number(lastQuestion.slack_ts)
           );
           await supabase.from('slack_threads')
-            .update({ has_unanswered_question: unanswered })
+            .update({ has_unanswered_question: unanswered, last_polled_at: new Date().toISOString() })
             .eq('id', t.id);
         }
       }
+
 
       // ──── AI ANALYSIS: Summarize + Extract Tasks ────
       let summary = null;
@@ -480,7 +538,7 @@ Deno.serve(async (req) => {
                 channels: [...new Set(allMessages.map(m => m.channel))],
                 key_topics: aiResult.key_topics || [],
               },
-            }, { onConflict: 'source_id' });
+            }, { onConflict: 'source,source_id' });
           }
 
           // Create tasks from extracted action items

@@ -12,11 +12,23 @@ const WRITE_METHODS = [
   "chat.update",
   "chat.postEphemeral",
   "reactions.add",
+  "conversations.open",
+  "files.upload",
   "files.completeUploadExternal",
   "files.getUploadURLExternal",
 ];
 
 const ALLOWED = ["supabase/functions/_shared/slack-post.ts"];
+
+/**
+ * A dynamically built method name (`api/${m}`) hides the literal, so also flag
+ * any Slack API URL whose method segment is an interpolation or concatenation.
+ */
+const DYNAMIC_SLACK_URL = [
+  /slack\.com\/api\/\$\{/,
+  /slack\.com\/api\/["'`]?\s*\+/,
+  /["'`]https:\/\/slack\.com\/api\/?["'`]\s*\+/,
+];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -40,6 +52,9 @@ describe("Slack write guard", () => {
         if (body.includes(`slack.com/api/${method}`) || body.includes(`api/${method}`)) {
           offenders.push(`${rel} → ${method}`);
         }
+      }
+      for (const pattern of DYNAMIC_SLACK_URL) {
+        if (pattern.test(body)) offenders.push(`${rel} → dynamically constructed Slack API URL`);
       }
     }
     expect(offenders).toEqual([]);

@@ -6163,6 +6163,53 @@ export type Database = {
         }
         Relationships: []
       }
+      slack_threads: {
+        Row: {
+          channel_id: string
+          client_id: string
+          created_at: string
+          has_unanswered_question: boolean
+          id: string
+          last_polled_at: string | null
+          last_reply_ts: string | null
+          parent_occurred_at: string
+          thread_ts: string
+          updated_at: string
+        }
+        Insert: {
+          channel_id: string
+          client_id: string
+          created_at?: string
+          has_unanswered_question?: boolean
+          id?: string
+          last_polled_at?: string | null
+          last_reply_ts?: string | null
+          parent_occurred_at: string
+          thread_ts: string
+          updated_at?: string
+        }
+        Update: {
+          channel_id?: string
+          client_id?: string
+          created_at?: string
+          has_unanswered_question?: boolean
+          id?: string
+          last_polled_at?: string | null
+          last_reply_ts?: string | null
+          parent_occurred_at?: string
+          thread_ts?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_threads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       slack_token_refresh_log: {
         Row: {
           created_at: string

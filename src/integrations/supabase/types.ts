@@ -6471,7 +6471,7 @@ export type Database = {
       tasks: {
         Row: {
           assignee_id: string | null
-          client_id: string
+          client_id: string | null
           completed_at: string | null
           created_at: string
           created_by_id: string | null
@@ -6490,7 +6490,7 @@ export type Database = {
         }
         Insert: {
           assignee_id?: string | null
-          client_id: string
+          client_id?: string | null
           completed_at?: string | null
           created_at?: string
           created_by_id?: string | null
@@ -6509,7 +6509,7 @@ export type Database = {
         }
         Update: {
           assignee_id?: string | null
-          client_id?: string
+          client_id?: string | null
           completed_at?: string | null
           created_at?: string
           created_by_id?: string | null
@@ -6595,6 +6595,7 @@ export type Database = {
       }
       team_members: {
         Row: {
+          aliases: string[]
           avatar_url: string | null
           created_at: string
           email: string
@@ -6607,6 +6608,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          aliases?: string[]
           avatar_url?: string | null
           created_at?: string
           email: string
@@ -6619,6 +6621,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          aliases?: string[]
           avatar_url?: string | null
           created_at?: string
           email?: string

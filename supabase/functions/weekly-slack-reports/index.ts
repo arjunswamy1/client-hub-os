@@ -118,7 +118,6 @@ async function deliver(
   supabase: any,
   supabaseUrl: string,
   serviceKey: string,
-  slackToken: string,
   periodKey: string,
 ): Promise<{ scope: string; sent: number; error?: string }> {
   const scope = row.scope as string;
@@ -131,7 +130,6 @@ async function deliver(
 
   for (const b of briefs) {
     await postSlack(
-      slackToken,
       row.slack_channel_id,
       `${meta.label} — ${b.lineLabel} weekly optimization brief`,
       planBlocks({
@@ -152,10 +150,7 @@ Deno.serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
   const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const SLACK_TOKEN = Deno.env.get('SLACK_BOT_TOKEN');
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
-
-  if (!SLACK_TOKEN) return json({ error: 'SLACK_BOT_TOKEN is not configured' }, 400);
 
   const body = await req.json().catch(() => ({}));
   const bearer = (req.headers.get('Authorization') || '').replace('Bearer ', '').trim();
@@ -209,7 +204,7 @@ Deno.serve(async (req) => {
       const { data: allowed } = await asUser.from('client_slack_reports').select('id').eq('id', row.id).maybeSingle();
       if (!allowed) return json({ error: 'You do not have access to this client' }, 403);
 
-      const result = await deliver(row, supabase, SUPABASE_URL, SERVICE_KEY, SLACK_TOKEN, `${periodKey}-test`);
+      const result = await deliver(row, supabase, SUPABASE_URL, SERVICE_KEY, `${periodKey}-test`);
       await supabase.from('client_slack_reports')
         .update({ last_sent_at: result.sent ? now.toISOString() : row.last_sent_at, last_error: result.error ?? null })
         .eq('id', row.id);
@@ -239,7 +234,7 @@ Deno.serve(async (req) => {
       if (!leased) { results.push({ scope: row.scope, skipped: 'lease held' }); continue; }
 
       try {
-        const result = await deliver(row, supabase, SUPABASE_URL, SERVICE_KEY, SLACK_TOKEN, periodKey);
+        const result = await deliver(row, supabase, SUPABASE_URL, SERVICE_KEY, periodKey);
         await supabase.from('client_slack_reports').update({
           lease_until: null,
           last_sent_at: result.sent ? now.toISOString() : row.last_sent_at,

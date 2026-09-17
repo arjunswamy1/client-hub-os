@@ -17,3 +17,5 @@ project_id = "bmwjwsxfpzzruitevnmx"
     verify_jwt = false
   [functions.handle-email-suppression]
     verify_jwt = false
+  [functions.slack-token-refresh]
+    verify_jwt = false

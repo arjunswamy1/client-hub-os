@@ -1,14 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/anthropic.ts";
 import { logAiUsage } from "../_shared/cost-tracking.ts";
+import { getValidBotToken } from "../_shared/slack-token.ts";
+import { postToSlack, SlackRefusedError } from "../_shared/slack-post.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
 };
 
 const SLACK_SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET')!;
-const SLACK_CLIENT_ID = Deno.env.get('SLACK_CLIENT_ID')!;
-const SLACK_CLIENT_SECRET = Deno.env.get('SLACK_CLIENT_SECRET')!;
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -18,87 +18,29 @@ const supabase = createClient(
 const DIRECT_CHANNEL_TYPES = new Set(['im', 'app_home']);
 const PENDING_REPLY_TEXT = 'Got it — thinking…';
 
-// ─── Token rotation helpers ────────────────────────────────────────────────
+// DM channels have no mapping row, so they are allowed only after the human on
+// the other side is confirmed to be a member of our own workspace.
+const directMessageVerified = new Set<string>();
 
-async function getValidBotToken(): Promise<string> {
-  const { data: row } = await supabase
-    .from('slack_tokens')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (row) {
-    const expiresAt = new Date(row.expires_at);
-    if (expiresAt.getTime() - Date.now() > 5 * 60 * 1000) {
-      return row.bot_access_token;
+async function isInternalSlackUser(token: string, userId: string): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const [meRes, userRes] = await Promise.all([
+      fetch('https://slack.com/api/auth.test', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`https://slack.com/api/users.info?user=${userId}`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    const me = await meRes.json();
+    const info = await userRes.json();
+    if (!me.ok || !info.ok || !info.user) {
+      console.warn('DM verification failed:', me.error || info.error || 'unknown');
+      return false;
     }
-    console.log('Token expired or expiring soon, refreshing...');
-    return await refreshToken(row.refresh_token, row.workspace_id);
+    if (info.user.is_stranger === true) return false;
+    return !!me.team_id && info.user.team_id === me.team_id;
+  } catch (e) {
+    console.warn('DM verification error:', e);
+    return false;
   }
-
-  const staticToken = Deno.env.get('SLACK_BOT_TOKEN');
-  if (staticToken) {
-    console.log('Exchanging static bot token for rotating tokens...');
-    return await exchangeStaticToken(staticToken);
-  }
-
-  throw new Error('No Slack bot token available.');
-}
-
-async function exchangeStaticToken(token: string): Promise<string> {
-  const res = await fetch('https://slack.com/api/oauth.v2.exchange', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: SLACK_CLIENT_ID,
-      client_secret: SLACK_CLIENT_SECRET,
-      token,
-    }),
-  });
-  const data = await res.json();
-  if (!data.ok) {
-    console.error('oauth.v2.exchange failed:', data.error);
-    return token;
-  }
-  const expiresAt = new Date(Date.now() + (data.expires_in || 43200) * 1000);
-  const workspaceId = data.team?.id || 'default';
-
-  await supabase.from('slack_tokens').upsert({
-    workspace_id: workspaceId,
-    bot_access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_at: expiresAt.toISOString(),
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'workspace_id' });
-
-  return data.access_token;
-}
-
-async function refreshToken(rt: string, workspaceId: string): Promise<string> {
-  const res = await fetch('https://slack.com/api/oauth.v2.access', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: SLACK_CLIENT_ID,
-      client_secret: SLACK_CLIENT_SECRET,
-      grant_type: 'refresh_token',
-      refresh_token: rt,
-    }),
-  });
-  const data = await res.json();
-  if (!data.ok) throw new Error(`Token refresh failed: ${data.error}`);
-  const expiresAt = new Date(Date.now() + (data.expires_in || 43200) * 1000);
-
-  await supabase.from('slack_tokens').upsert({
-    workspace_id: workspaceId,
-    bot_access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_at: expiresAt.toISOString(),
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'workspace_id' });
-
-  return data.access_token;
 }
 
 // ─── Slack helpers ─────────────────────────────────────────────────────────
@@ -1143,36 +1085,39 @@ async function callAI(messages: Array<{ role: string; content: string }>, client
 }
 
 // ─── Slack messaging ───────────────────────────────────────────────────────
+// All writes go through the guarded helper in _shared/slack-post.ts. A mention
+// inside an unclassified or external (client) channel produces a refusal and a
+// logged row, never a message.
 
-async function postSlackMessage(token: string, channel: string, text: string, threadTs?: string) {
-  const res = await fetch('https://slack.com/api/chat.postMessage', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) }),
+async function postSlackMessage(_token: string, channel: string, text: string, threadTs?: string) {
+  const out = await postToSlack({
+    channel,
+    method: 'chat.postMessage',
+    text,
+    threadTs,
+    directMessageVerifiedInternal: directMessageVerified.has(channel),
   });
-  const data = await res.json();
-  if (!data.ok) throw new Error(`chat.postMessage failed: ${data.error || 'unknown_error'}`);
-  return data as { ok: boolean; ts: string };
+  if (out.refused) throw new SlackRefusedError(out.reason || 'refused', channel);
+  if (!out.ok) throw new Error(out.error || 'chat post failed');
+  return { ok: true, ts: out.ts as string };
 }
 
-async function addReaction(token: string, channel: string, timestamp: string, emoji: string) {
+async function addReaction(_token: string, channel: string, timestamp: string, emoji: string) {
   try {
-    const res = await fetch('https://slack.com/api/reactions.add', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel, timestamp, name: emoji }),
+    await postToSlack({
+      channel,
+      method: 'reactions.add',
+      reactionTimestamp: timestamp,
+      reactionName: emoji,
+      directMessageVerifiedInternal: directMessageVerified.has(channel),
     });
-    const data = await res.json();
-    if (!data.ok && data.error !== 'already_reacted') {
-      console.warn('reactions.add failed:', data.error);
-    }
   } catch (e) {
-    console.warn('reactions.add error (non-fatal):', e);
+    console.warn('reaction error (non-fatal):', e);
   }
 }
 
 async function uploadChartToSlack(
-  token: string,
+  _token: string,
   channel: string,
   chart: { url: string; title: string },
   threadTs?: string,
@@ -1184,46 +1129,15 @@ async function uploadChartToSlack(
       return;
     }
     const blob = await imgRes.blob();
-    const fileSize = blob.size;
     const filename = `${chart.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
-
-    // Step 1: get upload URL
-    const getUrlRes = await fetch(
-      `https://slack.com/api/files.getUploadURLExternal?filename=${encodeURIComponent(filename)}&length=${fileSize}`,
-      { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } },
-    );
-    const getUrlData = await getUrlRes.json();
-    if (!getUrlData.ok) {
-      console.warn('files.getUploadURLExternal failed:', getUrlData.error);
-      return;
-    }
-
-    // Step 2: upload bytes
-    const uploadRes = await fetch(getUrlData.upload_url, {
-      method: 'POST',
-      body: blob,
+    const out = await postToSlack({
+      channel,
+      method: 'files.upload',
+      threadTs,
+      file: { bytes: blob, filename, title: chart.title },
+      directMessageVerifiedInternal: directMessageVerified.has(channel),
     });
-    if (!uploadRes.ok) {
-      console.warn('chart upload PUT failed:', uploadRes.status);
-      return;
-    }
-
-    // Step 3: complete and post into thread
-    const completeBody: Record<string, unknown> = {
-      files: [{ id: getUrlData.file_id, title: chart.title }],
-      channel_id: channel,
-    };
-    if (threadTs) completeBody.thread_ts = threadTs;
-
-    const completeRes = await fetch('https://slack.com/api/files.completeUploadExternal', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(completeBody),
-    });
-    const completeData = await completeRes.json();
-    if (!completeData.ok) {
-      console.warn('files.completeUploadExternal failed:', completeData.error);
-    }
+    if (!out.ok) console.warn('chart upload skipped:', out.reason || out.error);
   } catch (e) {
     console.warn('uploadChartToSlack error (non-fatal):', e);
   }
@@ -1239,6 +1153,21 @@ async function processSlackMessage(event: any) {
     const token = await getValidBotToken();
 
     console.log('Processing:', event.type, event.channel, 'thread:', historyAnchorTs, 'direct:', isDirectConversation);
+
+    // Fail-closed check before any work: a mention in an unmapped, unclassified
+    // or external (client) channel must produce a logged refusal, not a reply.
+    if (isDirectConversation) {
+      if (!(await isInternalSlackUser(token, event.user))) {
+        console.warn('Slack DM ignored — user is not a verified internal workspace member:', event.user);
+        return;
+      }
+      directMessageVerified.add(event.channel);
+    } else if (!(await canPostToChannel(event.channel))) {
+      await postToSlack({ channel: event.channel, text: PENDING_REPLY_TEXT, threadTs: replyThreadTs });
+      console.warn('Slack reply suppressed by channel guard before processing:', event.channel);
+      return;
+    }
+
     addReaction(token, event.channel, event.ts, 'brain');
     await postSlackMessage(token, event.channel, PENDING_REPLY_TEXT, replyThreadTs);
 
@@ -1351,12 +1280,19 @@ Guidelines:
     }
     console.log('Reply sent successfully for client:', client?.name || 'none detected', 'charts:', response.charts.length);
   } catch (error) {
+    if (error instanceof SlackRefusedError) {
+      // Guard did its job: unmapped/unclassified/external channel. Stay silent.
+      console.warn('Slack reply suppressed by channel guard:', error.reason, event.channel);
+      return;
+    }
     console.error('Error processing Slack event:', error);
     try {
-      const fallbackToken = await getValidBotToken().catch(() => Deno.env.get('SLACK_BOT_TOKEN') || '');
-      if (fallbackToken) {
-        await postSlackMessage(fallbackToken, event.channel, 'Sorry, I hit an error while processing that. Please try again! 🔧', replyThreadTs);
-      }
+      await postToSlack({
+        channel: event.channel,
+        text: 'Sorry, I hit an error while processing that. Please try again! 🔧',
+        threadTs: replyThreadTs,
+        directMessageVerifiedInternal: directMessageVerified.has(event.channel),
+      });
     } catch (replyError) {
       console.error('Failed to send error message:', replyError);
     }

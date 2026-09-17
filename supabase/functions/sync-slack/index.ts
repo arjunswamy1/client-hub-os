@@ -1,6 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
+import { classifyMessage } from "../_shared/slack-message-class.ts";
+
+// A first sync on a channel with no cursor is capped so it can never pull an
+// entire multi-year history in one run.
+const INITIAL_BACKFILL_DAYS = 90;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

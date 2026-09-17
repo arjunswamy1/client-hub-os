@@ -31,6 +31,15 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
  */
 const MIN_CALLS_RTB = 35; // {min_calls} at the RTB setting — below this, no verdict
 
+/**
+ * Revenue basis. Ringba records two different money fields: `payoutAmount` is what
+ * the account owes an outside publisher, and `conversionAmount` is what the buyer
+ * pays for the call. Our own traffic carries no publisher payout — we are the
+ * publisher — so its revenue lives in the buyer amount. Take the buyer amount and
+ * fall back to payout, never both, so no call is counted twice.
+ */
+const callRevenue = (c: HablyteCall) => ((c.revenue || 0) > 0 ? c.revenue : (c.payout || 0));
+
 interface Agg {
   calls: number;
   connected: number;
@@ -47,8 +56,8 @@ function agg(calls: HablyteCall[], spend: number, clicks = 0, impressions = 0): 
 } {
   const total = calls.length;
   const connected = calls.filter((c) => c.connected === true).length;
-  const paid = calls.filter((c) => (c.payout || 0) > 0).length;
-  const revenue = calls.reduce((s, c) => s + (c.payout || 0), 0);
+  const paid = calls.filter((c) => callRevenue(c) > 0).length;
+  const revenue = calls.reduce((s, c) => s + callRevenue(c), 0);
   const rpc = total ? revenue / total : 0;
   const costPerCall = total ? spend / total : 0;
   return {
@@ -149,6 +158,19 @@ export default function HablyteDashboard() {
       .sort((a, b) => b.calls - a.calls);
   }, [calls]);
 
+  /** Caller state — the read that tests a "the geography was wrong" explanation. */
+  const byState = useMemo(() => {
+    const map = new Map<string, HablyteCall[]>();
+    for (const c of calls) {
+      const st = ((c.metadata as Record<string, unknown> | null)?.state as string) || "Unknown";
+      if (!map.has(st)) map.set(st, []);
+      map.get(st)!.push(c);
+    }
+    return [...map.entries()]
+      .map(([state, items]) => ({ state, ...agg(items, 0) }))
+      .sort((a, b) => b.calls - a.calls);
+  }, [calls]);
+
   const trend = useMemo(() => {
     const byDate = new Map<string, { date: string; calls: number; paid: number; spend: number; revenue: number }>();
     const row = (d: string) => byDate.get(d) ?? { date: d, calls: 0, paid: 0, spend: 0, revenue: 0 };
@@ -156,8 +178,8 @@ export default function HablyteDashboard() {
       const d = c.call_date.slice(0, 10);
       const r = row(d);
       r.calls += 1;
-      if ((c.payout || 0) > 0) r.paid += 1;
-      r.revenue += c.payout || 0;
+      if (callRevenue(c) > 0) r.paid += 1;
+      r.revenue += callRevenue(c);
       byDate.set(d, r);
     }
     for (const s of spendRows) {
@@ -185,8 +207,8 @@ export default function HablyteDashboard() {
               campaign, never per individual ad.
             </p>
             <p className="text-muted-foreground">
-              Bid-per-call account: revenue is Ringba's reported payout, and both revenue per call and cost per
-              call use every call, so unpaid calls stay visible. Verticals under {MIN_CALLS_RTB} calls are marked
+              Bid-per-call account: revenue is what the buyer paid for the call as Ringba reports it, and both
+              revenue per call and cost per call use every call, so unsold calls stay visible. Verticals under {MIN_CALLS_RTB} calls are marked
               as too thin to judge.
               {freshness?.last_synced_at
                 ? ` Meta spend last pulled ${format(new Date(freshness.last_synced_at), "MMM d, HH:mm")}.`
@@ -233,6 +255,7 @@ export default function HablyteDashboard() {
             <TabsTrigger value="verticals" className="text-xs">Verticals</TabsTrigger>
             <TabsTrigger value="meta" className="text-xs">Meta campaigns</TabsTrigger>
             <TabsTrigger value="ringba" className="text-xs">Ringba campaigns</TabsTrigger>
+            <TabsTrigger value="states" className="text-xs">States</TabsTrigger>
             <TabsTrigger value="trend" className="text-xs">Trend</TabsTrigger>
             <TabsTrigger value="calls" className="text-xs">Call log</TabsTrigger>
           </TabsList>
@@ -357,6 +380,46 @@ export default function HablyteDashboard() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="states">
+          <Card className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="p-3 text-left">Caller state</th>
+                  <th className="p-3 text-right">Calls</th>
+                  <th className="p-3 text-right">Connected</th>
+                  <th className="p-3 text-right">Sold</th>
+                  <th className="p-3 text-right">Sold rate</th>
+                  <th className="p-3 text-right">Revenue</th>
+                  <th className="p-3 text-right">RPC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byState.map((r) => (
+                  <tr key={r.state} className="border-b last:border-0">
+                    <td className="p-3 font-medium">{r.state}</td>
+                    <td className="p-3 text-right">{r.calls.toLocaleString()}</td>
+                    <td className="p-3 text-right">{pct(r.connectRate)}</td>
+                    <td className="p-3 text-right">{r.paid.toLocaleString()}</td>
+                    <td className="p-3 text-right">{pct(r.paidRate)}</td>
+                    <td className="p-3 text-right">{money(r.revenue)}</td>
+                    <td className="p-3 text-right">{money2(r.rpc)}</td>
+                  </tr>
+                ))}
+                {byState.length === 0 && (
+                  <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No calls in this window.</td></tr>
+                )}
+              </tbody>
+            </table>
+            <p className="p-3 text-xs text-muted-foreground">
+              Buyer state acceptance is set per buyer in Ringba. Instar's static auto target accepts 22 states
+              (AK, CT, GA, KY, MD, ME, MI, MN, MS, MT, NC, NH, OK, OR, PA, RI, TX, UT, VA, VT, WV, WY) and
+              excludes NY and NJ — but the bidding buyers do take both, so a state outside one buyer's list is
+              not automatically unsellable.
+            </p>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="trend">
           <Card className="p-4">
             <div className="h-80">
@@ -389,7 +452,7 @@ export default function HablyteDashboard() {
                   <th className="p-3 text-left">Caller</th>
                   <th className="p-3 text-left">Buyer</th>
                   <th className="p-3 text-right">Duration</th>
-                  <th className="p-3 text-right">Payout</th>
+                  <th className="p-3 text-right">Revenue</th>
                 </tr>
               </thead>
               <tbody>
@@ -401,7 +464,7 @@ export default function HablyteDashboard() {
                     <td className="p-3">{c.caller_number || "—"}</td>
                     <td className="p-3">{c.target_name || "—"}</td>
                     <td className="p-3 text-right">{c.duration_seconds ?? 0}s</td>
-                    <td className="p-3 text-right">{money2(c.payout || 0)}</td>
+                    <td className="p-3 text-right">{money2(callRevenue(c))}</td>
                   </tr>
                 ))}
                 {calls.length === 0 && (

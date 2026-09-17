@@ -36,6 +36,11 @@ const VALUE_COLUMNS = [
   "publisherName", "callerStateProvince", "callerCity", "endCallSource", "recordingUrl",
   "number", "numberId", "numberPoolName", "numberPoolId", "isFromNumberPool",
   "hasPayout", "noPayoutReason",
+  // RTB bid diagnostics — under a ring tree, "not sold" has to be readable as
+  // "nobody bid" versus "won but rejected". Kept to a handful: the request has a
+  // practical column budget and the Geo/InboundNumber tags (state, city, dialed
+  // number) must never be crowded out by these.
+  "winningBid", "ringTreeWinningBidTargetName", "noConversionReason", "blockReason",
   "tag:User:utm_content", "tag:User:utm_source", "tag:User:utm_medium",
   "tag:User:utm_campaign", "tag:User:utm_term", "tag:User:creative",
 ];
@@ -113,6 +118,19 @@ function mapCallToRow(call: any) {
       recording_url: call.recordingUrl || null,
       connected_seconds: Number(call.connectedCallLengthInSeconds || 0),
       total_cost: Number(call.totalCost || 0),
+      // RTB bidding record. Kept raw and separate from payout/revenue: a bid is
+      // what a buyer offered, never what was earned.
+      bid_amount: call.bidAmount ?? null,
+      winning_bid: call.winningBid ?? call.ringTreeWinningBid ?? null,
+      winning_bid_target: call.ringTreeWinningBidTargetName ?? null,
+      ping_total_bid_amount: call.pingTotalBidAmount ?? null,
+      avg_ping_tree_bid: call.avgPingTreeBidAmount ?? null,
+      winning_bid_call_accepted: call.winningBidCallAccepted ?? null,
+      winning_bid_call_rejected: call.winningBidCallRejected ?? null,
+      no_conversion_reason: call.noConversionReason ?? null,
+      block_reason: call.blockReason ?? null,
+      was_blocked: call.wasBlocked ?? null,
+      buyer_conversion_amount: call.buyerConversionAmount ?? null,
       ...collectTags(call),
     },
   };
@@ -202,6 +220,30 @@ Deno.serve(async (req) => {
         });
       }
       return new Response(JSON.stringify({ status: res.status, body_head: text.substring(0, 4000) }, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Read-only diagnostic: buyer / target availability, including the geographic
+    // filters and hours each buyer accepts. Answers "which states will this buyer
+    // take?" from Ringba itself rather than from a claim. Writes nothing.
+    if (new URL(req.url).searchParams.get("buyers") === "1") {
+      const auth = { Authorization: `Token ${RINGBA_API_TOKEN}`, Accept: "application/json" };
+      const out: Record<string, unknown> = { diagnostic: true, wrote_nothing: true };
+      const paths = [
+        "targets", "buyers", "campaigns",
+        "targets/counts", "targetgroups", "numbers",
+      ];
+      for (const p of paths) {
+        try {
+          const r = await fetch(`https://api.ringba.com/v2/${RINGBA_ACCOUNT_ID}/${p}`, { headers: auth });
+          const t = await r.text();
+          out[p] = r.ok ? JSON.parse(t) : `${r.status} ${t.substring(0, 300)}`;
+        } catch (e) {
+          out[p] = `err ${e instanceof Error ? e.message : e}`;
+        }
+      }
+      return new Response(JSON.stringify(out, null, 2), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

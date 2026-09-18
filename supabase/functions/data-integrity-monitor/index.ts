@@ -410,20 +410,44 @@ Deno.serve(async (req) => {
       const callSource = presentSources.find((s) => SOURCE_REGISTRY[s.token].kind === 'calls');
       const spendSources = presentSources.filter((s) => SOURCE_REGISTRY[s.token].kind === 'spend');
 
-      const callsByDay: number[] = [];
-      const convByDay: number[] = [];
-      const spendByDay: number[] = [];
-      for (const day of days) {
-        let calls = 0, conv = 0, spend = 0;
-        if (callSource) {
-          calls = await dayCount(supabase, c.id, callSource.probe, day);
-          const p = callSource.probe;
-          if (p.convertedCol) conv += await dayCount(supabase, c.id, p, day, (q) => q.eq(p.convertedCol!, true));
-          if (p.revenueCol) conv += await dayCount(supabase, c.id, p, day, (q) => q.gt(p.revenueCol!, 0));
+      // One read per source, bucketed in memory. Per-day queries were far too
+      // slow to finish inside a single invocation.
+      const callsByDay = days.map(() => 0);
+      const convByDay = days.map(() => 0);
+      const spendByDay = days.map(() => 0);
+      const idx = new Map(days.map((d, i) => [d, i]));
+      let payoutSum = 0, revenueSum = 0;
+
+      if (callSource) {
+        const p = callSource.probe;
+        const cols = [p.dateCol, p.convertedCol, p.revenueCol, p.payoutCol].filter(Boolean).join(',');
+        let q = supabase.from(p.table).select(cols).eq('client_id', c.id).limit(50000);
+        q = p.dateOnly ? q.gte(p.dateCol, days[0]) : q.gte(p.dateCol, `${days[0]}T00:00:00`);
+        const { data: rows, error } = await q;
+        if (error) console.warn(`integrity: window read ${p.table} failed — ${error.message}`);
+        for (const r of (rows ?? []) as any[]) {
+          const i = idx.get(String(r[p.dateCol] ?? '').slice(0, 10));
+          payoutSum += Number(r[p.payoutCol ?? ''] ?? 0);
+          revenueSum += Number(r[p.revenueCol ?? ''] ?? 0);
+          if (i === undefined) continue;
+          callsByDay[i]++;
+          const converted = (p.convertedCol && r[p.convertedCol] === true) || (p.revenueCol && Number(r[p.revenueCol] ?? 0) > 0);
+          if (converted) convByDay[i]++;
         }
-        for (const s of spendSources) spend += await daySum(supabase, c.id, s.probe, day);
-        callsByDay.push(calls); convByDay.push(conv); spendByDay.push(spend);
       }
+      for (const s of spendSources) {
+        const p = s.probe;
+        let q = supabase.from(p.table).select(`${p.dateCol},${p.spendCol}`).eq('client_id', c.id).limit(20000);
+        q = applyFilter(q, p);
+        q = p.dateOnly ? q.gte(p.dateCol, days[0]) : q.gte(p.dateCol, `${days[0]}T00:00:00`);
+        const { data: rows, error } = await q;
+        if (error) console.warn(`integrity: window read ${p.table} failed — ${error.message}`);
+        for (const r of (rows ?? []) as any[]) {
+          const i = idx.get(String(r[p.dateCol] ?? '').slice(0, 10));
+          if (i !== undefined) spendByDay[i] += Number(r[p.spendCol!] ?? 0);
+        }
+      }
+
 
       const hadConvEarlier = convByDay.some((v, i) => v > 0 && i < days.length - 1);
       const convRun = callSource?.probe.convertedCol || callSource?.probe.revenueCol

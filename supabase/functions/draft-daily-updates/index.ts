@@ -143,6 +143,9 @@ function factSheet(m: ClientMetrics): string {
  */
 function buildAmNotes(m: ClientMetrics): string {
   const notes: string[] = [];
+  if (spendMissingForDay(m)) {
+    notes.push(`No spend landed for ${pretty(m.for_date)} even though calls came in — spend feed looks stale, so cost per call and any "campaign at $0" reading are unreliable for this day and were kept out of the draft`);
+  }
   if (m.spend_sources.length) notes.push(`Spend read from: ${m.spend_sources.join('; ')}`);
   if (m.call_sources.length) notes.push(`Calls read from: ${m.call_sources.join('; ')}`);
   for (const gap of m.gaps) notes.push(gap.charAt(0).toUpperCase() + gap.slice(1));

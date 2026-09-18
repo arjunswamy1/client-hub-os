@@ -116,7 +116,9 @@ function factSheet(m: ClientMetrics): string {
   }
   lines.push('7-day series (date | spend | calls | cost per call | % past 90s):');
   for (const d of m.trend) {
-    lines.push(`  ${d.date} | ${money(d.spend)} | ${d.calls} | ${d.cost_per_call === null ? 'not available' : money(d.cost_per_call)} | ${d.calls > 0 ? `${d.band_pct.d90}%` : 'not available'}`);
+    const spendCell = noSpend ? 'spend not available' : money(d.spend);
+    const cpcCell = noSpend || d.cost_per_call === null ? 'not available' : money(d.cost_per_call);
+    lines.push(`  ${d.date} | ${spendCell} | ${d.calls} | ${cpcCell} | ${d.calls > 0 ? `${d.band_pct.d90}%` : 'not available'}`);
   }
   if (m.campaign_breakdown.length) {
     lines.push('Campaign spend yesterday:');

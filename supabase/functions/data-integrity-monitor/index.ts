@@ -81,8 +81,10 @@ async function latestPerSource(
 ): Promise<{ table: string; latest: string }[]> {
   const out: { table: string; latest: string }[] = [];
   for (const [table, col] of sources) {
+    // nullsFirst: false matters — Postgres sorts NULLs first on a descending
+    // order, so a single undated row would otherwise read as "no data at all".
     const { data, error } = await db.from(table).select(col)
-      .eq('client_id', clientId).order(col, { ascending: false }).limit(1);
+      .eq('client_id', clientId).order(col, { ascending: false, nullsFirst: false }).limit(1);
     // A table this client is not wired into at all is not an error worth failing on.
     if (error) { console.warn(`integrity: ${table} read failed — ${error.message}`); continue; }
     const row = (data ?? [])[0] as Record<string, string> | undefined;

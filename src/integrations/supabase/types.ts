@@ -1916,6 +1916,72 @@ export type Database = {
           },
         ]
       }
+      client_daily_updates: {
+        Row: {
+          client_id: string
+          created_at: string
+          draft_text: string
+          edited_by_id: string | null
+          final_text: string | null
+          for_date: string
+          id: string
+          kind: string
+          metrics: Json
+          sent_at: string | null
+          slack_channel_id: string | null
+          slack_ts: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          draft_text: string
+          edited_by_id?: string | null
+          final_text?: string | null
+          for_date: string
+          id?: string
+          kind?: string
+          metrics?: Json
+          sent_at?: string | null
+          slack_channel_id?: string | null
+          slack_ts?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          draft_text?: string
+          edited_by_id?: string | null
+          final_text?: string | null
+          for_date?: string
+          id?: string
+          kind?: string
+          metrics?: Json
+          sent_at?: string | null
+          slack_channel_id?: string | null
+          slack_ts?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_daily_updates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_daily_updates_edited_by_id_fkey"
+            columns: ["edited_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_did_history: {
         Row: {
           ad_length: string | null
@@ -3058,6 +3124,39 @@ export type Database = {
           created_at?: string
           job_name?: string
           token?: string
+        }
+        Relationships: []
+      }
+      daily_update_style: {
+        Row: {
+          created_at: string
+          example_text: string
+          guidance: string
+          id: string
+          is_active: boolean
+          key: string
+          label: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          example_text?: string
+          guidance?: string
+          id?: string
+          is_active?: boolean
+          key: string
+          label: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          example_text?: string
+          guidance?: string
+          id?: string
+          is_active?: boolean
+          key?: string
+          label?: string
+          updated_at?: string
         }
         Relationships: []
       }

@@ -11,7 +11,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   gateCandidates, runGateA, runGateB, decide,
-  normaliseText, type CandidateRow,
+  normaliseText, trigramSimilarity, type CandidateRow,
 } from '../_shared/task-gate.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };

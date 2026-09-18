@@ -502,12 +502,7 @@ Deno.serve(async (req) => {
       // real money and `payout` is empty, margin computes against nothing.
       if (callSource?.probe.payoutCol && callSource.probe.revenueCol) {
         const p = callSource.probe;
-        const since = days[0];
-        let q = supabase.from(p.table).select(`${p.payoutCol},${p.revenueCol}`).eq('client_id', c.id).limit(20000);
-        q = p.dateOnly ? q.gte(p.dateCol, since) : q.gte(p.dateCol, `${since}T00:00:00`);
-        const { data: rows } = await q;
-        const payoutSum = (rows ?? []).reduce((s: number, r: any) => s + Number(r[p.payoutCol!] ?? 0), 0);
-        const revenueSum = (rows ?? []).reduce((s: number, r: any) => s + Number(r[p.revenueCol!] ?? 0), 0);
+
         if (revenueSum > 0 && payoutSum < revenueSum * 0.01) {
           findings.push({
             check_key: 'revenue_field_mismatch', client_id: c.id, client_name: c.name, priority: 'high',

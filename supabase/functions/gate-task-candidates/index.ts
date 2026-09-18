@@ -64,13 +64,18 @@ Deno.serve(async (req) => {
 
   try {
     if (action === 'run') {
+      // `offset` lets a large backlog be drained by several runs without two runs
+      // scoring the same rows.
+      const limit = Number(body.limit ?? 40);
+      const offset = Number(body.offset ?? 0);
       const { data, error } = await supabase
         .from('task_candidates').select(CANDIDATE_COLS)
         .eq('status', 'pending')
         .is('reviewed_at', null)
         .order('created_at', { ascending: true })
-        .limit(Number(body.limit ?? 40));
+        .range(offset, offset + limit - 1);
       if (error) throw error;
+
 
       // Already-scored candidates waiting on a human are left alone — re-scoring them
       // every run would burn model calls and could flip a human's queue item.

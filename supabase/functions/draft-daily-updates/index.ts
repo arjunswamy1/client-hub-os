@@ -159,7 +159,8 @@ function buildAmNotes(m: ClientMetrics): string {
     notes.push(`No duration mix for ${noQuality.join(', ')} — no calls recorded`);
   }
   if (m.anomalies.length) {
-    notes.push(`${m.anomalies.length} campaign${m.anomalies.length === 1 ? '' : 's'} at $0 yesterday: ${m.anomalies.map((a) => a.campaign).join(', ')}`);
+    const qualifier = spendMissingForDay(m) ? ' (unverified — spend feed stale for this day)' : '';
+    notes.push(`${m.anomalies.length} campaign${m.anomalies.length === 1 ? '' : 's'} with no spend yesterday${qualifier}: ${m.anomalies.map((a) => a.campaign).join(', ')}`);
   }
   if (!m.campaign_breakdown.length && m.spend_sources.length) {
     notes.push('No campaign-level spend breakdown available for this account');

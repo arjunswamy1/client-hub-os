@@ -5,6 +5,7 @@ import { AssignmentMatrix } from '@/components/admin/AssignmentMatrix';
 import { ClientOnboardingView } from '@/components/admin/ClientOnboardingView';
 import { ClientAccessManagement } from '@/components/admin/ClientAccessManagement';
 import { TechCostsOverview } from '@/components/admin/TechCostsOverview';
+import { DataIntegrityExceptions } from '@/components/admin/DataIntegrityExceptions';
 
 export default function AdminPage() {
   return (

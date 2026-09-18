@@ -7752,6 +7752,28 @@ export type Database = {
         Args: { check_client_id: string; check_user_id: string }
         Returns: boolean
       }
+      integrity_daily_call_feed: {
+        Args: { p_client_id: string; p_since: string; p_table: string }
+        Returns: {
+          calls: number
+          converted: number
+          d: string
+          payout: number
+          revenue: number
+        }[]
+      }
+      integrity_daily_spend_feed: {
+        Args: {
+          p_client_id: string
+          p_platforms: string[]
+          p_since: string
+          p_table: string
+        }
+        Returns: {
+          d: string
+          spend: number
+        }[]
+      }
       is_account_manager: { Args: { check_user_id: string }; Returns: boolean }
       is_admin: { Args: { check_user_id: string }; Returns: boolean }
       move_to_dlq: {

@@ -394,35 +394,36 @@ Deno.serve(async (req) => {
       const idx = new Map(days.map((d, i) => [d, i]));
       let payoutSum = 0, revenueSum = 0;
 
+      // The rollups run in Postgres — pulling a busy account's raw calls into the
+      // function silently returned nothing for Spektrafin's ~6,000 rows a week.
       if (callSource) {
         const p = callSource.probe;
-        const cols = [p.dateCol, p.convertedCol, p.revenueCol, p.payoutCol].filter(Boolean).join(',');
-        let q = supabase.from(p.table).select(cols).eq('client_id', c.id).limit(50000);
-        q = p.dateOnly ? q.gte(p.dateCol, days[0]) : q.gte(p.dateCol, `${days[0]}T00:00:00`);
-        const { data: rows, error } = await q;
-        if (error) console.warn(`integrity: window read ${p.table} failed — ${error.message}`);
+        const { data: rows, error } = await supabase.rpc('integrity_daily_call_feed', {
+          p_client_id: c.id, p_table: p.table, p_since: days[0],
+        });
+        if (error) console.warn(`integrity: call rollup ${p.table} failed — ${error.message}`);
         for (const r of (rows ?? []) as any[]) {
-          const i = idx.get(String(r[p.dateCol] ?? '').slice(0, 10));
-          payoutSum += Number(r[p.payoutCol ?? ''] ?? 0);
-          revenueSum += Number(r[p.revenueCol ?? ''] ?? 0);
+          payoutSum += Number(r.payout ?? 0);
+          revenueSum += Number(r.revenue ?? 0);
+          const i = idx.get(String(r.d).slice(0, 10));
           if (i === undefined) continue;
-          callsByDay[i]++;
-          const converted = (p.convertedCol && r[p.convertedCol] === true) || (p.revenueCol && Number(r[p.revenueCol] ?? 0) > 0);
-          if (converted) convByDay[i]++;
+          callsByDay[i] = Number(r.calls ?? 0);
+          convByDay[i] = Number(r.converted ?? 0);
         }
       }
       for (const s of spendSources) {
         const p = s.probe;
-        let q = supabase.from(p.table).select(`${p.dateCol},${p.spendCol}`).eq('client_id', c.id).limit(20000);
-        q = applyFilter(q, p);
-        q = p.dateOnly ? q.gte(p.dateCol, days[0]) : q.gte(p.dateCol, `${days[0]}T00:00:00`);
-        const { data: rows, error } = await q;
-        if (error) console.warn(`integrity: window read ${p.table} failed — ${error.message}`);
+        const { data: rows, error } = await supabase.rpc('integrity_daily_spend_feed', {
+          p_client_id: c.id, p_table: p.table,
+          p_platforms: p.filterVals ?? null, p_since: days[0],
+        });
+        if (error) console.warn(`integrity: spend rollup ${p.table} failed — ${error.message}`);
         for (const r of (rows ?? []) as any[]) {
-          const i = idx.get(String(r[p.dateCol] ?? '').slice(0, 10));
-          if (i !== undefined) spendByDay[i] += Number(r[p.spendCol!] ?? 0);
+          const i = idx.get(String(r.d).slice(0, 10));
+          if (i !== undefined) spendByDay[i] += Number(r.spend ?? 0);
         }
       }
+
 
 
       const hadConvEarlier = convByDay.some((v, i) => v > 0 && i < days.length - 1);

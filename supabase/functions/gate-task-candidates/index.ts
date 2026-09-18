@@ -69,17 +69,24 @@ Deno.serve(async (req) => {
         .eq('status', 'pending')
         .is('reviewed_at', null)
         .order('created_at', { ascending: true })
-        .limit(Number(body.limit ?? 300));
+        .limit(Number(body.limit ?? 40));
       if (error) throw error;
 
       // Already-scored candidates waiting on a human are left alone — re-scoring them
-      // every 15 minutes would burn model calls and could flip a human's queue item.
+      // every run would burn model calls and could flip a human's queue item.
       const unscored = (data ?? []).filter(
         (c: any) => !c.gate_results || Object.keys(c.gate_results).length === 0,
       ) as CandidateRow[];
 
-      const { summary } = await gateCandidates(supabase, unscored, apiKey);
-      return json({ success: true, action, ...summary });
+      // Scoring outlives the request idle limit, so it finishes in the background and
+      // the results land on the candidate rows.
+      EdgeRuntime.waitUntil(
+        gateCandidates(supabase, unscored, apiKey)
+          .then((r) => console.log('gate summary:', JSON.stringify(r.summary)))
+          .catch((e) => console.error('gate failed:', e instanceof Error ? e.message : JSON.stringify(e))),
+      );
+      return json({ success: true, action, queued_for_scoring: unscored.length });
+
     }
 
     if (action === 'rescore_meeting_tasks') {

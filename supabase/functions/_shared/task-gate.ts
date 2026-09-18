@@ -14,8 +14,12 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1/responses";
 const MODEL = "openai/gpt-6-astra";
 
 export const GATE_BATCH_SIZE = 15;
+/** Duplicate pairs sent per confirmation call — one call per pair rate-limits the gateway. */
+export const GATE_B_PAIRS_PER_CALL = 25;
 /** Trigram similarity at or above this is a *near* match — never a duplicate on its own. */
 export const NEAR_DUPLICATE_THRESHOLD = 0.45;
+/** At or above this the pair is plainly the same wording — merge without a model call. */
+export const HIGH_SIMILARITY_THRESHOLD = 0.9;
 /** Gate A confidence needed to auto-promote. Anything lower queues for review. */
 export const AUTO_PROMOTE_CONFIDENCE = 0.8;
 
@@ -53,7 +57,8 @@ export interface GateOutcome {
     similarity: number | null;
     near_duplicate: boolean;
     merged_into_candidate_id: string | null;
-    confirmed_by: "exact" | "trigram+llm" | "none" | "unavailable";
+    /** null means the check could not run — the next scheduled run retries the pair. */
+    confirmed_by: "exact" | "trigram_high" | "trigram+llm" | "none" | null;
   };
   gate_c: { appears_completed: boolean; evidence: string | null };
   auto_promote: boolean;
@@ -98,40 +103,65 @@ function parseSse(raw: string): string {
   return out;
 }
 
-/** One streamed gateway call returning parsed json, or null on any failure. */
-async function askModel(instructions: string, prompt: string, apiKey: string): Promise<any | null> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One streamed gateway call returning parsed json, or null on any failure.
+ * 429 and 5xx are retried with backoff, honouring Retry-After when present —
+ * the same treatment Slack's rate limits get in sync-slack. Every other status
+ * is terminal per the gateway error contract.
+ */
+async function askModel(
+  instructions: string,
+  prompt: string,
+  apiKey: string,
+  maxAttempts = 4,
+): Promise<any | null> {
   if (!apiKey) return null;
-  try {
-    const res = await fetch(GATEWAY, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Lovable-API-Key": apiKey,
-        "X-Lovable-AIG-SDK": "fetch",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        instructions,
-        input: prompt,
-        stream: true,
-        reasoning: { effort: "low", summary: "auto" },
-        text: { format: { type: "json_object" } },
-      }),
-    });
-    if (!res.ok) {
-      console.error("task-gate: gateway error", res.status, (await res.text()).slice(0, 400));
-      return null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(GATEWAY, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Lovable-API-Key": apiKey,
+          "X-Lovable-AIG-SDK": "fetch",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          instructions,
+          input: prompt,
+          stream: true,
+          reasoning: { effort: "low", summary: "auto" },
+          text: { format: { type: "json_object" } },
+        }),
+      });
+      if (!res.ok) {
+        const detail = (await res.text()).slice(0, 400);
+        const retryable = res.status === 429 || res.status >= 500;
+        console.error("task-gate: gateway error", res.status, detail);
+        if (!retryable || attempt === maxAttempts) return null;
+        const retryAfter = Number(res.headers.get("Retry-After"));
+        const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter, 30) * 1000
+          : Math.min(2 ** attempt * 1000, 16000) + Math.floor(Math.random() * 500);
+        console.log(`task-gate: retrying in ${waitMs}ms (attempt ${attempt}/${maxAttempts})`);
+        await sleep(waitMs);
+        continue;
+      }
+      const text = parseSse(await res.text());
+      if (!text.trim()) {
+        console.error("task-gate: empty model output");
+        return null;
+      }
+      return JSON.parse(text.replace(/```json\s*/g, "").replace(/```/g, "").trim());
+    } catch (e) {
+      console.error("task-gate: model call failed —", e instanceof Error ? e.message : String(e));
+      if (attempt === maxAttempts) return null;
+      await sleep(Math.min(2 ** attempt * 1000, 16000));
     }
-    const text = parseSse(await res.text());
-    if (!text.trim()) {
-      console.error("task-gate: empty model output");
-      return null;
-    }
-    return JSON.parse(text.replace(/```json\s*/g, "").replace(/```/g, "").trim());
-  } catch (e) {
-    console.error("task-gate: model call failed —", e instanceof Error ? e.message : String(e));
-    return null;
   }
+  return null;
 }
 
 // ──────────────────────────── Gate A ────────────────────────────
@@ -276,7 +306,8 @@ export async function runGateB(
     });
     if (taskError || candidateError) {
       console.error("task-gate: duplicate search failed", taskError?.message, candidateError?.message);
-      out.set(c.id, { ...none(), confirmed_by: "unavailable" });
+      // Not a verdict — leave it unchecked so the next run retries this row.
+      out.set(c.id, { ...none(), confirmed_by: null });
       continue;
     }
 
@@ -305,8 +336,9 @@ export async function runGateB(
       continue;
     }
 
+    const shortlist: DupCheck[] = [];
     for (const match of taskMatches ?? []) {
-      pending.push({
+      shortlist.push({
         key: `${c.id}|task|${match.id}`, candidateId: c.id, candidate: c.proposed_title,
         existing: match.title, taskId: match.id, matchCandidateId: null,
         similarity: Number(match.similarity) || 0,
@@ -318,39 +350,59 @@ export async function runGateB(
       } as CandidateRow);
       if (aResults.get(other.id)?.is_task === false) continue;
       if (!ranksBefore(other, c, aResults)) continue;
-      pending.push({
+      shortlist.push({
         key: `${c.id}|candidate|${match.id}`, candidateId: c.id, candidate: c.proposed_title,
         existing: match.proposed_title, taskId: null, matchCandidateId: match.id,
         similarity: Number(match.sim) || 0,
       });
     }
 
-    const shortlist = pending.filter((pair) => pair.candidateId === c.id);
-    if (shortlist.length === 0) out.set(c.id, none());
-    else {
-      const best = shortlist.sort((x, y) => y.similarity - x.similarity)[0];
-      out.set(c.id, {
-        duplicate: false, duplicate_of_task_id: best.taskId, match_title: best.existing,
-        similarity: Number(best.similarity.toFixed(3)), near_duplicate: true,
-        merged_into_candidate_id: best.matchCandidateId, confirmed_by: "unavailable",
-      });
+    if (shortlist.length === 0) {
+      out.set(c.id, none());
+      continue;
     }
+
+    shortlist.sort((x, y) => y.similarity - x.similarity);
+    const best = shortlist[0];
+    // Near-identical wording needs no adjudication — and needing the gateway up
+    // for the common case is exactly what made this pipeline fragile.
+    if (best.similarity >= HIGH_SIMILARITY_THRESHOLD) {
+      out.set(c.id, {
+        duplicate: true, duplicate_of_task_id: best.taskId, match_title: best.existing,
+        similarity: Number(best.similarity.toFixed(3)), near_duplicate: true,
+        merged_into_candidate_id: best.matchCandidateId, confirmed_by: "trigram_high",
+      });
+      continue;
+    }
+
+    // Ambiguous band: the model decides. Until it answers this stays unchecked (null).
+    for (const pair of shortlist) {
+      if (pair.similarity < HIGH_SIMILARITY_THRESHOLD) pending.push(pair);
+    }
+    out.set(c.id, {
+      duplicate: false, duplicate_of_task_id: best.taskId, match_title: best.existing,
+      similarity: Number(best.similarity.toFixed(3)), near_duplicate: true,
+      merged_into_candidate_id: best.matchCandidateId, confirmed_by: null,
+    });
   }
 
-  for (let i = 0; i < pending.length; i += GATE_BATCH_SIZE) {
-    const batch = pending.slice(i, i + GATE_BATCH_SIZE);
+  for (let i = 0; i < pending.length; i += GATE_B_PAIRS_PER_CALL) {
+    const batch = pending.slice(i, i + GATE_B_PAIRS_PER_CALL);
     const prompt = `Compare each pair and return the required json object.
 
 PAIRS:
 ${batch.map((p) => `- key: ${p.key}\n  a: ${JSON.stringify(p.candidate)}\n  b: ${JSON.stringify(p.existing)}`).join("\n")}`;
     const parsed = await askModel(GATE_B_SYSTEM, prompt, apiKey);
     const results = Array.isArray(parsed?.results) ? parsed.results : null;
+    // No answer: leave confirmed_by null so the next scheduled run retries these pairs.
     if (!results) continue;
     const byKey = new Map(results.map((r: any) => [String(r?.key ?? ""), r]));
     const candidateIds = [...new Set(batch.map((p) => p.candidateId))];
     for (const candidateId of candidateIds) {
-      const confirmed = batch
-        .filter((p) => p.candidateId === candidateId && byKey.get(p.key)?.same_work === true)
+      const answered = batch.filter((p) => p.candidateId === candidateId && byKey.has(p.key));
+      if (answered.length === 0) continue;
+      const confirmed = answered
+        .filter((p) => byKey.get(p.key)?.same_work === true)
         .sort((x, y) => y.similarity - x.similarity)[0];
       if (confirmed) {
         out.set(candidateId, {
@@ -360,7 +412,13 @@ ${batch.map((p) => `- key: ${p.key}\n  a: ${JSON.stringify(p.candidate)}\n  b: $
         });
       } else {
         const prior = out.get(candidateId);
-        if (prior && !prior.duplicate) out.set(candidateId, { ...prior, confirmed_by: "none" });
+        // Only settle to "none" once every shortlisted pair for this candidate got an answer.
+        const allAnswered = pending
+          .filter((p) => p.candidateId === candidateId)
+          .every((p) => batch.includes(p) ? byKey.has(p.key) : false);
+        if (prior && !prior.duplicate && allAnswered) {
+          out.set(candidateId, { ...prior, near_duplicate: false, confirmed_by: "none" });
+        }
       }
     }
   }

@@ -83,9 +83,13 @@ Deno.serve(async (req) => {
       // Already-scored candidates waiting on a human are left alone — re-scoring them
       // every run would burn model calls and could flip a human's queue item. A deliberate
       // force run bypasses this for calibration or a changed gate implementation.
-      const selected = (force ? (data ?? []) : (data ?? []).filter(
-        (c: any) => !c.gate_results || Object.keys(c.gate_results).length === 0,
-      )) as CandidateRow[];
+      // Exception: a candidate whose duplicate check could not run (gate_b.confirmed_by
+      // null) is not settled, so every run retries it until the gateway answers.
+      const needsRescore = (c: any) => {
+        if (!c.gate_results || Object.keys(c.gate_results).length === 0) return true;
+        return c.gate_results?.gate_b?.confirmed_by == null;
+      };
+      const selected = (force ? (data ?? []) : (data ?? []).filter(needsRescore)) as CandidateRow[];
 
       if (force && selected.length > 0) {
         const ids = selected.map((c) => c.id);

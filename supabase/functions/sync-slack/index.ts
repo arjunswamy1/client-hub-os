@@ -195,7 +195,7 @@ Deno.serve(async (req) => {
       return jsonResp({ success: true });
     }
 
-    // ──── SYNC + SUMMARIZE + EXTRACT TASKS ────
+    // ──── SYNC + SUMMARIZE (never creates tasks) ────
     if (action === 'sync') {
       if (!client_id) return jsonResp({ error: 'Missing client_id' }, 400);
 
@@ -227,6 +227,8 @@ Deno.serve(async (req) => {
       );
 
       let totalSynced = 0;
+      let candidatesCreated = 0;
+
       let threadPolls = 0;
       const allMessages: { channel: string; context: string; text: string; user: string; ts: string }[] = [];
       const userCache: Record<string, string> = {};
@@ -408,6 +410,10 @@ Deno.serve(async (req) => {
 
 
         const contextItems: any[] = [];
+        // Slack's only task inflow: a client_request in an EXTERNAL client channel
+        // becomes a CANDIDATE, never a task. Internal channels contribute nothing.
+        const candidateRows: any[] = [];
+
         for (const p of prepared) {
           // Permalinks only for the classes a human will be shown (Tier 3 budget).
           let permalink: string | null = null;
@@ -441,6 +447,27 @@ Deno.serve(async (req) => {
             },
           });
 
+          if (mapping.is_external === true && p.finalClass === 'client_request' && !p.isCpmAuthor) {
+            candidateRows.push({
+              client_id,
+              source: 'slack_client_request',
+              source_ref: {
+                channel_id: mapping.channel_id,
+                channel_name: mapping.channel_name,
+                slack_ts: p.msg.ts,
+                permalink,
+                author: p.userName,
+              },
+              raw_text: p.text,
+              proposed_title: p.text.replace(/\s+/g, ' ').trim().slice(0, 120),
+              proposed_assignee_id: null,
+              owner_raw: p.userName,
+              owner_side: 'client',
+              status: 'pending',
+              dedupe_key: `slack:${mapping.channel_id}:${p.msg.ts}`,
+            });
+          }
+
           allMessages.push({
             channel: mapping.channel_name,
             context: channelContext,
@@ -449,6 +476,25 @@ Deno.serve(async (req) => {
             ts: new Date(parseFloat(p.msg.ts) * 1000).toISOString(),
           });
         }
+
+        if (candidateRows.length > 0) {
+          // The dedupe index is partial, so ON CONFLICT cannot target it — skip keys
+          // we already hold instead.
+          const { data: dupes } = await supabase
+            .from('task_candidates')
+            .select('dedupe_key')
+            .in('dedupe_key', candidateRows.map((r) => r.dedupe_key));
+          const held = new Set((dupes ?? []).map((d: any) => d.dedupe_key));
+          const fresh = candidateRows.filter((r) => !held.has(r.dedupe_key));
+          if (fresh.length > 0) {
+            const { data: cands, error: candErr } = await supabase
+              .from('task_candidates').insert(fresh).select('id');
+            if (candErr) console.error('candidate insert error:', candErr);
+            else candidatesCreated += cands?.length ?? 0;
+          }
+        }
+
+
 
         // The cursor may only advance to the timestamp of the LAST SUCCESSFULLY
         // STORED message. A failed insert used to burn the cursor, which is how
@@ -513,9 +559,18 @@ Deno.serve(async (req) => {
       }
 
 
-      // ──── AI ANALYSIS: Summarize + Extract Tasks ────
+      // ──── AI ANALYSIS: Summarize only ────
+      //
+      // This function does NOT create tasks. It once extracted action items straight
+      // into `tasks` with no dedupe; on a 15-minute schedule that produced 907 rows
+      // from 314 distinct titles in 18 hours ("Create Facebook page for Timeshare
+      // campaign" 47 times). Internal channels are where people think out loud —
+      // commitments are made in meetings, and the meeting parser captures those.
+      //
+      // The only inflow from Slack is a `client_request` in an EXTERNAL client
+      // channel, written to `task_candidates` above and gated before it can ever
+      // become a task. Internal channels produce no candidates at all.
       let summary = null;
-      let tasksCreated = 0;
 
       if (allMessages.length > 0 && LOVABLE_API_KEY) {
         try {
@@ -540,56 +595,11 @@ Deno.serve(async (req) => {
               },
             }, { onConflict: 'source,source_id' });
           }
-
-          // Create tasks from extracted action items
-          if (aiResult.tasks && aiResult.tasks.length > 0) {
-            // Channels whose action items should ONLY become creative briefs (never tasks)
-            const CREATIVE_ONLY_CHANNELS = ['cpm_malena', '#cpm_malena'];
-
-            for (const task of aiResult.tasks) {
-              // Match assignee by name
-              let assigneeId: string | null = null;
-              if (task.assignee) {
-                const match = (teamMembers || []).find((tm: any) =>
-                  tm.name.toLowerCase().includes(task.assignee.toLowerCase()) ||
-                  task.assignee.toLowerCase().includes(tm.name.toLowerCase())
-                );
-                if (match) assigneeId = match.id;
-              }
-
-              // Normalize channel name (strip leading #)
-              const normalizedChannel = (task.channel || '').replace(/^#+/, '');
-              const isCreativeOnly = CREATIVE_ONLY_CHANNELS.includes(normalizedChannel) ||
-                                     CREATIVE_ONLY_CHANNELS.includes(task.channel);
-
-              // ──── Creative-only channels (e.g. #cpm_malena): SKIP entirely ────
-              // Briefs for Malena should only be created manually by Henry/Belu
-              // via the Creative Production flow — not auto-generated from Slack.
-              if (isCreativeOnly) {
-                console.log('Skipping auto-creation for creative-only channel:', normalizedChannel, '—', task.title);
-                continue;
-              }
-
-              // ──── Normal channel: create a task ────
-              const { error: taskError } = await supabase.from('tasks').insert({
-                client_id,
-                title: task.title,
-                description: `[Auto-created from Slack #${normalizedChannel}]\n\n${task.context}`,
-                status: 'todo',
-                priority: task.priority || 'medium',
-                assignee_id: assigneeId,
-                tags: ['slack-auto', normalizedChannel],
-                position: 0,
-              });
-
-              if (!taskError) tasksCreated++;
-              else console.error('Task creation error:', taskError);
-            }
-          }
         } catch (aiErr) {
           console.error('AI analysis error:', aiErr);
         }
       }
+
 
       // Log sync
       await supabase.from('context_sync_log').insert({
@@ -610,12 +620,19 @@ Deno.serve(async (req) => {
           metadata: {
             channels: mappings.length,
             messages_synced: totalSynced,
-            tasks_created: tasksCreated,
+            candidates_created: candidatesCreated,
           },
         });
       }
 
-      return jsonResp({ synced: totalSynced, thread_polls: threadPolls, tasks_created: tasksCreated, summary });
+      return jsonResp({
+        synced: totalSynced,
+        thread_polls: threadPolls,
+        tasks_created: 0,
+        candidates_created: candidatesCreated,
+        summary,
+      });
+
     }
 
     return jsonResp({ error: 'Unknown action' }, 400);
@@ -649,16 +666,10 @@ ${messageBlock}
 Respond with JSON containing:
 1. "summary" — A 3-5 sentence executive summary of what's happening. Focus on: campaign launches, performance discussions, creative requests, client feedback, and strategic decisions. Write in third person past tense.
 2. "key_topics" — Array of 3-7 key topics discussed (short phrases).
-3. "tasks" — Array of action items extracted from messages where someone is clearly assigned or volunteers to do something. Each task should have:
-   - "title": Short actionable task title (imperative mood, e.g. "Set up tracking for pest control campaign")
-   - "assignee": The name of the person assigned (must be one of the team members listed above, or null)
-   - "channel": Which channel the task came from
-   - "context": The relevant message text that indicates this task
-   - "priority": "urgent", "high", "medium", or "low" based on context
+3. "client_updates" — Array of items that would be relevant to share with the client in a meeting agenda. Things like campaign progress, creative status, results being discussed.
 
-Only extract REAL tasks — things like "set up a campaign", "add tracking", "create landing page", "send report", "update budget". Do NOT extract casual conversation, questions, or status updates as tasks.
+Do NOT extract action items or tasks. Task inflow is handled elsewhere, behind a review gate.`;
 
-4. "client_updates" — Array of items that would be relevant to share with the client in a meeting agenda. Things like campaign progress, creative status, results being discussed.`;
 
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
@@ -669,7 +680,7 @@ Only extract REAL tasks — things like "set up a campaign", "add tracking", "cr
     body: JSON.stringify({
       model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: 'You are an expert digital marketing operations analyst. Extract structured insights from Slack conversations. Be precise about action items — only flag genuine tasks, not casual chat.' },
+        { role: 'system', content: 'You are an expert digital marketing operations analyst. Summarize Slack conversations for a client record. Do not propose tasks or action items.' },
         { role: 'user', content: prompt },
       ],
       response_format: { type: 'json_object' },

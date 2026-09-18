@@ -1,4 +1,9 @@
-// Turns the "### Next Steps" lines of Wispr meeting summaries into tasks.
+// Turns the "### Next Steps" lines of Wispr meeting summaries into task CANDIDATES.
+//
+// Nothing here writes to `tasks`. Every line becomes a `task_candidates` row and then
+// passes the three gates in _shared/task-gate.ts; only a candidate that clears all of
+// them, with a resolved CPM owner, is promoted into a real task. Everything else waits
+// in the hub review queue.
 //
 // Owner resolution is EXACT, never fuzzy: a name matches a team member only by
 // `name`, an entry of `aliases`, or the local part of `email`, case-insensitively.
@@ -7,13 +12,15 @@
 // person's board is worse than an unassigned one.
 //
 // Three owner kinds, three behaviours:
-//   CPM (matched team member) -> assigned
-//   `Speaker N` (diarization failed) -> unassigned, needs_owner
-//   anyone else (client/vendor) -> unassigned, owner_side 'client', backlog
+//   CPM (matched team member) -> may auto-promote if the gates pass
+//   `Speaker N` (diarization failed) -> always queued, needs_owner
+//   anyone else (client/vendor) -> owner_side 'client', never auto-promoted
 //
-// Dedupe is on (meeting_id, normalised action text) stored as type_data.dedupe_key,
-// backed by a unique index, so re-running can never double-create.
+// Dedupe is on (meeting_id, normalised action text) stored as dedupe_key, backed by a
+// unique index, so re-running can never double-propose.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { gateCandidates, type CandidateRow } from '../_shared/task-gate.ts';
+
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -127,23 +134,26 @@ Deno.serve(async (req) => {
 
     const idx = ownerIndex((members ?? []) as TeamRow[]);
 
-    // Existing dedupe keys, so a re-run inserts nothing.
+    // Dedupe keys already seen — as a candidate, or as a task created before the
+    // gate existed. Either way the line must not be proposed again.
     const existing = new Set<string>();
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('type_data')
-        .eq('type_data->>source', 'wispr')
-        .range(from, from + 999);
-      if (error) throw error;
-      for (const row of data ?? []) {
-        const k = (row as { type_data?: Record<string, unknown> }).type_data?.dedupe_key;
-        if (typeof k === 'string') existing.add(k);
+    for (const table of ['task_candidates', 'tasks'] as const) {
+      for (let from = 0; ; from += 1000) {
+        const q = table === 'task_candidates'
+          ? supabase.from('task_candidates').select('dedupe_key').eq('source', 'wispr').range(from, from + 999)
+          : supabase.from('tasks').select('type_data').eq('type_data->>source', 'wispr').range(from, from + 999);
+        const { data, error } = await q;
+        if (error) throw error;
+        for (const row of data ?? []) {
+          const k = table === 'task_candidates'
+            ? (row as { dedupe_key?: string | null }).dedupe_key
+            : (row as { type_data?: Record<string, unknown> }).type_data?.dedupe_key;
+          if (typeof k === 'string') existing.add(k);
+        }
+        if (!data || data.length < 1000) break;
       }
-      if (!data || data.length < 1000) break;
     }
 
-    const now = Date.now();
     const rows: Record<string, unknown>[] = [];
     const unmatchedOwners = new Map<string, number>();
     const seenThisRun = new Set<string>();
@@ -154,9 +164,6 @@ Deno.serve(async (req) => {
         id: string; client_id: string | null; title: string | null;
         content: string | null; occurred_at: string; metadata: Record<string, unknown> | null;
       };
-      const occurred = new Date(m.occurred_at);
-      const fresh = now - occurred.getTime() <= FRESH_DAYS * 86400000;
-      const due = new Date(occurred.getTime() + 7 * 86400000).toISOString().slice(0, 10);
       const shareLink = typeof m.metadata?.share_link === 'string' ? m.metadata.share_link : null;
 
       for (const step of parseSteps(m.content)) {
@@ -174,51 +181,49 @@ Deno.serve(async (req) => {
 
         rows.push({
           client_id: m.client_id,
-          title: truncateTitle(step.action),
-          description: step.action,
-          task_type: 'general',
-          status: ownerSide === 'cpm' && fresh ? 'todo' : 'backlog',
-          priority: 'medium',
-          assignee_id: assigneeId,
-          created_by_id: null,
-          due_date: due,
-          type_data: {
-            source: 'wispr',
+          source: 'wispr',
+          source_ref: {
             meeting_id: m.id,
             share_link: shareLink,
             meeting_title: m.title,
             meeting_date: m.occurred_at,
-            owner_raw: step.ownerRaw,
-            owner_side: ownerSide,
-            needs_owner: !assigneeId,
-            needs_confirmation: !fresh,
-            dedupe_key: dedupeKey,
           },
+          raw_text: step.action,
+          proposed_title: truncateTitle(step.action),
+          proposed_assignee_id: assigneeId,
+          owner_raw: step.ownerRaw,
+          owner_side: ownerSide,
+          status: 'pending',
+          dedupe_key: dedupeKey,
         });
       }
     }
 
-    let created = 0;
+    // Candidates only — nothing here writes to `tasks`. Promotion is the gate's job.
+    const inserted: CandidateRow[] = [];
     for (let i = 0; i < rows.length; i += 200) {
       const chunk = rows.slice(i, i + 200);
-      const { data, error } = await supabase.from('tasks').insert(chunk).select('id');
+      const { data, error } = await supabase.from('task_candidates').insert(chunk)
+        .select('id, client_id, source, source_ref, raw_text, proposed_title, proposed_assignee_id, owner_raw, owner_side, status, created_at');
       if (error) throw error;
-      created += data?.length ?? 0;
+      inserted.push(...((data ?? []) as CandidateRow[]));
     }
+
+    const gate = await gateCandidates(supabase, inserted, Deno.env.get('LOVABLE_API_KEY') ?? '');
 
     const summary = {
       meetings: (meetings ?? []).length,
       lines_parsed: parsed,
-      created,
-      assigned_cpm: rows.filter((r) => (r.type_data as any).owner_side === 'cpm').length,
-      unassigned_unknown_speaker: rows.filter((r) => (r.type_data as any).owner_side === 'unknown').length,
-      client_side: rows.filter((r) => (r.type_data as any).owner_side === 'client').length,
-      todo: rows.filter((r) => r.status === 'todo').length,
-      backlog: rows.filter((r) => r.status === 'backlog').length,
+      candidates_created: inserted.length,
+      assigned_cpm: rows.filter((r) => r.owner_side === 'cpm').length,
+      unassigned_unknown_speaker: rows.filter((r) => r.owner_side === 'unknown').length,
+      client_side: rows.filter((r) => r.owner_side === 'client').length,
+      gate: gate.summary,
       unmatched_owners: Object.fromEntries(unmatchedOwners),
     };
     console.log('extract-meeting-tasks:', JSON.stringify(summary));
     return json({ success: true, ...summary });
+
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error('extract-meeting-tasks FAILED:', message);

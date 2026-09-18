@@ -3,6 +3,8 @@ import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/ant
 import { logAiUsage } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
 import { postToSlack, canPostToChannel, SlackRefusedError } from "../_shared/slack-post.ts";
+import { handleKillReaction, captureKillComment, isKillReaction } from "../_shared/task-kill.ts";
+
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -1327,11 +1329,28 @@ Deno.serve(async (req) => {
     const event = body.event;
     console.log('Received event:', event.type, 'channel_type:', event.channel_type, 'user:', event.user, 'bot_id:', event.bot_id);
 
+    // Fast kill: ❌ on a posted task rejects it and records the feedback. Checked
+    // before the bot/subtype filter only for reactions, which carry neither.
+    if (event.type === 'reaction_added' && isKillReaction(event.reaction)) {
+      EdgeRuntime.waitUntil(handleKillReaction(supabase, event).then((n) => {
+        if (n > 0) console.log('task-kill: rejected', n, 'task(s) from a Slack reaction');
+      }));
+      return new Response(JSON.stringify({ ok: true, status: 'kill_received' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     if (event.bot_id || event.subtype) {
       return new Response(JSON.stringify({ ok: true, ignored: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+
+    // A thread reply under a killed task is the reason for the ❌.
+    if (event.type === 'message' && event.thread_ts) {
+      EdgeRuntime.waitUntil(captureKillComment(supabase, event));
     }
 
     if (event.type === 'app_mention' || isDirectConversationEvent(event)) {
@@ -1341,6 +1360,7 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
       });
     }
+
   }
 
   return new Response(JSON.stringify({ ok: true }), {

@@ -3204,6 +3204,51 @@ export type Database = {
           },
         ]
       }
+      data_integrity_exceptions: {
+        Row: {
+          check_key: string
+          client_id: string | null
+          created_at: string
+          created_by_id: string | null
+          expires_at: string | null
+          id: string
+          reason: string
+        }
+        Insert: {
+          check_key: string
+          client_id?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          expires_at?: string | null
+          id?: string
+          reason: string
+        }
+        Update: {
+          check_key?: string
+          client_id?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          expires_at?: string | null
+          id?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "data_integrity_exceptions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "data_integrity_exceptions_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       designer_monthly_caps: {
         Row: {
           cap_hours: number

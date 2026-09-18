@@ -14,6 +14,8 @@ import {
   normaliseText, type CandidateRow,
 } from '../_shared/task-gate.ts';
 
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-nonce',

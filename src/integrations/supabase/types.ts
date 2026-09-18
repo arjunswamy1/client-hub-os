@@ -6387,6 +6387,7 @@ export type Database = {
           duplicate_of_task_id: string | null
           gate_results: Json
           id: string
+          merged_into_candidate_id: string | null
           owner_raw: string | null
           owner_side: string | null
           promoted_task_id: string | null
@@ -6409,6 +6410,7 @@ export type Database = {
           duplicate_of_task_id?: string | null
           gate_results?: Json
           id?: string
+          merged_into_candidate_id?: string | null
           owner_raw?: string | null
           owner_side?: string | null
           promoted_task_id?: string | null
@@ -6431,6 +6433,7 @@ export type Database = {
           duplicate_of_task_id?: string | null
           gate_results?: Json
           id?: string
+          merged_into_candidate_id?: string | null
           owner_raw?: string | null
           owner_side?: string | null
           promoted_task_id?: string | null
@@ -6458,6 +6461,13 @@ export type Database = {
             columns: ["duplicate_of_task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_candidates_merged_into_candidate_id_fkey"
+            columns: ["merged_into_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "task_candidates"
             referencedColumns: ["id"]
           },
           {
@@ -7561,6 +7571,21 @@ export type Database = {
           similarity: number
           status: string
           title: string
+        }[]
+      }
+      find_similar_pending_candidates: {
+        Args: {
+          p_client_id: string
+          p_exclude_id: string
+          p_limit?: number
+          p_text: string
+          p_threshold?: number
+        }
+        Returns: {
+          confidence: number
+          id: string
+          proposed_title: string
+          sim: number
         }[]
       }
       get_team_member_id: { Args: { check_user_id: string }; Returns: string }

@@ -32,6 +32,7 @@ export interface CandidateRow {
   status: string;
   created_at?: string;
   gate_results?: Record<string, unknown> | null;
+  confidence?: number | null;
 }
 
 export interface GateAResult {
@@ -39,6 +40,8 @@ export interface GateAResult {
   confidence: number;
   is_task_reason: string;
   decided_by: "llm" | "unavailable";
+  source_appears_completed: boolean;
+  completion_evidence: string | null;
 }
 
 export interface GateOutcome {
@@ -49,7 +52,8 @@ export interface GateOutcome {
     match_title: string | null;
     similarity: number | null;
     near_duplicate: boolean;
-    confirmed_by: "exact" | "llm" | "none";
+    merged_into_candidate_id: string | null;
+    confirmed_by: "exact" | "trigram+llm" | "none" | "unavailable";
   };
   gate_c: { appears_completed: boolean; evidence: string | null };
   auto_promote: boolean;
@@ -153,7 +157,9 @@ Judge by that rubric, NOT by spotting an imperative verb. Examples from real dat
 
 confidence is your certainty that this deserves to appear on someone's board unreviewed, 0..1.
 Use 0.8 or above ONLY for a specific action with an unambiguous done-state.
-is_task_reason is ONE short sentence a human will read to understand why it is in their queue.`;
+is_task_reason is ONE short sentence a human will read to understand why it is in their queue.
+source_appears_completed is true when the line itself says the work already happened; copy the shortest
+supporting phrase into completion_evidence. This makes completion visible in Gate C as well as Gate A.`;
 
 export async function runGateA(
   candidates: CandidateRow[],
@@ -162,7 +168,7 @@ export async function runGateA(
   const out = new Map<string, GateAResult>();
   for (let i = 0; i < candidates.length; i += GATE_BATCH_SIZE) {
     const batch = candidates.slice(i, i + GATE_BATCH_SIZE);
-    const prompt = `Judge each line. Respond with json {"results":[{"key":"<key>","is_task":true,"confidence":0.0,"is_task_reason":"..."}]} covering every key exactly once.
+    const prompt = `Judge each line. Respond with json {"results":[{"key":"<key>","is_task":true,"confidence":0.0,"is_task_reason":"...","source_appears_completed":false,"completion_evidence":null}]} covering every key exactly once.
 
 LINES:
 ${batch.map((c) => `- key: ${c.id}\n  text: ${JSON.stringify(c.raw_text.slice(0, 600))}`).join("\n")}`;
@@ -177,6 +183,8 @@ ${batch.map((c) => `- key: ${c.id}\n  text: ${JSON.stringify(c.raw_text.slice(0,
           confidence: 0,
           is_task_reason: "Quality check unavailable — queued for human review.",
           decided_by: "unavailable",
+          source_appears_completed: false,
+          completion_evidence: null,
         });
       }
       continue;
@@ -190,12 +198,18 @@ ${batch.map((c) => `- key: ${c.id}\n  text: ${JSON.stringify(c.raw_text.slice(0,
           confidence: Math.max(0, Math.min(1, Number(r.confidence) || 0)),
           is_task_reason: String(r.is_task_reason ?? "").slice(0, 400) || "No reasoning returned.",
           decided_by: "llm",
+          source_appears_completed: r.source_appears_completed === true,
+          completion_evidence: r.source_appears_completed === true
+            ? String(r.completion_evidence ?? r.is_task_reason ?? "").slice(0, 400) || null
+            : null,
         }
         : {
           is_task: true,
           confidence: 0,
           is_task_reason: "Model returned no verdict for this line — queued for human review.",
           decided_by: "unavailable",
+          source_appears_completed: false,
+          completion_evidence: null,
         });
     }
   }
@@ -210,114 +224,148 @@ same_work is true only if completing one would complete the other. Different cam
 different platforms, different assets or different time periods are NOT the same work.
 When unsure, answer false — a human will look at it.`;
 
-interface DupCheck { key: string; candidate: string; existing: string; taskId: string; similarity: number }
+interface DupCheck {
+  key: string;
+  candidateId: string;
+  candidate: string;
+  existing: string;
+  taskId: string | null;
+  matchCandidateId: string | null;
+  similarity: number;
+}
+
+function rankCandidate(c: CandidateRow, aResults: Map<string, GateAResult>): [number, number, string] {
+  return [aResults.get(c.id)?.confidence ?? c.confidence ?? 0, c.proposed_title.length, c.id];
+}
+
+function ranksBefore(a: CandidateRow, b: CandidateRow, aResults: Map<string, GateAResult>): boolean {
+  const ar = rankCandidate(a, aResults);
+  const br = rankCandidate(b, aResults);
+  if (ar[0] !== br[0]) return ar[0] > br[0];
+  if (ar[1] !== br[1]) return ar[1] > br[1];
+  return ar[2] < br[2];
+}
 
 /**
- * Gate B. Exact normalised match first, then trigram near-matches confirmed by the
- * model. A near match that the model does not confirm stays pending and is shown to a
- * human beside the task it resembles.
+ * Gate B. Both task and pending-candidate trigram searches shortlist pairs.
+ * Fuzzy pairs merge only after the model confirms that completing one completes the other.
  */
 export async function runGateB(
   supabase: any,
   candidates: CandidateRow[],
   apiKey: string,
+  aResults: Map<string, GateAResult>,
 ): Promise<Map<string, GateOutcome["gate_b"]>> {
   const out = new Map<string, GateOutcome["gate_b"]>();
-  const none: GateOutcome["gate_b"] = {
+  const none = (): GateOutcome["gate_b"] => ({
     duplicate: false, duplicate_of_task_id: null, match_title: null,
-    similarity: null, near_duplicate: false, confirmed_by: "none",
-  };
-
-  // Open tasks per client, loaded once.
-  const clientIds = [...new Set(candidates.map((c) => c.client_id))];
-  const openTasks = new Map<string, { id: string; title: string }[]>();
-  for (const cid of clientIds) {
-    let q = supabase.from("tasks").select("id, title, status, client_id, type_data")
-      .not("status", "in", "(done,archived)").limit(2000);
-    q = cid === null ? q.is("client_id", null) : q.eq("client_id", cid);
-    const { data } = await q;
-    openTasks.set(
-      String(cid),
-      (data ?? [])
-        .filter((t: any) => !t.type_data?.archived_reason)
-        .map((t: any) => ({ id: t.id, title: t.title })),
-    );
-  }
-
+    similarity: null, near_duplicate: false, merged_into_candidate_id: null, confirmed_by: "none",
+  });
+  const byId = new Map(candidates.map((c) => [c.id, c]));
   const pending: DupCheck[] = [];
-  const seenInRun = new Map<string, string>(); // normalised text -> candidate id
 
   for (const c of candidates) {
     const norm = normaliseText(c.proposed_title);
-    const tasks = openTasks.get(String(c.client_id)) ?? [];
+    const { data: taskMatches, error: taskError } = await supabase.rpc("find_similar_open_tasks", {
+      p_client_id: c.client_id, p_text: c.proposed_title,
+      p_threshold: NEAR_DUPLICATE_THRESHOLD, p_limit: 5,
+    });
+    const { data: candidateMatches, error: candidateError } = await supabase.rpc("find_similar_pending_candidates", {
+      p_client_id: c.client_id, p_text: c.proposed_title, p_exclude_id: c.id,
+      p_threshold: NEAR_DUPLICATE_THRESHOLD, p_limit: 5,
+    });
+    if (taskError || candidateError) {
+      console.error("task-gate: duplicate search failed", taskError?.message, candidateError?.message);
+      out.set(c.id, { ...none(), confirmed_by: "unavailable" });
+      continue;
+    }
 
-    const exact = tasks.find((t) => normaliseText(t.title) === norm);
-    if (exact) {
+    const exactTask = (taskMatches ?? []).find((t: any) => normaliseText(t.title) === norm);
+    if (exactTask) {
       out.set(c.id, {
-        duplicate: true, duplicate_of_task_id: exact.id, match_title: exact.title,
-        similarity: 1, near_duplicate: true, confirmed_by: "exact",
+        duplicate: true, duplicate_of_task_id: exactTask.id, match_title: exactTask.title,
+        similarity: 1, near_duplicate: true, merged_into_candidate_id: null, confirmed_by: "exact",
       });
       continue;
     }
-    // Another candidate in this same run proposing the same thing.
-    if (seenInRun.has(norm)) {
+
+    const exactCandidate = (candidateMatches ?? [])
+      .map((m: any) => byId.get(m.id) ?? ({
+        id: m.id, proposed_title: m.proposed_title, confidence: m.confidence,
+      } as CandidateRow))
+      .filter((other: CandidateRow) => aResults.get(other.id)?.is_task !== false)
+      .filter((other: CandidateRow | undefined): other is CandidateRow => !!other && normaliseText(other.proposed_title) === norm)
+      .filter((other: CandidateRow) => ranksBefore(other, c, aResults))
+      .sort((x: CandidateRow, y: CandidateRow) => ranksBefore(x, y, aResults) ? -1 : 1)[0];
+    if (exactCandidate) {
       out.set(c.id, {
-        duplicate: true, duplicate_of_task_id: null, match_title: c.proposed_title,
-        similarity: 1, near_duplicate: true, confirmed_by: "exact",
+        duplicate: true, duplicate_of_task_id: null, match_title: exactCandidate.proposed_title,
+        similarity: 1, near_duplicate: true, merged_into_candidate_id: exactCandidate.id, confirmed_by: "exact",
       });
       continue;
     }
-    seenInRun.set(norm, c.id);
 
-    // Trigram near-matches, then model confirmation.
-    let best: { id: string; title: string; sim: number } | null = null;
-    const { data: similar } = await supabase.rpc("find_similar_open_tasks", {
-      p_client_id: c.client_id,
-      p_text: c.proposed_title,
-      p_threshold: NEAR_DUPLICATE_THRESHOLD,
-      p_limit: 3,
-    });
-    for (const s of similar ?? []) {
-      const sim = Number(s.similarity) || 0;
-      if (!best || sim > best.sim) best = { id: s.id, title: s.title, sim };
+    for (const match of taskMatches ?? []) {
+      pending.push({
+        key: `${c.id}|task|${match.id}`, candidateId: c.id, candidate: c.proposed_title,
+        existing: match.title, taskId: match.id, matchCandidateId: null,
+        similarity: Number(match.similarity) || 0,
+      });
     }
-    if (!best) {
-      for (const t of tasks) {
-        const sim = trigramSimilarity(c.proposed_title, t.title);
-        if (sim >= NEAR_DUPLICATE_THRESHOLD && (!best || sim > best.sim)) {
-          best = { id: t.id, title: t.title, sim };
-        }
-      }
+    for (const match of candidateMatches ?? []) {
+      const other = byId.get(match.id) ?? ({
+        id: match.id, proposed_title: match.proposed_title, confidence: match.confidence,
+      } as CandidateRow);
+      if (aResults.get(other.id)?.is_task === false) continue;
+      if (!ranksBefore(other, c, aResults)) continue;
+      pending.push({
+        key: `${c.id}|candidate|${match.id}`, candidateId: c.id, candidate: c.proposed_title,
+        existing: match.proposed_title, taskId: null, matchCandidateId: match.id,
+        similarity: Number(match.sim) || 0,
+      });
     }
-    if (!best) { out.set(c.id, { ...none }); continue; }
 
-    out.set(c.id, {
-      duplicate: false, duplicate_of_task_id: best.id, match_title: best.title,
-      similarity: Number(best.sim.toFixed(3)), near_duplicate: true, confirmed_by: "none",
-    });
-    pending.push({ key: c.id, candidate: c.proposed_title, existing: best.title, taskId: best.id, similarity: best.sim });
+    const shortlist = pending.filter((pair) => pair.candidateId === c.id);
+    if (shortlist.length === 0) out.set(c.id, none());
+    else {
+      const best = shortlist.sort((x, y) => y.similarity - x.similarity)[0];
+      out.set(c.id, {
+        duplicate: false, duplicate_of_task_id: best.taskId, match_title: best.existing,
+        similarity: Number(best.similarity.toFixed(3)), near_duplicate: true,
+        merged_into_candidate_id: best.matchCandidateId, confirmed_by: "unavailable",
+      });
+    }
   }
 
   for (let i = 0; i < pending.length; i += GATE_BATCH_SIZE) {
     const batch = pending.slice(i, i + GATE_BATCH_SIZE);
-    const prompt = `Compare each pair.
+    const prompt = `Compare each pair and return the required json object.
 
 PAIRS:
 ${batch.map((p) => `- key: ${p.key}\n  a: ${JSON.stringify(p.candidate)}\n  b: ${JSON.stringify(p.existing)}`).join("\n")}`;
     const parsed = await askModel(GATE_B_SYSTEM, prompt, apiKey);
-    const results = Array.isArray(parsed?.results) ? parsed.results : [];
-    for (const r of results) {
-      const key = String(r?.key ?? "");
-      const hit = batch.find((p) => p.key === key);
-      if (!hit || r?.same_work !== true) continue;
-      out.set(key, {
-        duplicate: true, duplicate_of_task_id: hit.taskId, match_title: hit.existing,
-        similarity: Number(hit.similarity.toFixed(3)), near_duplicate: true, confirmed_by: "llm",
-      });
+    const results = Array.isArray(parsed?.results) ? parsed.results : null;
+    if (!results) continue;
+    const byKey = new Map(results.map((r: any) => [String(r?.key ?? ""), r]));
+    const candidateIds = [...new Set(batch.map((p) => p.candidateId))];
+    for (const candidateId of candidateIds) {
+      const confirmed = batch
+        .filter((p) => p.candidateId === candidateId && byKey.get(p.key)?.same_work === true)
+        .sort((x, y) => y.similarity - x.similarity)[0];
+      if (confirmed) {
+        out.set(candidateId, {
+          duplicate: true, duplicate_of_task_id: confirmed.taskId, match_title: confirmed.existing,
+          similarity: Number(confirmed.similarity.toFixed(3)), near_duplicate: true,
+          merged_into_candidate_id: confirmed.matchCandidateId, confirmed_by: "trigram+llm",
+        });
+      } else {
+        const prior = out.get(candidateId);
+        if (prior && !prior.duplicate) out.set(candidateId, { ...prior, confirmed_by: "none" });
+      }
     }
   }
 
-  for (const c of candidates) if (!out.has(c.id)) out.set(c.id, { ...none });
+  for (const c of candidates) if (!out.has(c.id)) out.set(c.id, none());
   return out;
 }
 
@@ -343,18 +391,32 @@ export async function runGateC(
   supabase: any,
   candidates: CandidateRow[],
   apiKey: string,
+  aResults?: Map<string, GateAResult>,
 ): Promise<Map<string, GateOutcome["gate_c"]>> {
   const out = new Map<string, GateOutcome["gate_c"]>();
   const checks: { key: string; text: string; context: string }[] = [];
 
+  const replayTaskIds = candidates
+    .map((c) => typeof c.source_ref?.replay_of_archived_task_id === "string" ? c.source_ref.replay_of_archived_task_id : null)
+    .filter((id): id is string => !!id);
+  const replayDates = new Map<string, string>();
+  for (let i = 0; i < replayTaskIds.length; i += 100) {
+    const { data } = await supabase.from("tasks").select("id, created_at").in("id", replayTaskIds.slice(i, i + 100));
+    for (const row of data ?? []) replayDates.set(row.id, row.created_at);
+  }
+
   for (const c of candidates) {
-    out.set(c.id, { appears_completed: false, evidence: null });
+    const gateA = aResults?.get(c.id);
+    out.set(c.id, gateA?.source_appears_completed
+      ? { appears_completed: true, evidence: gateA.completion_evidence }
+      : { appears_completed: false, evidence: null });
     const terms = searchTerms(c.proposed_title);
     if (terms.length < 2 || !c.client_id) continue;
 
     const after = typeof c.source_ref?.meeting_date === "string"
       ? String(c.source_ref.meeting_date)
-      : c.created_at ?? new Date(Date.now() - 30 * 86400000).toISOString();
+      : replayDates.get(String(c.source_ref?.replay_of_archived_task_id ?? ""))
+        ?? c.created_at ?? new Date(Date.now() - 30 * 86400000).toISOString();
 
     const { data } = await supabase
       .from("context_items")
@@ -363,7 +425,7 @@ export async function runGateC(
       .gt("occurred_at", after)
       .textSearch("search_vector", terms.join(" or "), { type: "websearch", config: "english" })
       .order("occurred_at", { ascending: false })
-      .limit(3);
+      .limit(15);
 
     if (!data || data.length === 0) continue;
     const context = data
@@ -374,7 +436,7 @@ export async function runGateC(
 
   for (let i = 0; i < checks.length; i += GATE_BATCH_SIZE) {
     const batch = checks.slice(i, i + GATE_BATCH_SIZE);
-    const prompt = `For each task, decide from the later context whether it is already done.
+    const prompt = `For each task, decide from the later context whether it is already done and return the required json object.
 
 ITEMS:
 ${batch.map((b) => `- key: ${b.key}\n  task: ${JSON.stringify(b.text)}\n  later_context: ${JSON.stringify(b.context.slice(0, 2500))}`).join("\n")}`;
@@ -485,15 +547,15 @@ export async function gateCandidates(
 
   const aResults = await runGateA(candidates, apiKey);
   const survivors = candidates.filter((c) => aResults.get(c.id)?.is_task !== false);
-  const bResults = await runGateB(supabase, survivors, apiKey);
-  const notDuplicates = survivors.filter((c) => !bResults.get(c.id)?.duplicate);
-  const cResults = await runGateC(supabase, notDuplicates, apiKey);
+  const bResults = await runGateB(supabase, survivors, apiKey, aResults);
+  const cResults = await runGateC(supabase, candidates, apiKey, aResults);
 
   for (const c of candidates) {
-    const a = aResults.get(c.id)!;
+    const a = aResults.get(c.id);
+    if (!a) continue;
     const b = bResults.get(c.id) ?? {
       duplicate: false, duplicate_of_task_id: null, match_title: null,
-      similarity: null, near_duplicate: false, confirmed_by: "none" as const,
+      similarity: null, near_duplicate: false, merged_into_candidate_id: null, confirmed_by: "none" as const,
     };
     const gc = cResults.get(c.id) ?? { appears_completed: false, evidence: null };
     const gate = decide(c, a, b, gc);
@@ -503,6 +565,7 @@ export async function gateCandidates(
       summary.rejected_not_a_task++;
       await supabase.from("task_candidates").update({
         status: "rejected", rejected_reason: "not_a_task",
+        duplicate_of_task_id: null, merged_into_candidate_id: null,
         gate_results: gate, confidence: a.confidence,
       }).eq("id", c.id);
       continue;
@@ -511,7 +574,7 @@ export async function gateCandidates(
       summary.merged++;
       await supabase.from("task_candidates").update({
         status: "merged", duplicate_of_task_id: b.duplicate_of_task_id,
-        gate_results: gate, confidence: a.confidence,
+        merged_into_candidate_id: b.merged_into_candidate_id, gate_results: gate, confidence: a.confidence,
       }).eq("id", c.id);
       continue;
     }
@@ -519,17 +582,24 @@ export async function gateCandidates(
       summary.rejected_completed++;
       await supabase.from("task_candidates").update({
         status: "rejected", rejected_reason: "appears_completed",
+        duplicate_of_task_id: null, merged_into_candidate_id: null,
         gate_results: gate, confidence: a.confidence,
       }).eq("id", c.id);
       continue;
     }
     if (gate.auto_promote) {
       const id = await promoteCandidate(supabase, c, gate);
-      if (id) { summary.promoted++; continue; }
+      if (id) {
+        await supabase.from("task_candidates").update({ duplicate_of_task_id: id })
+          .eq("merged_into_candidate_id", c.id).eq("status", "merged");
+        summary.promoted++;
+        continue;
+      }
     }
     summary.pending++;
     await supabase.from("task_candidates").update({
-      status: "pending", gate_results: gate, confidence: a.confidence,
+      status: "pending", rejected_reason: null, duplicate_of_task_id: null,
+      merged_into_candidate_id: null, gate_results: gate, confidence: a.confidence,
     }).eq("id", c.id);
   }
 

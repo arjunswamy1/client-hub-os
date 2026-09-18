@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
+import { proposeFathomCandidates } from "../_shared/fathom-candidates.ts";
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -230,45 +231,21 @@ Deno.serve(async (req) => {
 
     if (contextError) console.error('Context item error:', contextError);
 
-    // Create tasks from action items
+    // Propose candidates from action items; only the shared QA gate can create tasks.
     const extractedItems = await extractActionItems(summary, actionItems, client.name);
-    let tasksCreated = 0;
-
-    if (extractedItems.length > 0) {
-      const { data: teamMembers } = await supabase
-        .from('team_members').select('id, name, email').eq('is_active', true);
-
-      for (const item of extractedItems) {
-        let assigneeId: string | null = null;
-        if (item.assignee && teamMembers) {
-          const match = teamMembers.find(tm =>
-            tm.name.toLowerCase().includes(item.assignee!.toLowerCase()) ||
-            item.assignee!.toLowerCase().includes(tm.name.toLowerCase())
-          );
-          if (match) assigneeId = match.id;
-        }
-
-        const { error: taskError } = await supabase.from('tasks').insert({
-          client_id: client.id,
-          title: item.title,
-          description: `[Auto-created from ${accountLabel}: ${meetingTitle}]\n\n${item.context}`,
-          status: 'todo',
-          priority: item.priority,
-          assignee_id: assigneeId,
-          tags: ['fathom-auto', 'meeting-action-item'],
-          position: 0,
-        });
-
-        if (!taskError) tasksCreated++;
-        else console.error('Task creation error:', taskError);
-      }
-    }
+    const proposed = await proposeFathomCandidates(supabase, client.id, {
+      sourceId, meetingTitle, meetingDate, shareLink: recordingUrl, accountLabel,
+    }, extractedItems.map((item) => ({
+      title: item.title,
+      description: `[Extracted from ${accountLabel}: ${meetingTitle}]\n\n${item.context}`,
+      ownerRaw: item.assignee,
+    })), LOVABLE_API_KEY);
 
     await supabase.from('context_sync_log').insert({
       client_id: client.id,
       source: 'fathom',
       status: 'success',
-      items_synced: 1 + tasksCreated,
+      items_synced: 1 + proposed.candidates_created,
       last_sync_at: new Date().toISOString(),
     });
 
@@ -278,13 +255,13 @@ Deno.serve(async (req) => {
       service: "fathom_api",
       surface: "fathom-webhook",
       calls: 1,
-      metadata: { meeting: meetingTitle, tasks_created: tasksCreated },
+      metadata: { meeting: meetingTitle, candidates_created: proposed.candidates_created },
     });
 
     return new Response(JSON.stringify({
       ok: true, matched: true, client: client.name,
       fathom_account: accountLabel,
-      context_saved: true, tasks_created: tasksCreated,
+      context_saved: true, candidates_created: proposed.candidates_created, gate: proposed.gate,
     }), { headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
     console.error('Fathom webhook processing error:', err);

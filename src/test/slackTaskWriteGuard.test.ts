@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 
 /**
@@ -61,5 +61,29 @@ describe("sync-slack task write guard", () => {
   it("the guard actually detects a task write", () => {
     const sample = `await supabase.from('tasks').insert({ title: 'x' });`;
     expect(TASK_WRITE.some((p) => p.test(sample))).toBe(true);
+  });
+});
+
+describe("single task creation writer", () => {
+  it("only the shared task gate inserts or upserts tasks", () => {
+    const allowed = normalize("supabase/functions/_shared/task-gate.ts");
+    const root = "supabase/functions";
+    const stack = [root];
+    const files: string[] = [];
+    while (stack.length) {
+      const dir = stack.pop();
+      if (!dir) continue;
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) stack.push(path);
+        else if (entry.isFile() && path.endsWith(".ts")) files.push(path);
+      }
+    }
+    const offenders = files.filter((file) => {
+      if (normalize(file) === allowed) return false;
+      const body = readFileSync(file, "utf8");
+      return TASK_WRITE.some((pattern) => pattern.test(body));
+    });
+    expect(offenders).toEqual([]);
   });
 });

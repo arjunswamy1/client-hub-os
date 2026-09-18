@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
+import { proposeFathomCandidates } from "../_shared/fathom-candidates.ts";
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -55,9 +56,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: teamMembers } = await supabase
-      .from('team_members').select('id, name, email').eq('is_active', true);
-
     // Get existing source_ids for dedup
     const { data: existingItems } = await supabase
       .from('context_items')
@@ -69,7 +67,7 @@ Deno.serve(async (req) => {
     let totalMeetings = 0;
     let matched = 0;
     let contextSaved = 0;
-    let tasksCreated = 0;
+    let candidatesCreated = 0;
     const errors: string[] = [];
     const accountResults: any[] = [];
 
@@ -142,36 +140,21 @@ Deno.serve(async (req) => {
           }
 
           if (meeting.action_items?.length > 0) {
-            for (const item of meeting.action_items) {
+            const proposed = await proposeFathomCandidates(supabase, client.id, {
+              sourceId,
+              meetingTitle: meeting.meeting_title || meeting.title,
+              meetingDate,
+              shareLink: meeting.share_url || meeting.url || null,
+              accountLabel: account.label,
+            }, meeting.action_items.map((item: any) => {
               const desc = item.description || '';
-              if (!desc) continue;
-
-              let assigneeId: string | null = null;
-              const assigneeName = item.assignee?.name || item.assignee?.email || null;
-              if (assigneeName && teamMembers) {
-                const match = teamMembers.find(tm =>
-                  tm.name.toLowerCase().includes(assigneeName.toLowerCase()) ||
-                  assigneeName.toLowerCase().includes(tm.name.toLowerCase()) ||
-                  (item.assignee?.email && tm.email.toLowerCase() === item.assignee.email.toLowerCase())
-                );
-                if (match) assigneeId = match.id;
-              }
-
-              const { error: taskErr } = await supabase.from('tasks').insert({
-                client_id: client.id,
+              return {
                 title: desc.length > 100 ? desc.slice(0, 97) + '...' : desc,
                 description: `[Backfilled from ${account.label}: ${meeting.meeting_title || meeting.title}]\n\n${desc}${item.recording_playback_url ? `\n\n🎥 ${item.recording_playback_url}` : ''}`,
-                status: item.completed ? 'done' : 'todo',
-                priority: 'medium',
-                assignee_id: assigneeId,
-                tags: ['fathom-backfill', 'meeting-action-item'],
-                position: 0,
-                completed_at: item.completed ? new Date().toISOString() : null,
-              });
-
-              if (!taskErr) tasksCreated++;
-              else errors.push(`Task: ${taskErr.message}`);
-            }
+                ownerRaw: item.assignee?.name || item.assignee?.email || null,
+              };
+            }).filter((item: { title: string }) => item.title), Deno.env.get('LOVABLE_API_KEY') ?? '');
+            candidatesCreated += proposed.candidates_created;
           }
         }
       } while (cursor);
@@ -183,7 +166,7 @@ Deno.serve(async (req) => {
       client_id: client.id,
       source: 'fathom-backfill',
       status: errors.length > 0 ? 'partial' : 'success',
-      items_synced: contextSaved + tasksCreated,
+      items_synced: contextSaved + candidatesCreated,
       last_sync_at: new Date().toISOString(),
       error_message: errors.length > 0 ? errors.slice(0, 5).join('; ') : null,
     });
@@ -206,7 +189,7 @@ Deno.serve(async (req) => {
       total_meetings_scanned: totalMeetings,
       matched_to_client: matched,
       context_items_saved: contextSaved,
-      tasks_created: tasksCreated,
+      candidates_created: candidatesCreated,
       errors: errors.slice(0, 10),
     }, null, 2), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

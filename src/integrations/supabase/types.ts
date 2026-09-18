@@ -1918,6 +1918,7 @@ export type Database = {
       }
       client_daily_updates: {
         Row: {
+          am_notes: string | null
           client_id: string
           created_at: string
           draft_text: string
@@ -1934,6 +1935,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          am_notes?: string | null
           client_id: string
           created_at?: string
           draft_text: string
@@ -1950,6 +1952,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          am_notes?: string | null
           client_id?: string
           created_at?: string
           draft_text?: string

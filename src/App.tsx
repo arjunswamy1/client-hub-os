@@ -14,6 +14,8 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import ClientDashboardRoute from "./pages/ClientDashboardRoute";
 import TasksPage from "./pages/TasksPage";
+import TaskReviewPage from "./pages/TaskReviewPage";
+
 import AgendasPage from "./pages/AgendasPage";
 import CreativePage from "./pages/CreativePage";
 import ContextPage from "./pages/ContextPage";
@@ -136,6 +138,8 @@ function ProtectedRoutes() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/dashboard/:clientSlug" element={<ClientDashboardRoute />} />
           <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/tasks/review" element={<TaskReviewPage />} />
+
           <Route path="/agendas" element={<AgendasPage />} />
           <Route path="/creative" element={<CreativePage />} />
           <Route path="/landing-pages" element={<LandingPagesPage />} />

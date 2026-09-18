@@ -2,7 +2,7 @@ import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Phone, Palette, Globe,
   Database, Bot, Settings, Users, Shield, Rocket, Film, Sparkles, PhoneCall, Upload, Tv,
-  ClipboardList, Gauge, CalendarCheck, PhoneForwarded, MapPin,
+  ClipboardList, Gauge, CalendarCheck, PhoneForwarded, MapPin, Inbox,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -18,6 +18,8 @@ import { ClientSwitcher } from '@/components/layout/ClientSwitcher';
 const clientNavItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Tasks', url: '/tasks', icon: CheckSquare },
+  { title: 'Task Review', url: '/tasks/review', icon: Inbox },
+
   { title: 'Agendas', url: '/agendas', icon: Phone },
   { title: 'Creative Production', url: '/creative', icon: Palette },
   { title: 'Production', url: '/production', icon: Film },

@@ -6378,6 +6378,111 @@ export type Database = {
         }
         Relationships: []
       }
+      task_candidates: {
+        Row: {
+          client_id: string | null
+          confidence: number | null
+          created_at: string
+          dedupe_key: string | null
+          duplicate_of_task_id: string | null
+          gate_results: Json
+          id: string
+          owner_raw: string | null
+          owner_side: string | null
+          promoted_task_id: string | null
+          proposed_assignee_id: string | null
+          proposed_title: string
+          raw_text: string
+          rejected_reason: string | null
+          reviewed_at: string | null
+          reviewed_by_id: string | null
+          source: string
+          source_ref: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          dedupe_key?: string | null
+          duplicate_of_task_id?: string | null
+          gate_results?: Json
+          id?: string
+          owner_raw?: string | null
+          owner_side?: string | null
+          promoted_task_id?: string | null
+          proposed_assignee_id?: string | null
+          proposed_title: string
+          raw_text: string
+          rejected_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by_id?: string | null
+          source: string
+          source_ref?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          dedupe_key?: string | null
+          duplicate_of_task_id?: string | null
+          gate_results?: Json
+          id?: string
+          owner_raw?: string | null
+          owner_side?: string | null
+          promoted_task_id?: string | null
+          proposed_assignee_id?: string | null
+          proposed_title?: string
+          raw_text?: string
+          rejected_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by_id?: string | null
+          source?: string
+          source_ref?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_candidates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_candidates_duplicate_of_task_id_fkey"
+            columns: ["duplicate_of_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_candidates_promoted_task_id_fkey"
+            columns: ["promoted_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_candidates_proposed_assignee_id_fkey"
+            columns: ["proposed_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_candidates_reviewed_by_id_fkey"
+            columns: ["reviewed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_comments: {
         Row: {
           author_id: string
@@ -6416,6 +6521,70 @@ export type Database = {
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_feedback: {
+        Row: {
+          action: string
+          candidate_id: string | null
+          comment: string | null
+          corrected_text: string | null
+          created_at: string
+          distilled_into_rule_id: string | null
+          id: string
+          original_text: string | null
+          surface: string
+          task_id: string | null
+          team_member_id: string | null
+        }
+        Insert: {
+          action: string
+          candidate_id?: string | null
+          comment?: string | null
+          corrected_text?: string | null
+          created_at?: string
+          distilled_into_rule_id?: string | null
+          id?: string
+          original_text?: string | null
+          surface: string
+          task_id?: string | null
+          team_member_id?: string | null
+        }
+        Update: {
+          action?: string
+          candidate_id?: string | null
+          comment?: string | null
+          corrected_text?: string | null
+          created_at?: string
+          distilled_into_rule_id?: string | null
+          id?: string
+          original_text?: string | null
+          surface?: string
+          task_id?: string | null
+          team_member_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_feedback_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "task_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_feedback_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_feedback_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -7378,6 +7547,21 @@ export type Database = {
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
+      }
+      find_similar_open_tasks: {
+        Args: {
+          p_client_id: string
+          p_limit?: number
+          p_text: string
+          p_threshold?: number
+        }
+        Returns: {
+          assignee_id: string
+          id: string
+          similarity: number
+          status: string
+          title: string
+        }[]
       }
       get_team_member_id: { Args: { check_user_id: string }; Returns: string }
       has_client_access: {

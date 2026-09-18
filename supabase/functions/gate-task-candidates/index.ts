@@ -213,13 +213,20 @@ Deno.serve(async (req) => {
       }
 
 
-      const { summary } = await gateCandidates(supabase, inserted, apiKey);
+      // Scoring 300+ titles runs past the request idle limit, so it continues in the
+      // background; the results land on the candidate rows and in the review queue.
+      EdgeRuntime.waitUntil(
+        gateCandidates(supabase, inserted, apiKey)
+          .then((r) => console.log('backfill gate summary:', JSON.stringify(r.summary)))
+          .catch((e) => console.error('backfill gate failed:', e instanceof Error ? e.message : JSON.stringify(e))),
+      );
       return json({
         success: true, action,
         distinct_titles: rows.length,
         candidates_created: inserted.length,
-        ...summary,
+        scoring: 'running in background',
       });
+
     }
 
     return json({ error: `Unknown action: ${action}` }, 400);

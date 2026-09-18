@@ -2437,6 +2437,10 @@ export type Database = {
           color: string | null
           communication_channel: string | null
           created_at: string
+          data_model_note: string | null
+          engagement_type: string | null
+          expected_sources: string[]
+          external_dashboard_url: string | null
           id: string
           logo_url: string | null
           name: string
@@ -2448,6 +2452,10 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          data_model_note?: string | null
+          engagement_type?: string | null
+          expected_sources?: string[]
+          external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
           name: string
@@ -2459,6 +2467,10 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          data_model_note?: string | null
+          engagement_type?: string | null
+          expected_sources?: string[]
+          external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
           name?: string
@@ -7739,6 +7751,28 @@ export type Database = {
       has_client_access: {
         Args: { check_client_id: string; check_user_id: string }
         Returns: boolean
+      }
+      integrity_daily_call_feed: {
+        Args: { p_client_id: string; p_since: string; p_table: string }
+        Returns: {
+          calls: number
+          converted: number
+          d: string
+          payout: number
+          revenue: number
+        }[]
+      }
+      integrity_daily_spend_feed: {
+        Args: {
+          p_client_id: string
+          p_platforms: string[]
+          p_since: string
+          p_table: string
+        }
+        Returns: {
+          d: string
+          spend: number
+        }[]
       }
       is_account_manager: { Args: { check_user_id: string }; Returns: boolean }
       is_admin: { Args: { check_user_id: string }; Returns: boolean }

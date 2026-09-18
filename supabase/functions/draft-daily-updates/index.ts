@@ -120,11 +120,13 @@ function factSheet(m: ClientMetrics): string {
     const cpcCell = noSpend || d.cost_per_call === null ? 'not available' : money(d.cost_per_call);
     lines.push(`  ${d.date} | ${spendCell} | ${d.calls} | ${cpcCell} | ${d.calls > 0 ? `${d.band_pct.d90}%` : 'not available'}`);
   }
-  if (m.campaign_breakdown.length) {
+  if (m.campaign_breakdown.length && !noSpend) {
     lines.push('Campaign spend yesterday:');
     for (const c of m.campaign_breakdown) lines.push(`  ${c.campaign} | ${money(c.spend)}`);
   }
-  if (m.anomalies.length) {
+  // With no spend landed for the reporting day every campaign looks paused, so
+  // these are not a finding — they stay out of the client copy entirely.
+  if (m.anomalies.length && !noSpend) {
     lines.push('Campaigns that spent earlier in the week but nothing yesterday (part three is about these):');
     for (const a of m.anomalies) lines.push(`  ${a.campaign}: ${a.detail}`);
   }

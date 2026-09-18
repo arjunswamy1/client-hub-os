@@ -272,6 +272,65 @@ Deno.serve(async (req) => {
 
     }
 
+    if (action === 'consolidate_duplicates') {
+      // Scoring runs in batches, so two near-identical candidates can land in different
+      // batches and never be compared. This pass compares every pending candidate against
+      // every other one for the same client using the same trigram measure — no model
+      // calls, so it is cheap enough to run over the whole set after any scoring run.
+      const rows: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        let q = supabase.from('task_candidates').select(CANDIDATE_COLS)
+          .eq('status', 'pending').is('reviewed_at', null);
+        if (body.replay_only === true) q = q.like('dedupe_key', 'archived_replay:%');
+        const { data, error } = await q.order('created_at', { ascending: true }).range(from, from + 999);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < 1000) break;
+      }
+
+      const threshold = Number(body.threshold ?? 0.9);
+      const rank = (c: any): [number, number, string] =>
+        [Number(c.confidence ?? 0), String(c.proposed_title ?? '').length, c.id];
+      const before = (a: any, b: any) => {
+        const ra = rank(a), rb = rank(b);
+        if (ra[0] !== rb[0]) return ra[0] > rb[0];
+        if (ra[1] !== rb[1]) return ra[1] > rb[1];
+        return ra[2] < rb[2];
+      };
+
+      const merged: { id: string; into: string; similarity: number; title: string }[] = [];
+      const gone = new Set<string>();
+      const ordered = [...rows].sort((a, b) => before(a, b) ? -1 : 1);
+      for (const survivor of ordered) {
+        if (gone.has(survivor.id)) continue;
+        for (const other of ordered) {
+          if (other.id === survivor.id || gone.has(other.id)) continue;
+          if ((survivor.client_id ?? null) !== (other.client_id ?? null)) continue;
+          const sim = trigramSimilarity(survivor.proposed_title, other.proposed_title);
+          if (sim < threshold) continue;
+          gone.add(other.id);
+          merged.push({ id: other.id, into: survivor.id, similarity: Number(sim.toFixed(3)), title: other.proposed_title });
+          const gate = { ...(other.gate_results ?? {}) } as Record<string, unknown>;
+          gate.gate_b = {
+            ...(gate.gate_b as Record<string, unknown> ?? {}),
+            duplicate: true, near_duplicate: true,
+            merged_into_candidate_id: survivor.id,
+            match_title: survivor.proposed_title,
+            similarity: Number(sim.toFixed(3)),
+            confirmed_by: 'trigram_high',
+          };
+          const { error: upErr } = await supabase.from('task_candidates').update({
+            status: 'merged', merged_into_candidate_id: survivor.id, gate_results: gate,
+          }).eq('id', other.id);
+          if (upErr) throw upErr;
+        }
+      }
+
+      return json({
+        success: true, action, examined: rows.length, merged: merged.length, threshold, merges: merged.slice(0, 50),
+      });
+    }
+
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (e) {
     const message = e instanceof Error ? e.message : JSON.stringify(e);

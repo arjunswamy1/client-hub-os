@@ -46,7 +46,11 @@ export default function AdminPage() {
         <TabsContent value="costs">
           <TechCostsOverview />
         </TabsContent>
+        <TabsContent value="integrity">
+          <DataIntegrityExceptions />
+        </TabsContent>
         <TabsContent value="activity">
+
           <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
             Activity log will be available when login events are migrated from the existing codebase.
           </div>

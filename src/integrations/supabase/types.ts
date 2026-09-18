@@ -2437,6 +2437,10 @@ export type Database = {
           color: string | null
           communication_channel: string | null
           created_at: string
+          data_model_note: string | null
+          engagement_type: string | null
+          expected_sources: string[]
+          external_dashboard_url: string | null
           id: string
           logo_url: string | null
           name: string
@@ -2448,6 +2452,10 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          data_model_note?: string | null
+          engagement_type?: string | null
+          expected_sources?: string[]
+          external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
           name: string
@@ -2459,6 +2467,10 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          data_model_note?: string | null
+          engagement_type?: string | null
+          expected_sources?: string[]
+          external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
           name?: string

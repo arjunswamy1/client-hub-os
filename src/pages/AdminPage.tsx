@@ -5,6 +5,7 @@ import { AssignmentMatrix } from '@/components/admin/AssignmentMatrix';
 import { ClientOnboardingView } from '@/components/admin/ClientOnboardingView';
 import { ClientAccessManagement } from '@/components/admin/ClientAccessManagement';
 import { TechCostsOverview } from '@/components/admin/TechCostsOverview';
+import { DataIntegrityExceptions } from '@/components/admin/DataIntegrityExceptions';
 
 export default function AdminPage() {
   return (
@@ -23,7 +24,9 @@ export default function AdminPage() {
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
           <TabsTrigger value="costs">Tech Costs</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="integrity">Data Integrity</TabsTrigger>
         </TabsList>
+
 
         <TabsContent value="team">
           <TeamManagement />
@@ -43,7 +46,11 @@ export default function AdminPage() {
         <TabsContent value="costs">
           <TechCostsOverview />
         </TabsContent>
+        <TabsContent value="integrity">
+          <DataIntegrityExceptions />
+        </TabsContent>
         <TabsContent value="activity">
+
           <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
             Activity log will be available when login events are migrated from the existing codebase.
           </div>

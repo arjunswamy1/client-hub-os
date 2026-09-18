@@ -87,7 +87,9 @@ Deno.serve(async (req) => {
       // null) is not settled, so every run retries it until the gateway answers.
       const needsRescore = (c: any) => {
         if (!c.gate_results || Object.keys(c.gate_results).length === 0) return true;
-        return c.gate_results?.gate_b?.confirmed_by == null;
+        const cb = c.gate_results?.gate_b?.confirmed_by;
+        // null (never ran) and the legacy "unavailable" marker are both unsettled.
+        return cb == null || cb === 'unavailable';
       };
       const selected = (force ? (data ?? []) : (data ?? []).filter(needsRescore)) as CandidateRow[];
 

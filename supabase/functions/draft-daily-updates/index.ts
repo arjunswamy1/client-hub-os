@@ -53,10 +53,14 @@ const pretty = (iso: string) =>
 /**
  * The week's direction for the headline metric. Day-over-day is noise; the
  * useful sentence is whether cost per call is drifting while call quality holds.
+ *
+ * Returns null when the reporting day itself has no spend — a cost-per-call
+ * trend that ends days before the report describes a stale feed, not the market.
  */
-function weeklyDirection(trend: DayRow[]): { series: string; direction: string } | null {
+function weeklyDirection(trend: DayRow[], forDate: string): { series: string; direction: string } | null {
   const priced = trend.filter((d) => d.cost_per_call !== null);
   if (priced.length < 3) return null;
+  if (priced[priced.length - 1].date !== forDate) return null;
   const first = priced[0].cost_per_call!;
   const last = priced[priced.length - 1].cost_per_call!;
   const pct = first > 0 ? Math.round(((last - first) / first) * 1000) / 10 : 0;
@@ -78,14 +82,23 @@ function weeklyDirection(trend: DayRow[]): { series: string; direction: string }
   };
 }
 
+/** True when calls arrived on the reporting day but no spend has landed for it. */
+const spendMissingForDay = (m: ClientMetrics) =>
+  !!m.yesterday && m.yesterday.calls > 0 && m.yesterday.spend <= 0;
+
 /** The measured facts, written out so the model never has to derive a number. */
 function factSheet(m: ClientMetrics): string {
   const y = m.yesterday;
+  const noSpend = spendMissingForDay(m);
   const lines: string[] = [];
   lines.push(`Client: ${m.client_name}`);
   lines.push(`Reporting day: ${m.for_date} (7-day window from ${m.window_start})`);
   if (y) {
-    lines.push(`Yesterday: spend ${money(y.spend)}, ${y.calls} inbound calls, cost per call ${y.cost_per_call === null ? 'not available' : money(y.cost_per_call)}`);
+    if (noSpend) {
+      lines.push(`Yesterday: ${y.calls} inbound calls. Spend and cost per call for this day are NOT available — do not mention spend, cost per call or budget efficiency anywhere in the update, and never write "$0". Build the update from call volume, the duration mix and campaign activity.`);
+    } else {
+      lines.push(`Yesterday: spend ${money(y.spend)}, ${y.calls} inbound calls, cost per call ${y.cost_per_call === null ? 'not available' : money(y.cost_per_call)}`);
+    }
     if (y.calls > 0) {
       lines.push(`Yesterday duration mix: ${y.band_pct.d10}% past 10 seconds, ${y.band_pct.d25}% past 25 seconds, ${y.band_pct.d90}% past 90 seconds, ${y.band_pct.d600}% past 10 minutes, ${y.band_pct.d1200}% past 20 minutes`);
     }
@@ -93,10 +106,13 @@ function factSheet(m: ClientMetrics): string {
       lines.push(`NOTE: only ${y.calls} calls yesterday — too few to read a day-over-day change as a real shift. Say so in the prose; this is a caveat the client needs in order to read the number.`);
     }
   }
-  const dir = weeklyDirection(m.trend);
+  const dir = noSpend ? null : weeklyDirection(m.trend, m.for_date);
   if (dir) {
     lines.push(`Cost per call by day: ${dir.series}`);
     lines.push(`WEEKLY DIRECTION (lead with this, not with yesterday vs the day before): ${dir.direction}`);
+  } else {
+    const callSeries = m.trend.map((d) => `${d.date} ${d.calls} calls`).join(' → ');
+    lines.push(`Call volume by day (use the direction of this series instead of a cost-per-call trend): ${callSeries}`);
   }
   lines.push('7-day series (date | spend | calls | cost per call | % past 90s):');
   for (const d of m.trend) {

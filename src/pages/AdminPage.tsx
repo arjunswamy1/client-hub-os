@@ -24,7 +24,9 @@ export default function AdminPage() {
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
           <TabsTrigger value="costs">Tech Costs</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="integrity">Data Integrity</TabsTrigger>
         </TabsList>
+
 
         <TabsContent value="team">
           <TeamManagement />

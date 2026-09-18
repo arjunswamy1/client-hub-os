@@ -174,23 +174,6 @@ async function latestForProbe(db: SupabaseClient, clientId: string, p: Probe): P
   return row?.[p.dateCol] ? String(row[p.dateCol]).slice(0, 10) : null;
 }
 
-async function dayCount(db: SupabaseClient, clientId: string, p: Probe, day: string, extra?: (q: any) => any): Promise<number> {
-  let q = db.from(p.table).select('id', { count: 'exact', head: true }).eq('client_id', clientId);
-  q = boundDay(applyFilter(q, p), p, day);
-  if (extra) q = extra(q);
-  const { count, error } = await q;
-  if (error) { console.warn(`integrity: count ${p.table} failed — ${error.message}`); return 0; }
-  return count ?? 0;
-}
-
-async function daySum(db: SupabaseClient, clientId: string, p: Probe, day: string): Promise<number> {
-  if (!p.spendCol) return 0;
-  let q = db.from(p.table).select(p.spendCol).eq('client_id', clientId).limit(2000);
-  q = boundDay(applyFilter(q, p), p, day);
-  const { data, error } = await q;
-  if (error) { console.warn(`integrity: sum ${p.table} failed — ${error.message}`); return 0; }
-  return (data ?? []).reduce((s: number, r: any) => s + Number(r[p.spendCol!] ?? 0), 0);
-}
 
 /** The last SILENT_WINDOW_DAYS calendar days, oldest first, excluding today. */
 function recentDays(): string[] {

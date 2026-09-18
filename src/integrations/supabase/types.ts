@@ -6077,7 +6077,7 @@ export type Database = {
           channel_name: string
           channel_purpose: string | null
           classified_at: string | null
-          client_id: string
+          client_id: string | null
           created_at: string
           id: string
           is_ext_shared: boolean | null
@@ -6094,7 +6094,7 @@ export type Database = {
           channel_name: string
           channel_purpose?: string | null
           classified_at?: string | null
-          client_id: string
+          client_id?: string | null
           created_at?: string
           id?: string
           is_ext_shared?: boolean | null
@@ -6111,7 +6111,7 @@ export type Database = {
           channel_name?: string
           channel_purpose?: string | null
           classified_at?: string | null
-          client_id?: string
+          client_id?: string | null
           created_at?: string
           id?: string
           is_ext_shared?: boolean | null

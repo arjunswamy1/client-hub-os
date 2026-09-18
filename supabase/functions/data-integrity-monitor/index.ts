@@ -153,13 +153,6 @@ function applyFilter<T>(q: any, p: Probe) {
   return p.filterCol && p.filterVals ? q.in(p.filterCol, p.filterVals) : q;
 }
 
-/** Bound one probe to a single day, whether its date column is a date or a timestamp. */
-function boundDay(q: any, p: Probe, day: string) {
-  if (p.dateOnly) return q.eq(p.dateCol, day);
-  const next = new Date(`${day}T00:00:00Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return q.gte(p.dateCol, `${day}T00:00:00`).lt(p.dateCol, `${next.toISOString().slice(0, 10)}T00:00:00`);
-}
 
 /** Newest row date for one probe, or null when this client has nothing in it. */
 async function latestForProbe(db: SupabaseClient, clientId: string, p: Probe): Promise<string | null> {

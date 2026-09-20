@@ -193,6 +193,24 @@ function payoutAmount(...candidates: unknown[]): number {
 }
 
 /**
+ * The same coalesce, but a zero does not win over a later non-zero candidate.
+ * Used where the platform writes its revenue into one field and leaves the other
+ * at a token value: RingFuel records $5.00 of `payout` across thousands of calls
+ * while `revenue` carries the real figure, so reading `payout` first would report
+ * nearly every earning call as a no-bid.
+ */
+function amountPreferNonZero(...candidates: unknown[]): number {
+  let firstSeen: number | null = null;
+  for (const c of candidates) {
+    const n = num(c);
+    if (n === null) continue;
+    if (firstSeen === null) firstSeen = n;
+    if (n !== 0) return n;
+  }
+  return firstSeen ?? 0;
+}
+
+/**
  * Derive `billable` by delegating to `engine.isBillableCall` — the billable
  * definition lives in the engine exactly once, so no mapper can drift from it.
  * Returns false when the duration threshold is unknown — never guessed.

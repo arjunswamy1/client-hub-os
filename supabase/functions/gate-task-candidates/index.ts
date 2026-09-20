@@ -71,11 +71,16 @@ Deno.serve(async (req) => {
       const awaitCompletion = body.await_completion === true;
       const limit = Number(body.limit ?? (force && replayOnly ? 500 : 40));
       const offset = Number(body.offset ?? 0);
+      // `source` narrows a run to one extractor (e.g. 'data_integrity') so a targeted
+      // re-score does not have to walk the whole pending backlog first.
+      const source = typeof body.source === 'string' ? body.source : null;
       let query = supabase.from('task_candidates').select(CANDIDATE_COLS)
         .is('reviewed_at', null);
+      if (source) query = query.eq('source', source);
       query = replayOnly
         ? query.like('dedupe_key', 'archived_replay:%')
         : query.eq('status', 'pending');
+
       const { data, error } = await query.order('created_at', { ascending: true })
         .range(offset, offset + limit - 1);
       if (error) throw error;

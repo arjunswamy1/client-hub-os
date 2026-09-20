@@ -130,38 +130,43 @@ Deno.serve(async (req) => {
 
       const revenueRaw = pick(rec, F.revenue);
       const convertedRaw = pick(rec, F.converted);
-      const connDur = toInt(pick(rec, F.connectedDuration));
+      const connRaw = pick(rec, F.connectedDuration);
+      const durRaw = pick(rec, F.duration);
+      const connectedRaw = pick(rec, F.connected);
+      const payoutRaw = pick(rec, F.payout);
 
+      // Absent stays NULL so the database merge (public.ringfuel_merge_call) leaves
+      // the stored value alone — a CSV row ENRICHES a thin webhook row field by field
+      // and never blanks anything it does not carry.
       const row: Record<string, unknown> = {
         client_id,
         call_id: String(call_id),
-        duration_seconds: toInt(pick(rec, F.duration)),
-        connection_duration_seconds: connDur,
-        connected: toBool(pick(rec, F.connected)) || connDur > 0,
-        payout: toNum(pick(rec, F.payout)),
+        duration_seconds: durRaw !== undefined ? toInt(durRaw) : null,
+        connection_duration_seconds: connRaw !== undefined ? toInt(connRaw) : null,
+        connected: connectedRaw !== undefined
+          ? toBool(connectedRaw)
+          : (connRaw !== undefined && toInt(connRaw) > 0 ? true : null),
+        payout: payoutRaw !== undefined ? toNum(payoutRaw) : null,
+        revenue: revenueRaw !== undefined ? toNum(revenueRaw) : null,
+        converted: convertedRaw !== undefined ? toBool(convertedRaw) : null,
         revenue_captured: revenueRaw !== undefined,
         conversion_captured: convertedRaw !== undefined,
         payload_shape: revenueRaw !== undefined ? 'csv_full' : 'webhook_minimal',
+        call_start: toIso(pick(rec, F.start)),
+        campaign_name: pick(rec, F.campaign) ?? null,
+        did: pick(rec, F.did) ?? null,
+        caller_number: pick(rec, F.caller) ?? null,
+        caller_state: pick(rec, F.state) ?? null,
+        caller_city: pick(rec, F.city) ?? null,
+        creative_label: pick(rec, F.creative) ?? null,
+        disposition: pick(rec, F.status) ?? null,
+        recording_url: pick(rec, F.recording) ?? null,
+        buyer_name: pick(rec, F.buyer) ?? null,
+        target_name: pick(rec, F.target) ?? null,
         // The whole CSV row is kept, always, plus the import label so any row can be
-        // traced back to the file it came from.
+        // traced back to the file it came from. raw_payload accumulates in the merge.
         raw_payload: { ...rec, _import_source: importLabel },
       };
-
-      const setIf = (k: string, v: unknown) => { if (v !== undefined && v !== null && v !== '') row[k] = v; };
-      setIf('call_start', toIso(pick(rec, F.start)));
-      setIf('campaign_name', pick(rec, F.campaign));
-      setIf('did', pick(rec, F.did));
-      setIf('caller_number', pick(rec, F.caller));
-      setIf('caller_state', pick(rec, F.state));
-      setIf('caller_city', pick(rec, F.city));
-      setIf('creative_label', pick(rec, F.creative));
-      setIf('disposition', pick(rec, F.status));
-      setIf('recording_url', pick(rec, F.recording));
-      setIf('buyer_name', pick(rec, F.buyer));
-      setIf('target_name', pick(rec, F.target));
-      if (revenueRaw !== undefined) row.revenue = toNum(revenueRaw);
-      if (convertedRaw !== undefined) row.converted = toBool(convertedRaw);
-      if (!row.call_start) row.call_start = new Date().toISOString();
 
       rows.push(row);
     }
@@ -189,18 +194,24 @@ Deno.serve(async (req) => {
     }
 
     let written = 0;
-    for (let i = 0; i < rows.length; i += 500) {
-      const chunk = rows.slice(i, i + 500);
-      const { error } = await admin
-        .from('ringfuel_calls')
-        .upsert(chunk, { onConflict: 'client_id,call_id' });
-      if (error) return json({ error: 'Upsert failed', details: error.message, written }, 500);
+    let inserted = 0;
+    let merged = 0;
+    for (let i = 0; i < rows.length; i += 200) {
+      const chunk = rows.slice(i, i + 200);
+      const { data, error } = await admin.rpc('ringfuel_merge_calls', {
+        p_rows: chunk,
+        p_event: `csv_import:${importLabel}`,
+      });
+      if (error) return json({ error: 'Merge failed', details: error.message, written }, 500);
+      inserted += (data as any)?.inserted ?? 0;
+      merged += (data as any)?.merged ?? 0;
       written += chunk.length;
     }
 
     return json({
       ok: true, client_id, import_label: importLabel, parsed: rows.length, written,
-      enriched_existing: existing, inserted_new: rows.length - existing,
+      enriched_existing: merged, inserted_new: inserted,
+      matched_before_run: existing,
       revenue_captured_rows: rows.filter((r) => r.revenue_captured).length, skipped,
     });
   } catch (e) {

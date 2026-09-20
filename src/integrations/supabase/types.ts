@@ -5471,6 +5471,7 @@ export type Database = {
           disposition: string | null
           duration_seconds: number
           event_type: string | null
+          events_seen: string[]
           id: string
           payload_shape: string | null
           payout: number
@@ -5501,6 +5502,7 @@ export type Database = {
           disposition?: string | null
           duration_seconds?: number
           event_type?: string | null
+          events_seen?: string[]
           id?: string
           payload_shape?: string | null
           payout?: number
@@ -5531,6 +5533,7 @@ export type Database = {
           disposition?: string | null
           duration_seconds?: number
           event_type?: string | null
+          events_seen?: string[]
           id?: string
           payload_shape?: string | null
           payout?: number
@@ -7843,6 +7846,14 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      ringfuel_merge_call: {
+        Args: { p_event?: string; p_row: Json }
+        Returns: Json
+      }
+      ringfuel_merge_calls: {
+        Args: { p_event?: string; p_rows: Json }
+        Returns: Json
       }
       working_hours_between: {
         Args: { p_end: string; p_start: string }

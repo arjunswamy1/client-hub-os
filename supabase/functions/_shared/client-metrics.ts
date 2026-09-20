@@ -465,6 +465,11 @@ export async function computeClientMetrics(
   } else if (callTables.length === 0) {
     revenueNote = 'No call source is mapped to this account, so revenue cannot be computed.';
     revenueDisplay = 'unknown — no call source';
+  } else if (pub.moneyBlocked) {
+    // THE PUBLISHER GATE. The payout column on this feed pays several
+    // publishers. Until we know which calls are ours, none of that money is.
+    revenueDisplay = 'UNKNOWN — cannot be separated from other publishers';
+    revenueNote = `Revenue CANNOT be stated for ${client.name}: ${pub.blockReason} ${pub.notes.join(' ')}`;
   } else if (hadUncapturedData) {
     // THE GATE. No total is produced while any row is uncaptured.
     revenueDisplay = 'UNKNOWN — cannot be totalled';

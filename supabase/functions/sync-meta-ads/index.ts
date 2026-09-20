@@ -271,6 +271,7 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
         const batch = campaignInsights.map((c: any) => {
           const m = extractMetrics(c, governingEvent);
           recordEvents(c, "campaign", c.campaign_id ?? null, c.campaign_name ?? null);
+          const cfg = campaignConfigs.get(c.campaign_id) || {};
           return {
             client_id: clientId,
             platform: "meta",

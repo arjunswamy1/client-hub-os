@@ -101,6 +101,25 @@ Deno.serve(async (req) => {
     || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
     || url.searchParams.get('secret');
   if (provided !== expected) {
+    // A rejected delivery must never be invisible: a misconfigured secret used to look
+    // exactly like no traffic at all. Key NAMES only — never values, never the token.
+    let keys: string[] = [];
+    let nested: string[] = [];
+    try {
+      const body = await req.clone().json();
+      keys = Object.keys(body ?? {});
+      const inner = body?.call ?? body?.data;
+      if (inner && typeof inner === 'object') nested = Object.keys(inner);
+    } catch { /* non-JSON body: no keys to report */ }
+    console.error('ringfuel-webhook: REJECTED 401', JSON.stringify({
+      at: new Date().toISOString(),
+      client_id: url.searchParams.get('client_id') ?? null,
+      secret_source: req.headers.get('x-ringfuel-secret') ? 'header'
+        : req.headers.get('authorization') ? 'bearer'
+        : url.searchParams.get('secret') ? 'query' : 'none',
+      payload_keys: keys,
+      nested_keys: nested,
+    }));
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

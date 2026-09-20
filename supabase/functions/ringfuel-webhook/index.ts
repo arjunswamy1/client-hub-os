@@ -99,7 +99,15 @@ const F = {
   creative: ['creative', 'creative_label', 'creative_name', 'Creative', 'sub_id', 'subid'],
   payout: ['payout', 'payoutAmount', 'payout_amount', 'Payout'],
   connected: ['connected', 'answered', 'is_connected'],
-  event: ['event_type', 'event', 'type', 'event_name', 'webhook_event', 'Event', 'Event Type'],
+  // RingFuel's own macros are {{event_type}} and {{event_name}}; the rest are the
+  // spellings seen in its templates and envelopes. Lookup is case- and
+  // separator-insensitive, so "Event Name", "eventName" and "event-name" all land.
+  event: [
+    'event_type', 'event_name', 'event', 'type', 'name',
+    'webhook_event', 'webhook_event_type', 'webhook_event_name',
+    'call_event', 'call_event_type', 'event_label', 'eventType', 'eventName',
+    'action', 'trigger', 'trigger_name', 'hook', 'hook_event', 'notification_type',
+  ],
   // Kept in raw_payload only, no columns: Quality Score, lead_score, is_duplicate,
   // is_repeat_caller, Telephony Cost, Platform Fee, Publisher Cost, Publisher.
 };

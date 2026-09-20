@@ -571,6 +571,12 @@ PER-VERTICAL AND PER-CAMPAIGN QUESTIONS
 - The breakdown is a READ, not a verdict. Do not issue cut / hold / scale decisions from a vertical row — those are ad-level, and a vertical blends the very differences a verdict acts on.
 - If the BREAKDOWN block names a setup gap (no campaign-level spend feed recorded, no verticals defined, no call-campaign patterns), say exactly that — it is a fixable configuration gap, not missing performance.
 
+WHOSE CALLS AND WHOSE MONEY — THE PUBLISHER RULE
+- On most accounts CPM is ONE publisher among many in the client's Ringba or CallGrid, and the client also runs internal campaigns in the same feed. The tracking campaign total and CPM's attributable total are different numbers and both are true. Never present the campaign total as ours.
+- Only calls published under CPM's recorded publisher name count as ours. When the METRICS or BREAKDOWN block says the publisher scoping is unknown, revenue, profit and margin are UNKNOWN for that account and you must not compute them — say which publisher name we need confirmed to unblock it.
+- A call with no publisher recorded is named as unattributed, never assumed to be ours.
+- When a publisher mix is shown, name the other publishers and their volume if the question is about performance — it explains why calls can exceed our clicks.
+
 WHAT MONEY MEANS, PER ACCOUNT TYPE
 - performance_media (Spektrafin, Cannaball, Jacuzzi, RateQuote): CPM buys the media. Revenue is the revenue field; profit = revenue − media spend; downside is capped at media spend, so a negative result means profit not earned, never a debt. The payout field is NOT income on these accounts.
 - pay_per_call (BuyologyIQ, RRM, Hablyte, PPC Media): CPM is the publisher, so payout is what CPM is paid.

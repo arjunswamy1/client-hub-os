@@ -353,7 +353,7 @@ export async function computeClientMetrics(
       label: client.slug === 'jacuzzi' ? 'Cost per lead' : 'Cost per call',
       value: spend / callValue,
       display: money(spend / callValue),
-      note: `${money(spend)} ÷ ${callValue} ${client.slug === 'jacuzzi' ? 'leads' : 'calls'}. Total calls is the denominator — never a billable subset, so nothing is hidden.`,
+      note: `${money(spend)} ÷ ${callValue} ${client.slug === 'jacuzzi' ? 'leads' : 'calls'}. Total calls is the denominator — never a billable subset, so nothing is hidden.${spendCoverageIncomplete ? ` A FLOOR only: ${coverageNote}` : ''}`,
       sources: [...spendTables, ...callTables],
     });
   }
@@ -479,6 +479,7 @@ export async function computeClientMetrics(
     : null;
 
   if (client.data_model_note) caveats.push(client.data_model_note);
+  if (spendCoverageIncomplete) caveats.push(coverageNote + ' Cost per call is therefore a floor, and profit and margin are withheld.');
   if (hadUncapturedData) {
     caveats.push(`Revenue is unknown for ${uncaptured} of ${totalCalls} calls in this window. Do not state a revenue, profit or margin figure for it.`);
   }

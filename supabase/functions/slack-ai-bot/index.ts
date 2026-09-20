@@ -4,6 +4,8 @@ import { logAiUsage } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
 import { postToSlack, canPostToChannel, SlackRefusedError } from "../_shared/slack-post.ts";
 import { handleKillReaction, captureKillComment, isKillReaction } from "../_shared/task-kill.ts";
+import { handleDigestReaction, captureDigestReply, ackKindForReaction } from "../_shared/task-digest-ack.ts";
+
 
 
 declare const EdgeRuntime: {

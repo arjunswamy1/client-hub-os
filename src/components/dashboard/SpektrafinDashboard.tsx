@@ -330,7 +330,11 @@ export default function SpektrafinDashboard() {
 
         <TabsContent value="trend">
           <Card className="p-4">
-            <h3 className="mb-3 text-sm font-medium">Daily spend, revenue and calls</h3>
+            <h3 className="mb-1 text-sm font-medium">Daily spend, revenue and calls</h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Where the dashed line rises, RingFuel sent calls without telling us what they earned — those days show no revenue bar because
+              the figure is unknown, not because nothing was earned.
+            </p>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={trend}>

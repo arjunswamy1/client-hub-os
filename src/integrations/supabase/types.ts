@@ -1289,6 +1289,81 @@ export type Database = {
           },
         ]
       }
+      bot_qa_log: {
+        Row: {
+          answer: string | null
+          asked_by_slack_id: string | null
+          channel_id: string | null
+          channel_name: string | null
+          created_at: string
+          error: string | null
+          had_uncaptured_data: boolean | null
+          id: string
+          latency_ms: number | null
+          metrics_used: string[]
+          question: string
+          resolved_client_id: string | null
+          sql_used: string | null
+          team_member_id: string | null
+          thread_ts: string | null
+          tokens_in: number | null
+          tokens_out: number | null
+        }
+        Insert: {
+          answer?: string | null
+          asked_by_slack_id?: string | null
+          channel_id?: string | null
+          channel_name?: string | null
+          created_at?: string
+          error?: string | null
+          had_uncaptured_data?: boolean | null
+          id?: string
+          latency_ms?: number | null
+          metrics_used?: string[]
+          question: string
+          resolved_client_id?: string | null
+          sql_used?: string | null
+          team_member_id?: string | null
+          thread_ts?: string | null
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
+        Update: {
+          answer?: string | null
+          asked_by_slack_id?: string | null
+          channel_id?: string | null
+          channel_name?: string | null
+          created_at?: string
+          error?: string | null
+          had_uncaptured_data?: boolean | null
+          id?: string
+          latency_ms?: number | null
+          metrics_used?: string[]
+          question?: string
+          resolved_client_id?: string | null
+          sql_used?: string | null
+          team_member_id?: string | null
+          thread_ts?: string | null
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_qa_log_resolved_client_id_fkey"
+            columns: ["resolved_client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bot_qa_log_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_action_items: {
         Row: {
           assignee_id: string | null
@@ -2476,6 +2551,7 @@ export type Database = {
       }
       clients: {
         Row: {
+          aliases: string[]
           color: string | null
           communication_channel: string | null
           created_at: string
@@ -2493,6 +2569,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          aliases?: string[]
           color?: string | null
           communication_channel?: string | null
           created_at?: string
@@ -2510,6 +2587,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          aliases?: string[]
           color?: string | null
           communication_channel?: string | null
           created_at?: string
@@ -2774,6 +2852,7 @@ export type Database = {
           assigned_to_id: string | null
           brand_guidelines_url: string | null
           client_id: string | null
+          completion_confirmed_by_id: string | null
           copy_suggestions: Json | null
           created_at: string
           created_by_id: string | null
@@ -2794,6 +2873,8 @@ export type Database = {
           num_concepts: number | null
           objective: string | null
           platforms: string[] | null
+          presumed_complete_at: string | null
+          presumed_complete_reason: string | null
           priority: string
           raw_footage_url: string | null
           reference_assets: Json | null
@@ -2815,6 +2896,7 @@ export type Database = {
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
           client_id?: string | null
+          completion_confirmed_by_id?: string | null
           copy_suggestions?: Json | null
           created_at?: string
           created_by_id?: string | null
@@ -2835,6 +2917,8 @@ export type Database = {
           num_concepts?: number | null
           objective?: string | null
           platforms?: string[] | null
+          presumed_complete_at?: string | null
+          presumed_complete_reason?: string | null
           priority?: string
           raw_footage_url?: string | null
           reference_assets?: Json | null
@@ -2856,6 +2940,7 @@ export type Database = {
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
           client_id?: string | null
+          completion_confirmed_by_id?: string | null
           copy_suggestions?: Json | null
           created_at?: string
           created_by_id?: string | null
@@ -2876,6 +2961,8 @@ export type Database = {
           num_concepts?: number | null
           objective?: string | null
           platforms?: string[] | null
+          presumed_complete_at?: string | null
+          presumed_complete_reason?: string | null
           priority?: string
           raw_footage_url?: string | null
           reference_assets?: Json | null
@@ -2905,6 +2992,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_briefs_completion_confirmed_by_id_fkey"
+            columns: ["completion_confirmed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {
@@ -7841,6 +7935,10 @@ export type Database = {
       }
     }
     Functions: {
+      bot_readonly_select: {
+        Args: { p_row_limit?: number; p_sql: string }
+        Returns: Json
+      }
       compute_tech_cost: {
         Args: {
           p_cache_read_tokens?: number

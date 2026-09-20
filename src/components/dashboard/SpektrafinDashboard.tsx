@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin, AlertTriangle,
+  Hash, Users,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -14,9 +15,13 @@ import {
   useSpektrafinCalls,
   useSpektrafinRokuSpend,
   useSpektrafinRokuFreshness,
+  useSpektrafinBreakdowns,
   SpektrafinCall,
+  RingFuelBreakdownRow,
 } from "@/hooks/useSpektrafinData";
+import { parseRokuCampaignName } from "@/lib/mediaBrain/rokuCampaignAttributes";
 import { resolveClientRevenue } from "@/lib/mediaBrain/clientRevenue";
+
 
 const fmtMoney = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
 const fmtMoney2 = (n: number) => (n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`);
@@ -106,6 +111,77 @@ function KPI({ label, value, sub, icon: Icon, accent }: any) {
     </Card>
   );
 }
+
+/**
+ * Spektrafin's confidence floor, taken from its Media Brain record (gap 0.57 →
+ * 8 ÷ gap² = 25 calls). A row below it cannot be ranked against another: the
+ * difference between two noisy estimates needs more calls than either alone.
+ */
+const MIN_CALLS_TO_RANK = 25;
+
+/** Shared table for the revenue splits: tracking number, RingFuel campaign, publisher. */
+function BreakdownTable({
+  rows,
+  label,
+  empty,
+}: {
+  rows: RingFuelBreakdownRow[];
+  label: string;
+  empty: string;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/40">
+          <tr className="text-left">
+            <th className="px-3 py-2 font-medium">{label}</th>
+            <th className="px-3 py-2 text-right font-medium">Calls</th>
+            <th className="px-3 py-2 text-right font-medium">Connect rate</th>
+            <th className="px-3 py-2 text-right font-medium">Converted</th>
+            <th className="px-3 py-2 text-right font-medium">Avg duration</th>
+            <th className="px-3 py-2 text-right font-medium">Revenue</th>
+            <th className="px-3 py-2 text-right font-medium">Revenue / call</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">{empty}</td></tr>
+          ) : rows.map((r) => {
+            const known = r.revenue_known;
+            const unknown = r.calls - known;
+            const rpc = known ? r.revenue / known : null;
+            // Too few calls to rank — shown, greyed, and labelled rather than hidden.
+            const thin = r.calls < MIN_CALLS_TO_RANK;
+            return (
+              <tr key={r.key} className={`border-t ${thin ? "text-muted-foreground" : ""}`}>
+                <td className="px-3 py-2 font-medium font-mono text-xs">
+                  {r.key}
+                  {thin && <span className="ml-2 font-sans text-xs">not enough calls to rank</span>}
+                </td>
+                <td className="px-3 py-2 text-right">{r.calls.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">{fmtPct(r.calls ? r.connected / r.calls : 0)}</td>
+                <td className="px-3 py-2 text-right">{known ? r.converted.toLocaleString() : "unknown"}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {fmtDuration(r.connected ? Math.round(r.duration_seconds / r.connected) : 0)}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {known ? fmtMoney(r.revenue) : <span className="text-amber-600">unknown</span>}
+                  {known > 0 && unknown > 0 && (
+                    <span className="ml-1 text-xs text-amber-600" title={`Revenue unknown for ${unknown} of ${r.calls} calls`}>
+                      ({unknown.toLocaleString()} unknown)
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right">{rpc !== null ? fmtMoney2(rpc) : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
 
 export default function SpektrafinDashboard() {
   const { data: calls = [], isLoading, dataUpdatedAt, refetch: refetchCalls } = useSpektrafinCalls();

@@ -331,6 +331,7 @@ export function readPublisher(row: RawCallRow): string | null {
 export const fromRingba: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
   const payout = payoutAmount(row.payout, row.revenue);
+  const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
@@ -351,6 +352,7 @@ export const fromRingba: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.target_name),
     publisher: readPublisher(row),
     state: null,
@@ -363,6 +365,7 @@ export const fromRingba: CallMapper = (row, opts) => {
 export const fromRingba4js: CallMapper = (row, opts) => {
   const duration = num(row.call_duration_seconds);
   const payout = payoutAmount(row.payout);
+  const revenueCaptured = row.revenue_captured !== false;
   return {
     call_id: str(row.ringba_call_id) ?? str(row.id) ?? '',
     timestamp: iso(row.call_start),
@@ -379,6 +382,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.buyer_name),
     publisher: readPublisher(row),
     state: str(row.caller_state),
@@ -391,6 +395,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
 export const fromRingfuel: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
   const payout = payoutAmount(row.payout, row.revenue);
+  const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
@@ -408,6 +413,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.buyer_name),
     publisher: readPublisher(row),
     state: str(row.caller_state),
@@ -420,6 +426,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
 export const fromMoja: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
   const payout = payoutAmount(row.payout, row.revenue);
+  const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
@@ -437,6 +444,7 @@ export const fromMoja: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.buyer_name),
     publisher: readPublisher(row),
     state: str(row.caller_state),
@@ -449,6 +457,7 @@ export const fromMoja: CallMapper = (row, opts) => {
 export const fromCannaball: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
   const payout = payoutAmount(row.payout);
+  const revenueCaptured = row.revenue_captured !== false;
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
     timestamp: iso(row.call_start),
@@ -465,6 +474,7 @@ export const fromCannaball: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: null,
     publisher: readPublisher(row),
     state: str(row.caller_state),

@@ -412,7 +412,11 @@ export const fromRingba4js: CallMapper = (row, opts) => {
 /** `ringfuel_calls` → canonical. @see §3 */
 export const fromRingfuel: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
-  const payout = payoutAmount(row.payout, row.revenue);
+  // RingFuel's `revenue` column is authoritative here; `payout` carries a token
+  // value and must not decide. A row whose revenue was never captured keeps 0
+  // but is flagged uncaptured, so the engine excludes it instead of reading it
+  // as "earned nothing".
+  const payout = amountPreferNonZero(row.revenue, row.payout);
   const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {

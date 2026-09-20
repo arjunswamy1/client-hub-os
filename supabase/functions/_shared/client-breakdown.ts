@@ -25,6 +25,10 @@
 
 import { revenueFieldForClient, resolveClientRevenue } from './client-revenue.ts';
 import type { ResolvedClientRow } from './client-resolve.ts';
+import {
+  createPublisherFilter, loadPublisherScopes, publisherColumns, readPublisher,
+  PUBLISHER_NOT_RECORDED,
+} from './publisher-scope.ts';
 
 /** Call tables and the column that carries their campaign name. */
 const CALL_DIMS: Record<string, { dateCol: string; hasConverted: boolean; hasRevenue: boolean; hasCaptureFlags: boolean; testFlagCol?: string }> = {

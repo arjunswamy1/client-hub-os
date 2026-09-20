@@ -284,6 +284,10 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
             roas: m.spend > 0 ? m.revenue / m.spend : null,
             bidding_strategy_type: c.objective ? formatMetaObjective(c.objective) : null,
             campaign_type: c.buying_type || null,
+            objective: c.objective ? formatMetaObjective(c.objective) : null,
+            bid_strategy: cfg.bid_strategy || null,
+            daily_budget: minorToMajor(cfg.daily_budget),
+            lifetime_budget: minorToMajor(cfg.lifetime_budget),
           };
         });
         await batchUpsert(supabase, "ad_campaigns", batch, "client_id,platform,campaign_name,date");

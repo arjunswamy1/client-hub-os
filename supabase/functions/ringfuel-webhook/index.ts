@@ -246,7 +246,9 @@ Deno.serve(async (req) => {
     revenue_captured,
     conversion_captured,
     payload_shape,
-    // raw_payload accumulates in the merge: every event's fields survive.
+    // raw_payload holds the LATEST delivery; the merge also appends this delivery
+    // verbatim to payload_history (append-only, arrival order, capped at 20), and
+    // payload_shape / the capture flags derive from the whole history.
     raw_payload: payload,
   };
 

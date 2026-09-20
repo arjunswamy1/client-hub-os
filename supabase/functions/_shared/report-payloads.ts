@@ -235,7 +235,8 @@ export async function buildJacuzziBriefs(supabase: Client, clientId: string, day
     supabase.from('jacuzzi_delivery').select('date, station_code, campaign_name, impressions, spend, cpm')
       .eq('client_id', clientId).gte('date', w.from).lte('date', w.to),
     supabase.from('ringfuel_calls').select('call_id, did, campaign_name, creative_label, call_start, duration_seconds, connected, converted, revenue, payout, caller_state')
-      .eq('client_id', clientId).gte('call_start', `${w.from}T00:00:00`).lte('call_start', `${w.to}T23:59:59`),
+      .eq('client_id', clientId).eq('is_test', false)
+      .gte('call_start', `${w.from}T00:00:00`).lte('call_start', `${w.to}T23:59:59`),
     supabase.from('jacuzzi_leads').select('transaction_date, lead_type, station_code, attributed_station, payout_rate, call_status')
       .eq('client_id', clientId).gte('transaction_date', w.from).lte('transaction_date', w.to),
   ]);

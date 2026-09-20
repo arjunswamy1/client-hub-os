@@ -583,6 +583,8 @@ export function computeWindow({
       (p): p is string => typeof p === 'string' && p.trim().length > 0,
     ),
     revenueNote: windowRevenue.note,
+    uncapturedRevenueCalls: windowRevenue.uncapturedRevenueCalls,
+    revenueComplete: windowRevenue.revenueComplete,
     missingBillableDefinition,
     breakers,
   };

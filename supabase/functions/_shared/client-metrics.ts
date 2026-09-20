@@ -489,8 +489,10 @@ export async function computeClientMetrics(
   });
 
   // ── profit and margin, gated on revenue AND on spend coverage ────────────
-  const canDoProfit = revenueValue !== null && spendRows > 0 && !spendCoverageIncomplete;
-  const withheldBecause = revenueValue === null
+  const canDoProfit = revenueValue !== null && !pub.moneyBlocked && spendRows > 0 && !spendCoverageIncomplete;
+  const withheldBecause = pub.moneyBlocked
+    ? `${pub.blockReason} Our media spend is ours; the payouts on this feed are not all ours, so a margin built from the pair would credit CPM for other publishers' calls.`
+    : revenueValue === null
     ? 'revenue is unknown for at least one call in the window. Stating it would mean treating unreported calls as having earned nothing.'
     : spendRows === 0
       ? 'no spend rows arrived for this window, so the cost side is unknown — not zero.'

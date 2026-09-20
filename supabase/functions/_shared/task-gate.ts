@@ -43,7 +43,7 @@ export interface GateAResult {
   is_task: boolean;
   confidence: number;
   is_task_reason: string;
-  decided_by: "llm" | "unavailable";
+  decided_by: "llm" | "unavailable" | "machine";
   source_appears_completed: boolean;
   completion_evidence: string | null;
 }

@@ -221,9 +221,15 @@ Deno.serve(async (req) => {
   );
 
   // RingFuel fires FIVE events per call (Incoming, Connected, Completed, Converted,
-  // Payout), all sharing one call_id. The event name is read from either the envelope
-  // or the merged call object.
-  const event_type = pick<string>(payload, F.event) ?? pick<string>(call, F.event) ?? null;
+  // Payout), all sharing one call_id. The label is read from the envelope, the merged
+  // call object, or the tags block, under either macro ({{event_type}} / {{event_name}})
+  // and any casing. Both macros are read, and the one that arrives filled wins.
+  const event_type = canonicalEvent(
+    pick<string>(payload, F.event)
+      ?? pick<string>(call, F.event)
+      ?? pick<string>(tags, F.event)
+      ?? null,
+  );
 
   // What did this payload actually carry?
   const revenueRaw = pick(call, F.revenue);

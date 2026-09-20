@@ -137,6 +137,12 @@ export interface ComputeWindowArgs {
   verticals: VerticalRow[];
   instance: ComputeInstance;
   economics: ComputeEconomics;
+  /**
+   * `clients.engagement_type` — decides which column is CPM's money
+   * (`performance_media` → revenue, `pay_per_call` → payout). Resolved once in
+   * `clientRevenue.resolveClientRevenue`; the mappers never choose.
+   */
+  engagementType?: string | null;
   window: { start: string; end: string; timezone: string };
 }
 
@@ -335,6 +341,7 @@ export function computeWindow({
   verticals,
   instance,
   economics,
+  engagementType,
   window: { start, end, timezone },
 }: ComputeWindowArgs): PullWindowResult {
   const payoutMode = (economics.payout_mode ?? 'static') as PayoutMode;

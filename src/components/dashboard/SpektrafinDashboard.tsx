@@ -126,14 +126,20 @@ export default function SpektrafinDashboard() {
   }, [spendRows]);
 
   const trend = useMemo(() => {
-    const byDate = new Map<string, { calls: number; paid: number; spend: number; revenue: number }>();
-    const row = (d: string) => byDate.get(d) ?? { calls: 0, paid: 0, spend: 0, revenue: 0 };
+    const byDate = new Map<string, { calls: number; converted: number; spend: number; revenue: number; uncaptured: number }>();
+    const row = (d: string) => byDate.get(d) ?? { calls: 0, converted: 0, spend: 0, revenue: 0, uncaptured: 0 };
     for (const c of calls) {
       const d = prDay(c.call_start);
       const r = row(d);
       r.calls += 1;
-      r.paid += 1; // every raw call pays
-      r.revenue += SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
+      // Days RingFuel never reported revenue for show calls and spend but no
+      // revenue bar — a gap in what we were told, not a day that earned nothing.
+      if (captured(c)) {
+        r.revenue += Number(c.revenue || 0);
+        if (c.converted === true) r.converted += 1;
+      } else {
+        r.uncaptured += 1;
+      }
       byDate.set(d, r);
     }
     for (const s of spendRows) {
@@ -146,9 +152,10 @@ export default function SpektrafinDashboard() {
       .map(([date, v]) => ({
         date: format(new Date(`${date}T00:00:00`), "MMM d"),
         calls: v.calls,
-        paid: v.paid,
+        converted: v.converted,
         spend: Math.round(v.spend),
-        revenue: Math.round(v.revenue),
+        revenue: v.uncaptured === v.calls && v.calls > 0 ? null : Math.round(v.revenue),
+        revenueUnknownCalls: v.uncaptured,
       }));
   }, [calls, spendRows]);
 

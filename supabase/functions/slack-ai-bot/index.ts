@@ -545,6 +545,7 @@ function buildSystemPrompt(args: {
   client: ResolvedClientRow | null;
   candidates: ResolvedClientRow[];
   metricsBlock: string;
+  breakdownBlock: string;
   supportingBlock: string;
   sqlBlock: string;
   teamRoster: string;
@@ -586,6 +587,7 @@ STYLE
 
 ${args.channelInfo}
 ${args.metricsBlock}
+${args.breakdownBlock}
 ${args.supportingBlock}
 ${args.sqlBlock}`;
 }

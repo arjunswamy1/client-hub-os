@@ -133,7 +133,15 @@ export interface JoinedEntityRow {
   /** How `revenue` was arrived at. Null when no revenue economics were supplied. */
   revenueResolution: ResolvedRevenue | null;
   /** Per-call payout/duration/billable triples — the input to `resolveRevenue`. */
-  revenueRows: { payout_amount: number; duration_seconds: number | null; billable: boolean }[];
+  revenueRows: {
+    payout_amount: number;
+    duration_seconds: number | null;
+    billable: boolean;
+    /** False where the source delivered no revenue figure — unknown, not zero. */
+    revenue_captured: boolean;
+  }[];
+  /** Calls in this row whose revenue the source never delivered. */
+  uncaptured_revenue_calls: number;
   /** Payouts of every call, zeros INCLUDED — needed for the RTB median. */
   payouts: number[];
   /** Call durations in seconds, nulls dropped — needed for median duration. */

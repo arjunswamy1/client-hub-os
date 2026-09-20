@@ -397,6 +397,24 @@ async function loadRoster(): Promise<string> {
   ).join('\n');
 }
 
+/**
+ * Real column lists for the tables the query lane is asked about most. Without
+ * these the planner invents names (it guessed tasks.assigned_to, which does not
+ * exist) and the query is rejected after the fact.
+ */
+const SCHEMA_HINT = `
+tasks(id, client_id, title, description, status, priority, assignee_id -> team_members.id, created_by_id, due_date, completed_at, parent_task_id, position, tags, task_type, type_data jsonb, created_at, updated_at)
+  status values: todo, in_progress, review, done, backlog, archived
+team_members(id, user_id, name, email, role, avatar_url, is_active, slack_user_id, aliases text[], created_at, updated_at)
+clients(id, name, slug, status, engagement_type, expected_sources, aliases text[], daily_update_enabled, communication_channel, created_at, updated_at)
+task_candidates(id, client_id, source, source_ref jsonb, raw_text, proposed_title, proposed_assignee_id, owner_raw, owner_side, status, confidence, gate_results jsonb, rejected_reason, duplicate_of_task_id, promoted_task_id, reviewed_by_id, reviewed_at, dedupe_key, created_at)
+creative_briefs(id, client_id, title, creative_type, status, priority, due_date, assigned_to_id -> team_members.id, created_by_id, submitted_at, approved_at, delivered_at, estimated_hours, scheduled_date, deleted_at, created_at)
+creative_deliverables(id, brief_id, file_name, version, status, approved_by_id, approved_at, uploaded_by_id, uploaded_at)
+shoot_briefs(id, title, client_ids uuid[], status, shoot_date, assigned_producer_id, estimated_total, actual_total, created_at)
+client_daily_updates(id, client_id, for_date, kind, draft_text, final_text, status, metrics jsonb, sent_at, created_at)
+data_integrity_exceptions(id, client_id, check_key, reason, created_by_id, expires_at, created_at)
+`;
+
 async function maybeRunSqlFallback(question: string, clientName: string | null, roster: string): Promise<{ sql: string; rows: unknown[] } | null> {
   if (METRIC_WORDS.test(question)) return null;
 
@@ -406,6 +424,8 @@ async function maybeRunSqlFallback(question: string, clientName: string | null, 
       content: `You write a single read-only Postgres SELECT against an advertising agency's database, or decline.
 Tables you may use include: clients, team_members, tasks, task_candidates, creative_briefs, creative_deliverables, shoot_briefs, context_items, client_daily_updates, media_brain_economics, media_brain_reviews, data_integrity_exceptions, ad_campaigns, ad_sets, ad_creatives, ad_daily_metrics, roku_daily_metrics, ringba_calls, ringfuel_calls, cannaball_calls, moja_calls, jacuzzi_leads, bot_qa_log.
 Rules: SELECT or WITH…SELECT only; one statement; no semicolons; no comments; never reference auth/vault/storage schemas, slack_tokens, platform_connections, or any column named like token/secret/password; always LIMIT 50 or fewer.
+Use ONLY these columns — do not invent column names:
+${SCHEMA_HINT}
 A person named in the question must be matched against this roster — never search for a nickname
 literally, look up which roster name it belongs to and filter on that name or email:
 ${roster}

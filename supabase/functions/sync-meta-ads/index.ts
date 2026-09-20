@@ -642,6 +642,88 @@ async function fetchInsights(accountId: string, accessToken: string, since: stri
   return allData.length > 0 ? allData : null;
 }
 
+/**
+ * Campaign and ad set CONFIGURATION — bid strategy, budgets, optimisation goal and
+ * targeting. These are settings, not insights: they never come back from the insights
+ * endpoint, which is why the report could not explain *why* delivery looked the way it
+ * did. Read-only; the sync never writes back to Meta.
+ */
+async function fetchEntityConfigs(
+  accountId: string,
+  accessToken: string,
+  entityType: "campaigns" | "adsets",
+): Promise<Map<string, any>> {
+  const map = new Map<string, any>();
+  const fields = entityType === "campaigns"
+    ? "id,name,objective,bid_strategy,daily_budget,lifetime_budget,buying_type,effective_status"
+    : "id,name,bid_strategy,bid_amount,billing_event,optimization_goal,daily_budget,lifetime_budget,targeting,promoted_object,effective_status";
+  let url: string | null =
+    `https://graph.facebook.com/v21.0/${accountId}/${entityType}?fields=${fields}&limit=200&access_token=${accessToken}`;
+  try {
+    while (url) {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) {
+        console.error(`${entityType} config error ${accountId}: ${data.error.message}`);
+        break;
+      }
+      for (const row of data.data || []) map.set(row.id, row);
+      url = data.paging?.next || null;
+    }
+  } catch (err) {
+    console.error(`Failed to fetch ${entityType} configs:`, err);
+  }
+  return map;
+}
+
+/** Meta money fields arrive in minor units (cents). */
+function minorToMajor(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n / 100 : null;
+}
+
+/**
+ * A one-line, human-readable read of an ad set's audience: ages, gender, where it runs
+ * and any interest or behaviour sets. Stored alongside the raw targeting object so the
+ * report can show the plain words without every page re-parsing Meta's shape.
+ */
+function summarizeTargeting(t: any): string | null {
+  if (!t || typeof t !== "object") return null;
+  const parts: string[] = [];
+  if (t.age_min || t.age_max) parts.push(`${t.age_min ?? 18}–${t.age_max ?? 65}`);
+  const genders: number[] = t.genders || [];
+  parts.push(genders.length === 1 ? (genders[0] === 1 ? "men" : "women") : "all genders");
+
+  const geo = t.geo_locations || {};
+  const places: string[] = [];
+  if (geo.countries?.length) places.push(geo.countries.join(", "));
+  if (geo.regions?.length) places.push(geo.regions.map((r: any) => r.name || r.key).join(", "));
+  if (geo.cities?.length) places.push(`${geo.cities.length} cities`);
+  if (geo.zips?.length) places.push(`${geo.zips.length} ZIPs`);
+  if (places.length) parts.push(places.join(" · "));
+  if (geo.location_types?.length) parts.push(geo.location_types.join("/"));
+
+  const detailed: string[] = [];
+  for (const group of t.flexible_spec || []) {
+    for (const key of ["interests", "behaviors", "demographics", "life_events", "industries"]) {
+      for (const item of group?.[key] || []) if (item?.name) detailed.push(item.name);
+    }
+  }
+  for (const key of ["interests", "behaviors"]) {
+    for (const item of t[key] || []) if (item?.name) detailed.push(item.name);
+  }
+  if (detailed.length) {
+    parts.push(detailed.slice(0, 4).join(", ") + (detailed.length > 4 ? ` +${detailed.length - 4} more` : ""));
+  } else if (!t.custom_audiences?.length) {
+    parts.push("broad (no interest targeting)");
+  }
+  if (t.custom_audiences?.length) parts.push(`${t.custom_audiences.length} custom audience(s)`);
+  if (t.excluded_custom_audiences?.length) parts.push(`${t.excluded_custom_audiences.length} excluded`);
+  if (t.publisher_platforms?.length) parts.push(t.publisher_platforms.join("/"));
+
+  return parts.join(" · ") || null;
+}
+
 async function fetchEntityStatuses(accountId: string, accessToken: string, entityType: "campaigns" | "adsets"): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   let url: string | null = `https://graph.facebook.com/v21.0/${accountId}/${entityType}?fields=id,effective_status&limit=500&access_token=${accessToken}`;

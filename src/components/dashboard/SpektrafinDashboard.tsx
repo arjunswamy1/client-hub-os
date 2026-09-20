@@ -405,7 +405,8 @@ export default function SpektrafinDashboard() {
                     <th className="px-3 py-2 font-medium">Buyer</th>
                     <th className="px-3 py-2 text-right font-medium">Duration</th>
                     <th className="px-3 py-2 text-right font-medium">Conn.</th>
-                    <th className="px-3 py-2 text-right font-medium">Payout</th>
+                    <th className="px-3 py-2 text-right font-medium">Converted</th>
+                    <th className="px-3 py-2 text-right font-medium">Revenue</th>
                   </tr>
                 </thead>
                 <tbody>

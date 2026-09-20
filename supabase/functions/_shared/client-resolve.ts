@@ -13,6 +13,8 @@ export interface ResolvedClientRow {
   expected_sources: string[] | null;
   data_model_note: string | null;
   aliases: string[] | null;
+  /** Explicit money column, when the engagement-type default is wrong here. */
+  revenue_field?: string | null;
 }
 
 export interface ClientResolution {
@@ -26,7 +28,7 @@ export interface ClientResolution {
 export async function loadActiveClients(supabase: any): Promise<ResolvedClientRow[]> {
   const { data } = await supabase
     .from('clients')
-    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases')
+    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field')
     .eq('status', 'active')
     .order('name');
   return (data || []) as ResolvedClientRow[];

@@ -431,37 +431,66 @@ export default function SpektrafinDashboard() {
           />
         </TabsContent>
 
-        <TabsContent value="campaigns">
-
-          <Card className="overflow-hidden">
+        <TabsContent value="campaigns" className="space-y-3">
+          <Card className="p-3 text-xs text-muted-foreground">
+            Roku reports delivery only — spend, impressions and completions. The buying setup below (daily cap, time
+            zone, hours, geography, intent, genre target) is <span className="font-medium">read from the campaign name
+            the buyer typed</span>, not confirmed by Roku, so treat a blank as "not written in the name". Calls cannot be
+            split across these campaigns: every call carries one RingFuel campaign and a number shared by several buys,
+            so cost per call is a whole-account figure and these rows are judged on delivery.
+          </Card>
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr className="text-left">
                   <th className="px-3 py-2 font-medium">Roku campaign</th>
+                  <th className="px-3 py-2 font-medium">Daily cap</th>
+                  <th className="px-3 py-2 font-medium">Zone / hours</th>
+                  <th className="px-3 py-2 font-medium">Geography</th>
+                  <th className="px-3 py-2 font-medium">Intent</th>
+                  <th className="px-3 py-2 font-medium">Genre target</th>
+                  <th className="px-3 py-2 font-medium">Number in name</th>
                   <th className="px-3 py-2 text-right font-medium">Spend</th>
                   <th className="px-3 py-2 text-right font-medium">Impressions</th>
                   <th className="px-3 py-2 text-right font-medium">Completions</th>
+                  <th className="px-3 py-2 text-right font-medium">Completion rate</th>
                   <th className="px-3 py-2 text-right font-medium">CPM</th>
+                  <th className="px-3 py-2 text-right font-medium">Cost / completion</th>
                 </tr>
               </thead>
               <tbody>
                 {byCampaign.length === 0 ? (
-                  <tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
+                  <tr><td colSpan={13} className="px-3 py-8 text-center text-muted-foreground">
                     No Roku delivery synced for this range — link the Roku account and sync on the Setup tab.
                   </td></tr>
-                ) : byCampaign.map((r) => (
-                  <tr key={r.campaign} className="border-t">
-                    <td className="px-3 py-2 font-medium">{r.campaign}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney2(r.spend)}</td>
-                    <td className="px-3 py-2 text-right">{r.impressions.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{r.completions.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtMoney2((r.spend / r.impressions) * 1000) : "—"}</td>
-                  </tr>
-                ))}
+                ) : byCampaign.map((r) => {
+                  const a = r.attributes;
+                  const dash = <span className="text-muted-foreground">—</span>;
+                  return (
+                    <tr key={r.campaign} className="border-t align-top">
+                      <td className="px-3 py-2 font-medium">{r.campaign}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{a.dailyBudget !== null ? `${fmtMoney(a.dailyBudget)}/day` : dash}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {a.timezone || a.daypart ? `${a.timezone ?? ""}${a.timezone && a.daypart ? " · " : ""}${a.daypart ?? ""}` : dash}
+                      </td>
+                      <td className="px-3 py-2">{a.geo || dash}</td>
+                      <td className="px-3 py-2">{a.intent || dash}</td>
+                      <td className="px-3 py-2">{a.genreTarget || dash}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{a.did || dash}</td>
+                      <td className="px-3 py-2 text-right">{fmtMoney2(r.spend)}</td>
+                      <td className="px-3 py-2 text-right">{r.impressions.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right">{r.completions.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtPct(r.completions / r.impressions) : "—"}</td>
+                      <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtMoney2((r.spend / r.impressions) * 1000) : "—"}</td>
+                      <td className="px-3 py-2 text-right">{r.completions > 0 ? fmtMoney2(r.spend / r.completions) : "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </Card>
         </TabsContent>
+
 
         <TabsContent value="trend">
           <Card className="p-4">

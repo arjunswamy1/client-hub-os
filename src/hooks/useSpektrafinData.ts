@@ -68,7 +68,7 @@ export function useSpektrafinCalls() {
         const { data, error } = await supabase
           .from("ringfuel_calls")
           .select(
-            "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url",
+            "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url, revenue_captured, conversion_captured, payload_shape",
           )
           .eq("client_id", SPEKTRAFIN_CLIENT_ID)
           .gte("call_start", startTs)

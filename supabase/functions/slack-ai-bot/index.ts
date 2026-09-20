@@ -19,6 +19,7 @@ import { handleKillReaction, captureKillComment, isKillReaction } from "../_shar
 import { handleDigestReaction, captureDigestReply, ackKindForReaction } from "../_shared/task-digest-ack.ts";
 import { resolveClient, loadActiveClients, type ResolvedClientRow } from "../_shared/client-resolve.ts";
 import { computeClientMetrics, buildCaptureSafeSummary, type ClientMetrics } from "../_shared/client-metrics.ts";
+import { computeClientBreakdown } from "../_shared/client-breakdown.ts";
 import { runReadOnlySql } from "../_shared/bot-sql.ts";
 import { isDuplicateDelivery, checkThrottle, logQa, resolveTeamMember } from "../_shared/bot-guard.ts";
 

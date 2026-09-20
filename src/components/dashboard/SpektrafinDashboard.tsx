@@ -401,7 +401,38 @@ export default function SpektrafinDashboard() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="numbers" className="space-y-3">
+          <Card className="p-3 text-xs text-muted-foreground">
+            Revenue by tracking number, then by the RingFuel campaign the call belonged to. A number tells you which
+            buy the call came from, not which advert the caller watched — several Roku campaigns share the same number,
+            so a number reads at buy level and never at creative level.
+          </Card>
+          <BreakdownTable
+            rows={byNumber}
+            label="Tracking number"
+            empty="No calls in this range. Numbers appear here as soon as RingFuel posts calls against them."
+          />
+          <BreakdownTable
+            rows={byRingFuelCampaign}
+            label="RingFuel campaign"
+            empty="No calls in this range."
+          />
+        </TabsContent>
+
+        <TabsContent value="publishers" className="space-y-3">
+          <Card className="p-3 text-xs text-muted-foreground">
+            Publisher is read from what RingFuel sends with each call. CPM buys this media directly, so one publisher
+            is expected — anything else here means traffic is arriving from a source we did not buy.
+          </Card>
+          <BreakdownTable
+            rows={byPublisher}
+            label="Publisher"
+            empty="No calls in this range."
+          />
+        </TabsContent>
+
         <TabsContent value="campaigns">
+
           <Card className="overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">

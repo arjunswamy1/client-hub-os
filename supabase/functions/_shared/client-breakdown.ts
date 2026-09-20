@@ -321,12 +321,18 @@ export async function computeClientBreakdown(
   const byCampaign = [...campaigns.values()].sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0) || b.calls - a.calls);
   const byVertical = [...verticalRows.values()].sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0) || b.calls - a.calls);
 
-  const promptBlock = renderBlock(client, window, byVertical, byCampaign, notes, revenueField);
+  const promptBlock = renderBlock(client, window, byVertical, byCampaign, notes, revenueField, {
+    blocked: pub.moneyBlocked,
+    reason: pub.blockReason,
+    show: pubScope.scoping !== 'not_required_dedicated_campaigns',
+  });
   return { available: true, byCampaign, byVertical, notes, promptBlock };
 }
 
+interface PubRender { blocked: boolean; reason: string | null; show: boolean }
+
 /** One row, with every number carrying its own coverage. */
-function renderRow(g: BreakdownRow, revenueField: string | null): string {
+function renderRow(g: BreakdownRow, revenueField: string | null, pub: PubRender): string {
   const bits: string[] = [];
   bits.push(`calls ${g.calls}`);
   if (g.spend !== null) bits.push(`spend ${money(g.spend)}`);
@@ -337,9 +343,23 @@ function renderRow(g: BreakdownRow, revenueField: string | null): string {
 
   if (g.revenue !== null) bits.push(`revenue ${money(g.revenue)}`);
   else if (g.calls > 0) {
-    bits.push(revenueField === null
-      ? 'revenue not applicable to this account'
-      : `revenue UNKNOWN (${g.uncaptured} of ${g.calls} calls never reported a ${revenueField})`);
+    bits.push(
+      revenueField === null
+        ? 'revenue not applicable to this account'
+        : pub.blocked
+          ? 'revenue UNKNOWN — the money on this feed is not all CPM\'s (see the publisher caveat); it must not be quoted as ours'
+          : `revenue UNKNOWN (${g.uncaptured} of ${g.calls} calls never reported a ${revenueField})`,
+    );
+  }
+
+  // Who delivered this group's calls. Shown wherever CPM is one of several
+  // publishers, so a per-vertical read can never be mistaken for ours alone.
+  if (pub.show && g.publishers.size) {
+    const mix = [...g.publishers.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([p, n]) => `${p} ${n}`).join(', ');
+    bits.push(`publishers on this group: ${mix}`);
+    if (g.otherPublisherCalls) bits.push(`${g.otherPublisherCalls} call(s) excluded as another publisher's`);
   }
 
   if (g.spend !== null && g.calls > 0) {

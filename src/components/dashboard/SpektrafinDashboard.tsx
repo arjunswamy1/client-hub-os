@@ -223,6 +223,13 @@ export default function SpektrafinDashboard() {
       cur.completions += r.video_completions;
       map.set(campaign, cur);
     }
+    return Array.from(map.values())
+      // The buying setup lives in the name the buyer typed — Roku's feed carries no
+      // bid-strategy or audience object to read instead.
+      .map((r) => ({ ...r, attributes: parseRokuCampaignName(r.campaign) }))
+      .sort((a, b) => b.spend - a.spend);
+  }, [spendRows]);
+
     return Array.from(map.values()).sort((a, b) => b.spend - a.spend);
   }, [spendRows]);
 

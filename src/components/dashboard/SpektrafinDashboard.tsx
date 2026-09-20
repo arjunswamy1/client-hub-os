@@ -180,7 +180,7 @@ export default function SpektrafinDashboard() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — screen updated {lastSync}
+          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
         </p>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
@@ -188,15 +188,57 @@ export default function SpektrafinDashboard() {
         </Button>
       </div>
 
+      {overall.uncapturedRevenueCalls > 0 && (
+        <Card className="border-amber-500/40 bg-amber-500/5 p-3">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <div className="text-sm">
+              <p className="font-medium">
+                Revenue is unknown for {overall.uncapturedRevenueCalls.toLocaleString()} of {overall.calls.toLocaleString()} calls
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                RingFuel sent only the caller's state, the call length and an ID for those calls, so we were never told what they earned.
+                They are left out of revenue rather than counted as nothing, and profit and margin stay blank until the missing figures
+                arrive — either from the fuller RingFuel feed or from a re-import of the daily sheet. Revenue below covers the{" "}
+                {overall.callsWithRevenue.toLocaleString()} calls we do have figures for.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <KPI label="Spend" value={fmtMoney(overall.spend)} icon={DollarSign} accent="text-blue-500" />
         <KPI label="Calls" value={overall.calls.toLocaleString()} icon={Phone} accent="text-indigo-500" />
         <KPI label="Connected" value={overall.connected.toLocaleString()} sub={fmtPct(overall.connectRate)} icon={PhoneCall} accent="text-emerald-500" />
-        <KPI label="Paid calls" value={overall.paid.toLocaleString()} sub="$16 per raw call" icon={Target} />
-        <KPI label="Revenue" value={fmtMoney(overall.revenue)} sub={`RPC ${fmtMoney2(overall.rpc)}`} icon={DollarSign} accent="text-emerald-500" />
-        <KPI label="Cost / call" value={overall.costPerCall > 0 ? fmtMoney2(overall.costPerCall) : "—"} sub={overall.costPerPaidCall > 0 ? `${fmtMoney2(overall.costPerPaidCall)} per paid call` : undefined} icon={Target} />
-        <KPI label="Margin / call" value={overall.calls ? fmtMoney2(overall.marginPerCall) : "—"} sub={overall.revenue > 0 ? fmtPct(overall.marginPct) : undefined} icon={TrendingUp} accent={overall.marginPerCall >= 0 ? "text-emerald-500" : "text-destructive"} />
-        <KPI label="Profit" value={fmtMoney(overall.profit)} icon={TrendingUp} accent={overall.profit >= 0 ? "text-emerald-500" : "text-destructive"} />
+        <KPI
+          label="Converted calls"
+          value={overall.callsWithRevenue ? overall.convertedCalls.toLocaleString() : "unknown"}
+          sub={overall.conversionRate !== null ? `${fmtPct(overall.conversionRate)} of the ${overall.callsWithRevenue.toLocaleString()} reported` : "no conversions reported yet"}
+          icon={Target}
+        />
+        <KPI
+          label={overall.revenueComplete ? "Revenue" : "Revenue (partial)"}
+          value={overall.callsWithRevenue ? fmtMoney(overall.revenue) : "unknown"}
+          sub={overall.rpc !== null ? `${fmtMoney2(overall.rpc)} per reported call` : "not reported for any call"}
+          icon={DollarSign}
+          accent="text-emerald-500"
+        />
+        <KPI label="Cost / call" value={overall.costPerCall > 0 ? fmtMoney2(overall.costPerCall) : "—"} sub={overall.costPerConvertedCall > 0 ? `${fmtMoney2(overall.costPerConvertedCall)} per converted call` : undefined} icon={Target} />
+        <KPI
+          label="Margin / call"
+          value={overall.marginPerCall !== null ? fmtMoney2(overall.marginPerCall) : "—"}
+          sub={overall.marginPct !== null ? fmtPct(overall.marginPct) : "revenue incomplete"}
+          icon={TrendingUp}
+          accent={overall.marginPerCall !== null && overall.marginPerCall >= 0 ? "text-emerald-500" : overall.marginPerCall !== null ? "text-destructive" : undefined}
+        />
+        <KPI
+          label="Profit"
+          value={overall.profit !== null ? fmtMoney(overall.profit) : "—"}
+          sub={overall.profit === null ? "revenue incomplete" : undefined}
+          icon={TrendingUp}
+          accent={overall.profit !== null && overall.profit >= 0 ? "text-emerald-500" : overall.profit !== null ? "text-destructive" : undefined}
+        />
       </div>
 
       <Tabs defaultValue="creative" className="space-y-3">

@@ -81,6 +81,7 @@ const F = {
   creative: ['creative', 'creative_label', 'creative_name', 'Creative', 'sub_id', 'subid'],
   payout: ['payout', 'payoutAmount', 'payout_amount', 'Payout'],
   connected: ['connected', 'answered', 'is_connected'],
+  event: ['event_type', 'event', 'type', 'event_name', 'webhook_event', 'Event', 'Event Type'],
   // Kept in raw_payload only, no columns: Quality Score, lead_score, is_duplicate,
   // is_repeat_caller, Telephony Cost, Platform Fee, Publisher Cost, Publisher.
 };

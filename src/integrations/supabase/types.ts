@@ -2552,6 +2552,7 @@ export type Database = {
       clients: {
         Row: {
           aliases: string[]
+          call_source_tables: string[]
           color: string | null
           communication_channel: string | null
           created_at: string
@@ -2566,11 +2567,13 @@ export type Database = {
           name: string
           revenue_field: string | null
           slug: string
+          spend_source_tables: string[]
           status: string
           updated_at: string
         }
         Insert: {
           aliases?: string[]
+          call_source_tables?: string[]
           color?: string | null
           communication_channel?: string | null
           created_at?: string
@@ -2585,11 +2588,13 @@ export type Database = {
           name: string
           revenue_field?: string | null
           slug: string
+          spend_source_tables?: string[]
           status?: string
           updated_at?: string
         }
         Update: {
           aliases?: string[]
+          call_source_tables?: string[]
           color?: string | null
           communication_channel?: string | null
           created_at?: string
@@ -2604,6 +2609,7 @@ export type Database = {
           name?: string
           revenue_field?: string | null
           slug?: string
+          spend_source_tables?: string[]
           status?: string
           updated_at?: string
         }

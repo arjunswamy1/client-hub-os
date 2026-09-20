@@ -93,40 +93,65 @@ const CALL_SOURCES: Record<string, CallSourceSpec> = {
 };
 
 /** Which call table belongs to which account. Probed against the data, not assumed. */
-const CALL_SOURCE_BY_SLUG: Record<string, string[]> = {
-  spektrafin: ['ringfuel_calls'],
-  jacuzzi: ['ringfuel_calls'],
-  cannaball: ['cannaball_calls'],
-  'ppc-media': ['cannaball_calls'],
-  rrm: ['moja_calls'],
-  buyologyiq: ['ringba_calls'],
-  hablyte: ['ringba_calls'],
-  billy: ['ringba_calls'],
-  'sample-client': ['ringba_calls'],
-  '4js': ['ringba_calls_4js'],
-};
+/** Spend tables that record one row per entity level, where only campaign rows are totals. */
+const ENTITY_SCOPED_SPEND = new Set(['roku_daily_metrics', 'universal_ads_geo_metrics']);
 
-/** Roku accounts do not get a Ringba pull, and vice versa. */
-function spendSourcesFor(client: ResolvedClientRow): string[] {
-  const expected = client.expected_sources || [];
-  const out: string[] = [];
-  if (expected.includes('roku_spend')) out.push('roku_daily_metrics');
-  if (expected.includes('meta_spend') || expected.includes('google_spend')) out.push('ad_daily_metrics');
-  if (out.length === 0) {
-    // No stated expectation: read the general ad feed only, never Roku.
-    out.push('ad_daily_metrics');
+const KNOWN_SPEND_TABLES = new Set([
+  'ad_daily_metrics', 'roku_daily_metrics', 'universal_ads_geo_metrics',
+  'platform_spend_4js', 'cannaball_spend',
+]);
+
+export interface SourceResolution {
+  tables: string[];
+  /** Named gap when the account record does not say where its data lives. */
+  gap: string | null;
+}
+
+/**
+ * WHERE AN ACCOUNT'S DATA LIVES IS AN ACCOUNT FACT, read from the client record
+ * (clients.call_source_tables / spend_source_tables) — never guessed from the
+ * slug and never defaulted to another account's feed. An unrecorded account
+ * returns a named gap, because "we have not recorded where this account's calls
+ * land" and "this account had no calls" are different answers.
+ */
+function resolveSources(
+  recorded: string[] | null | undefined,
+  known: Set<string>,
+  kind: 'call' | 'spend',
+  clientName: string,
+): SourceResolution {
+  const listed = (recorded || []).filter((t) => t && t.length > 0);
+  if (listed.length === 0) {
+    return {
+      tables: [],
+      gap: `No ${kind} feed is recorded for ${clientName} (clients.${kind}_source_tables is empty), so ${
+        kind === 'call' ? 'call and revenue' : 'spend'
+      } figures are NOT AVAILABLE for this account — that is a setup gap, not zero ${kind === 'call' ? 'calls' : 'spend'}.`,
+    };
   }
-  return out;
+  const usable = listed.filter((t) => known.has(t));
+  const unsupported = listed.filter((t) => !known.has(t));
+  return {
+    tables: usable,
+    gap: unsupported.length
+      ? `${clientName} records ${kind} data in ${unsupported.join(', ')}, which this metric layer cannot read yet. Those figures are missing from the totals below.`
+      : null,
+  };
 }
 
-function callSourcesFor(client: ResolvedClientRow): string[] {
-  const bySlug = CALL_SOURCE_BY_SLUG[client.slug];
-  if (bySlug) return bySlug;
-  const expected = client.expected_sources || [];
-  if (expected.includes('ringfuel_calls')) return ['ringfuel_calls'];
-  if (expected.includes('calls')) return ['ringba_calls'];
-  return [];
+function spendSourcesFor(client: ResolvedClientRow): SourceResolution {
+  return resolveSources(client.spend_source_tables, KNOWN_SPEND_TABLES, 'spend', client.name);
 }
+
+function callSourcesFor(client: ResolvedClientRow): SourceResolution {
+  return resolveSources(
+    client.call_source_tables,
+    new Set(Object.keys(CALL_SOURCES)),
+    'call',
+    client.name,
+  );
+}
+
 
 // ─── Fetch helpers ──────────────────────────────────────────────────────────
 
@@ -164,11 +189,21 @@ export async function computeClientMetrics(
   client: ResolvedClientRow,
   window: { from: string; to: string },
 ): Promise<ClientMetrics> {
-  const callTables = callSourcesFor(client);
-  const spendTables = spendSourcesFor(client);
+  const callSrc = callSourcesFor(client);
+  const spendSrc = spendSourcesFor(client);
+  const callTables = callSrc.tables;
+  const spendTables = spendSrc.tables;
   const caveats: string[] = [];
   const metrics: Metric[] = [];
   const revenueField = revenueFieldForClient(client);
+
+  // A gap in the account's own setup is stated first: it changes what any
+  // number below is allowed to mean.
+  if (callSrc.gap) caveats.push(callSrc.gap);
+  if (spendSrc.gap) caveats.push(spendSrc.gap);
+  if (!client.engagement_type) {
+    caveats.push(`${client.name} has no engagement type recorded, so how CPM earns on this account is UNKNOWN. Do not state revenue, profit or margin for it.`);
+  }
 
   const startTs = `${window.from}T00:00:00Z`;
   const endTs = `${window.to}T23:59:59.999Z`;
@@ -182,31 +217,34 @@ export async function computeClientMetrics(
   const spendDays = new Set<string>();
 
   for (const table of spendTables) {
-    if (table === 'roku_daily_metrics') {
-      const rows = await fetchAll((f, t) =>
-        supabase.from('roku_daily_metrics').select('date, spend, entity').eq('client_id', client.id)
-          .eq('entity', 'campaign').gte('date', window.from).lte('date', window.to).range(f, t));
-      for (const r of rows) {
-        spend += num(r.spend);
-        spendByPlatform.roku = (spendByPlatform.roku || 0) + num(r.spend);
-        spendRows++;
-        spendDays.add(String(r.date).slice(0, 10));
-        if (!latestSpendDate || r.date > latestSpendDate) latestSpendDate = r.date;
-      }
-    } else {
-      const rows = await fetchAll((f, t) =>
-        supabase.from('ad_daily_metrics').select('date, platform, spend').eq('client_id', client.id)
-          .gte('date', window.from).lte('date', window.to).range(f, t));
-      for (const r of rows) {
-        spend += num(r.spend);
-        const p = r.platform || 'unknown';
-        spendByPlatform[p] = (spendByPlatform[p] || 0) + num(r.spend);
-        spendRows++;
-        spendDays.add(String(r.date).slice(0, 10));
-        if (!latestSpendDate || r.date > latestSpendDate) latestSpendDate = r.date;
-      }
+    // Every recorded spend table is read the same way: date, spend, and a
+    // platform label where the table has one. Entity-scoped feeds are narrowed
+    // to campaign rows so nothing is counted twice.
+    const entityScoped = ENTITY_SCOPED_SPEND.has(table);
+    const labelCol = table === 'roku_daily_metrics' || table === 'universal_ads_geo_metrics' ? null : 'platform';
+    const cols = ['date', 'spend', entityScoped ? 'entity' : null, labelCol].filter(Boolean).join(', ');
+    const defaultLabel = table === 'roku_daily_metrics'
+      ? 'roku'
+      : table === 'universal_ads_geo_metrics'
+        ? 'universal_ads'
+        : 'unknown';
+
+    const rows = await fetchAll((f, t) => {
+      let q = supabase.from(table).select(cols).eq('client_id', client.id)
+        .gte('date', window.from).lte('date', window.to);
+      if (entityScoped) q = q.eq('entity', 'campaign');
+      return q.range(f, t);
+    });
+    for (const r of rows as any[]) {
+      spend += num(r.spend);
+      const p = (labelCol ? r[labelCol] : null) || defaultLabel;
+      spendByPlatform[p] = (spendByPlatform[p] || 0) + num(r.spend);
+      spendRows++;
+      spendDays.add(String(r.date).slice(0, 10));
+      if (!latestSpendDate || r.date > latestSpendDate) latestSpendDate = r.date;
     }
   }
+
 
 
   const platformParts = Object.entries(spendByPlatform).map(([p, v]) => `${p} ${money(v)}`);
@@ -214,10 +252,12 @@ export async function computeClientMetrics(
     key: 'spend',
     label: 'Media spend',
     value: spendRows > 0 ? spend : null,
-    display: spendRows > 0 ? money(spend) : 'no spend rows in this window',
+    display: spendRows > 0 ? money(spend) : spendTables.length === 0 ? 'not available — no spend feed recorded for this account' : 'no spend rows in this window',
     note: spendRows > 0
       ? `Measured from ${spendTables.join(' + ')} (${spendRows} day-rows${platformParts.length ? `; ${platformParts.join(', ')}` : ''}). Latest spend day: ${latestSpendDate}.`
-      : `No spend rows found in ${spendTables.join(' + ')} for this window. That is a missing feed, not $0 of spend, unless the account is expected to be quiet.`,
+      : spendTables.length === 0
+        ? spendSrc.gap || 'No spend feed is recorded for this account, so spend is UNKNOWN, not $0.'
+        : `No spend rows found in ${spendTables.join(' + ')} for this window. That is a missing feed, not $0 of spend, unless the account is expected to be quiet.`,
     sources: spendTables,
   });
 
@@ -316,7 +356,7 @@ export async function computeClientMetrics(
     key: 'calls',
     label: callLabel,
     value: callTables.length === 0 && jacuzziLeads === null ? null : callValue,
-    display: callTables.length === 0 && jacuzziLeads === null ? 'no call source configured' : String(callValue),
+    display: callTables.length === 0 && jacuzziLeads === null ? 'not available — no call feed recorded for this account' : String(callValue),
     note: client.slug === 'jacuzzi'
       ? `Paid per lead: ${jacuzziLeads ?? 0} leads from jacuzzi_leads (calls and QR scans counted identically, never split). ${totalCalls} of them appear as tracked calls in ringfuel_calls.`
       : callTables.length

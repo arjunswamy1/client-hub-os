@@ -120,7 +120,9 @@ export function resolvePublisherScope(
     };
   }
 
-  if (raw === 'attributed_publishers' && attributed.length > 0) {
+  // 'required' is the value the economics table's own CHECK constraint allows and
+  // means the same thing: filtering to our own publisher name is required here.
+  if ((raw === 'attributed_publishers' || raw === 'required') && attributed.length > 0) {
     return {
       scoping: 'attributed_publishers',
       attributed,

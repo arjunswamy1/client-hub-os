@@ -224,6 +224,12 @@ export async function computeClientBreakdown(
       if (spec.testFlagCol && r[spec.testFlagCol] === true) continue;
       const name = (r.campaign_name || '').trim() || NO_CAMPAIGN;
       const g = row(name);
+      // Every publisher is counted on the group before filtering, so the answer
+      // can say how big the other publishers are instead of silently dropping them.
+      const publisher = readPublisher(table, r);
+      const pubKey = publisher || PUBLISHER_NOT_RECORDED;
+      g.publishers.set(pubKey, (g.publishers.get(pubKey) || 0) + 1);
+      if (!pubFilter.keep(publisher)) { g.otherPublisherCalls++; continue; }
       g.calls++;
       g.callDays.add(String(r[spec.dateCol] ?? '').slice(0, 10));
 

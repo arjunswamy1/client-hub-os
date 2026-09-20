@@ -327,7 +327,15 @@ function renderRow(g: BreakdownRow, revenueField: string | null): string {
   }
 
   if (g.clicks) bits.push(`clicks ${g.clicks}`);
-  if (g.calls > 0 && g.clicks > 0) bits.push(`call rate ${((g.calls / g.clicks) * 100).toFixed(1)}%`);
+  if (g.calls > 0 && g.clicks > 0) {
+    const rate = (g.calls / g.clicks) * 100;
+    // More calls than clicks means this group's calls did not all come from this
+    // group's media — other publishers are routed into the same call campaign.
+    // A "call rate" above 100% is an attribution warning, never engagement.
+    bits.push(rate > 100
+      ? `MORE CALLS THAN CLICKS (${g.calls} calls vs ${g.clicks} clicks) — calls in this group are NOT all from CPM's media on this campaign, so cost per call and margin here are mixed-source and must be read as such, not as engagement`
+      : `call rate ${rate.toFixed(1)}%`);
+  }
   if (g.platforms.size) bits.push(`platform ${[...g.platforms].join('/')}`);
   return bits.join(' · ');
 }

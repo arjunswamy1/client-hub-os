@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin,
+  RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin, AlertTriangle,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,

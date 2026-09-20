@@ -210,7 +210,8 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true, client_id, import_label: importLabel, parsed: rows.length, written,
-      enriched_existing: existing, inserted_new: rows.length - existing,
+      enriched_existing: merged, inserted_new: inserted,
+      matched_before_run: existing,
       revenue_captured_rows: rows.filter((r) => r.revenue_captured).length, skipped,
     });
   } catch (e) {

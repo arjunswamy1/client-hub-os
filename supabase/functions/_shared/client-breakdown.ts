@@ -25,6 +25,10 @@
 
 import { revenueFieldForClient, resolveClientRevenue } from './client-revenue.ts';
 import type { ResolvedClientRow } from './client-resolve.ts';
+import {
+  createPublisherFilter, loadPublisherScopes, publisherColumns, readPublisher,
+  PUBLISHER_NOT_RECORDED,
+} from './publisher-scope.ts';
 
 /** Call tables and the column that carries their campaign name. */
 const CALL_DIMS: Record<string, { dateCol: string; hasConverted: boolean; hasRevenue: boolean; hasCaptureFlags: boolean; testFlagCol?: string }> = {
@@ -67,6 +71,10 @@ export interface BreakdownRow {
   clicks: number;
   impressions: number;
   platforms: Set<string>;
+  /** Every publisher that delivered calls to this group, counted — ours and theirs. */
+  publishers: Map<string, number>;
+  /** Calls on this group that another publisher delivered, excluded from the figures. */
+  otherPublisherCalls: number;
 }
 
 export interface ClientBreakdown {
@@ -83,6 +91,7 @@ function blank(key: string): BreakdownRow {
     key, members: [], calls: 0, callDays: new Set(), connectedKnown: 0, connected: 0,
     convertedKnown: 0, converted: 0, revenue: null, capturedRevenue: 0, uncaptured: 0,
     spend: null, spendDays: new Set(), clicks: 0, impressions: 0, platforms: new Set(),
+    publishers: new Map(), otherPublisherCalls: 0,
   };
 }
 
@@ -186,11 +195,19 @@ export async function computeClientBreakdown(
   const startTs = `${window.from}T00:00:00Z`;
   const endTs = `${window.to}T23:59:59.999Z`;
 
+  // ── whose calls are these? ────────────────────────────────────────────────
+  // A tracking campaign receives calls from every publisher pointed at it, and
+  // the client's internal campaigns sit in the same feed. Only calls published
+  // under CPM's recorded name may be counted against CPM's spend.
+  const { account: pubScope } = await loadPublisherScopes(supabase, client.id, client.name);
+  const pubFilter = createPublisherFilter(pubScope, client.name);
+
   // ── calls, revenue and conversion per campaign ────────────────────────────
   for (const table of callTables) {
     const spec = CALL_DIMS[table];
     const cols = [
       spec.dateCol, 'campaign_name', 'connected', 'payout',
+      ...publisherColumns(table),
       spec.hasConverted ? 'converted' : null,
       spec.hasRevenue ? 'revenue' : null,
       spec.hasCaptureFlags ? 'revenue_captured' : null,
@@ -207,6 +224,12 @@ export async function computeClientBreakdown(
       if (spec.testFlagCol && r[spec.testFlagCol] === true) continue;
       const name = (r.campaign_name || '').trim() || NO_CAMPAIGN;
       const g = row(name);
+      // Every publisher is counted on the group before filtering, so the answer
+      // can say how big the other publishers are instead of silently dropping them.
+      const publisher = readPublisher(table, r);
+      const pubKey = publisher || PUBLISHER_NOT_RECORDED;
+      g.publishers.set(pubKey, (g.publishers.get(pubKey) || 0) + 1);
+      if (!pubFilter.keep(publisher)) { g.otherPublisherCalls++; continue; }
       g.calls++;
       g.callDays.add(String(r[spec.dateCol] ?? '').slice(0, 10));
 
@@ -253,9 +276,14 @@ export async function computeClientBreakdown(
     }
   }
 
-  // Gate each campaign's revenue on its own capture coverage.
+  // Gate each campaign's revenue on its own capture coverage AND on the publisher
+  // question: money that may belong to another publisher is never published here.
+  const pub = pubFilter.summary();
+  for (const n of pub.notes) notes.push(n);
   for (const g of campaigns.values()) {
-    g.revenue = g.calls > 0 && g.uncaptured === 0 && revenueField !== null ? g.capturedRevenue : null;
+    g.revenue = !pub.moneyBlocked && g.calls > 0 && g.uncaptured === 0 && revenueField !== null
+      ? g.capturedRevenue
+      : null;
   }
 
   // ── roll campaigns up into verticals ──────────────────────────────────────
@@ -279,22 +307,32 @@ export async function computeClientBreakdown(
     v.convertedKnown += g.convertedKnown; v.converted += g.converted;
     v.capturedRevenue += g.capturedRevenue; v.uncaptured += g.uncaptured;
     v.clicks += g.clicks; v.impressions += g.impressions;
+    v.otherPublisherCalls += g.otherPublisherCalls;
+    g.publishers.forEach((n, p) => v.publishers.set(p, (v.publishers.get(p) || 0) + n));
     g.platforms.forEach((p) => v.platforms.add(p));
     if (g.spend !== null) v.spend = (v.spend ?? 0) + g.spend;
   }
   for (const v of verticalRows.values()) {
-    v.revenue = v.calls > 0 && v.uncaptured === 0 && revenueField !== null ? v.capturedRevenue : null;
+    v.revenue = !pub.moneyBlocked && v.calls > 0 && v.uncaptured === 0 && revenueField !== null
+      ? v.capturedRevenue
+      : null;
   }
 
   const byCampaign = [...campaigns.values()].sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0) || b.calls - a.calls);
   const byVertical = [...verticalRows.values()].sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0) || b.calls - a.calls);
 
-  const promptBlock = renderBlock(client, window, byVertical, byCampaign, notes, revenueField);
+  const promptBlock = renderBlock(client, window, byVertical, byCampaign, notes, revenueField, {
+    blocked: pub.moneyBlocked,
+    reason: pub.blockReason,
+    show: pubScope.scoping !== 'not_required_dedicated_campaigns',
+  });
   return { available: true, byCampaign, byVertical, notes, promptBlock };
 }
 
+interface PubRender { blocked: boolean; reason: string | null; show: boolean }
+
 /** One row, with every number carrying its own coverage. */
-function renderRow(g: BreakdownRow, revenueField: string | null): string {
+function renderRow(g: BreakdownRow, revenueField: string | null, pub: PubRender): string {
   const bits: string[] = [];
   bits.push(`calls ${g.calls}`);
   if (g.spend !== null) bits.push(`spend ${money(g.spend)}`);
@@ -305,9 +343,23 @@ function renderRow(g: BreakdownRow, revenueField: string | null): string {
 
   if (g.revenue !== null) bits.push(`revenue ${money(g.revenue)}`);
   else if (g.calls > 0) {
-    bits.push(revenueField === null
-      ? 'revenue not applicable to this account'
-      : `revenue UNKNOWN (${g.uncaptured} of ${g.calls} calls never reported a ${revenueField})`);
+    bits.push(
+      revenueField === null
+        ? 'revenue not applicable to this account'
+        : pub.blocked
+          ? 'revenue UNKNOWN — the money on this feed is not all CPM\'s (see the publisher caveat); it must not be quoted as ours'
+          : `revenue UNKNOWN (${g.uncaptured} of ${g.calls} calls never reported a ${revenueField})`,
+    );
+  }
+
+  // Who delivered this group's calls. Shown wherever CPM is one of several
+  // publishers, so a per-vertical read can never be mistaken for ours alone.
+  if (pub.show && g.publishers.size) {
+    const mix = [...g.publishers.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([p, n]) => `${p} ${n}`).join(', ');
+    bits.push(`publishers on this group: ${mix}`);
+    if (g.otherPublisherCalls) bits.push(`${g.otherPublisherCalls} call(s) excluded as another publisher's`);
   }
 
   if (g.spend !== null && g.calls > 0) {
@@ -347,21 +399,27 @@ function renderBlock(
   byCampaign: BreakdownRow[],
   notes: string[],
   revenueField: string | null,
+  pub: PubRender,
 ): string {
   const lines: string[] = [
     `--- BREAKDOWN: ${client.name} per vertical and per campaign (${window.from} to ${window.to}) ---`,
     'Calls are assigned by the campaign name on the call; spend by the campaign name on the spend row. A group with any uncaptured money row publishes NO revenue, profit or margin. UNCLASSIFIED means the name matched no vertical — report it, never fold it into another vertical.',
+    pub.blocked
+      ? `PUBLISHER GATE: no revenue, profit or margin may be stated for any row below, because ${pub.reason}`
+      : pub.show
+        ? 'Only calls published under CPM\'s own publisher name are counted in these rows. The publisher mix shown per group is the whole tracking campaign, which is a larger number than ours and must never be reported as our delivery.'
+        : null,
     '',
     'BY VERTICAL:',
-  ];
+  ].filter((l): l is string => l !== null);
   if (!byVertical.length) lines.push('  (nothing in this window)');
   for (const v of byVertical) {
-    lines.push(`  [${v.key}] ${renderRow(v, revenueField)}`);
+    lines.push(`  [${v.key}] ${renderRow(v, revenueField, pub)}`);
     lines.push(`      campaigns: ${v.members.join(' | ')}`);
   }
   lines.push('', 'BY CAMPAIGN:');
   if (!byCampaign.length) lines.push('  (nothing in this window)');
-  for (const g of byCampaign.slice(0, 40)) lines.push(`  [${g.key}] ${renderRow(g, revenueField)}`);
+  for (const g of byCampaign.slice(0, 40)) lines.push(`  [${g.key}] ${renderRow(g, revenueField, pub)}`);
   if (byCampaign.length > 40) lines.push(`  …${byCampaign.length - 40} further campaigns not listed.`);
   if (notes.length) {
     lines.push('', 'BREAKDOWN CAVEATS THE ANSWER MUST CARRY:');

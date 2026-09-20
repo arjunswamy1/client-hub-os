@@ -18,6 +18,10 @@
 
 import { revenueFieldForClient, resolveClientRevenue } from './client-revenue.ts';
 import type { ResolvedClientRow } from './client-resolve.ts';
+import {
+  createPublisherFilter, loadPublisherScopes, publisherColumns, readPublisher,
+  type PublisherFilterSummary,
+} from './publisher-scope.ts';
 
 export interface Metric {
   key: string;
@@ -280,11 +284,18 @@ export async function computeClientMetrics(
   const calls: CallRow[] = [];
   let testRowsExcluded = 0;
 
+  // WHOSE CALLS ARE THESE? CPM is one publisher on most of these feeds. The
+  // recorded scoping decision is loaded before a single call is counted, and
+  // calls from other publishers never reach the figures below.
+  const { account: pubScope } = await loadPublisherScopes(supabase, client.id, client.name);
+  const pubFilter = createPublisherFilter(pubScope, client.name);
+
   for (const tableKey of callTables) {
     const spec = CALL_SOURCES[tableKey];
     if (!spec) continue;
     const cols = [
       spec.dateCol, 'connected', spec.durationCol, 'payout',
+      ...publisherColumns(tableKey),
       spec.hasConverted ? 'converted' : null,
       spec.hasRevenue ? 'revenue' : null,
       spec.hasCaptureFlags ? 'revenue_captured' : null,
@@ -301,6 +312,7 @@ export async function computeClientMetrics(
 
     for (const r of rows as any[]) {
       if (spec.testFlagCol && r[spec.testFlagCol] === true) { testRowsExcluded++; continue; }
+      if (!pubFilter.keep(readPublisher(tableKey, r))) continue;
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
       calls.push({
         connected: r.connected ?? null,
@@ -332,6 +344,8 @@ export async function computeClientMetrics(
     jacuzziLeads = leadRows.length;
   }
 
+  const pub: PublisherFilterSummary = pubFilter.summary();
+
   const totalCalls = calls.length;
   const connectionKnownCalls = calls.filter((c) => c.connectionKnown);
   const connectedCalls = connectionKnownCalls.filter((c) => c.connected === true).length;
@@ -360,7 +374,11 @@ export async function computeClientMetrics(
     note: client.slug === 'jacuzzi'
       ? `Paid per lead: ${jacuzziLeads ?? 0} leads from jacuzzi_leads (calls and QR scans counted identically, never split). ${totalCalls} of them appear as tracked calls in ringfuel_calls.`
       : callTables.length
-        ? `Counted from ${callTables.join(' + ')}${testRowsExcluded ? `; ${testRowsExcluded} flagged test row(s) excluded` : ''}.`
+        ? `Counted from ${callTables.join(' + ')}${testRowsExcluded ? `; ${testRowsExcluded} flagged test row(s) excluded` : ''}.${
+          pub.excludedCalls
+            ? ` ${pub.excludedCalls} call(s) from other publishers were excluded — this is CPM's volume, not the tracking campaign's total.`
+            : ''
+        }`
         : 'No call table is mapped to this account.',
     sources: client.slug === 'jacuzzi' ? ['jacuzzi_leads', ...callTables] : callTables,
   });
@@ -404,7 +422,11 @@ export async function computeClientMetrics(
       label: client.slug === 'jacuzzi' ? 'Cost per lead' : 'Cost per call',
       value: spend / callValue,
       display: money(spend / callValue),
-      note: `${money(spend)} ÷ ${callValue} ${client.slug === 'jacuzzi' ? 'leads' : 'calls'}. Total calls is the denominator — never a billable subset, so nothing is hidden.${spendCoverageIncomplete ? ` A FLOOR only: ${coverageNote}` : ''}`,
+      note: `${money(spend)} ÷ ${callValue} ${client.slug === 'jacuzzi' ? 'leads' : 'calls'}. Total calls is the denominator — never a billable subset, so nothing is hidden.${spendCoverageIncomplete ? ` A FLOOR only: ${coverageNote}` : ''}${
+        pubScope.scoping === 'unknown' && pub.inventory.length > 1
+          ? ` UNDERSTATED: the denominator still contains other publishers' calls (publisher scoping is unknown here) while the numerator is only CPM's spend. Our true cost per call is HIGHER than this.`
+          : ''
+      }`,
       sources: [...spendTables, ...callTables],
     });
   }
@@ -447,6 +469,11 @@ export async function computeClientMetrics(
   } else if (callTables.length === 0) {
     revenueNote = 'No call source is mapped to this account, so revenue cannot be computed.';
     revenueDisplay = 'unknown — no call source';
+  } else if (pub.moneyBlocked) {
+    // THE PUBLISHER GATE. The payout column on this feed pays several
+    // publishers. Until we know which calls are ours, none of that money is.
+    revenueDisplay = 'UNKNOWN — cannot be separated from other publishers';
+    revenueNote = `Revenue CANNOT be stated for ${client.name}: ${pub.blockReason} ${pub.notes.join(' ')}`;
   } else if (hadUncapturedData) {
     // THE GATE. No total is produced while any row is uncaptured.
     revenueDisplay = 'UNKNOWN — cannot be totalled';
@@ -466,8 +493,10 @@ export async function computeClientMetrics(
   });
 
   // ── profit and margin, gated on revenue AND on spend coverage ────────────
-  const canDoProfit = revenueValue !== null && spendRows > 0 && !spendCoverageIncomplete;
-  const withheldBecause = revenueValue === null
+  const canDoProfit = revenueValue !== null && !pub.moneyBlocked && spendRows > 0 && !spendCoverageIncomplete;
+  const withheldBecause = pub.moneyBlocked
+    ? `${pub.blockReason} Our media spend is ours; the payouts on this feed are not all ours, so a margin built from the pair would credit CPM for other publishers' calls.`
+    : revenueValue === null
     ? 'revenue is unknown for at least one call in the window. Stating it would mean treating unreported calls as having earned nothing.'
     : spendRows === 0
       ? 'no spend rows arrived for this window, so the cost side is unknown — not zero.'
@@ -519,6 +548,8 @@ export async function computeClientMetrics(
     : null;
 
   if (client.data_model_note) caveats.push(client.data_model_note);
+  // Whose traffic this is comes first: it decides what every money figure means.
+  if (callTables.length) for (const n of pub.notes) caveats.push(n);
   if (spendCoverageIncomplete) caveats.push(coverageNote + ' Cost per call is therefore a floor, and profit and margin are withheld.');
   if (hadUncapturedData) {
     caveats.push(`Revenue is unknown for ${uncaptured} of ${totalCalls} calls in this window. Do not state a revenue, profit or margin figure for it.`);
@@ -531,6 +562,9 @@ export async function computeClientMetrics(
     `--- CANONICAL METRICS: ${client.name} (${window.from} to ${window.to}) ---`,
     `engagement_type: ${client.engagement_type || 'not recorded'} · money field: ${revenueField || 'none — calls are not this account\'s income'}`,
     `call sources: ${callTables.join(', ') || 'none'} · spend sources: ${spendTables.join(', ')}`,
+    callTables.length
+      ? `publisher scoping: ${pubScope.scoping}${pubScope.attributed.length ? ` · CPM's publisher name(s): ${pubScope.attributed.join(', ')}` : ''}${pub.excludedCalls ? ` · ${pub.excludedCalls} other-publisher call(s) excluded` : ''}`
+      : null,
     economicsNote ? `economics: ${economicsNote}` : null,
     '',
     ...metrics.map((m) => `[${m.key}] ${m.label}: ${m.display}\n    coverage: ${m.note}`),

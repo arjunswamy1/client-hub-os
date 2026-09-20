@@ -276,6 +276,14 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
   if (ecoError) return { ok: false, error: `Economics lookup failed: ${ecoError.message}` };
   if (!economics) return { ok: false, error: 'No Economics record for this client. Run intake first — the framework does not fall back on defaults.' };
 
+  // Which column is CPM's money is an account-level fact, not a per-report choice.
+  const { data: client, error: clientError } = await supabase
+    .from('clients')
+    .select('engagement_type')
+    .eq('id', clientId)
+    .maybeSingle();
+  if (clientError) return { ok: false, error: `Client lookup failed: ${clientError.message}` };
+
   const { data: instance, error: instError } = await supabase
     .from('media_brain_instances')
     .select('*')
@@ -325,6 +333,7 @@ export async function pullWindow({ clientId, start, end, timezone }: PullWindowA
     verticals: (verticalsRes.data ?? []) as VerticalRow[],
     instance: instance as unknown as ComputeInstance,
     economics: economics as unknown as ComputeEconomics,
+    engagementType: client?.engagement_type ?? null,
     window: { start, end, timezone },
   });
 }
@@ -385,6 +394,7 @@ export function computeWindow({
     billableMinDurationSeconds: economics.billable_min_duration_seconds ?? null,
     revenueSource: economics.revenue_source ?? 'platform',
     minPayoutThreshold: economics.min_payout_threshold ?? null,
+    engagementType: engagementType ?? null,
   });
 
   const publisherSplit = engine.partitionForScoping(allCalls, economics);

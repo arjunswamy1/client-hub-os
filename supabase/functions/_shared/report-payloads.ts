@@ -2,6 +2,7 @@
 // One builder per client scope; each returns the AI prompt plus the headline
 // metrics that get rendered in Slack, so the frontend never has to run.
 import { PLAN_JSON_SHAPE } from './optimizer-ai.ts';
+import { sumClientRevenue } from './client-revenue.ts';
 
 type Client = { from: (t: string) => any };
 
@@ -77,7 +78,9 @@ export async function buildRRMBriefs(supabase: Client, days = 7): Promise<BriefI
     const raw = lineCalls.length;
     const connected = lineCalls.filter((c: any) => c.connected).length;
     const converted = lineCalls.filter((c: any) => c.converted).length;
-    const revenue = lineCalls.reduce((s: number, c: any) => s + Number(c.revenue || 0), 0);
+    // RRM is `pay_per_call`: CPM is the publisher, so `payout` is CPM's income.
+    // The field is chosen by engagement type in one place, never per report.
+    const revenue = sumClientRevenue({ engagement_type: 'pay_per_call' }, lineCalls as any).total;
     const talk = lineCalls.reduce((s: number, c: any) => s + Number(c.duration_seconds || 0), 0);
 
     const totals = {

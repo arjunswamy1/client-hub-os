@@ -2553,6 +2553,7 @@ export type Database = {
         Row: {
           aliases: string[]
           call_source_tables: string[]
+          campaign_spend_source_tables: string[]
           color: string | null
           communication_channel: string | null
           created_at: string
@@ -2574,6 +2575,7 @@ export type Database = {
         Insert: {
           aliases?: string[]
           call_source_tables?: string[]
+          campaign_spend_source_tables?: string[]
           color?: string | null
           communication_channel?: string | null
           created_at?: string
@@ -2595,6 +2597,7 @@ export type Database = {
         Update: {
           aliases?: string[]
           call_source_tables?: string[]
+          campaign_spend_source_tables?: string[]
           color?: string | null
           communication_channel?: string | null
           created_at?: string

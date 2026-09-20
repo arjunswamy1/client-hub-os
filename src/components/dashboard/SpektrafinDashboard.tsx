@@ -411,9 +411,9 @@ export default function SpektrafinDashboard() {
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                    <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
                   ) : calls.length === 0 ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                    <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">
                       No calls in this range yet.
                     </td></tr>
                   ) : calls.slice(0, 500).map((c) => (
@@ -426,7 +426,12 @@ export default function SpektrafinDashboard() {
                       <td className="px-3 py-1.5 text-muted-foreground">{c.buyer_name || c.target_name || "—"}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtDuration(c.duration_seconds)}</td>
                       <td className="px-3 py-1.5 text-right">{c.connected === true ? "✓" : c.connected === false ? "—" : "?"}</td>
-                      <td className="px-3 py-1.5 text-right">{fmtMoney2(SPEKTRAFIN_PAYOUT_PER_RAW_CALL)}</td>
+                      <td className="px-3 py-1.5 text-right">
+                        {c.conversion_captured === false ? <span className="text-amber-600">not reported</span> : c.converted === true ? "✓" : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        {captured(c) ? fmtMoney2(Number(c.revenue || 0)) : <span className="text-amber-600">unknown</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

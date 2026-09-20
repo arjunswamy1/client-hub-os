@@ -19,6 +19,7 @@ import { handleKillReaction, captureKillComment, isKillReaction } from "../_shar
 import { handleDigestReaction, captureDigestReply, ackKindForReaction } from "../_shared/task-digest-ack.ts";
 import { resolveClient, loadActiveClients, type ResolvedClientRow } from "../_shared/client-resolve.ts";
 import { computeClientMetrics, buildCaptureSafeSummary, type ClientMetrics } from "../_shared/client-metrics.ts";
+import { computeClientBreakdown } from "../_shared/client-breakdown.ts";
 import { runReadOnlySql } from "../_shared/bot-sql.ts";
 import { isDuplicateDelivery, checkThrottle, logQa, resolveTeamMember } from "../_shared/bot-guard.ts";
 
@@ -544,6 +545,7 @@ function buildSystemPrompt(args: {
   client: ResolvedClientRow | null;
   candidates: ResolvedClientRow[];
   metricsBlock: string;
+  breakdownBlock: string;
   supportingBlock: string;
   sqlBlock: string;
   teamRoster: string;
@@ -561,6 +563,13 @@ HOW TO QUOTE NUMBERS
 - Never recompute a metric from raw rows, and never add a metric that is marked unknown into an arithmetic result.
 - If the answer needs a metric that is not in the block, say what is missing rather than improvising it.
 - Anything from the READ-ONLY SQL block must be labelled "computed directly from the database, not a verified metric". If it disagrees with a canonical metric, report both figures and flag the discrepancy explicitly — never silently prefer one.
+
+PER-VERTICAL AND PER-CAMPAIGN QUESTIONS
+- "Does auto beat home", "which vertical is profitable", "how is campaign X doing" are answered from the BREAKDOWN block, which splits the same gated figures per campaign and per vertical. Use it; do not say a breakdown is unavailable while that block carries rows.
+- Every rule above applies per row: a vertical whose calls include an uncaptured money row has UNKNOWN revenue, profit and margin, and a vertical with no campaign-level spend row has UNKNOWN cost per call — never zero.
+- Compare verticals on margin per call and margin %, not on CPA or spend size. Report UNCLASSIFIED volume when it is material instead of ignoring it.
+- The breakdown is a READ, not a verdict. Do not issue cut / hold / scale decisions from a vertical row — those are ad-level, and a vertical blends the very differences a verdict acts on.
+- If the BREAKDOWN block names a setup gap (no campaign-level spend feed recorded, no verticals defined, no call-campaign patterns), say exactly that — it is a fixable configuration gap, not missing performance.
 
 WHAT MONEY MEANS, PER ACCOUNT TYPE
 - performance_media (Spektrafin, Cannaball, Jacuzzi, RateQuote): CPM buys the media. Revenue is the revenue field; profit = revenue − media spend; downside is capped at media spend, so a negative result means profit not earned, never a debt. The payout field is NOT income on these accounts.
@@ -585,6 +594,7 @@ STYLE
 
 ${args.channelInfo}
 ${args.metricsBlock}
+${args.breakdownBlock}
 ${args.supportingBlock}
 ${args.sqlBlock}`;
 }
@@ -662,12 +672,24 @@ async function composeAnswer(args: {
 
   let metrics: ClientMetrics | null = null;
   let metricsBlock = '--- CANONICAL METRICS ---\nNo client resolved, so no metrics were computed.\n--- END CANONICAL METRICS ---';
+  let breakdownBlock = '';
   let supportingBlock = '';
 
   if (resolution.client) {
-    metrics = await computeClientMetrics(supabase, resolution.client, { from: dateRange.from, to: dateRange.to });
-    metricsBlock = metrics.promptBlock;
-    supportingBlock = await gatherSupportingContext(resolution.client, { from: dateRange.from, to: dateRange.to });
+    const win = { from: dateRange.from, to: dateRange.to };
+    const [m, b, s] = await Promise.all([
+      computeClientMetrics(supabase, resolution.client, win),
+      computeClientBreakdown(supabase, resolution.client, win),
+      gatherSupportingContext(resolution.client, win),
+    ]);
+    metrics = m;
+    metricsBlock = m.promptBlock;
+    // The dimension layer answers "which vertical / which campaign". Where the
+    // account cannot be split, the block says so rather than going silent.
+    breakdownBlock = b.available
+      ? b.promptBlock
+      : `--- BREAKDOWN ---\n${b.notes.join(' ')}\n--- END BREAKDOWN ---`;
+    supportingBlock = s;
   }
 
   const roster = await loadRoster();
@@ -685,6 +707,7 @@ async function composeAnswer(args: {
     client: resolution.client,
     candidates: resolution.candidates,
     metricsBlock,
+    breakdownBlock,
     supportingBlock,
     sqlBlock,
     teamRoster: roster,

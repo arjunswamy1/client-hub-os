@@ -44,3 +44,33 @@ so nothing double-counts.
 Jacuzzi is the one domain exception: it is paid per **lead**, so `jacuzzi_leads`
 (calls + QR scans) is the count and `ringfuel_calls` is a subset of it. That is a
 payment rule, not a data-location rule.
+
+## Campaign and vertical grain (added 2026-09-20)
+
+An account total cannot answer "does auto beat home". Three account facts make the
+finer read possible, and all three live on the records, never in code:
+
+1. `clients.call_source_tables` — every supported call feed records
+   `campaign_name`, so calls and revenue always split per campaign.
+2. `clients.campaign_spend_source_tables` — the spend feeds that carry a campaign
+   dimension (`ad_campaigns`, `roku_daily_metrics`, `universal_ads_geo_metrics`,
+   `cannaball_spend`, `platform_spend_4js`). Empty means spend CANNOT be split:
+   cost per call and margin per vertical are UNKNOWN, never zero, and never
+   borrowed from the account-level total.
+3. `client_verticals` — `ringba_patterns` assign CALLS by call-feed campaign name
+   (on every feed, not only Ringba); `meta_patterns` / `google_patterns` assign
+   SPEND. A name matching no vertical, or more than one, is UNCLASSIFIED and is
+   reported as such.
+
+`_shared/client-breakdown.ts` computes the rows. Every account-level rule applies
+per row: a group with any uncaptured money row publishes no revenue, profit or
+margin; spend that misses a group's call days makes cost per call a FLOOR and
+withholds margin. More calls than clicks in a group is an attribution warning
+(other publishers routed into the same call campaign), never engagement.
+
+On RTB pay-per-call accounts the spend campaign name and the call campaign name
+routinely differ (Hablyte spends on "Auto Insurance - Test CBO" and receives calls
+on "Auto RTB"). The VERTICAL is therefore the finest grain where both sides join;
+per-campaign profit stays UNKNOWN there and the read says so.
+
+The breakdown is a READ, not a verdict. Cut / hold / scale stay ad-level.

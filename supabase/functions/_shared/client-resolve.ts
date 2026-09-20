@@ -19,6 +19,8 @@ export interface ResolvedClientRow {
   call_source_tables?: string[] | null;
   /** Where this account's media spend lives. Empty = not recorded. */
   spend_source_tables?: string[] | null;
+  /** Spend feeds carrying a campaign dimension. Empty = spend cannot be split per campaign. */
+  campaign_spend_source_tables?: string[] | null;
 }
 
 export interface ClientResolution {
@@ -32,7 +34,7 @@ export interface ClientResolution {
 export async function loadActiveClients(supabase: any): Promise<ResolvedClientRow[]> {
   const { data } = await supabase
     .from('clients')
-    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables')
+    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables')
     .eq('status', 'active')
     .order('name');
   return (data || []) as ResolvedClientRow[];

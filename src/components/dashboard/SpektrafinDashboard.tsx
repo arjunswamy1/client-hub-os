@@ -261,7 +261,7 @@ export default function SpektrafinDashboard() {
                   <th className="px-3 py-2 font-medium">Creative</th>
                   <th className="px-3 py-2 text-right font-medium">Calls</th>
                   <th className="px-3 py-2 text-right font-medium">Connected</th>
-                  <th className="px-3 py-2 text-right font-medium">Paid</th>
+                  <th className="px-3 py-2 text-right font-medium">Converted</th>
                   <th className="px-3 py-2 text-right font-medium">Connect rate</th>
                   <th className="px-3 py-2 text-right font-medium">Avg duration</th>
                   <th className="px-3 py-2 text-right font-medium">Revenue</th>
@@ -278,11 +278,18 @@ export default function SpektrafinDashboard() {
                     <td className="px-3 py-2 font-medium">{r.creative}</td>
                     <td className="px-3 py-2 text-right">{r.calls}</td>
                     <td className="px-3 py-2 text-right">{r.connected}</td>
-                    <td className="px-3 py-2 text-right">{r.paid}</td>
+                    <td className="px-3 py-2 text-right">{r.callsWithRevenue ? r.convertedCalls : <span className="text-muted-foreground">unknown</span>}</td>
                     <td className="px-3 py-2 text-right">{fmtPct(r.connectRate)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtDuration(r.avgDuration)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(r.revenue)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney2(r.rpc)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {r.callsWithRevenue ? fmtMoney(r.revenue) : <span className="text-muted-foreground">unknown</span>}
+                      {r.callsWithRevenue > 0 && r.uncapturedRevenueCalls > 0 && (
+                        <span className="ml-1 text-xs text-amber-600" title={`Revenue unknown for ${r.uncapturedRevenueCalls} of ${r.calls} calls`}>
+                          ({r.uncapturedRevenueCalls} unknown)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">{r.rpc !== null ? fmtMoney2(r.rpc) : "—"}</td>
                   </tr>
                 ))}
               </tbody>

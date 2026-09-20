@@ -298,6 +298,17 @@ export async function computeClientMetrics(
   const convertedKnown = calls.filter((c) => c.conversionKnown);
   const convertedCalls = convertedKnown.filter((c) => c.converted === true).length;
 
+  // ── spend coverage ───────────────────────────────────────────────────────
+  // Absent applies to the cost side too. If calls arrived on days that carry no
+  // spend row, the spend total is a PARTIAL cost against a FULL revenue, and any
+  // margin computed from the pair flatters the account. Name the gap and withhold.
+  const callDays = new Set(calls.map((c) => c.day).filter(Boolean));
+  const daysWithCallsNoSpend = [...callDays].filter((d) => !spendDays.has(d)).sort();
+  const spendCoverageIncomplete = spendRows > 0 && daysWithCallsNoSpend.length > 0;
+  const coverageNote = spendCoverageIncomplete
+    ? `Spend covers ${spendDays.size} day(s) but calls arrived on ${callDays.size}. ${daysWithCallsNoSpend.length} day(s) have calls and no spend row (${daysWithCallsNoSpend.slice(0, 6).join(', ')}${daysWithCallsNoSpend.length > 6 ? '…' : ''}) — that is missing spend data, not free traffic.`
+    : '';
+
   const callLabel = client.slug === 'jacuzzi' ? 'Leads (calls + QR scans, never split)' : 'Calls';
   const callValue = client.slug === 'jacuzzi' ? (jacuzziLeads ?? totalCalls) : totalCalls;
 
@@ -413,17 +424,6 @@ export async function computeClientMetrics(
     key: 'revenue', label: 'Revenue', value: revenueValue, display: revenueDisplay,
     note: revenueNote, sources: callTables,
   });
-
-  // ── spend coverage ───────────────────────────────────────────────────────
-  // Absent applies to the cost side too. If calls arrived on days that carry no
-  // spend row, the spend total is a PARTIAL cost against a FULL revenue, and any
-  // margin computed from the pair flatters the account. Name the gap and withhold.
-  const callDays = new Set(calls.map((c) => c.day).filter(Boolean));
-  const daysWithCallsNoSpend = [...callDays].filter((d) => !spendDays.has(d)).sort();
-  const spendCoverageIncomplete = spendRows > 0 && daysWithCallsNoSpend.length > 0;
-  const coverageNote = spendCoverageIncomplete
-    ? `Spend covers ${spendDays.size} day(s) but calls arrived on ${callDays.size}. ${daysWithCallsNoSpend.length} day(s) have calls and no spend row (${daysWithCallsNoSpend.slice(0, 6).join(', ')}${daysWithCallsNoSpend.length > 6 ? '…' : ''}) — that is missing spend data, not free traffic.`
-    : '';
 
   // ── profit and margin, gated on revenue AND on spend coverage ────────────
   const canDoProfit = revenueValue !== null && spendRows > 0 && !spendCoverageIncomplete;

@@ -422,7 +422,11 @@ export async function computeClientMetrics(
       label: client.slug === 'jacuzzi' ? 'Cost per lead' : 'Cost per call',
       value: spend / callValue,
       display: money(spend / callValue),
-      note: `${money(spend)} ÷ ${callValue} ${client.slug === 'jacuzzi' ? 'leads' : 'calls'}. Total calls is the denominator — never a billable subset, so nothing is hidden.${spendCoverageIncomplete ? ` A FLOOR only: ${coverageNote}` : ''}`,
+      note: `${money(spend)} ÷ ${callValue} ${client.slug === 'jacuzzi' ? 'leads' : 'calls'}. Total calls is the denominator — never a billable subset, so nothing is hidden.${spendCoverageIncomplete ? ` A FLOOR only: ${coverageNote}` : ''}${
+        pubScope.scoping === 'unknown' && pub.inventory.length > 1
+          ? ` UNDERSTATED: the denominator still contains other publishers' calls (publisher scoping is unknown here) while the numerator is only CPM's spend. Our true cost per call is HIGHER than this.`
+          : ''
+      }`,
       sources: [...spendTables, ...callTables],
     });
   }

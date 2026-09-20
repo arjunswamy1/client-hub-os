@@ -234,6 +234,8 @@ export async function computeClientMetrics(
     revenue: unknown;
     revenue_captured: boolean | null;
     payload_shape: string | null;
+    /** Calendar day of the call, for comparing against the days spend covers. */
+    day: string;
   }
   const calls: CallRow[] = [];
   let testRowsExcluded = 0;
@@ -275,6 +277,7 @@ export async function computeClientMetrics(
         revenue: spec.hasRevenue ? r.revenue : null,
         revenue_captured: spec.hasCaptureFlags ? (r.revenue_captured ?? null) : null,
         payload_shape: spec.hasCaptureFlags ? (r.payload_shape ?? null) : null,
+        day: String(r[spec.dateCol] ?? '').slice(0, 10),
       });
     }
   }

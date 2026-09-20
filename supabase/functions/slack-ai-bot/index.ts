@@ -388,7 +388,16 @@ async function callAI(messages: Array<{ role: string; content: string }>, client
  */
 const METRIC_WORDS = /(spend|spent|call|calls|revenue|profit|margin|cost per|convert|payout|lead|leads|duration|connected)/i;
 
-async function maybeRunSqlFallback(question: string, clientName: string | null): Promise<{ sql: string; rows: unknown[] } | null> {
+/** Names and aliases of the team, so "AJ" is not searched for literally. */
+async function loadRoster(): Promise<string> {
+  const { data } = await supabase.from('team_members')
+    .select('name, email, role, aliases, is_active').eq('is_active', true).order('name');
+  return (data || []).map((m: any) =>
+    `${m.name} (${m.role}${m.aliases?.length ? `; also called ${m.aliases.join(', ')}` : ''}) id-by-email ${m.email}`
+  ).join('\n');
+}
+
+async function maybeRunSqlFallback(question: string, clientName: string | null, roster: string): Promise<{ sql: string; rows: unknown[] } | null> {
   if (METRIC_WORDS.test(question)) return null;
 
   const plan = await callAnthropic([
@@ -397,6 +406,9 @@ async function maybeRunSqlFallback(question: string, clientName: string | null):
       content: `You write a single read-only Postgres SELECT against an advertising agency's database, or decline.
 Tables you may use include: clients, team_members, tasks, task_candidates, creative_briefs, creative_deliverables, shoot_briefs, context_items, client_daily_updates, media_brain_economics, media_brain_reviews, data_integrity_exceptions, ad_campaigns, ad_sets, ad_creatives, ad_daily_metrics, roku_daily_metrics, ringba_calls, ringfuel_calls, cannaball_calls, moja_calls, jacuzzi_leads, bot_qa_log.
 Rules: SELECT or WITH…SELECT only; one statement; no semicolons; no comments; never reference auth/vault/storage schemas, slack_tokens, platform_connections, or any column named like token/secret/password; always LIMIT 50 or fewer.
+A person named in the question must be matched against this roster — never search for a nickname
+literally, look up which roster name it belongs to and filter on that name or email:
+${roster}
 Reply with json only: {"sql": "..."} or {"sql": null} when a query is not the right tool.`,
     },
     { role: 'user', content: `Client in scope: ${clientName || 'none resolved'}\nQuestion: ${question}` },
@@ -433,6 +445,7 @@ function buildSystemPrompt(args: {
   metricsBlock: string;
   supportingBlock: string;
   sqlBlock: string;
+  roster: string;
 }): string {
   const roster = args.clients.map((c) => `${c.name} (${c.engagement_type || 'engagement type not recorded'})`).join('; ');
 
@@ -555,9 +568,10 @@ async function composeAnswer(args: {
     supportingBlock = await gatherSupportingContext(resolution.client, { from: dateRange.from, to: dateRange.to });
   }
 
-  const sqlOut = await maybeRunSqlFallback(args.question, resolution.client?.name ?? null);
+  const roster = await loadRoster();
+  const sqlOut = await maybeRunSqlFallback(args.question, resolution.client?.name ?? null, roster);
   const sqlBlock = sqlOut
-    ? `--- READ-ONLY SQL (computed directly from the database, not a verified metric) ---\nquery: ${sqlOut.sql}\nrows: ${JSON.stringify(sqlOut.rows).slice(0, 4000)}\n--- END READ-ONLY SQL ---`
+    ? `--- READ-ONLY SQL (computed directly from the database, not a verified metric) ---\nquery: ${sqlOut.sql}\nrows: ${JSON.stringify(sqlOut.rows).slice(0, 4000)}\nNOTE: an empty result, or a count of 0 from a query that filtered on a person or client name, may mean the FILTER MATCHED NOBODY rather than that the real answer is zero. Say which it is, or say you could not tell.\n--- END READ-ONLY SQL ---`
     : '';
 
   const systemPrompt = buildSystemPrompt({
@@ -571,6 +585,7 @@ async function composeAnswer(args: {
     metricsBlock,
     supportingBlock,
     sqlBlock,
+    roster,
   });
 
   const conversation = args.conversation?.length ? args.conversation : [{ role: 'user', content: args.question }];

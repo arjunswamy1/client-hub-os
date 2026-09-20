@@ -2479,6 +2479,8 @@ export type Database = {
           color: string | null
           communication_channel: string | null
           created_at: string
+          daily_update_enabled: boolean
+          daily_update_suppressed_reason: string | null
           data_model_note: string | null
           engagement_type: string | null
           expected_sources: string[]
@@ -2494,6 +2496,8 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          daily_update_enabled?: boolean
+          daily_update_suppressed_reason?: string | null
           data_model_note?: string | null
           engagement_type?: string | null
           expected_sources?: string[]
@@ -2509,6 +2513,8 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          daily_update_enabled?: boolean
+          daily_update_suppressed_reason?: string | null
           data_model_note?: string | null
           engagement_type?: string | null
           expected_sources?: string[]

@@ -18,6 +18,10 @@
 
 import { revenueFieldForClient, resolveClientRevenue } from './client-revenue.ts';
 import type { ResolvedClientRow } from './client-resolve.ts';
+import {
+  createPublisherFilter, loadPublisherScopes, publisherColumns, readPublisher,
+  type PublisherFilterSummary,
+} from './publisher-scope.ts';
 
 export interface Metric {
   key: string;

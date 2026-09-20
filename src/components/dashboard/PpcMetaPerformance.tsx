@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -274,9 +274,8 @@ export default function PpcMetaPerformance() {
                   {structure.map((c) => {
                     const open = !!openCampaigns[c.name];
                     return (
-                      <>
+                      <Fragment key={c.name}>
                         <tr
-                          key={c.name}
                           className="cursor-pointer border-t bg-muted/20 hover:bg-muted/40"
                           onClick={() => setOpenCampaigns((p) => ({ ...p, [c.name]: !p[c.name] }))}
                         >
@@ -305,9 +304,8 @@ export default function PpcMetaPerformance() {
                           const setKey = `${c.name}||${s.name}`;
                           const setOpen = !!openAdSets[setKey];
                           return (
-                            <>
+                            <Fragment key={setKey}>
                               <tr
-                                key={setKey}
                                 className="cursor-pointer border-t hover:bg-muted/30"
                                 onClick={() => setOpenAdSets((p) => ({ ...p, [setKey]: !p[setKey] }))}
                               >
@@ -359,10 +357,10 @@ export default function PpcMetaPerformance() {
                                   <td className="p-3 text-right text-muted-foreground">—</td>
                                 </tr>
                               ))}
-                            </>
+                            </Fragment>
                           );
                         })}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>

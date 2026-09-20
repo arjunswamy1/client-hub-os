@@ -21,10 +21,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ringfuel-secret',
 };
 
+/**
+ * An unfilled RingFuel macro — "{{event_name}}", "[tag:revenue]" — is ABSENT, not a
+ * value. Storing the literal would flag a call as captured and record a nonsense
+ * label, so it is treated exactly like a missing field.
+ */
+const UNFILLED_MACRO_RE = /^\s*(?:\{\{?[^{}]*\}?\}|\[[^\][]*\]|%%[^%]*%%)\s*$/;
+const isPlaceholder = (v: unknown) => typeof v === 'string' && UNFILLED_MACRO_RE.test(v);
+
+/** Key lookup that ignores case, spaces, underscores and hyphens: "Event Type" === "event_type". */
+const normKey = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const usable = (v: unknown) => v !== undefined && v !== null && v !== '' && !isPlaceholder(v);
   for (const k of keys) {
-    const v = obj?.[k];
-    if (v !== undefined && v !== null && v !== '') return v as T;
+    const v = obj[k];
+    if (usable(v)) return v as T;
+  }
+  // Fall back to a normalised match so a name we did not spell exactly still lands.
+  const wanted = new Set(keys.map(normKey));
+  for (const [key, v] of Object.entries(obj)) {
+    if (wanted.has(normKey(key)) && usable(v)) return v as T;
   }
   return undefined;
 }
@@ -81,10 +99,45 @@ const F = {
   creative: ['creative', 'creative_label', 'creative_name', 'Creative', 'sub_id', 'subid'],
   payout: ['payout', 'payoutAmount', 'payout_amount', 'Payout'],
   connected: ['connected', 'answered', 'is_connected'],
-  event: ['event_type', 'event', 'type', 'event_name', 'webhook_event', 'Event', 'Event Type'],
+  // RingFuel's own macros are {{event_type}} and {{event_name}}; the rest are the
+  // spellings seen in its templates and envelopes. Lookup is case- and
+  // separator-insensitive, so "Event Name", "eventName" and "event-name" all land.
+  event: [
+    'event_type', 'event_name', 'event', 'type', 'name',
+    'webhook_event', 'webhook_event_type', 'webhook_event_name',
+    'call_event', 'call_event_type', 'event_label', 'eventType', 'eventName',
+    'action', 'trigger', 'trigger_name', 'hook', 'hook_event', 'notification_type',
+  ],
   // Kept in raw_payload only, no columns: Quality Score, lead_score, is_duplicate,
   // is_repeat_caller, Telephony Cost, Platform Fee, Publisher Cost, Publisher.
 };
+
+/**
+ * The five RingFuel events, each under one spelling so `events_seen` stays readable
+ * and a label arriving as "call.converted", "CONVERTED" or "conversion" is the same
+ * event. An unrecognised label is KEPT VERBATIM (trimmed) rather than discarded or
+ * forced into one of the five — a new event type must be visible, not swallowed.
+ */
+const EVENT_CANON: Record<string, string> = {
+  callincoming: 'Call Incoming', incoming: 'Call Incoming', inbound: 'Call Incoming',
+  callstart: 'Call Incoming', callstarted: 'Call Incoming', callinitiated: 'Call Incoming',
+  new: 'Call Incoming', newcall: 'Call Incoming', ringing: 'Call Incoming',
+  connected: 'Connected', callconnected: 'Connected', answered: 'Connected', callanswered: 'Connected',
+  completed: 'Completed', callcompleted: 'Completed', complete: 'Completed',
+  callended: 'Completed', ended: 'Completed', callend: 'Completed', hangup: 'Completed', finished: 'Completed',
+  converted: 'Converted', callconverted: 'Converted', conversion: 'Converted', callbillable: 'Converted',
+  billable: 'Converted', sale: 'Converted', qualified: 'Converted',
+  payout: 'Payout', callpayout: 'Payout', payoutupdated: 'Payout', revenue: 'Payout', payment: 'Payout',
+};
+
+function canonicalEvent(raw: string | null): string | null {
+  if (raw === null || raw === undefined) return null;
+  const label = String(raw).trim();
+  if (!label) return null;
+  // "call.converted", "Call - Converted", "ringfuel:converted" all reduce the same way.
+  const key = label.toLowerCase().replace(/^(?:ringfuel|call)[.:_\- ]+(?=\w)/, '').replace(/[^a-z0-9]/g, '');
+  return EVENT_CANON[key] ?? EVENT_CANON[label.toLowerCase().replace(/[^a-z0-9]/g, '')] ?? label;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -195,9 +248,15 @@ Deno.serve(async (req) => {
   );
 
   // RingFuel fires FIVE events per call (Incoming, Connected, Completed, Converted,
-  // Payout), all sharing one call_id. The event name is read from either the envelope
-  // or the merged call object.
-  const event_type = pick<string>(payload, F.event) ?? pick<string>(call, F.event) ?? null;
+  // Payout), all sharing one call_id. The label is read from the envelope, the merged
+  // call object, or the tags block, under either macro ({{event_type}} / {{event_name}})
+  // and any casing. Both macros are read, and the one that arrives filled wins.
+  const event_type = canonicalEvent(
+    pick<string>(payload, F.event)
+      ?? pick<string>(call, F.event)
+      ?? pick<string>(tags, F.event)
+      ?? null,
+  );
 
   // What did this payload actually carry?
   const revenueRaw = pick(call, F.revenue);

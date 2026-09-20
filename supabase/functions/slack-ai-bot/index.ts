@@ -223,9 +223,11 @@ async function resolveUserContext(token: string, userId: string): Promise<UserCo
 async function gatherSupportingContext(client: ResolvedClientRow, window: { from: string; to: string }): Promise<string> {
   const sinceIso = new Date(Date.now() - 30 * 86400000).toISOString();
   const isMediaAccount = client.engagement_type === 'pay_per_call' || client.engagement_type === 'performance_media';
-  const usesRoku = (client.expected_sources || []).includes('roku_spend');
+  // Where the account's spend actually lives is recorded on the account row.
+  const spendTables = client.spend_source_tables || [];
+  const usesRoku = spendTables.includes('roku_daily_metrics') || (client.expected_sources || []).includes('roku_spend');
 
-  const [tasksRes, candidatesRes, contextRes, reviewsRes, dailyRes, briefsRes, campaignsRes, creativesRes, rokuRes] = await Promise.all([
+  const [tasksRes, candidatesRes, contextRes, reviewsRes, dailyRes, briefsRes, campaignsRes, creativesRes, rokuRes, econRes, instRes] = await Promise.all([
     supabase.from('tasks').select('title, status, priority, due_date').eq('client_id', client.id)
       .in('status', ['todo', 'in_progress']).order('due_date', { ascending: true }).limit(20),
     supabase.from('task_candidates').select('proposed_title, status, confidence').eq('client_id', client.id)
@@ -252,11 +254,41 @@ async function gatherSupportingContext(client: ResolvedClientRow, window: { from
           .eq('client_id', client.id).eq('entity', 'campaign').gte('date', window.from).lte('date', window.to)
           .order('spend', { ascending: false }).limit(300)
       : Promise.resolve({ data: [] }),
+    supabase.from('media_brain_economics')
+      .select('vertical, payout_mode, payout, revenue_source, min_payout_threshold, billable_min_duration_seconds, reporting_cadence, tracking_platform')
+      .eq('client_id', client.id).limit(10),
+    supabase.from('media_brain_instances')
+      .select('target_margin, min_margin, kill_threshold, min_calls, actionable_gap, expected_billable_calls_per_week, cut_cadence, scale_cadence, lifecycle_stage, unknown_fields')
+      .eq('client_id', client.id).order('created_at', { ascending: false }).limit(1),
   ]);
 
   const out: string[] = [`--- SUPPORTING CONTEXT: ${client.name} ---`];
   if (client.data_model_note) out.push(`ACCOUNT NOTE (authoritative): ${client.data_model_note}`);
   out.push(`expected sources: ${(client.expected_sources || []).join(', ') || 'none recorded'}`);
+
+  if (econRes.data?.length) {
+    out.push('\nPayout terms on record:');
+    for (const e of econRes.data as any[]) {
+      const billable = e.payout_mode === 'rtb'
+        ? `billable when the buyer pays (payout at or above $${Number(e.min_payout_threshold ?? 0).toFixed(2)})`
+        : e.billable_min_duration_seconds
+          ? `billable at ${e.billable_min_duration_seconds}s or longer`
+          : 'billable definition NOT recorded';
+      out.push(`  • ${e.vertical || 'account default'}: ${e.payout_mode}${e.payout ? ` at $${Number(e.payout).toFixed(2)} per billable call` : ''}, revenue source ${e.revenue_source}, ${billable}${e.reporting_cadence ? `, reviewed ${e.reporting_cadence}` : ''}`);
+    }
+  } else {
+    out.push('\nPayout terms: NONE recorded. Do not state a margin target, allowable cost per call or kill threshold for this account.');
+  }
+
+  const inst = (instRes.data as any[] | null)?.[0];
+  if (inst) {
+    out.push(`\nThresholds on record: target margin ${(Number(inst.target_margin) * 100).toFixed(0)}%, floor ${(Number(inst.min_margin) * 100).toFixed(0)}%${inst.kill_threshold ? `, kill threshold $${Number(inst.kill_threshold).toFixed(2)} spent with nothing paid` : ''}${inst.min_calls ? `, ${inst.min_calls} calls needed before ranking two things against each other` : ''}${inst.cut_cadence ? `, cuts ${inst.cut_cadence}` : ''}${inst.scale_cadence ? `, scale steps ${inst.scale_cadence}` : ''}.`);
+    if ((inst.unknown_fields || []).length) {
+      out.push(`  ASSUMED, not confirmed by the client: ${(inst.unknown_fields as string[]).join('; ')}. Say so when you lean on any of these.`);
+    }
+  } else {
+    out.push('\nThresholds: no Media Brain instance recorded, so no margin target or kill threshold exists for this account.');
+  }
 
   if (rokuRes.data?.length) {
     const byCampaign: Record<string, { spend: number; imps: number; comps: number }> = {};

@@ -7859,6 +7859,19 @@ export type Database = {
           read_ct: number
         }[]
       }
+      ringfuel_breakdown: {
+        Args: { p_client_id: string; p_end: string; p_start: string }
+        Returns: {
+          calls: number
+          connected: number
+          converted: number
+          dimension: string
+          duration_seconds: number
+          key: string
+          revenue: number
+          revenue_known: number
+        }[]
+      }
       ringfuel_merge_call: {
         Args: { p_event?: string; p_row: Json }
         Returns: Json

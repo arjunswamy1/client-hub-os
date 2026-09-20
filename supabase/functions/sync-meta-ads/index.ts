@@ -265,6 +265,7 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
       }
 
       const campaignStatusMap = await fetchEntityStatuses(accountId, accessToken, "campaigns");
+      const campaignConfigs = await fetchEntityConfigs(accountId, accessToken, "campaigns");
 
       if (campaignInsights) {
         const batch = campaignInsights.map((c: any) => {

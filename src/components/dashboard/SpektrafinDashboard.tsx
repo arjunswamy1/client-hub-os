@@ -287,7 +287,7 @@ export default function SpektrafinDashboard() {
         <p className="text-xs text-muted-foreground">
           Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
         </p>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); }}>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); refetchBreakdowns(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>

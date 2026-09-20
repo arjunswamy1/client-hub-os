@@ -218,6 +218,17 @@ export interface PullWindowSuccess {
   attributedPublishers: string[];
   /** How revenue was resolved for this window, in plain language. */
   revenueNote: string;
+  /**
+   * Calls in this window whose revenue the source never delivered. Their earnings
+   * are UNKNOWN, not zero: they are excluded from revenue and counted here.
+   */
+  uncapturedRevenueCalls: number;
+  /**
+   * False when any call's revenue was not captured. Revenue, profit and margin
+   * are then PARTIAL and must not be published as totals — report the coverage
+   * (`revenueNote`) instead of a figure.
+   */
+  revenueComplete: boolean;
   /** Call ids whose billable status is undetermined — surface, never hide. */
   missingBillableDefinition: string[];
   /** Circuit breakers raised by the pull itself (§ Circuit breakers). */

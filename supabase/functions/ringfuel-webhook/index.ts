@@ -112,6 +112,33 @@ const F = {
   // is_repeat_caller, Telephony Cost, Platform Fee, Publisher Cost, Publisher.
 };
 
+/**
+ * The five RingFuel events, each under one spelling so `events_seen` stays readable
+ * and a label arriving as "call.converted", "CONVERTED" or "conversion" is the same
+ * event. An unrecognised label is KEPT VERBATIM (trimmed) rather than discarded or
+ * forced into one of the five — a new event type must be visible, not swallowed.
+ */
+const EVENT_CANON: Record<string, string> = {
+  callincoming: 'Call Incoming', incoming: 'Call Incoming', inbound: 'Call Incoming',
+  callstart: 'Call Incoming', callstarted: 'Call Incoming', callinitiated: 'Call Incoming',
+  new: 'Call Incoming', newcall: 'Call Incoming', ringing: 'Call Incoming',
+  connected: 'Connected', callconnected: 'Connected', answered: 'Connected', callanswered: 'Connected',
+  completed: 'Completed', callcompleted: 'Completed', complete: 'Completed',
+  callended: 'Completed', ended: 'Completed', callend: 'Completed', hangup: 'Completed', finished: 'Completed',
+  converted: 'Converted', callconverted: 'Converted', conversion: 'Converted', callbillable: 'Converted',
+  billable: 'Converted', sale: 'Converted', qualified: 'Converted',
+  payout: 'Payout', callpayout: 'Payout', payoutupdated: 'Payout', revenue: 'Payout', payment: 'Payout',
+};
+
+function canonicalEvent(raw: string | null): string | null {
+  if (raw === null || raw === undefined) return null;
+  const label = String(raw).trim();
+  if (!label) return null;
+  // "call.converted", "Call - Converted", "ringfuel:converted" all reduce the same way.
+  const key = label.toLowerCase().replace(/^(?:ringfuel|call)[.:_\- ]+(?=\w)/, '').replace(/[^a-z0-9]/g, '');
+  return EVENT_CANON[key] ?? EVENT_CANON[label.toLowerCase().replace(/[^a-z0-9]/g, '')] ?? label;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 

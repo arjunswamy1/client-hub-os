@@ -548,6 +548,8 @@ export async function computeClientMetrics(
     : null;
 
   if (client.data_model_note) caveats.push(client.data_model_note);
+  // Whose traffic this is comes first: it decides what every money figure means.
+  if (callTables.length) for (const n of pub.notes) caveats.push(n);
   if (spendCoverageIncomplete) caveats.push(coverageNote + ' Cost per call is therefore a floor, and profit and margin are withheld.');
   if (hadUncapturedData) {
     caveats.push(`Revenue is unknown for ${uncaptured} of ${totalCalls} calls in this window. Do not state a revenue, profit or margin figure for it.`);
@@ -560,6 +562,9 @@ export async function computeClientMetrics(
     `--- CANONICAL METRICS: ${client.name} (${window.from} to ${window.to}) ---`,
     `engagement_type: ${client.engagement_type || 'not recorded'} · money field: ${revenueField || 'none — calls are not this account\'s income'}`,
     `call sources: ${callTables.join(', ') || 'none'} · spend sources: ${spendTables.join(', ')}`,
+    callTables.length
+      ? `publisher scoping: ${pubScope.scoping}${pubScope.attributed.length ? ` · CPM's publisher name(s): ${pubScope.attributed.join(', ')}` : ''}${pub.excludedCalls ? ` · ${pub.excludedCalls} other-publisher call(s) excluded` : ''}`
+      : null,
     economicsNote ? `economics: ${economicsNote}` : null,
     '',
     ...metrics.map((m) => `[${m.key}] ${m.label}: ${m.display}\n    coverage: ${m.note}`),

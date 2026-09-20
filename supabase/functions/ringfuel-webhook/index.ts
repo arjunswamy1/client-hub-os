@@ -174,86 +174,81 @@ Deno.serve(async (req) => {
     pick(call, ['call_id', 'callId', 'id', 'uuid', 'call_uuid', 'inbound_call_id']) ?? crypto.randomUUID()
   );
 
+  // RingFuel fires FIVE events per call (Incoming, Connected, Completed, Converted,
+  // Payout), all sharing one call_id. The event name is read from either the envelope
+  // or the merged call object.
+  const event_type = pick<string>(payload, F.event) ?? pick<string>(call, F.event) ?? null;
+
   // What did this payload actually carry?
   const revenueRaw = pick(call, F.revenue);
   const convertedRaw = pick(call, F.converted);
+  const payoutRaw = pick(call, F.payout);
   const revenue_captured = revenueRaw !== undefined;
+  // conversion_captured is true ONLY when a conversion value was genuinely received —
+  // never merely because the column happens to read false.
   const conversion_captured = convertedRaw !== undefined;
   const payload_shape: 'csv_full' | 'webhook_minimal' = revenue_captured ? 'csv_full' : 'webhook_minimal';
 
-  const connection_duration_seconds = toInt(pick(call, F.connectedDuration));
-  const duration_seconds = toInt(pick(call, F.duration));
+  const connRaw = pick(call, F.connectedDuration);
+  const durRaw = pick(call, F.duration);
+  const connectedRaw = pick(call, F.connected);
 
-  // Only keys the payload actually carries are written. PostgREST's upsert updates
-  // exactly the columns supplied, so a thin webhook can never blank a rich row.
+  // Every value is either present or NULL — NEVER zero/false as a stand-in for absent.
+  // The merge happens in the database (public.ringfuel_merge_call), so a concurrent
+  // delivery cannot lose the race: each column is COALESCE(incoming, stored).
   const row: Record<string, unknown> = {
     client_id,
     call_id,
-    call_start: toIso(pick(call, ['call_start', 'iso_date', 'started_at', 'start_time', 'timestamp', 'created_at'])),
-    duration_seconds,
-    connection_duration_seconds,
-    connected: toBool(pick(call, F.connected)) || connection_duration_seconds > 0,
-    payout: toNumber(pick(call, F.payout)),
+    event_type,
+    call_start: pick(call, ['call_start', 'iso_date', 'started_at', 'start_time', 'timestamp', 'created_at'])
+      ? toIso(pick(call, ['call_start', 'iso_date', 'started_at', 'start_time', 'timestamp', 'created_at']))
+      : null,
+    // Durations grow as the call progresses — newest wins, handled in the merge.
+    duration_seconds: durRaw !== undefined ? toInt(durRaw) : null,
+    connection_duration_seconds: connRaw !== undefined ? toInt(connRaw) : null,
+    connected: connectedRaw !== undefined
+      ? toBool(connectedRaw)
+      : (connRaw !== undefined && toInt(connRaw) > 0 ? true : null),
+    payout: payoutRaw !== undefined ? toNumber(payoutRaw) : null,
+    revenue: revenue_captured ? toNumber(revenueRaw) : null,
+    converted: conversion_captured ? toBool(convertedRaw) : null,
+    campaign_id,
+    campaign_name: pick<string>(call, F.campaign) ?? null,
+    did,
+    caller_number: pick<string>(call, F.caller) ?? null,
+    caller_state: pick<string>(call, F.state) ?? null,
+    caller_city: pick<string>(call, F.city) ?? null,
+    creative_label: pick<string>(call, F.creative) ?? null,
+    disposition: pick<string>(call, F.status) ?? null,
+    recording_url: pick<string>(call, F.recording) ?? null,
+    buyer_name: pick<string>(call, F.buyer) ?? null,
+    target_name: pick<string>(call, F.target) ?? null,
     revenue_captured,
     conversion_captured,
     payload_shape,
+    // raw_payload accumulates in the merge: every event's fields survive.
+    raw_payload: payload,
   };
 
-  const setIf = (key: string, value: unknown) => {
-    if (value !== undefined && value !== null && value !== '') row[key] = value;
-  };
-  setIf('event_type', pick<string>(payload, ['event', 'event_type', 'type']));
-  setIf('campaign_id', campaign_id);
-  setIf('campaign_name', pick<string>(call, F.campaign));
-  setIf('did', did);
-  setIf('caller_number', pick<string>(call, F.caller));
-  setIf('caller_state', pick<string>(call, F.state));
-  setIf('caller_city', pick<string>(call, F.city));
-  setIf('creative_label', pick<string>(call, F.creative));
-  setIf('disposition', pick<string>(call, F.status));
-  setIf('recording_url', pick<string>(call, F.recording));
-  setIf('buyer_name', pick<string>(call, F.buyer));
-  setIf('target_name', pick<string>(call, F.target));
-  // Revenue and conversion are written ONLY when the payload carries them.
-  if (revenue_captured) row.revenue = toNumber(revenueRaw);
-  if (conversion_captured) row.converted = toBool(convertedRaw);
-
-  // Never downgrade an already-enriched row: if a full payload is already stored
-  // and a thin one arrives late, keep the rich payload and flags and file the thin
-  // body alongside it for audit.
-  const { data: existing } = await supabase
-    .from('ringfuel_calls')
-    .select('payload_shape, revenue_captured, conversion_captured, raw_payload')
-    .eq('client_id', client_id)
-    .eq('call_id', call_id)
-    .maybeSingle();
-
-  if (existing && existing.payload_shape === 'csv_full' && payload_shape === 'webhook_minimal') {
-    row.payload_shape = 'csv_full';
-    row.revenue_captured = existing.revenue_captured ?? true;
-    row.conversion_captured = existing.conversion_captured ?? true;
-    const prior = (existing.raw_payload && typeof existing.raw_payload === 'object') ? existing.raw_payload : {};
-    row.raw_payload = { ...prior, _late_webhook: payload };
-  } else {
-    row.raw_payload = payload;
-  }
-
-  const { error } = await supabase
-    .from('ringfuel_calls')
-    .upsert(row, { onConflict: 'client_id,call_id' });
+  const { data: merged, error } = await supabase.rpc('ringfuel_merge_call', {
+    p_row: row,
+    p_event: event_type ?? 'unlabelled',
+  });
 
   if (error) {
-    console.error('ringfuel_calls upsert failed', error);
-    return new Response(JSON.stringify({ error: 'DB insert failed', details: error.message }), {
+    console.error('ringfuel_calls merge failed', error);
+    return new Response(JSON.stringify({ error: 'DB write failed', details: error.message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
   return new Response(JSON.stringify({
-    ok: true, call_id, client_id,
-    payload_shape: row.payload_shape,
-    revenue_captured: row.revenue_captured,
-    conversion_captured: row.conversion_captured,
+    ok: true, call_id, client_id, event_type,
+    inserted: (merged as any)?.inserted ?? null,
+    merged: (merged as any)?.merged ?? null,
+    payload_shape,
+    revenue_captured,
+    conversion_captured,
   }), {
     status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });

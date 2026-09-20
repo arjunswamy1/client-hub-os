@@ -64,6 +64,14 @@ export interface CanonicalCall {
   payout_looks_like_cost: boolean;
   /** 0 for a no-bid, never null — under RTB a zero must stay in the denominator. */
   payout_amount: number;
+  /**
+   * Did the source actually deliver a revenue figure for this call? False means
+   * the revenue is UNKNOWN and `payout_amount` here is NOT a measured zero — the
+   * call is counted, its revenue is not. Only sources that can tell the
+   * difference (RingFuel's `revenue_captured`) ever set this false.
+   */
+  revenue_captured: boolean;
+
 
   buyer_id: string | null;
   /**

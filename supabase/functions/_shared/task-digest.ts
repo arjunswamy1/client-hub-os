@@ -1,0 +1,292 @@
+// The morning task digest: one message per person, per lane, top-level.
+//
+// Top-level and not a thread reply on purpose. Slack nests exactly one level, so
+// a person only gets their own correction thread if their list is its own root
+// message. Only the owner is @-mentioned — four buyers in one channel means one
+// notification each, not four.
+//
+// Nothing here writes to Slack. The caller posts through `postToSlack()`, the
+// single guarded write path.
+
+export const HUB_TASKS_URL = 'https://hub.connectpaidmedia.com/tasks';
+
+/** Hard cap on listed items; the rest collapse into "+N more". */
+export const MAX_ITEMS = 5;
+
+export const LANES = ['media', 'creative'] as const;
+export type Lane = (typeof LANES)[number];
+
+/** The two internal channels this digest is allowed to write to. */
+export const LANE_CHANNELS: Record<Lane, { id: string; purpose: string }> = {
+  media: { id: 'C0C3QCHJ1PA', purpose: 'media' },
+  creative: { id: 'C0C2ZMBTXL4', purpose: 'creative' },
+};
+
+/**
+ * People whose default lane is creative. Designers are creative by role; Henry
+ * is the creative lead, so his creative-ops work belongs in the creative
+ * channel even when it carries no client. Their work only moves to the media
+ * channel when the task sits on a media account — which is how Henry ends up
+ * with two messages rather than one mixed list.
+ */
+export const CREATIVE_LANE_ROLES = new Set(['designer']);
+export const CREATIVE_LANE_NAMES = new Set(['henry']);
+
+/** Engagement types that make a task unambiguously media-side. */
+const MEDIA_ENGAGEMENT = new Set(['pay_per_call', 'performance_media']);
+
+export interface MemberRow {
+  id: string;
+  name: string;
+  role: string | null;
+  slack_user_id: string | null;
+  is_active: boolean | null;
+}
+
+export interface DigestItem {
+  kind: 'task' | 'brief';
+  id: string;
+  title: string;
+  client: string | null;
+  due_date: string | null;
+  overdue: boolean;
+  created_at: string;
+}
+
+export interface DigestMessage {
+  lane: Lane;
+  channel_id: string;
+  channel_name: string;
+  member: MemberRow;
+  mention: string;
+  text: string;
+  items: DigestItem[];
+  shown: DigestItem[];
+  hidden_count: number;
+}
+
+export function isCreativeLaneMember(member: MemberRow): boolean {
+  return (
+    CREATIVE_LANE_ROLES.has((member.role ?? '').toLowerCase()) ||
+    CREATIVE_LANE_NAMES.has((member.name ?? '').trim().toLowerCase().split(' ')[0])
+  );
+}
+
+/**
+ * A task's lane. Creative when it came out of a creative brief or sits on a
+ * creative-only account; otherwise media — except for creative-lane people,
+ * whose unattributed work stays creative and only crosses to media when the
+ * account itself is a media account.
+ */
+export function laneForTask(
+  task: { task_type?: string | null; type_data?: Record<string, unknown> | null },
+  engagementType: string | null,
+  member: MemberRow,
+): Lane {
+  const fromBrief =
+    task.task_type === 'creative_brief' ||
+    !!(task.type_data as Record<string, unknown> | null)?.brief_id ||
+    !!(task.type_data as Record<string, unknown> | null)?.creative_brief_id;
+  if (fromBrief) return 'creative';
+  if (engagementType === 'creative_only') return 'creative';
+  if (isCreativeLaneMember(member)) {
+    return engagementType && MEDIA_ENGAGEMENT.has(engagementType) ? 'media' : 'creative';
+  }
+  return 'media';
+}
+
+/** Overdue first, oldest overdue leading; then the newest work. */
+export function sortItems(items: DigestItem[]): DigestItem[] {
+  return [...items].sort((a, b) => {
+    if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+    if (a.overdue && b.overdue) return (a.due_date ?? '').localeCompare(b.due_date ?? '');
+    return b.created_at.localeCompare(a.created_at);
+  });
+}
+
+const FOOTER = '✅ aligned   ·   ✏️ editing, see my reply   ·   ❌ not mine';
+
+export function buildMessageText(opts: {
+  mention: string;
+  weekday: string;
+  lane: Lane;
+  items: DigestItem[];
+}): { text: string; shown: DigestItem[]; hidden: number } {
+  const ordered = sortItems(opts.items);
+  const shown = ordered.slice(0, MAX_ITEMS);
+  const hidden = ordered.length - shown.length;
+
+  const lines: string[] = [];
+  lines.push(`${opts.mention} · ${opts.weekday} · ${opts.lane}`);
+  lines.push('');
+  lines.push('Today');
+  shown.forEach((item, i) => {
+    const prefix = item.client ? `${item.client} — ` : '';
+    lines.push(`  ${i + 1}. ${prefix}${item.title}`);
+  });
+  if (hidden > 0) lines.push(`  +${hidden} more · <${HUB_TASKS_URL}|open in the hub>`);
+  lines.push('');
+  lines.push(FOOTER);
+
+  return { text: lines.join('\n'), shown, hidden };
+}
+
+/** Wall-clock day, hour and weekday in US Eastern, daylight saving included. */
+export function easternNow(now = new Date()): {
+  hour: number;
+  weekdayShort: string;
+  weekdayLong: string;
+  date: string;
+} {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      hour12: false,
+      weekday: 'short',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
+  );
+  const long = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'long',
+  }).format(now);
+  return {
+    hour: Number(parts.hour),
+    weekdayShort: String(parts.weekday),
+    weekdayLong: long,
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+  };
+}
+
+export const isWeekday = (weekdayShort: string) =>
+  ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekdayShort);
+
+/**
+ * Collect every person's items and build their messages.
+ *
+ * Only `todo` tasks, and only tasks that came through the gate — a task with no
+ * `type_data.source` never passed a quality check and has no business waking
+ * anyone up. `backlog` is the pool people pull from, not today's list.
+ */
+export async function buildDigests(
+  supabase: any,
+  todayEastern: string,
+  weekdayLong: string,
+): Promise<{ messages: DigestMessage[]; skipped: { member: string; reason: string }[] }> {
+  const skipped: { member: string; reason: string }[] = [];
+
+  const { data: members, error: memberErr } = await supabase
+    .from('team_members')
+    .select('id, name, role, slack_user_id, is_active')
+    .eq('is_active', true);
+  if (memberErr) throw memberErr;
+  const memberById = new Map<string, MemberRow>((members ?? []).map((m: MemberRow) => [m.id, m]));
+
+  const { data: clients, error: clientErr } = await supabase
+    .from('clients')
+    .select('id, name, engagement_type');
+  if (clientErr) throw clientErr;
+  const clientById = new Map<string, { name: string; engagement_type: string | null }>(
+    (clients ?? []).map((c: any) => [c.id as string, { name: c.name, engagement_type: c.engagement_type }]),
+  );
+
+  const { data: tasks, error: taskErr } = await supabase
+    .from('tasks')
+    .select('id, title, client_id, due_date, created_at, assignee_id, task_type, type_data')
+    .eq('status', 'todo')
+    .not('assignee_id', 'is', null);
+  if (taskErr) throw taskErr;
+
+  // Creative briefs are the creative team's real queue; their tasks table rows
+  // are only part of the picture.
+  const { data: briefs, error: briefErr } = await supabase
+    .from('creative_briefs')
+    .select('id, title, client_id, due_date, created_at, assigned_to_id, status, delivered_at, deleted_at')
+    .is('delivered_at', null)
+    .is('deleted_at', null)
+    .not('assigned_to_id', 'is', null);
+  if (briefErr) throw briefErr;
+
+  const BRIEF_CLOSED = new Set(['delivered', 'trafficked', 'archived', 'cancelled', 'draft']);
+
+  // member id -> lane -> items
+  const byMember = new Map<string, Map<Lane, DigestItem[]>>();
+  const push = (memberId: string, lane: Lane, item: DigestItem) => {
+    if (!byMember.has(memberId)) byMember.set(memberId, new Map());
+    const lanes = byMember.get(memberId)!;
+    if (!lanes.has(lane)) lanes.set(lane, []);
+    lanes.get(lane)!.push(item);
+  };
+
+  for (const t of tasks ?? []) {
+    const member = memberById.get(t.assignee_id as string);
+    if (!member) continue;
+    const source = (t.type_data as Record<string, unknown> | null)?.source;
+    if (!source) continue; // never went through the gate
+    const client = t.client_id ? clientById.get(t.client_id as string) : undefined;
+    const lane = laneForTask(t, client?.engagement_type ?? null, member);
+    push(member.id, lane, {
+      kind: 'task',
+      id: t.id as string,
+      title: String(t.title ?? '').trim(),
+      client: client?.name ?? null,
+      due_date: (t.due_date as string | null) ?? null,
+      overdue: !!t.due_date && String(t.due_date) < todayEastern,
+      created_at: String(t.created_at),
+    });
+  }
+
+  for (const b of briefs ?? []) {
+    if (BRIEF_CLOSED.has(String(b.status ?? ''))) continue;
+    const member = memberById.get(b.assigned_to_id as string);
+    if (!member) continue;
+    const client = b.client_id ? clientById.get(b.client_id as string) : undefined;
+    push(member.id, 'creative', {
+      kind: 'brief',
+      id: b.id as string,
+      title: String(b.title ?? '').trim(),
+      client: client?.name ?? null,
+      due_date: (b.due_date as string | null) ?? null,
+      overdue: !!b.due_date && String(b.due_date) < todayEastern,
+      created_at: String(b.created_at),
+    });
+  }
+
+  const messages: DigestMessage[] = [];
+  for (const [memberId, lanes] of byMember) {
+    const member = memberById.get(memberId)!;
+    for (const lane of LANES) {
+      const items = lanes.get(lane) ?? [];
+      if (items.length === 0) continue; // silence when someone has nothing
+      if (!member.slack_user_id) {
+        skipped.push({ member: member.name, reason: 'no Slack user id on their team record' });
+        continue;
+      }
+      const built = buildMessageText({
+        mention: `<@${member.slack_user_id}>`,
+        weekday: weekdayLong,
+        lane,
+        items,
+      });
+      messages.push({
+        lane,
+        channel_id: LANE_CHANNELS[lane].id,
+        channel_name: lane === 'media' ? 'media-team-tasks' : 'creative-team-tasks',
+        member,
+        mention: `<@${member.slack_user_id}>`,
+        text: built.text,
+        items: sortItems(items),
+        shown: built.shown,
+        hidden_count: built.hidden,
+      });
+    }
+  }
+
+  messages.sort((a, b) => a.lane.localeCompare(b.lane) || a.member.name.localeCompare(b.member.name));
+  return { messages, skipped };
+}

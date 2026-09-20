@@ -6760,6 +6760,86 @@ export type Database = {
           },
         ]
       }
+      task_digest_posts: {
+        Row: {
+          ack_kind: string | null
+          ack_reaction: string | null
+          ack_slack_user_id: string | null
+          acknowledged_at: string | null
+          brief_ids: string[]
+          channel_id: string
+          channel_name: string | null
+          correction_text: string | null
+          created_at: string
+          digest_date: string
+          hidden_count: number
+          id: string
+          lane: string
+          message_text: string
+          nudged_at: string | null
+          rolled_up_at: string | null
+          shown_count: number
+          slack_ts: string | null
+          task_ids: string[]
+          team_member_id: string
+          updated_at: string
+        }
+        Insert: {
+          ack_kind?: string | null
+          ack_reaction?: string | null
+          ack_slack_user_id?: string | null
+          acknowledged_at?: string | null
+          brief_ids?: string[]
+          channel_id: string
+          channel_name?: string | null
+          correction_text?: string | null
+          created_at?: string
+          digest_date: string
+          hidden_count?: number
+          id?: string
+          lane: string
+          message_text: string
+          nudged_at?: string | null
+          rolled_up_at?: string | null
+          shown_count?: number
+          slack_ts?: string | null
+          task_ids?: string[]
+          team_member_id: string
+          updated_at?: string
+        }
+        Update: {
+          ack_kind?: string | null
+          ack_reaction?: string | null
+          ack_slack_user_id?: string | null
+          acknowledged_at?: string | null
+          brief_ids?: string[]
+          channel_id?: string
+          channel_name?: string | null
+          correction_text?: string | null
+          created_at?: string
+          digest_date?: string
+          hidden_count?: number
+          id?: string
+          lane?: string
+          message_text?: string
+          nudged_at?: string | null
+          rolled_up_at?: string | null
+          shown_count?: number
+          slack_ts?: string | null
+          task_ids?: string[]
+          team_member_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_digest_posts_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_feedback: {
         Row: {
           action: string

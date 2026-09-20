@@ -4,6 +4,8 @@ import { logAiUsage } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
 import { postToSlack, canPostToChannel, SlackRefusedError } from "../_shared/slack-post.ts";
 import { handleKillReaction, captureKillComment, isKillReaction } from "../_shared/task-kill.ts";
+import { handleDigestReaction, captureDigestReply, ackKindForReaction } from "../_shared/task-digest-ack.ts";
+
 
 
 declare const EdgeRuntime: {
@@ -1329,13 +1331,26 @@ Deno.serve(async (req) => {
     const event = body.event;
     console.log('Received event:', event.type, 'channel_type:', event.channel_type, 'user:', event.user, 'bot_id:', event.bot_id);
 
-    // Fast kill: ❌ on a posted task rejects it and records the feedback. Checked
-    // before the bot/subtype filter only for reactions, which carry neither.
-    if (event.type === 'reaction_added' && isKillReaction(event.reaction)) {
-      EdgeRuntime.waitUntil(handleKillReaction(supabase, event).then((n) => {
-        if (n > 0) console.log('task-kill: rejected', n, 'task(s) from a Slack reaction');
-      }));
-      return new Response(JSON.stringify({ ok: true, status: 'kill_received' }), {
+    // Reactions are checked before the bot/subtype filter, which they never carry.
+    //
+    // Two gates share the ❌: the morning digest's acknowledgement gate and the
+    // older per-task fast kill. The digest is tried first and the kill only runs
+    // when the reacted message was not a digest, so a reaction is never counted
+    // twice. If the `reaction_added` subscription is off, neither runs and a
+    // digest simply stays unacknowledged — the message itself still stands.
+    if (event.type === 'reaction_added' && (ackKindForReaction(event.reaction) || isKillReaction(event.reaction))) {
+      EdgeRuntime.waitUntil((async () => {
+        const kind = await handleDigestReaction(supabase, event);
+        if (kind) {
+          console.log('task-digest: acknowledged as', kind);
+          return;
+        }
+        if (isKillReaction(event.reaction)) {
+          const n = await handleKillReaction(supabase, event);
+          if (n > 0) console.log('task-kill: rejected', n, 'task(s) from a Slack reaction');
+        }
+      })());
+      return new Response(JSON.stringify({ ok: true, status: 'reaction_received' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -1348,10 +1363,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    // A thread reply under a killed task is the reason for the ❌.
+    // A thread reply under a digest marked ✏️ or ❌ is the correction; under a
+    // killed task it is the reason. Stored, never fed back into a prompt.
     if (event.type === 'message' && event.thread_ts) {
-      EdgeRuntime.waitUntil(captureKillComment(supabase, event));
+      EdgeRuntime.waitUntil((async () => {
+        const captured = await captureDigestReply(supabase, event);
+        if (!captured) await captureKillComment(supabase, event);
+      })());
     }
+
 
     if (event.type === 'app_mention' || isDirectConversationEvent(event)) {
       EdgeRuntime.waitUntil(processSlackMessage(event));

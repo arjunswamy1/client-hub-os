@@ -193,8 +193,8 @@ export async function computeClientBreakdown(
     return campaigns.get(k)!;
   };
 
-  const startTs = `${window.from}T00:00:00Z`;
-  const endTs = `${window.to}T23:59:59.999Z`;
+  const tz = reportingTimeZone(client);
+  const { startTs, endTs } = reportingWindowBounds(window, tz);
 
   // ── whose calls are these? ────────────────────────────────────────────────
   // A tracking campaign receives calls from every publisher pointed at it, and
@@ -232,7 +232,7 @@ export async function computeClientBreakdown(
       g.publishers.set(pubKey, (g.publishers.get(pubKey) || 0) + 1);
       if (!pubFilter.keep(publisher)) { g.otherPublisherCalls++; continue; }
       g.calls++;
-      g.callDays.add(String(r[spec.dateCol] ?? '').slice(0, 10));
+      g.callDays.add(spec.isTimestamp ? reportingDay(r[spec.dateCol], tz) : String(r[spec.dateCol] ?? '').slice(0, 10));
 
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
       if (!thin) { g.connectedKnown++; if (r.connected === true) g.connected++; }

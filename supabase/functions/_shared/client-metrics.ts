@@ -210,8 +210,10 @@ export async function computeClientMetrics(
     caveats.push(`${client.name} has no engagement type recorded, so how CPM earns on this account is UNKNOWN. Do not state revenue, profit or margin for it.`);
   }
 
-  const startTs = `${window.from}T00:00:00Z`;
-  const endTs = `${window.to}T23:59:59.999Z`;
+  // A calendar day is cut on the account's own reporting timezone, so a call
+  // and the spend row for the same day belong to the same day.
+  const tz = reportingTimeZone(client);
+  const { startTs, endTs } = reportingWindowBounds(window, tz);
 
   // ── spend ────────────────────────────────────────────────────────────────
   let spend = 0;
@@ -259,7 +261,7 @@ export async function computeClientMetrics(
     value: spendRows > 0 ? spend : null,
     display: spendRows > 0 ? money(spend) : spendTables.length === 0 ? 'not available — no spend feed recorded for this account' : 'no spend rows in this window',
     note: spendRows > 0
-      ? `Measured from ${spendTables.join(' + ')} (${spendRows} day-rows${platformParts.length ? `; ${platformParts.join(', ')}` : ''}). Latest spend day: ${latestSpendDate}.`
+      ? `Measured from ${spendTables.join(' + ')} over ${window.from} to ${window.to} (${spendRows} row(s) covering ${spendDays.size} day(s) — a row is one campaign-day, not one day${platformParts.length ? `; ${platformParts.join(', ')}` : ''}). Latest spend day: ${latestSpendDate}.`
       : spendTables.length === 0
         ? spendSrc.gap || 'No spend feed is recorded for this account, so spend is UNKNOWN, not $0.'
         : `No spend rows found in ${spendTables.join(' + ')} for this window. That is a missing feed, not $0 of spend, unless the account is expected to be quiet.`,
@@ -330,7 +332,7 @@ export async function computeClientMetrics(
         revenue: spec.hasRevenue ? r.revenue : null,
         revenue_captured: spec.hasCaptureFlags ? (r.revenue_captured ?? null) : null,
         payload_shape: spec.hasCaptureFlags ? (r.payload_shape ?? null) : null,
-        day: String(r[spec.dateCol] ?? '').slice(0, 10),
+        day: spec.isTimestamp ? reportingDay(r[spec.dateCol], tz) : String(r[spec.dateCol] ?? '').slice(0, 10),
       });
     }
   }

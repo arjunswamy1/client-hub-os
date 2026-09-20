@@ -5463,6 +5463,7 @@ export type Database = {
           client_id: string
           connected: boolean
           connection_duration_seconds: number
+          conversion_captured: boolean | null
           converted: boolean
           created_at: string
           creative_label: string | null
@@ -5471,10 +5472,12 @@ export type Database = {
           duration_seconds: number
           event_type: string | null
           id: string
+          payload_shape: string | null
           payout: number
           raw_payload: Json | null
           recording_url: string | null
           revenue: number
+          revenue_captured: boolean | null
           target_name: string | null
           updated_at: string
         }
@@ -5490,6 +5493,7 @@ export type Database = {
           client_id: string
           connected?: boolean
           connection_duration_seconds?: number
+          conversion_captured?: boolean | null
           converted?: boolean
           created_at?: string
           creative_label?: string | null
@@ -5498,10 +5502,12 @@ export type Database = {
           duration_seconds?: number
           event_type?: string | null
           id?: string
+          payload_shape?: string | null
           payout?: number
           raw_payload?: Json | null
           recording_url?: string | null
           revenue?: number
+          revenue_captured?: boolean | null
           target_name?: string | null
           updated_at?: string
         }
@@ -5517,6 +5523,7 @@ export type Database = {
           client_id?: string
           connected?: boolean
           connection_duration_seconds?: number
+          conversion_captured?: boolean | null
           converted?: boolean
           created_at?: string
           creative_label?: string | null
@@ -5525,10 +5532,12 @@ export type Database = {
           duration_seconds?: number
           event_type?: string | null
           id?: string
+          payload_shape?: string | null
           payout?: number
           raw_payload?: Json | null
           recording_url?: string | null
           revenue?: number
+          revenue_captured?: boolean | null
           target_name?: string | null
           updated_at?: string
         }

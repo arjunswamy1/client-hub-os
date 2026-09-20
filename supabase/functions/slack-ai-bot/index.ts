@@ -167,6 +167,23 @@ function shiftIsoDate(dateValue: string, days: number): string {
   shifted.setUTCDate(shifted.getUTCDate() + days);
   return formatShiftedDate(shifted);
 }
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+/**
+ * "on Friday" / "last Friday" means the most recent Friday that has already
+ * happened — never today's date and never a guess. Asked on Sunday 2026-09-20,
+ * "Friday" is 2026-09-18. Without this the question fell through to a 7-day
+ * window and the answer invented a date.
+ */
+function parseWeekday(lower: string, today: string): { date: string; label: string } | null {
+  const hit = WEEKDAYS.findIndex((d) => new RegExp(`\\b${d}\\b`).test(lower));
+  if (hit < 0) return null;
+  const todayDow = new Date(`${today}T12:00:00.000Z`).getUTCDay();
+  let back = todayDow - hit;
+  if (back <= 0) back += 7; // the same weekday means a week ago, not today
+  const date = shiftIsoDate(today, -back);
+  return { date, label: `${WEEKDAYS[hit][0].toUpperCase()}${WEEKDAYS[hit].slice(1)} ${date}` };
+}
+
 function parseDateIntent(
   text: string,
   userContext: Pick<UserContext, 'tzOffsetSeconds' | 'timeZone'>,
@@ -180,6 +197,8 @@ function parseDateIntent(
     const y = shiftIsoDate(today, -1);
     return { from: y, to: y, userToday: today, label: 'yesterday' };
   }
+  const weekday = parseWeekday(lower, today);
+  if (weekday) return { from: weekday.date, to: weekday.date, userToday: today, label: weekday.label };
   if (lower.includes('since the 15') || lower.includes('since sep 15') || lower.includes('since 15')) {
     return { from: `${today.slice(0, 4)}-09-15`, to: today, userToday: today, label: 'since 15 September' };
   }

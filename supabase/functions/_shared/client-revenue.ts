@@ -31,6 +31,15 @@ export type RevenueField = 'revenue' | 'payout' | null;
 
 export interface RevenueClient {
   engagement_type?: string | null;
+  /**
+   * Explicit money column for this account, recorded on the client record. It
+   * WINS over the engagement-type default, because which column the feed fills
+   * is an account fact, not something the engagement type can promise. Cannaball
+   * is `performance_media` yet its call feed carries only `payout` — that payout
+   * is what CPM is paid, so reading `revenue` there produced "unknown" on an
+   * account whose earnings were sitting in plain sight.
+   */
+  revenue_field?: string | null;
 }
 
 export interface RevenueCallRow {
@@ -78,6 +87,16 @@ export function revenueFieldForEngagement(engagement?: string | null): RevenueFi
 }
 
 /**
+ * The money field for a client: the recorded override first, the engagement-type
+ * default second. Every caller goes through this, never the engagement type alone.
+ */
+export function revenueFieldForClient(client: RevenueClient | null | undefined): RevenueField {
+  const explicit = client?.revenue_field;
+  if (explicit === 'revenue' || explicit === 'payout') return explicit;
+  return revenueFieldForEngagement(client?.engagement_type ?? null);
+}
+
+/**
  * THE per-call money resolver. Picks the field from `clients.engagement_type`
  * rather than letting each report choose, and reports an uncaptured revenue as
  * unknown instead of zero.
@@ -87,7 +106,7 @@ export function resolveClientRevenue(
   call: RevenueCallRow,
 ): ResolvedClientRevenue {
   const engagement = client?.engagement_type ?? null;
-  const field = revenueFieldForEngagement(engagement);
+  const field = revenueFieldForClient(client);
 
   if (field === null) {
     return {
@@ -128,7 +147,8 @@ export function resolveClientRevenue(
     };
   }
 
-  // Pay per call: CPM is the publisher and payout is what CPM is paid.
+  // The payout column is the money — either because CPM is the publisher
+  // (pay_per_call) or because the account's feed records what CPM is paid there.
   const payout = num(call.payout);
   if (payout === null) {
     return {
@@ -157,7 +177,7 @@ export function sumClientRevenue(
   let total = 0;
   let capturedCalls = 0;
   let uncapturedCalls = 0;
-  const field = revenueFieldForEngagement(client?.engagement_type ?? null);
+  const field = revenueFieldForClient(client);
   for (const call of calls) {
     const r = resolveClientRevenue(client, call);
     if (r.captured && r.amount !== null) {

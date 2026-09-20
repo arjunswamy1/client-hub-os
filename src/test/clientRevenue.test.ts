@@ -58,3 +58,24 @@ describe('resolveClientRevenue', () => {
     expect(sum.complete).toBe(false);
   });
 });
+
+describe('recorded money column overrides the engagement default', () => {
+  const CANNABALL = { engagement_type: 'performance_media', revenue_field: 'payout' };
+
+  it('reads payout when the account records payout, even on performance media', () => {
+    const r = resolveClientRevenue(CANNABALL, { payout: 17.5, revenue: null });
+    expect(r.field).toBe('payout');
+    expect(r.amount).toBe(17.5);
+    expect(r.captured).toBe(true);
+  });
+
+  it('still reports unknown when the recorded column is empty', () => {
+    expect(resolveClientRevenue(CANNABALL, { payout: null }).amount).toBeNull();
+  });
+
+  it('leaves accounts without an override on the engagement default', () => {
+    const r = resolveClientRevenue({ engagement_type: 'performance_media' }, { payout: 5, revenue: 16, revenue_captured: true });
+    expect(r.field).toBe('revenue');
+    expect(r.amount).toBe(16);
+  });
+});

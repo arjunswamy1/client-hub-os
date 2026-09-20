@@ -16,7 +16,7 @@
 //
 // @see docs/media-brain/01_Decision_Engine.md §7
 
-import { revenueFieldForEngagement, resolveClientRevenue } from './client-revenue.ts';
+import { revenueFieldForClient, resolveClientRevenue } from './client-revenue.ts';
 import type { ResolvedClientRow } from './client-resolve.ts';
 
 export interface Metric {
@@ -168,7 +168,7 @@ export async function computeClientMetrics(
   const spendTables = spendSourcesFor(client);
   const caveats: string[] = [];
   const metrics: Metric[] = [];
-  const revenueField = revenueFieldForEngagement(client.engagement_type);
+  const revenueField = revenueFieldForClient(client);
 
   const startTs = `${window.from}T00:00:00Z`;
   const endTs = `${window.to}T23:59:59.999Z`;
@@ -384,7 +384,7 @@ export async function computeClientMetrics(
   let capturedRevenue = 0;
   let capturedCalls = 0;
   for (const c of calls) {
-    const r = resolveClientRevenue({ engagement_type: client.engagement_type }, {
+    const r = resolveClientRevenue({ engagement_type: client.engagement_type, revenue_field: client.revenue_field }, {
       payout: c.payout, revenue: c.revenue, revenue_captured: c.revenue_captured,
     });
     const shapeThin = c.payload_shape === 'webhook_minimal';
@@ -402,7 +402,7 @@ export async function computeClientMetrics(
   let revenueNote: string;
 
   if (revenueField === null) {
-    revenueNote = `This account's engagement type (${client.engagement_type || 'not recorded'}) is not paid per call, so neither the revenue nor the payout column is CPM's income. No revenue figure exists to quote here.`;
+    revenueNote = `This account's engagement type (${client.engagement_type || 'not recorded'}) is not paid per call and no money column is recorded on the account, so neither the revenue nor the payout column is CPM's income. No revenue figure exists to quote here.`;
     revenueDisplay = 'not applicable to this account';
   } else if (callTables.length === 0) {
     revenueNote = 'No call source is mapped to this account, so revenue cannot be computed.';
@@ -417,7 +417,7 @@ export async function computeClientMetrics(
   } else {
     revenueValue = capturedRevenue;
     revenueDisplay = money(capturedRevenue);
-    revenueNote = `All ${totalCalls} calls reported a ${revenueField} figure. ${client.engagement_type === 'performance_media' ? 'Performance media: revenue is CPM\'s income and payout is ignored on this account.' : 'Pay per call: CPM is the publisher, so payout is what CPM is paid.'}`;
+    revenueNote = `All ${totalCalls} calls reported a ${revenueField} figure, read from the ${revenueField} column — the money column recorded for this account. ${client.engagement_type === 'performance_media' && revenueField === 'revenue' ? 'Performance media: revenue is CPM\'s income and payout is ignored on this account.' : revenueField === 'payout' ? 'The payout column is what CPM is paid here.' : ''}`;
   }
 
   metrics.push({

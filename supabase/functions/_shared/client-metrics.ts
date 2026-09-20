@@ -178,6 +178,8 @@ export async function computeClientMetrics(
   const spendByPlatform: Record<string, number> = {};
   let spendRows = 0;
   let latestSpendDate: string | null = null;
+  /** Which calendar days actually carry a spend row — a missing day is UNKNOWN spend, not $0. */
+  const spendDays = new Set<string>();
 
   for (const table of spendTables) {
     if (table === 'roku_daily_metrics') {
@@ -188,6 +190,7 @@ export async function computeClientMetrics(
         spend += num(r.spend);
         spendByPlatform.roku = (spendByPlatform.roku || 0) + num(r.spend);
         spendRows++;
+        spendDays.add(String(r.date).slice(0, 10));
         if (!latestSpendDate || r.date > latestSpendDate) latestSpendDate = r.date;
       }
     } else {
@@ -199,10 +202,12 @@ export async function computeClientMetrics(
         const p = r.platform || 'unknown';
         spendByPlatform[p] = (spendByPlatform[p] || 0) + num(r.spend);
         spendRows++;
+        spendDays.add(String(r.date).slice(0, 10));
         if (!latestSpendDate || r.date > latestSpendDate) latestSpendDate = r.date;
       }
     }
   }
+
 
   const platformParts = Object.entries(spendByPlatform).map(([p, v]) => `${p} ${money(v)}`);
   metrics.push({

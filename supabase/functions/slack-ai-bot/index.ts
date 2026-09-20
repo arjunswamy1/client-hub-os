@@ -388,34 +388,96 @@ async function callAI(messages: Array<{ role: string; content: string }>, client
  */
 const METRIC_WORDS = /(spend|spent|call|calls|revenue|profit|margin|cost per|convert|payout|lead|leads|duration|connected)/i;
 
-async function maybeRunSqlFallback(question: string, clientName: string | null): Promise<{ sql: string; rows: unknown[] } | null> {
-  if (METRIC_WORDS.test(question)) return null;
+/** Names and aliases of the team, so "AJ" is not searched for literally. */
+async function loadRoster(): Promise<string> {
+  const { data } = await supabase.from('team_members')
+    .select('name, email, role, aliases, is_active').eq('is_active', true).order('name');
+  return (data || []).map((m: any) =>
+    `${m.name} (${m.role}${m.aliases?.length ? `; also called ${m.aliases.join(', ')}` : ''}) id-by-email ${m.email}`
+  ).join('\n');
+}
 
+/**
+ * Real column lists for the tables the query lane is asked about most. Without
+ * these the planner invents names (it guessed tasks.assigned_to, which does not
+ * exist) and the query is rejected after the fact.
+ */
+const SCHEMA_HINT = `
+tasks(id, client_id, title, description, status, priority, assignee_id -> team_members.id, created_by_id, due_date, completed_at, parent_task_id, position, tags, task_type, type_data jsonb, created_at, updated_at)
+  status values: todo, in_progress, review, done, backlog, archived
+team_members(id, user_id, name, email, role, avatar_url, is_active, slack_user_id, aliases text[], created_at, updated_at)
+clients(id, name, slug, status, engagement_type, expected_sources, aliases text[], daily_update_enabled, communication_channel, created_at, updated_at)
+task_candidates(id, client_id, source, source_ref jsonb, raw_text, proposed_title, proposed_assignee_id, owner_raw, owner_side, status, confidence, gate_results jsonb, rejected_reason, duplicate_of_task_id, promoted_task_id, reviewed_by_id, reviewed_at, dedupe_key, created_at)
+creative_briefs(id, client_id, title, creative_type, status, priority, due_date, assigned_to_id -> team_members.id, created_by_id, submitted_at, approved_at, delivered_at, estimated_hours, scheduled_date, deleted_at, created_at)
+creative_deliverables(id, brief_id, file_name, version, status, approved_by_id, approved_at, uploaded_by_id, uploaded_at)
+shoot_briefs(id, title, client_ids uuid[], status, shoot_date, assigned_producer_id, estimated_total, actual_total, created_at)
+client_daily_updates(id, client_id, for_date, kind, draft_text, final_text, status, metrics jsonb, sent_at, created_at)
+data_integrity_exceptions(id, client_id, check_key, reason, created_by_id, expires_at, created_at)
+`;
+
+async function planSql(
+  question: string,
+  clientName: string | null,
+  roster: string,
+  previous?: { sql: string; error: string },
+): Promise<string | null> {
   const plan = await callAnthropic([
     {
       role: 'system',
       content: `You write a single read-only Postgres SELECT against an advertising agency's database, or decline.
 Tables you may use include: clients, team_members, tasks, task_candidates, creative_briefs, creative_deliverables, shoot_briefs, context_items, client_daily_updates, media_brain_economics, media_brain_reviews, data_integrity_exceptions, ad_campaigns, ad_sets, ad_creatives, ad_daily_metrics, roku_daily_metrics, ringba_calls, ringfuel_calls, cannaball_calls, moja_calls, jacuzzi_leads, bot_qa_log.
 Rules: SELECT or WITH…SELECT only; one statement; no semicolons; no comments; never reference auth/vault/storage schemas, slack_tokens, platform_connections, or any column named like token/secret/password; always LIMIT 50 or fewer.
+Use ONLY these columns — do not invent column names:
+${SCHEMA_HINT}
+A person named in the question must be matched against this roster — never search for a nickname
+literally, look up which roster name it belongs to and filter on that name or email:
+${roster}
 Reply with json only: {"sql": "..."} or {"sql": null} when a query is not the right tool.`,
     },
-    { role: 'user', content: `Client in scope: ${clientName || 'none resolved'}\nQuestion: ${question}` },
+    {
+      role: 'user',
+      content: `Client in scope: ${clientName || 'none resolved'}\nQuestion: ${question}${
+        previous
+          ? `\n\nYour previous attempt was rejected by the database. Correct it using the column lists above.\nprevious sql: ${previous.sql}\nerror: ${previous.error}`
+          : ''
+      }`,
+    },
   ], { max_tokens: 400, temperature: 0 });
 
-  if (!plan.ok || !plan.content) return null;
-  let sql: string | null = null;
+  if (!plan.ok || !plan.content) {
+    console.warn('SQL planner unavailable:', plan.error || 'no content');
+    return null;
+  }
   try {
     const cleaned = plan.content.replace(/```json\s*/g, '').replace(/```/g, '').trim();
-    sql = JSON.parse(cleaned)?.sql ?? null;
+    return JSON.parse(cleaned)?.sql ?? null;
   } catch {
     return null;
   }
-  if (!sql) return null;
+}
 
-  const out = await runReadOnlySql(supabase, sql, 50);
-  if (!out.ok) {
-    console.warn('SQL fallback rejected:', out.error);
+async function maybeRunSqlFallback(question: string, clientName: string | null, roster: string): Promise<{ sql: string; rows: unknown[] } | null> {
+  if (METRIC_WORDS.test(question)) return null;
+
+  let sql = await planSql(question, clientName, roster);
+  if (!sql) {
+    console.log('SQL planner declined for question:', question.slice(0, 120));
     return null;
+  }
+
+  let out = await runReadOnlySql(supabase, sql, 50);
+  if (!out.ok) {
+    // One correction attempt with the database's own complaint handed back. A
+    // rejected query is a planning mistake, not an answer of "no data".
+    console.warn('SQL fallback rejected, retrying once:', out.error);
+    const retry = await planSql(question, clientName, roster, { sql, error: out.error ?? 'unknown error' });
+    if (!retry) return null;
+    sql = retry;
+    out = await runReadOnlySql(supabase, sql, 50);
+    if (!out.ok) {
+      console.warn('SQL fallback rejected after retry:', out.error);
+      return null;
+    }
   }
   return { sql: out.sql, rows: out.rows };
 }
@@ -433,6 +495,7 @@ function buildSystemPrompt(args: {
   metricsBlock: string;
   supportingBlock: string;
   sqlBlock: string;
+  teamRoster: string;
 }): string {
   const roster = args.clients.map((c) => `${c.name} (${c.engagement_type || 'engagement type not recorded'})`).join('; ');
 
@@ -457,6 +520,7 @@ WHAT MONEY MEANS, PER ACCOUNT TYPE
 
 CLIENT SCOPE
 Active clients: ${roster}
+CPM team (use these names when someone is referred to by a nickname): ${args.teamRoster.replace(/\n/g, ' | ')}
 ${args.client
     ? `This question resolved to: ${args.client.name}.`
     : args.candidates.length
@@ -555,9 +619,10 @@ async function composeAnswer(args: {
     supportingBlock = await gatherSupportingContext(resolution.client, { from: dateRange.from, to: dateRange.to });
   }
 
-  const sqlOut = await maybeRunSqlFallback(args.question, resolution.client?.name ?? null);
+  const roster = await loadRoster();
+  const sqlOut = await maybeRunSqlFallback(args.question, resolution.client?.name ?? null, roster);
   const sqlBlock = sqlOut
-    ? `--- READ-ONLY SQL (computed directly from the database, not a verified metric) ---\nquery: ${sqlOut.sql}\nrows: ${JSON.stringify(sqlOut.rows).slice(0, 4000)}\n--- END READ-ONLY SQL ---`
+    ? `--- READ-ONLY SQL (computed directly from the database, not a verified metric) ---\nquery: ${sqlOut.sql}\nrows: ${JSON.stringify(sqlOut.rows).slice(0, 4000)}\nNOTE: an empty result, or a count of 0 from a query that filtered on a person or client name, may mean the FILTER MATCHED NOBODY rather than that the real answer is zero. Say which it is, or say you could not tell.\n--- END READ-ONLY SQL ---`
     : '';
 
   const systemPrompt = buildSystemPrompt({
@@ -571,6 +636,7 @@ async function composeAnswer(args: {
     metricsBlock,
     supportingBlock,
     sqlBlock,
+    teamRoster: roster,
   });
 
   const conversation = args.conversation?.length ? args.conversation : [{ role: 'user', content: args.question }];

@@ -191,13 +191,36 @@ is_task_reason is ONE short sentence a human will read to understand why it is i
 source_appears_completed is true when the line itself says the work already happened; copy the shortest
 supporting phrase into completion_evidence. This makes completion visible in Gate C as well as Gate A.`;
 
+/**
+ * Sources whose items are produced by a deterministic check, not extracted from human
+ * chatter. Gate A's rubric was written to judge meeting lines and Slack messages; applied
+ * to a monitor finding it reads "BuyologyIQ: spend zero since Sep 16" as an observation
+ * and rejects it, which is exactly backwards — the finding is a verified condition with a
+ * named done-state (the condition clears). These bypass Gate A; B and C still run.
+ */
+const MACHINE_SOURCES = new Set(["data_integrity"]);
+
 export async function runGateA(
   candidates: CandidateRow[],
   apiKey: string,
 ): Promise<Map<string, GateAResult>> {
   const out = new Map<string, GateAResult>();
-  for (let i = 0; i < candidates.length; i += GATE_BATCH_SIZE) {
-    const batch = candidates.slice(i, i + GATE_BATCH_SIZE);
+  for (const c of candidates) {
+    if (!MACHINE_SOURCES.has(c.source)) continue;
+    out.set(c.id, {
+      is_task: true,
+      confidence: 0.9,
+      is_task_reason:
+        "Filed by a deterministic integrity check that carries the query proving the condition; done when the condition clears.",
+      decided_by: "machine",
+      source_appears_completed: false,
+      completion_evidence: null,
+    });
+  }
+  const judged = candidates.filter((c) => !MACHINE_SOURCES.has(c.source));
+  for (let i = 0; i < judged.length; i += GATE_BATCH_SIZE) {
+    const batch = judged.slice(i, i + GATE_BATCH_SIZE);
+
     const prompt = `Judge each line. Respond with json {"results":[{"key":"<key>","is_task":true,"confidence":0.0,"is_task_reason":"...","source_appears_completed":false,"completion_evidence":null}]} covering every key exactly once.
 
 LINES:

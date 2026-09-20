@@ -1,0 +1,3 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS reporting_timezone text;
+COMMENT ON COLUMN public.clients.reporting_timezone IS 'The timezone the platform cuts this account''s reporting day on (e.g. America/Puerto_Rico for RingFuel). NULL = not recorded, so readers cut the day on UTC exactly as the feed timestamps are stored. Never guess a local day.';
+UPDATE public.clients SET reporting_timezone = 'America/Puerto_Rico' WHERE slug IN ('spektrafin','jacuzzi');

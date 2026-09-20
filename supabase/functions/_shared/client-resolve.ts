@@ -21,6 +21,8 @@ export interface ResolvedClientRow {
   spend_source_tables?: string[] | null;
   /** Spend feeds carrying a campaign dimension. Empty = spend cannot be split per campaign. */
   campaign_spend_source_tables?: string[] | null;
+  /** Timezone the platform cuts this account's reporting day on. Null = UTC, as stored. */
+  reporting_timezone?: string | null;
 }
 
 export interface ClientResolution {
@@ -34,7 +36,7 @@ export interface ClientResolution {
 export async function loadActiveClients(supabase: any): Promise<ResolvedClientRow[]> {
   const { data } = await supabase
     .from('clients')
-    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables')
+    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone')
     .eq('status', 'active')
     .order('name');
   return (data || []) as ResolvedClientRow[];

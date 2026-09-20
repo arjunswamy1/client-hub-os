@@ -150,7 +150,7 @@ export default function SpektrafinDashboard() {
       // Days RingFuel never reported revenue for show calls and spend but no
       // revenue bar — a gap in what we were told, not a day that earned nothing.
       if (captured(c)) {
-        r.revenue += Number(c.revenue || 0);
+        r.revenue += money(c).amount ?? 0;
         if (c.converted === true) r.converted += 1;
       } else {
         r.uncaptured += 1;
@@ -445,7 +445,7 @@ export default function SpektrafinDashboard() {
                         {c.conversion_captured === false ? <span className="text-amber-600">not reported</span> : c.converted === true ? "✓" : "—"}
                       </td>
                       <td className="px-3 py-1.5 text-right">
-                        {captured(c) ? fmtMoney2(Number(c.revenue || 0)) : <span className="text-amber-600">unknown</span>}
+                        {captured(c) ? fmtMoney2(money(c).amount ?? 0) : <span className="text-amber-600">unknown</span>}
                       </td>
                     </tr>
                   ))}

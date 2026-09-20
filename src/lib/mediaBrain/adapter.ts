@@ -150,6 +150,30 @@ export interface MapOptions {
   revenueSource?: RevenueSource | string | null;
   /** Smallest payout that counts as revenue rather than telco cost. */
   minPayoutThreshold?: number | null;
+  /**
+   * `clients.engagement_type`. Decides WHICH COLUMN is CPM's money:
+   * `performance_media` → the call table's `revenue`; `pay_per_call` → `payout`.
+   * Resolved once in `clientRevenue.resolveClientRevenue`, never per mapper.
+   * Absent keeps the legacy coalesce so an unclassified account still maps.
+   */
+  engagementType?: string | null;
+}
+
+/**
+ * The money on this call, chosen by engagement type. Performance-media accounts
+ * read `revenue` and never substitute `payout`; pay-per-call accounts read
+ * `payout`. Unclassified accounts fall back to the legacy prefer-non-zero
+ * coalesce so nothing silently reads as a no-bid.
+ */
+function clientMoney(row: RawCallRow, opts: MapOptions, ...legacy: unknown[]): number {
+  if (!opts.engagementType) return amountPreferNonZero(...legacy);
+  const resolved = resolveClientRevenue({ engagement_type: opts.engagementType }, {
+    payout: row.payout,
+    revenue: row.revenue,
+    revenue_captured: row.revenue_captured as boolean | null | undefined,
+  });
+  if (resolved.field === null) return amountPreferNonZero(...legacy);
+  return resolved.amount ?? 0;
 }
 
 export type CallMapper = (row: RawCallRow, opts: MapOptions) => MappedCall;

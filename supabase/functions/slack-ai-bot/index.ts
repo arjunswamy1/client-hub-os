@@ -414,7 +414,10 @@ Reply with json only: {"sql": "..."} or {"sql": null} when a query is not the ri
     { role: 'user', content: `Client in scope: ${clientName || 'none resolved'}\nQuestion: ${question}` },
   ], { max_tokens: 400, temperature: 0 });
 
-  if (!plan.ok || !plan.content) return null;
+  if (!plan.ok || !plan.content) {
+    console.warn('SQL planner unavailable:', plan.error || 'no content');
+    return null;
+  }
   let sql: string | null = null;
   try {
     const cleaned = plan.content.replace(/```json\s*/g, '').replace(/```/g, '').trim();
@@ -422,7 +425,10 @@ Reply with json only: {"sql": "..."} or {"sql": null} when a query is not the ri
   } catch {
     return null;
   }
-  if (!sql) return null;
+  if (!sql) {
+    console.log('SQL planner declined for question:', question.slice(0, 120));
+    return null;
+  }
 
   const out = await runReadOnlySql(supabase, sql, 50);
   if (!out.ok) {

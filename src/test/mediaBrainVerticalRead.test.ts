@@ -88,6 +88,9 @@ function call(over: Partial<CanonicalCall> & { call_id: string }): CanonicalCall
     paid: payout > 0,
     payout_looks_like_cost: false,
     payout_amount: payout,
+    // Fixtures state revenue explicitly, so it counts as captured unless a case
+    // deliberately says otherwise.
+    revenue_captured: true,
     buyer_id: null,
     publisher: OURS,
     state: null,

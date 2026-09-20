@@ -3,8 +3,23 @@
 // Auth: shared secret via header `x-ringfuel-secret`, Bearer token, or `?secret=` query param,
 // matching RINGFUEL_WEBHOOK_SECRET.
 // Client routing: `?client_id=<uuid>` query param, else resolved from the DID via ringfuel_numbers.
+//
+// TWO PAYLOAD SHAPES, both accepted:
+//   `webhook_minimal` — the current live template: { state, payout, call_id, duration }.
+//   `csv_full`        — the full RingFuel field set (Revenue, Converted, Campaign,
+//                       Dialed Number, Publisher, Duration (s), ...), in either the
+//                       spaced/capitalised CSV names or their snake_case variants.
+//
+// ABSENT IS NOT ZERO. A field the payload does not carry is never written as 0 or
+// false, and never overwrites a richer stored value. `revenue_captured`,
+// `conversion_captured` and `payload_shape` record what we actually received so
+// that no aggregation reads a missing revenue as "earned nothing".
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ringfuel-secret',
+};
 
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
   for (const k of keys) {
@@ -20,12 +35,13 @@ function toInt(v: unknown): number {
 }
 
 function toNumber(v: unknown): number {
-  const n = Number(v);
+  const n = Number(String(v).replace(/[$,]/g, ''));
   return isFinite(n) ? n : 0;
 }
 
 function toBool(v: unknown): boolean {
-  return v === true || v === 'true' || v === 1 || v === '1' || v === 'yes';
+  const s = String(v).trim().toLowerCase();
+  return v === true || v === 1 || s === 'true' || s === '1' || s === 'yes' || s === 'y' || s === 'converted';
 }
 
 function toIso(v: unknown): string {
@@ -45,6 +61,29 @@ function digits(v: unknown): string | null {
   const d = String(v).replace(/\D/g, '');
   return d ? d.slice(-10) : null;
 }
+
+// Field-name lists. Each reads BOTH the CSV's spaced/capitalised names and the
+// snake_case / camelCase variants — the payloads contain both conventions.
+const F = {
+  revenue: ['Revenue', 'revenue', 'revenue_amount', 'conversion_revenue'],
+  converted: ['Converted', 'converted', 'isConverted', 'is_converted', 'conversion'],
+  campaign: ['Campaign', 'campaign_name', 'campaign', 'campaignName'],
+  did: ['Dialed Number', 'dialed_number', 'number_called', 'did', 'dialedNumber', 'tracking_number', 'to', 'to_number', 'dnis', 'number'],
+  duration: ['Duration (s)', 'total_call_length', 'duration', 'durationSeconds', 'duration_seconds', 'call_duration', 'total_duration'],
+  connectedDuration: ['connected_call_length', 'connected_duration', 'connection_duration', 'talk_time', 'talk_duration', 'billable_duration'],
+  caller: ['Caller Number', 'caller_number_e164', 'caller_number', 'callerNumber', 'caller_id', 'caller', 'from', 'from_number', 'ani'],
+  status: ['Status', 'call_status', 'disposition', 'status', 'result', 'End Reason', 'end_reason', 'endReason'],
+  buyer: ['Buyer', 'buyer_name', 'buyerName', 'buyer'],
+  target: ['Target', 'target_name', 'targetName', 'target'],
+  recording: ['Recording URL', 'recording_url', 'recordingUrl', 'recording', 'audio_url'],
+  state: ['caller_state', 'callerState', 'state', 'from_state', 'State'],
+  city: ['caller_city', 'callerCity', 'city', 'from_city', 'City'],
+  creative: ['creative', 'creative_label', 'creative_name', 'Creative', 'sub_id', 'subid'],
+  payout: ['payout', 'payoutAmount', 'payout_amount', 'Payout'],
+  connected: ['connected', 'answered', 'is_connected'],
+  // Kept in raw_payload only, no columns: Quality Score, lead_score, is_duplicate,
+  // is_repeat_caller, Telephony Cost, Platform Fee, Publisher Cost, Publisher.
+};
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -99,10 +138,7 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const did = pick<string>(call, [
-    'did', 'dialedNumber', 'dialed_number', 'number_called', 'tracking_number',
-    'to', 'to_number', 'dnis', 'number',
-  ]) ?? null;
+  const did = pick<string>(call, F.did) ?? null;
   const campaign_id = pick<string>(call, ['campaign_id', 'campaignId']) ?? null;
 
   // Resolve client: explicit query param wins, else DID lookup, else campaign lookup.
@@ -138,45 +174,69 @@ Deno.serve(async (req) => {
     pick(call, ['call_id', 'callId', 'id', 'uuid', 'call_uuid', 'inbound_call_id']) ?? crypto.randomUUID()
   );
 
-  const connection_duration_seconds = toInt(
-    pick(call, [
-      'connection_duration', 'connected_duration', 'connected_call_length',
-      'talk_time', 'talk_duration', 'billable_duration',
-    ])
-  );
-  const duration_seconds = toInt(pick(call, [
-    'duration', 'durationSeconds', 'duration_seconds', 'call_duration',
-    'total_call_length', 'total_duration',
-  ]));
+  // What did this payload actually carry?
+  const revenueRaw = pick(call, F.revenue);
+  const convertedRaw = pick(call, F.converted);
+  const revenue_captured = revenueRaw !== undefined;
+  const conversion_captured = convertedRaw !== undefined;
+  const payload_shape: 'csv_full' | 'webhook_minimal' = revenue_captured ? 'csv_full' : 'webhook_minimal';
 
+  const connection_duration_seconds = toInt(pick(call, F.connectedDuration));
+  const duration_seconds = toInt(pick(call, F.duration));
 
-  const row = {
+  // Only keys the payload actually carries are written. PostgREST's upsert updates
+  // exactly the columns supplied, so a thin webhook can never blank a rich row.
+  const row: Record<string, unknown> = {
     client_id,
     call_id,
-    event_type: pick<string>(payload, ['event', 'event_type', 'type']) ?? null,
-    campaign_id,
-    campaign_name: pick<string>(call, ['campaign_name', 'campaign', 'campaignName']) ?? null,
-    did,
-    caller_number: pick<string>(call, [
-      'callerNumber', 'caller_number_e164', 'caller_id', 'caller', 'caller_number',
-      'from', 'from_number', 'ani',
-    ]) ?? null,
-    caller_state: pick<string>(call, ['caller_state', 'callerState', 'state', 'from_state']) ?? null,
-    caller_city: pick<string>(call, ['caller_city', 'callerCity', 'city', 'from_city']) ?? null,
-    creative_label: pick<string>(call, ['creative', 'creative_label', 'creative_name', 'sub_id', 'subid']) ?? null,
     call_start: toIso(pick(call, ['call_start', 'iso_date', 'started_at', 'start_time', 'timestamp', 'created_at'])),
     duration_seconds,
     connection_duration_seconds,
-    connected: toBool(pick(call, ['connected', 'answered', 'is_connected'])) || connection_duration_seconds > 0,
-    converted: toBool(pick(call, ['isConverted', 'converted', 'conversion', 'is_converted'])),
-    payout: toNumber(pick(call, ['payout', 'payoutAmount', 'payout_amount'])),
-    revenue: toNumber(pick(call, ['revenue', 'amount', 'price', 'bid_amount'])),
-    disposition: pick<string>(call, ['disposition', 'status', 'call_status', 'result', 'end_reason', 'endReason']) ?? null,
-    recording_url: pick<string>(call, ['recording_url', 'recordingUrl', 'recording', 'audio_url']) ?? null,
-    buyer_name: pick<string>(call, ['buyerName', 'buyer', 'buyer_name']) ?? null,
-    target_name: pick<string>(call, ['targetName', 'target', 'target_name']) ?? null,
-    raw_payload: payload,
+    connected: toBool(pick(call, F.connected)) || connection_duration_seconds > 0,
+    payout: toNumber(pick(call, F.payout)),
+    revenue_captured,
+    conversion_captured,
+    payload_shape,
   };
+
+  const setIf = (key: string, value: unknown) => {
+    if (value !== undefined && value !== null && value !== '') row[key] = value;
+  };
+  setIf('event_type', pick<string>(payload, ['event', 'event_type', 'type']));
+  setIf('campaign_id', campaign_id);
+  setIf('campaign_name', pick<string>(call, F.campaign));
+  setIf('did', did);
+  setIf('caller_number', pick<string>(call, F.caller));
+  setIf('caller_state', pick<string>(call, F.state));
+  setIf('caller_city', pick<string>(call, F.city));
+  setIf('creative_label', pick<string>(call, F.creative));
+  setIf('disposition', pick<string>(call, F.status));
+  setIf('recording_url', pick<string>(call, F.recording));
+  setIf('buyer_name', pick<string>(call, F.buyer));
+  setIf('target_name', pick<string>(call, F.target));
+  // Revenue and conversion are written ONLY when the payload carries them.
+  if (revenue_captured) row.revenue = toNumber(revenueRaw);
+  if (conversion_captured) row.converted = toBool(convertedRaw);
+
+  // Never downgrade an already-enriched row: if a full payload is already stored
+  // and a thin one arrives late, keep the rich payload and flags and file the thin
+  // body alongside it for audit.
+  const { data: existing } = await supabase
+    .from('ringfuel_calls')
+    .select('payload_shape, revenue_captured, conversion_captured, raw_payload')
+    .eq('client_id', client_id)
+    .eq('call_id', call_id)
+    .maybeSingle();
+
+  if (existing && existing.payload_shape === 'csv_full' && payload_shape === 'webhook_minimal') {
+    row.payload_shape = 'csv_full';
+    row.revenue_captured = existing.revenue_captured ?? true;
+    row.conversion_captured = existing.conversion_captured ?? true;
+    const prior = (existing.raw_payload && typeof existing.raw_payload === 'object') ? existing.raw_payload : {};
+    row.raw_payload = { ...prior, _late_webhook: payload };
+  } else {
+    row.raw_payload = payload;
+  }
 
   const { error } = await supabase
     .from('ringfuel_calls')
@@ -189,7 +249,12 @@ Deno.serve(async (req) => {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true, call_id, client_id }), {
+  return new Response(JSON.stringify({
+    ok: true, call_id, client_id,
+    payload_shape: row.payload_shape,
+    revenue_captured: row.revenue_captured,
+    conversion_captured: row.conversion_captured,
+  }), {
     status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });

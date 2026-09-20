@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin,
+  RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin, AlertTriangle,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -26,38 +26,59 @@ const fmtDuration = (s: number) => {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/** Spektrafin payout terms (client-confirmed 2026-09-14): $16 per raw call — every call pays. */
-export const SPEKTRAFIN_PAYOUT_PER_RAW_CALL = 16;
-
 /** RingFuel reports in America/Puerto_Rico (fixed UTC-4), so days are bucketed there too. */
 const PR_OFFSET_MS = 4 * 60 * 60 * 1000;
 const prShift = (iso: string) => new Date(new Date(iso).getTime() - PR_OFFSET_MS);
 const prDay = (iso: string) => prShift(iso).toISOString().slice(0, 10);
 const prTime = (iso: string) => format(prShift(iso), "MMM d, HH:mm");
 
+/**
+ * Spektrafin payout terms, confirmed by AJ: $16 per CONVERTED call — not per raw
+ * call. It was $23 until 2026-09-09. Roughly three calls in four convert; the rest
+ * earn nothing. Kept for reference only: revenue is READ from RingFuel's own
+ * revenue field, never multiplied out here, and conversion is NEVER inferred from
+ * duration (converted and non-converted calls overlap completely on duration).
+ */
+export const SPEKTRAFIN_PAYOUT_PER_CONVERTED_CALL = 16;
+
+/** Revenue arrived for this call, as opposed to simply not having been sent. */
+const captured = (c: SpektrafinCall) => c.revenue_captured !== false;
 
 function aggregate(calls: SpektrafinCall[], spend: number) {
   const total = calls.length;
   const connected = calls.filter((c) => c.connected === true).length;
-  const paid = total; // every raw call pays $16
-  const revenue = total * SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
+
+  // ABSENT IS NOT ZERO. Rows the live webhook delivered carry no revenue field, so
+  // they are excluded from revenue and counted separately — reading them as $0
+  // would turn a roughly break-even account into a fabricated catastrophe.
+  const withRevenue = calls.filter(captured);
+  const uncaptured = total - withRevenue.length;
+  const revenue = withRevenue.reduce((s, c) => s + Number(c.revenue || 0), 0);
+  const convertedCalls = withRevenue.filter((c) => c.converted === true).length;
+
   const duration = calls.reduce((s, c) => s + (c.connection_duration_seconds || c.duration_seconds || 0), 0);
-  const rpc = total ? revenue / total : 0;
+  // Revenue-denominated reads cover only the calls whose revenue we actually have.
+  const rpc = withRevenue.length ? revenue / withRevenue.length : null;
   const costPerCall = total ? spend / total : 0;
+  const revenueComplete = uncaptured === 0 && total > 0;
   return {
     calls: total,
     connected,
     connectRate: total ? connected / total : 0,
-    paid,
-    paidRate: connected ? paid / connected : 0,
+    callsWithRevenue: withRevenue.length,
+    uncapturedRevenueCalls: uncaptured,
+    revenueComplete,
+    convertedCalls,
+    conversionRate: withRevenue.length ? convertedCalls / withRevenue.length : null,
     revenue,
     spend,
-    profit: revenue - spend,
+    // Profit and margin are published ONLY when every call's revenue is known.
+    profit: revenueComplete ? revenue - spend : null,
     rpc,
     costPerCall,
-    costPerPaidCall: paid ? spend / paid : 0,
-    marginPerCall: rpc - costPerCall,
-    marginPct: revenue > 0 ? (revenue - spend) / revenue : 0,
+    costPerConvertedCall: convertedCalls ? spend / convertedCalls : 0,
+    marginPerCall: revenueComplete && rpc !== null ? rpc - costPerCall : null,
+    marginPct: revenueComplete && revenue > 0 ? (revenue - spend) / revenue : null,
     avgDuration: connected ? Math.round(duration / connected) : 0,
   };
 }
@@ -111,14 +132,20 @@ export default function SpektrafinDashboard() {
   }, [spendRows]);
 
   const trend = useMemo(() => {
-    const byDate = new Map<string, { calls: number; paid: number; spend: number; revenue: number }>();
-    const row = (d: string) => byDate.get(d) ?? { calls: 0, paid: 0, spend: 0, revenue: 0 };
+    const byDate = new Map<string, { calls: number; converted: number; spend: number; revenue: number; uncaptured: number }>();
+    const row = (d: string) => byDate.get(d) ?? { calls: 0, converted: 0, spend: 0, revenue: 0, uncaptured: 0 };
     for (const c of calls) {
       const d = prDay(c.call_start);
       const r = row(d);
       r.calls += 1;
-      r.paid += 1; // every raw call pays
-      r.revenue += SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
+      // Days RingFuel never reported revenue for show calls and spend but no
+      // revenue bar — a gap in what we were told, not a day that earned nothing.
+      if (captured(c)) {
+        r.revenue += Number(c.revenue || 0);
+        if (c.converted === true) r.converted += 1;
+      } else {
+        r.uncaptured += 1;
+      }
       byDate.set(d, r);
     }
     for (const s of spendRows) {
@@ -131,9 +158,10 @@ export default function SpektrafinDashboard() {
       .map(([date, v]) => ({
         date: format(new Date(`${date}T00:00:00`), "MMM d"),
         calls: v.calls,
-        paid: v.paid,
+        converted: v.converted,
         spend: Math.round(v.spend),
-        revenue: Math.round(v.revenue),
+        revenue: v.uncaptured === v.calls && v.calls > 0 ? null : Math.round(v.revenue),
+        revenueUnknownCalls: v.uncaptured,
       }));
   }, [calls, spendRows]);
 
@@ -158,7 +186,7 @@ export default function SpektrafinDashboard() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue at $16 per raw call — screen updated {lastSync}
+          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
         </p>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
@@ -166,15 +194,57 @@ export default function SpektrafinDashboard() {
         </Button>
       </div>
 
+      {overall.uncapturedRevenueCalls > 0 && (
+        <Card className="border-amber-500/40 bg-amber-500/5 p-3">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <div className="text-sm">
+              <p className="font-medium">
+                Revenue is unknown for {overall.uncapturedRevenueCalls.toLocaleString()} of {overall.calls.toLocaleString()} calls
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                RingFuel sent only the caller's state, the call length and an ID for those calls, so we were never told what they earned.
+                They are left out of revenue rather than counted as nothing, and profit and margin stay blank until the missing figures
+                arrive — either from the fuller RingFuel feed or from a re-import of the daily sheet. Revenue below covers the{" "}
+                {overall.callsWithRevenue.toLocaleString()} calls we do have figures for.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <KPI label="Spend" value={fmtMoney(overall.spend)} icon={DollarSign} accent="text-blue-500" />
         <KPI label="Calls" value={overall.calls.toLocaleString()} icon={Phone} accent="text-indigo-500" />
         <KPI label="Connected" value={overall.connected.toLocaleString()} sub={fmtPct(overall.connectRate)} icon={PhoneCall} accent="text-emerald-500" />
-        <KPI label="Paid calls" value={overall.paid.toLocaleString()} sub="$16 per raw call" icon={Target} />
-        <KPI label="Revenue" value={fmtMoney(overall.revenue)} sub={`RPC ${fmtMoney2(overall.rpc)}`} icon={DollarSign} accent="text-emerald-500" />
-        <KPI label="Cost / call" value={overall.costPerCall > 0 ? fmtMoney2(overall.costPerCall) : "—"} sub={overall.costPerPaidCall > 0 ? `${fmtMoney2(overall.costPerPaidCall)} per paid call` : undefined} icon={Target} />
-        <KPI label="Margin / call" value={overall.calls ? fmtMoney2(overall.marginPerCall) : "—"} sub={overall.revenue > 0 ? fmtPct(overall.marginPct) : undefined} icon={TrendingUp} accent={overall.marginPerCall >= 0 ? "text-emerald-500" : "text-destructive"} />
-        <KPI label="Profit" value={fmtMoney(overall.profit)} icon={TrendingUp} accent={overall.profit >= 0 ? "text-emerald-500" : "text-destructive"} />
+        <KPI
+          label="Converted calls"
+          value={overall.callsWithRevenue ? overall.convertedCalls.toLocaleString() : "unknown"}
+          sub={overall.conversionRate !== null ? `${fmtPct(overall.conversionRate)} of the ${overall.callsWithRevenue.toLocaleString()} reported` : "no conversions reported yet"}
+          icon={Target}
+        />
+        <KPI
+          label={overall.revenueComplete ? "Revenue" : "Revenue (partial)"}
+          value={overall.callsWithRevenue ? fmtMoney(overall.revenue) : "unknown"}
+          sub={overall.rpc !== null ? `${fmtMoney2(overall.rpc)} per reported call` : "not reported for any call"}
+          icon={DollarSign}
+          accent="text-emerald-500"
+        />
+        <KPI label="Cost / call" value={overall.costPerCall > 0 ? fmtMoney2(overall.costPerCall) : "—"} sub={overall.costPerConvertedCall > 0 ? `${fmtMoney2(overall.costPerConvertedCall)} per converted call` : undefined} icon={Target} />
+        <KPI
+          label="Margin / call"
+          value={overall.marginPerCall !== null ? fmtMoney2(overall.marginPerCall) : "—"}
+          sub={overall.marginPct !== null ? fmtPct(overall.marginPct) : "revenue incomplete"}
+          icon={TrendingUp}
+          accent={overall.marginPerCall !== null && overall.marginPerCall >= 0 ? "text-emerald-500" : overall.marginPerCall !== null ? "text-destructive" : undefined}
+        />
+        <KPI
+          label="Profit"
+          value={overall.profit !== null ? fmtMoney(overall.profit) : "—"}
+          sub={overall.profit === null ? "revenue incomplete" : undefined}
+          icon={TrendingUp}
+          accent={overall.profit !== null && overall.profit >= 0 ? "text-emerald-500" : overall.profit !== null ? "text-destructive" : undefined}
+        />
       </div>
 
       <Tabs defaultValue="creative" className="space-y-3">
@@ -197,7 +267,7 @@ export default function SpektrafinDashboard() {
                   <th className="px-3 py-2 font-medium">Creative</th>
                   <th className="px-3 py-2 text-right font-medium">Calls</th>
                   <th className="px-3 py-2 text-right font-medium">Connected</th>
-                  <th className="px-3 py-2 text-right font-medium">Paid</th>
+                  <th className="px-3 py-2 text-right font-medium">Converted</th>
                   <th className="px-3 py-2 text-right font-medium">Connect rate</th>
                   <th className="px-3 py-2 text-right font-medium">Avg duration</th>
                   <th className="px-3 py-2 text-right font-medium">Revenue</th>
@@ -214,11 +284,18 @@ export default function SpektrafinDashboard() {
                     <td className="px-3 py-2 font-medium">{r.creative}</td>
                     <td className="px-3 py-2 text-right">{r.calls}</td>
                     <td className="px-3 py-2 text-right">{r.connected}</td>
-                    <td className="px-3 py-2 text-right">{r.paid}</td>
+                    <td className="px-3 py-2 text-right">{r.callsWithRevenue ? r.convertedCalls : <span className="text-muted-foreground">unknown</span>}</td>
                     <td className="px-3 py-2 text-right">{fmtPct(r.connectRate)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtDuration(r.avgDuration)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(r.revenue)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney2(r.rpc)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {r.callsWithRevenue ? fmtMoney(r.revenue) : <span className="text-muted-foreground">unknown</span>}
+                      {r.callsWithRevenue > 0 && r.uncapturedRevenueCalls > 0 && (
+                        <span className="ml-1 text-xs text-amber-600" title={`Revenue unknown for ${r.uncapturedRevenueCalls} of ${r.calls} calls`}>
+                          ({r.uncapturedRevenueCalls} unknown)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">{r.rpc !== null ? fmtMoney2(r.rpc) : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -259,7 +336,11 @@ export default function SpektrafinDashboard() {
 
         <TabsContent value="trend">
           <Card className="p-4">
-            <h3 className="mb-3 text-sm font-medium">Daily spend, revenue and calls</h3>
+            <h3 className="mb-1 text-sm font-medium">Daily spend, revenue and calls</h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Where the dashed line rises, RingFuel sent calls without telling us what they earned — those days show no revenue bar because
+              the figure is unknown, not because nothing was earned.
+            </p>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={trend}>
@@ -272,7 +353,8 @@ export default function SpektrafinDashboard() {
                   <Bar yAxisId="money" dataKey="spend" name="Spend" fill="hsl(var(--primary))" opacity={0.5} />
                   <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="hsl(var(--chart-2, var(--primary)))" opacity={0.7} />
                   <Line yAxisId="calls" type="monotone" dataKey="calls" name="Calls" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-                  <Line yAxisId="calls" type="monotone" dataKey="paid" name="Paid calls" stroke="hsl(var(--muted-foreground))" strokeWidth={2} dot={false} />
+                  <Line yAxisId="calls" type="monotone" dataKey="converted" name="Converted calls" stroke="hsl(var(--muted-foreground))" strokeWidth={2} dot={false} />
+                  <Line yAxisId="calls" type="monotone" dataKey="revenueUnknownCalls" name="Calls with revenue unknown" stroke="hsl(38 92% 50%)" strokeWidth={2} strokeDasharray="4 3" dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -287,7 +369,7 @@ export default function SpektrafinDashboard() {
                   <th className="px-3 py-2 font-medium">State</th>
                   <th className="px-3 py-2 text-right font-medium">Calls</th>
                   <th className="px-3 py-2 text-right font-medium">Connected</th>
-                  <th className="px-3 py-2 text-right font-medium">Paid</th>
+                  <th className="px-3 py-2 text-right font-medium">Converted</th>
                   <th className="px-3 py-2 text-right font-medium">Revenue</th>
                   <th className="px-3 py-2 text-right font-medium">RPC</th>
                 </tr>
@@ -300,9 +382,14 @@ export default function SpektrafinDashboard() {
                     <td className="px-3 py-2 font-medium">{r.state}</td>
                     <td className="px-3 py-2 text-right">{r.calls}</td>
                     <td className="px-3 py-2 text-right">{r.connected}</td>
-                    <td className="px-3 py-2 text-right">{r.paid}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(r.revenue)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney2(r.rpc)}</td>
+                    <td className="px-3 py-2 text-right">{r.callsWithRevenue ? r.convertedCalls : <span className="text-muted-foreground">unknown</span>}</td>
+                    <td className="px-3 py-2 text-right">
+                      {r.callsWithRevenue ? fmtMoney(r.revenue) : <span className="text-muted-foreground">unknown</span>}
+                      {r.callsWithRevenue > 0 && r.uncapturedRevenueCalls > 0 && (
+                        <span className="ml-1 text-xs text-amber-600">({r.uncapturedRevenueCalls} unknown)</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">{r.rpc !== null ? fmtMoney2(r.rpc) : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -324,14 +411,15 @@ export default function SpektrafinDashboard() {
                     <th className="px-3 py-2 font-medium">Buyer</th>
                     <th className="px-3 py-2 text-right font-medium">Duration</th>
                     <th className="px-3 py-2 text-right font-medium">Conn.</th>
-                    <th className="px-3 py-2 text-right font-medium">Payout</th>
+                    <th className="px-3 py-2 text-right font-medium">Converted</th>
+                    <th className="px-3 py-2 text-right font-medium">Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                    <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
                   ) : calls.length === 0 ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                    <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">
                       No calls in this range yet.
                     </td></tr>
                   ) : calls.slice(0, 500).map((c) => (
@@ -344,7 +432,12 @@ export default function SpektrafinDashboard() {
                       <td className="px-3 py-1.5 text-muted-foreground">{c.buyer_name || c.target_name || "—"}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtDuration(c.duration_seconds)}</td>
                       <td className="px-3 py-1.5 text-right">{c.connected === true ? "✓" : c.connected === false ? "—" : "?"}</td>
-                      <td className="px-3 py-1.5 text-right">{fmtMoney2(SPEKTRAFIN_PAYOUT_PER_RAW_CALL)}</td>
+                      <td className="px-3 py-1.5 text-right">
+                        {c.conversion_captured === false ? <span className="text-amber-600">not reported</span> : c.converted === true ? "✓" : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        {captured(c) ? fmtMoney2(Number(c.revenue || 0)) : <span className="text-amber-600">unknown</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

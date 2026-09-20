@@ -218,6 +218,17 @@ export interface PullWindowSuccess {
   attributedPublishers: string[];
   /** How revenue was resolved for this window, in plain language. */
   revenueNote: string;
+  /**
+   * Calls in this window whose revenue the source never delivered. Their earnings
+   * are UNKNOWN, not zero: they are excluded from revenue and counted here.
+   */
+  uncapturedRevenueCalls: number;
+  /**
+   * False when any call's revenue was not captured. Revenue, profit and margin
+   * are then PARTIAL and must not be published as totals — report the coverage
+   * (`revenueNote`) instead of a figure.
+   */
+  revenueComplete: boolean;
   /** Call ids whose billable status is undetermined — surface, never hide. */
   missingBillableDefinition: string[];
   /** Circuit breakers raised by the pull itself (§ Circuit breakers). */
@@ -488,6 +499,11 @@ export function computeWindow({
   if (missingBillableDefinition.length) {
     breakers.push('Billable definition is missing on the Economics record, so no call can be marked billable. Every billable-denominated metric is unavailable until it is supplied.');
   }
+  if (!windowRevenue.revenueComplete) {
+    breakers.push(
+      `Revenue not captured: the source delivered no revenue figure for ${windowRevenue.uncapturedRevenueCalls} of ${windowRevenue.totalCalls} calls in this window. Those calls earned an UNKNOWN amount, not zero, so they are excluded from revenue and no profit or margin total here may be read as the account's result. Restore the missing fields at the source, or re-import them, before judging performance.`,
+    );
+  }
   if (economicsDrift) {
     breakers.push(
       `The economics changed since intake was last run: the Instance record stores a kill threshold of $${(storedKill as number).toFixed(2)}, but the current payout terms imply $${(recomputedKill as number).toFixed(2)}. Neither is used silently — the stored value is shown, the instance is treated as stale, and intake must be re-run before acting on any threshold here.`,
@@ -567,6 +583,8 @@ export function computeWindow({
       (p): p is string => typeof p === 'string' && p.trim().length > 0,
     ),
     revenueNote: windowRevenue.note,
+    uncapturedRevenueCalls: windowRevenue.uncapturedRevenueCalls,
+    revenueComplete: windowRevenue.revenueComplete,
     missingBillableDefinition,
     breakers,
   };

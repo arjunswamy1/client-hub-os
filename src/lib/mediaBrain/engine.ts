@@ -569,6 +569,14 @@ export interface BillableCallInput {
   payout_amount: Num;
   /** The source's own conversion flag, where the table has one. */
   converted?: boolean | null;
+  /**
+   * Did the source actually DELIVER a revenue figure for this call? False means
+   * the value is UNKNOWN, not zero — a thin webhook that omits the revenue field
+   * says nothing about what the call earned. Absent from a source that always
+   * carries revenue → treated as captured (§7: a field we cannot see is a data
+   * limitation to declare, never a zero to believe).
+   */
+  revenue_captured?: boolean | null;
 }
 
 /**
@@ -601,6 +609,19 @@ export interface ResolvedRevenue {
   qualifyingPayoutCalls: number;
   /** Non-zero payouts BELOW the threshold — the telco-cost tail. */
   subThresholdPayoutCalls: number;
+  /** Total calls considered, captured and uncaptured alike. */
+  totalCalls: number;
+  /**
+   * Calls whose revenue the source never delivered. These are EXCLUDED from
+   * `revenue` and are not zeros — the figure below covers only the rest.
+   */
+  uncapturedRevenueCalls: number;
+  /**
+   * True only when every call's revenue was actually captured. False means
+   * `revenue` is a PARTIAL total and no profit or margin point estimate may be
+   * published from it — report the coverage instead.
+   */
+  revenueComplete: boolean;
   /** Plain-language statement of where the number came from. Always rendered. */
   note: string;
 }
@@ -622,8 +643,17 @@ export function resolveRevenue(
   let qualifyingPayoutCalls = 0;
   let subThresholdPayoutCalls = 0;
   let platformRevenue = 0;
+  let uncapturedRevenueCalls = 0;
+  const totalCalls = rows.length;
 
   for (const row of rows) {
+    // A call whose revenue the source never delivered is UNKNOWN, not zero. It
+    // counts as a call and it is named here, but it contributes nothing to
+    // revenue and nothing to the paid/billable reads that revenue decides (§7).
+    if (row.revenue_captured === false) {
+      uncapturedRevenueCalls += 1;
+      continue;
+    }
     const billable = typeof row.billable === 'boolean' ? row.billable : isBillableCall(eco, row);
     if (billable) billableCalls += 1;
     const payout = ok(row.payout_amount) ? row.payout_amount : 0;
@@ -636,6 +666,11 @@ export function resolveRevenue(
     }
   }
 
+  const revenueComplete = uncapturedRevenueCalls === 0;
+  const coverageNote = revenueComplete
+    ? ''
+    : ` Revenue is UNKNOWN for ${uncapturedRevenueCalls} of ${totalCalls} calls — the source delivered no revenue field on those, so they are excluded rather than counted as zero. The figure here covers only the ${totalCalls - uncapturedRevenueCalls} calls whose revenue was captured, and no profit or margin total may be published from it.`;
+
   if (source === 'computed') {
     const payout = eco.payout;
     return {
@@ -645,9 +680,12 @@ export function resolveRevenue(
       paidCalls,
       qualifyingPayoutCalls,
       subThresholdPayoutCalls,
-      note: ok(payout)
+      totalCalls,
+      uncapturedRevenueCalls,
+      revenueComplete,
+      note: (ok(payout)
         ? `Computed: the tracking platform does not expose this vertical's payouts, so revenue is the contracted $${payout.toFixed(2)} × ${billableCalls} billable calls. The platform payout field is ignored here — an invisible payout is a declared data limitation, not a zero.`
-        : 'Computed revenue was requested but no contracted payout is recorded, so revenue is unavailable. It is not zero — re-run intake and supply the payout.',
+        : 'Computed revenue was requested but no contracted payout is recorded, so revenue is unavailable. It is not zero — re-run intake and supply the payout.') + coverageNote,
     };
   }
 
@@ -658,11 +696,15 @@ export function resolveRevenue(
     paidCalls,
     qualifyingPayoutCalls,
     subThresholdPayoutCalls,
+    totalCalls,
+    uncapturedRevenueCalls,
+    revenueComplete,
     note:
       `Platform: revenue is the sum of the ${qualifyingPayoutCalls} payouts at or above $${threshold.toFixed(2)}.` +
       (subThresholdPayoutCalls
         ? ` ${subThresholdPayoutCalls} further calls carry a non-zero payout below that threshold; those are excluded as telco cost recorded in the payout field, not revenue.`
-        : ''),
+        : '') +
+      coverageNote,
   };
 }
 

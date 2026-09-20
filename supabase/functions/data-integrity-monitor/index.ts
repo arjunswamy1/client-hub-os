@@ -434,14 +434,50 @@ Deno.serve(async (req) => {
         const firstIdx = days.indexOf(convRun[0]);
         const spendAtRisk = spendByDay.slice(firstIdx).reduce((a, b) => a + b, 0);
         const callsInRun = callsByDay.slice(firstIdx).reduce((a, b) => a + b, 0);
-        findings.push({
-          check_key: 'silent_feed:conversions', client_id: c.id, client_name: c.name, priority: 'urgent',
-          title: `${c.name}: conversions zero since ${prettyDate(convRun[0])} — ${money(spendAtRisk)} spent with no recorded revenue`,
-          expected: `conversions and revenue continuing alongside call volume in ${callSource!.probe.table}`,
-          found: `${convRun.length} consecutive days with exactly zero conversions and zero revenue while ${callsInRun.toLocaleString('en-US')} calls arrived (${convRun.map((d, i) => `${d}: ${callsByDay[firstIdx + i]} calls, 0 converted`).join('; ')}), against ${money(spendAtRisk)} of spend`,
-          proof: `select date(${callSource!.probe.dateCol}), count(*), sum(case when ${callSource!.probe.convertedCol ?? 'converted'} then 1 else 0 end), sum(coalesce(revenue,0)) from ${callSource!.probe.table} where client_id = '${c.id}' and ${callSource!.probe.dateCol} >= '${days[0]}' group by 1 order by 1`,
-          dedupe_key: dedupeKey('silent_feed:conversions', c.id),
-        });
+
+        // ABSENT IS NOT ZERO. A run of zero revenue means one of two very different
+        // things, and naming the wrong one costs trust: either the buyer genuinely
+        // stopped converting, or the source stopped SENDING the revenue field. Where
+        // the rows carry no revenue figure at all, earnings are UNKNOWN — filing that
+        // as "no revenue on this spend" invents a loss that never happened. Only
+        // ringfuel_calls records capture; other feeds fall through unchanged.
+        // Both counts come from the SAME query window, so the sentence cannot read
+        // "5,093 of 5,066" — the daily rollup buckets by local day and would not
+        // line up with a timestamp filter.
+        let uncapturedInRun = 0;
+        let rowsInRun = 0;
+        if (callSource!.probe.table === 'ringfuel_calls') {
+          const since = `${convRun[0]}T00:00:00`;
+          const [uncap, all] = await Promise.all([
+            supabase.from('ringfuel_calls').select('call_id', { count: 'exact', head: true })
+              .eq('client_id', c.id).eq('revenue_captured', false).gte(callSource!.probe.dateCol, since),
+            supabase.from('ringfuel_calls').select('call_id', { count: 'exact', head: true })
+              .eq('client_id', c.id).gte(callSource!.probe.dateCol, since),
+          ]);
+          uncapturedInRun = Number(uncap.count ?? 0);
+          rowsInRun = Number(all.count ?? 0);
+        }
+        // Most of the run arrived without a revenue field: a feed configuration gap,
+        // not a delivery collapse.
+        const notCaptured = rowsInRun > 0 && uncapturedInRun >= rowsInRun * 0.8;
+
+        findings.push(notCaptured
+          ? {
+            check_key: 'revenue_not_captured', client_id: c.id, client_name: c.name, priority: 'urgent',
+            title: `${c.name}: revenue not being sent since ${prettyDate(convRun[0])} — ${money(spendAtRisk)} of spend cannot be judged`,
+            expected: `every call in ${callSource!.probe.table} carrying the revenue and conversion fields, as the earlier rows do`,
+            found: `${uncapturedInRun.toLocaleString('en-US')} of ${rowsInRun.toLocaleString('en-US')} calls since ${convRun[0]} arrived with no revenue field at all, so their earnings are UNKNOWN rather than zero. Profit and margin are unavailable for this period against ${money(spendAtRisk)} of spend — a feed gap to close at the source, or to fill by re-importing the daily sheet, not a loss`,
+            proof: `select payload_shape, count(*), sum(coalesce(revenue,0)) from ${callSource!.probe.table} where client_id = '${c.id}' and ${callSource!.probe.dateCol} >= '${convRun[0]}' group by 1`,
+            dedupe_key: dedupeKey('revenue_not_captured', c.id),
+          }
+          : {
+            check_key: 'silent_feed:conversions', client_id: c.id, client_name: c.name, priority: 'urgent',
+            title: `${c.name}: conversions zero since ${prettyDate(convRun[0])} — ${money(spendAtRisk)} spent with no recorded revenue`,
+            expected: `conversions and revenue continuing alongside call volume in ${callSource!.probe.table}`,
+            found: `${convRun.length} consecutive days with exactly zero conversions and zero revenue on calls that DID report revenue fields, while ${callsInRun.toLocaleString('en-US')} calls arrived (${convRun.map((d, i) => `${d}: ${callsByDay[firstIdx + i]} calls, 0 converted`).join('; ')}), against ${money(spendAtRisk)} of spend`,
+            proof: `select date(${callSource!.probe.dateCol}), count(*), sum(case when ${callSource!.probe.convertedCol ?? 'converted'} then 1 else 0 end), sum(coalesce(revenue,0)) from ${callSource!.probe.table} where client_id = '${c.id}' and ${callSource!.probe.dateCol} >= '${days[0]}' group by 1 order by 1`,
+            dedupe_key: dedupeKey('silent_feed:conversions', c.id),
+          });
       }
 
       const hadCallsEarlier = callsByDay.some((v, i) => v > 0 && i < days.length - 1);

@@ -133,7 +133,15 @@ export interface JoinedEntityRow {
   /** How `revenue` was arrived at. Null when no revenue economics were supplied. */
   revenueResolution: ResolvedRevenue | null;
   /** Per-call payout/duration/billable triples — the input to `resolveRevenue`. */
-  revenueRows: { payout_amount: number; duration_seconds: number | null; billable: boolean }[];
+  revenueRows: {
+    payout_amount: number;
+    duration_seconds: number | null;
+    billable: boolean;
+    /** False where the source delivered no revenue figure — unknown, not zero. */
+    revenue_captured: boolean;
+  }[];
+  /** Calls in this row whose revenue the source never delivered. */
+  uncaptured_revenue_calls: number;
   /** Payouts of every call, zeros INCLUDED — needed for the RTB median. */
   payouts: number[];
   /** Call durations in seconds, nulls dropped — needed for median duration. */
@@ -204,6 +212,7 @@ function emptyRow(
     revenue: 0,
     revenueResolution: null,
     revenueRows: [],
+    uncaptured_revenue_calls: 0,
     payouts: [],
     durations: [],
     call_ids: [],
@@ -481,11 +490,15 @@ export function joinCallsToMeta({ calls, didMappings, metaAds, verticals, window
     if (call.billable) row.billable_calls += 1;
     if (call.paid) row.paid_calls += 1;
     if (call.paid && !call.billable) row.paid_not_billable_calls += 1;
-    row.revenue += call.payout_amount;
+    // A call whose revenue was never captured adds nothing here — its earnings
+    // are unknown, not zero — and is counted so the read can declare coverage.
+    if (call.revenue_captured) row.revenue += call.payout_amount;
+    else row.uncaptured_revenue_calls += 1;
     row.revenueRows.push({
       payout_amount: call.payout_amount,
       duration_seconds: call.duration_seconds,
       billable: call.billable,
+      revenue_captured: call.revenue_captured,
     });
     // Zeros are included deliberately: a no-bid is real data under RTB.
     row.payouts.push(call.payout_amount);

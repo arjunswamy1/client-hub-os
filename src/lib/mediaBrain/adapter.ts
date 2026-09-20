@@ -64,6 +64,14 @@ export interface CanonicalCall {
   payout_looks_like_cost: boolean;
   /** 0 for a no-bid, never null — under RTB a zero must stay in the denominator. */
   payout_amount: number;
+  /**
+   * Did the source actually deliver a revenue figure for this call? False means
+   * the revenue is UNKNOWN and `payout_amount` here is NOT a measured zero — the
+   * call is counted, its revenue is not. Only sources that can tell the
+   * difference (RingFuel's `revenue_captured`) ever set this false.
+   */
+  revenue_captured: boolean;
+
 
   buyer_id: string | null;
   /**
@@ -182,6 +190,24 @@ function payoutAmount(...candidates: unknown[]): number {
     if (n !== null) return n;
   }
   return 0;
+}
+
+/**
+ * The same coalesce, but a zero does not win over a later non-zero candidate.
+ * Used where the platform writes its revenue into one field and leaves the other
+ * at a token value: RingFuel records $5.00 of `payout` across thousands of calls
+ * while `revenue` carries the real figure, so reading `payout` first would report
+ * nearly every earning call as a no-bid.
+ */
+function amountPreferNonZero(...candidates: unknown[]): number {
+  let firstSeen: number | null = null;
+  for (const c of candidates) {
+    const n = num(c);
+    if (n === null) continue;
+    if (firstSeen === null) firstSeen = n;
+    if (n !== 0) return n;
+  }
+  return firstSeen ?? 0;
 }
 
 /**
@@ -323,6 +349,7 @@ export function readPublisher(row: RawCallRow): string | null {
 export const fromRingba: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
   const payout = payoutAmount(row.payout, row.revenue);
+  const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
@@ -343,6 +370,7 @@ export const fromRingba: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.target_name),
     publisher: readPublisher(row),
     state: null,
@@ -355,6 +383,7 @@ export const fromRingba: CallMapper = (row, opts) => {
 export const fromRingba4js: CallMapper = (row, opts) => {
   const duration = num(row.call_duration_seconds);
   const payout = payoutAmount(row.payout);
+  const revenueCaptured = row.revenue_captured !== false;
   return {
     call_id: str(row.ringba_call_id) ?? str(row.id) ?? '',
     timestamp: iso(row.call_start),
@@ -371,6 +400,7 @@ export const fromRingba4js: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.buyer_name),
     publisher: readPublisher(row),
     state: str(row.caller_state),
@@ -382,7 +412,12 @@ export const fromRingba4js: CallMapper = (row, opts) => {
 /** `ringfuel_calls` → canonical. @see §3 */
 export const fromRingfuel: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
-  const payout = payoutAmount(row.payout, row.revenue);
+  // RingFuel's `revenue` column is authoritative here; `payout` carries a token
+  // value and must not decide. A row whose revenue was never captured keeps 0
+  // but is flagged uncaptured, so the engine excludes it instead of reading it
+  // as "earned nothing".
+  const payout = amountPreferNonZero(row.revenue, row.payout);
+  const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
@@ -400,6 +435,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.buyer_name),
     publisher: readPublisher(row),
     state: str(row.caller_state),
@@ -412,6 +448,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
 export const fromMoja: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
   const payout = payoutAmount(row.payout, row.revenue);
+  const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
@@ -429,6 +466,7 @@ export const fromMoja: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: str(row.buyer_name),
     publisher: readPublisher(row),
     state: str(row.caller_state),
@@ -441,6 +479,7 @@ export const fromMoja: CallMapper = (row, opts) => {
 export const fromCannaball: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
   const payout = payoutAmount(row.payout);
+  const revenueCaptured = row.revenue_captured !== false;
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',
     timestamp: iso(row.call_start),
@@ -457,6 +496,7 @@ export const fromCannaball: CallMapper = (row, opts) => {
     paid: payout > 0,
     payout_looks_like_cost: looksLikeCost(row, payout, opts),
     payout_amount: payout,
+    revenue_captured: revenueCaptured,
     buyer_id: null,
     publisher: readPublisher(row),
     state: str(row.caller_state),

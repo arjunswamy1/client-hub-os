@@ -42,6 +42,14 @@ export interface SpektrafinCall {
   buyer_name: string | null;
   target_name: string | null;
   recording_url: string | null;
+  /**
+   * Did RingFuel actually deliver a revenue figure for this call? The live webhook
+   * template sends only state/payout/call_id/duration, so revenue on those rows is
+   * UNKNOWN — never treat it as zero earnings.
+   */
+  revenue_captured: boolean | null;
+  conversion_captured: boolean | null;
+  payload_shape: string | null;
 }
 
 /** The server caps every response at 1,000 rows — page through the full window. */
@@ -60,7 +68,7 @@ export function useSpektrafinCalls() {
         const { data, error } = await supabase
           .from("ringfuel_calls")
           .select(
-            "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url",
+            "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url, revenue_captured, conversion_captured, payload_shape",
           )
           .eq("client_id", SPEKTRAFIN_CLIENT_ID)
           .gte("call_start", startTs)

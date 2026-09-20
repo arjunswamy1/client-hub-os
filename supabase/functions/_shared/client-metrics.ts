@@ -344,6 +344,8 @@ export async function computeClientMetrics(
     jacuzziLeads = leadRows.length;
   }
 
+  const pub: PublisherFilterSummary = pubFilter.summary();
+
   const totalCalls = calls.length;
   const connectionKnownCalls = calls.filter((c) => c.connectionKnown);
   const connectedCalls = connectionKnownCalls.filter((c) => c.connected === true).length;
@@ -372,7 +374,11 @@ export async function computeClientMetrics(
     note: client.slug === 'jacuzzi'
       ? `Paid per lead: ${jacuzziLeads ?? 0} leads from jacuzzi_leads (calls and QR scans counted identically, never split). ${totalCalls} of them appear as tracked calls in ringfuel_calls.`
       : callTables.length
-        ? `Counted from ${callTables.join(' + ')}${testRowsExcluded ? `; ${testRowsExcluded} flagged test row(s) excluded` : ''}.`
+        ? `Counted from ${callTables.join(' + ')}${testRowsExcluded ? `; ${testRowsExcluded} flagged test row(s) excluded` : ''}.${
+          pub.excludedCalls
+            ? ` ${pub.excludedCalls} call(s) from other publishers were excluded — this is CPM's volume, not the tracking campaign's total.`
+            : ''
+        }`
         : 'No call table is mapped to this account.',
     sources: client.slug === 'jacuzzi' ? ['jacuzzi_leads', ...callTables] : callTables,
   });

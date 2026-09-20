@@ -569,6 +569,14 @@ export interface BillableCallInput {
   payout_amount: Num;
   /** The source's own conversion flag, where the table has one. */
   converted?: boolean | null;
+  /**
+   * Did the source actually DELIVER a revenue figure for this call? False means
+   * the value is UNKNOWN, not zero — a thin webhook that omits the revenue field
+   * says nothing about what the call earned. Absent from a source that always
+   * carries revenue → treated as captured (§7: a field we cannot see is a data
+   * limitation to declare, never a zero to believe).
+   */
+  revenue_captured?: boolean | null;
 }
 
 /**

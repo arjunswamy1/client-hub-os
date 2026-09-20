@@ -128,6 +128,130 @@ export function usePpcMetaSpend() {
   });
 }
 
+export interface PpcCampaignConfigRow extends PpcSpendRow {
+  status: string | null;
+  objective: string | null;
+  bid_strategy: string | null;
+  bidding_strategy_type: string | null;
+  campaign_type: string | null;
+  daily_budget: number | null;
+  lifetime_budget: number | null;
+  conversions: number | null;
+}
+
+export interface PpcAdSetRow {
+  date: string;
+  campaign_name: string | null;
+  adset_name: string | null;
+  platform_adset_id: string | null;
+  status: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number | null;
+  reach: number | null;
+  frequency: number | null;
+  bid_strategy: string | null;
+  bid_amount: number | null;
+  billing_event: string | null;
+  optimization_goal: string | null;
+  daily_budget: number | null;
+  lifetime_budget: number | null;
+  audience_summary: string | null;
+  targeting: Record<string, unknown> | null;
+}
+
+export interface PpcAdRow {
+  ad_name: string | null;
+  platform_ad_id: string | null;
+  adset_name: string | null;
+  campaign_name: string | null;
+  status: string | null;
+  creative_type: string | null;
+  headline: string | null;
+  primary_text: string | null;
+  cta: string | null;
+  creative_thumbnail_url: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number | null;
+  date_from: string | null;
+  date_to: string | null;
+}
+
+/** Campaign rows with their settings — bid strategy, objective and budget. */
+export function usePpcCampaignConfigs() {
+  const { from, to } = useWindow();
+  return useQuery({
+    queryKey: ["ppc-campaign-configs", from, to],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ad_campaigns")
+        .select(
+          "date, campaign_name, platform, spend, impressions, clicks, conversions, status, objective, bid_strategy, bidding_strategy_type, campaign_type, daily_budget, lifetime_budget",
+        )
+        .eq("client_id", PPC_MEDIA_CLIENT_ID)
+        .gte("date", from)
+        .lte("date", to)
+        .limit(20000);
+      if (error) throw error;
+      return (data || []).filter((r) => {
+        const p = (r.platform || "").toLowerCase();
+        return p === "meta" || p === "facebook";
+      }) as unknown as PpcCampaignConfigRow[];
+    },
+  });
+}
+
+/** Ad sets with their audience and optimisation settings. */
+export function usePpcAdSets() {
+  const { from, to } = useWindow();
+  return useQuery({
+    queryKey: ["ppc-ad-sets", from, to],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ad_sets")
+        .select(
+          "date, campaign_name, adset_name, platform_adset_id, status, spend, impressions, clicks, conversions, reach, frequency, bid_strategy, bid_amount, billing_event, optimization_goal, daily_budget, lifetime_budget, audience_summary, targeting",
+        )
+        .eq("client_id", PPC_MEDIA_CLIENT_ID)
+        .eq("platform", "meta")
+        .gte("date", from)
+        .lte("date", to)
+        .limit(20000);
+      if (error) throw error;
+      return (data || []) as unknown as PpcAdSetRow[];
+    },
+  });
+}
+
+/**
+ * Ads with their creative. These are Meta's own snapshot rows (date_from/date_to),
+ * not a daily series, so they are never summed with the daily spend above — they rank
+ * creatives against each other inside the snapshot window Meta returned.
+ */
+export function usePpcAds() {
+  return useQuery({
+    queryKey: ["ppc-ads"],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ad_creatives")
+        .select(
+          "ad_name, platform_ad_id, adset_name, campaign_name, status, creative_type, headline, primary_text, cta, creative_thumbnail_url, spend, impressions, clicks, conversions, date_from, date_to",
+        )
+        .eq("client_id", PPC_MEDIA_CLIENT_ID)
+        .eq("platform", "meta")
+        .limit(5000);
+      if (error) throw error;
+      return (data || []) as unknown as PpcAdRow[];
+    },
+  });
+}
+
 /** Whether Meta spend is actually flowing yet, and when it last arrived. */
 export function usePpcMetaConnection() {
   return useQuery({

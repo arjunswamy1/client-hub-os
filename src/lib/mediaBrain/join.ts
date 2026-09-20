@@ -212,6 +212,7 @@ function emptyRow(
     revenue: 0,
     revenueResolution: null,
     revenueRows: [],
+    uncaptured_revenue_calls: 0,
     payouts: [],
     durations: [],
     call_ids: [],

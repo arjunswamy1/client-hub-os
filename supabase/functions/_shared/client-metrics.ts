@@ -284,11 +284,18 @@ export async function computeClientMetrics(
   const calls: CallRow[] = [];
   let testRowsExcluded = 0;
 
+  // WHOSE CALLS ARE THESE? CPM is one publisher on most of these feeds. The
+  // recorded scoping decision is loaded before a single call is counted, and
+  // calls from other publishers never reach the figures below.
+  const { account: pubScope } = await loadPublisherScopes(supabase, client.id, client.name);
+  const pubFilter = createPublisherFilter(pubScope, client.name);
+
   for (const tableKey of callTables) {
     const spec = CALL_SOURCES[tableKey];
     if (!spec) continue;
     const cols = [
       spec.dateCol, 'connected', spec.durationCol, 'payout',
+      ...publisherColumns(tableKey),
       spec.hasConverted ? 'converted' : null,
       spec.hasRevenue ? 'revenue' : null,
       spec.hasCaptureFlags ? 'revenue_captured' : null,
@@ -305,6 +312,7 @@ export async function computeClientMetrics(
 
     for (const r of rows as any[]) {
       if (spec.testFlagCol && r[spec.testFlagCol] === true) { testRowsExcluded++; continue; }
+      if (!pubFilter.keep(readPublisher(tableKey, r))) continue;
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
       calls.push({
         connected: r.connected ?? null,

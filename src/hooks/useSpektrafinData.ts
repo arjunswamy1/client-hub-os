@@ -42,6 +42,14 @@ export interface SpektrafinCall {
   buyer_name: string | null;
   target_name: string | null;
   recording_url: string | null;
+  /**
+   * Did RingFuel actually deliver a revenue figure for this call? The live webhook
+   * template sends only state/payout/call_id/duration, so revenue on those rows is
+   * UNKNOWN — never treat it as zero earnings.
+   */
+  revenue_captured: boolean | null;
+  conversion_captured: boolean | null;
+  payload_shape: string | null;
 }
 
 /** The server caps every response at 1,000 rows — page through the full window. */

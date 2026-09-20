@@ -25,6 +25,7 @@
 
 import { revenueFieldForClient, resolveClientRevenue } from './client-revenue.ts';
 import type { ResolvedClientRow } from './client-resolve.ts';
+import { reportingTimeZone, reportingWindowBounds, reportingDay } from './reporting-day.ts';
 import {
   createPublisherFilter, loadPublisherScopes, publisherColumns, readPublisher,
   PUBLISHER_NOT_RECORDED,

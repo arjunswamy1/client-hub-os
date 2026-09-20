@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           account_id: string | null
           add_to_cart: number | null
+          bid_strategy: string | null
           bid_strategy_details: Json | null
           bidding_strategy_type: string | null
           campaign_name: string
@@ -31,6 +32,8 @@ export type Database = {
           id: string
           impression_share: number | null
           impressions: number
+          lifetime_budget: number | null
+          objective: string | null
           platform: string
           revenue: number
           roas: number | null
@@ -40,6 +43,7 @@ export type Database = {
         Insert: {
           account_id?: string | null
           add_to_cart?: number | null
+          bid_strategy?: string | null
           bid_strategy_details?: Json | null
           bidding_strategy_type?: string | null
           campaign_name: string
@@ -53,6 +57,8 @@ export type Database = {
           id?: string
           impression_share?: number | null
           impressions?: number
+          lifetime_budget?: number | null
+          objective?: string | null
           platform: string
           revenue?: number
           roas?: number | null
@@ -62,6 +68,7 @@ export type Database = {
         Update: {
           account_id?: string | null
           add_to_cart?: number | null
+          bid_strategy?: string | null
           bid_strategy_details?: Json | null
           bidding_strategy_type?: string | null
           campaign_name?: string
@@ -75,6 +82,8 @@ export type Database = {
           id?: string
           impression_share?: number | null
           impressions?: number
+          lifetime_budget?: number | null
+          objective?: string | null
           platform?: string
           revenue?: number
           roas?: number | null
@@ -288,6 +297,10 @@ export type Database = {
         Row: {
           account_id: string | null
           adset_name: string
+          audience_summary: string | null
+          bid_amount: number | null
+          bid_strategy: string | null
+          billing_event: string | null
           campaign_name: string
           clicks: number
           client_id: string
@@ -296,19 +309,30 @@ export type Database = {
           cpc: number | null
           created_at: string
           ctr: number | null
+          daily_budget: number | null
           date: string
+          frequency: number | null
           id: string
           impressions: number
+          lifetime_budget: number | null
+          optimization_goal: string | null
           platform: string
           platform_adset_id: string | null
           platform_campaign_id: string | null
+          promoted_object: Json | null
+          reach: number | null
           revenue: number
           spend: number
           status: string | null
+          targeting: Json | null
         }
         Insert: {
           account_id?: string | null
           adset_name: string
+          audience_summary?: string | null
+          bid_amount?: number | null
+          bid_strategy?: string | null
+          billing_event?: string | null
           campaign_name: string
           clicks?: number
           client_id: string
@@ -317,19 +341,30 @@ export type Database = {
           cpc?: number | null
           created_at?: string
           ctr?: number | null
+          daily_budget?: number | null
           date: string
+          frequency?: number | null
           id?: string
           impressions?: number
+          lifetime_budget?: number | null
+          optimization_goal?: string | null
           platform: string
           platform_adset_id?: string | null
           platform_campaign_id?: string | null
+          promoted_object?: Json | null
+          reach?: number | null
           revenue?: number
           spend?: number
           status?: string | null
+          targeting?: Json | null
         }
         Update: {
           account_id?: string | null
           adset_name?: string
+          audience_summary?: string | null
+          bid_amount?: number | null
+          bid_strategy?: string | null
+          billing_event?: string | null
           campaign_name?: string
           clicks?: number
           client_id?: string
@@ -338,15 +373,22 @@ export type Database = {
           cpc?: number | null
           created_at?: string
           ctr?: number | null
+          daily_budget?: number | null
           date?: string
+          frequency?: number | null
           id?: string
           impressions?: number
+          lifetime_budget?: number | null
+          optimization_goal?: string | null
           platform?: string
           platform_adset_id?: string | null
           platform_campaign_id?: string | null
+          promoted_object?: Json | null
+          reach?: number | null
           revenue?: number
           spend?: number
           status?: string | null
+          targeting?: Json | null
         }
         Relationships: [
           {

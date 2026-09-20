@@ -244,11 +244,19 @@ export default function PpcMediaDashboard() {
             <TabsTrigger value="states" className="gap-1.5 text-xs whitespace-nowrap">
               <MapPin className="h-3.5 w-3.5" />Caller states
             </TabsTrigger>
+            <TabsTrigger value="meta" className="gap-1.5 text-xs whitespace-nowrap">
+              <Sparkles className="h-3.5 w-3.5" />Meta performance
+            </TabsTrigger>
             <TabsTrigger value="calls" className="gap-1.5 text-xs whitespace-nowrap">
               <PhoneCall className="h-3.5 w-3.5" />Call log
             </TabsTrigger>
           </TabsList>
         </div>
+
+        <TabsContent value="meta">
+          <PpcMetaPerformance />
+        </TabsContent>
+
 
         <TabsContent value="verticals">
           <Card className="overflow-hidden">

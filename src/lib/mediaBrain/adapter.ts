@@ -208,14 +208,6 @@ function iso(v: unknown): string {
   return Number.isNaN(d.getTime()) ? new Date(0).toISOString() : d.toISOString();
 }
 
-/** Payout coalesced to 0 — a no-bid is a real zero, never a null. @see §2, §5 */
-function payoutAmount(...candidates: unknown[]): number {
-  for (const c of candidates) {
-    const n = num(c);
-    if (n !== null) return n;
-  }
-  return 0;
-}
 
 /**
  * The same coalesce, but a zero does not win over a later non-zero candidate.

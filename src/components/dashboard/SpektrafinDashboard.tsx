@@ -343,7 +343,8 @@ export default function SpektrafinDashboard() {
                   <Bar yAxisId="money" dataKey="spend" name="Spend" fill="hsl(var(--primary))" opacity={0.5} />
                   <Bar yAxisId="money" dataKey="revenue" name="Revenue" fill="hsl(var(--chart-2, var(--primary)))" opacity={0.7} />
                   <Line yAxisId="calls" type="monotone" dataKey="calls" name="Calls" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-                  <Line yAxisId="calls" type="monotone" dataKey="paid" name="Paid calls" stroke="hsl(var(--muted-foreground))" strokeWidth={2} dot={false} />
+                  <Line yAxisId="calls" type="monotone" dataKey="converted" name="Converted calls" stroke="hsl(var(--muted-foreground))" strokeWidth={2} dot={false} />
+                  <Line yAxisId="calls" type="monotone" dataKey="revenueUnknownCalls" name="Calls with revenue unknown" stroke="hsl(38 92% 50%)" strokeWidth={2} strokeDasharray="4 3" dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

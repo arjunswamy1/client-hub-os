@@ -195,11 +195,19 @@ export async function computeClientBreakdown(
   const startTs = `${window.from}T00:00:00Z`;
   const endTs = `${window.to}T23:59:59.999Z`;
 
+  // ── whose calls are these? ────────────────────────────────────────────────
+  // A tracking campaign receives calls from every publisher pointed at it, and
+  // the client's internal campaigns sit in the same feed. Only calls published
+  // under CPM's recorded name may be counted against CPM's spend.
+  const { account: pubScope } = await loadPublisherScopes(supabase, client.id, client.name);
+  const pubFilter = createPublisherFilter(pubScope, client.name);
+
   // ── calls, revenue and conversion per campaign ────────────────────────────
   for (const table of callTables) {
     const spec = CALL_DIMS[table];
     const cols = [
       spec.dateCol, 'campaign_name', 'connected', 'payout',
+      ...publisherColumns(table),
       spec.hasConverted ? 'converted' : null,
       spec.hasRevenue ? 'revenue' : null,
       spec.hasCaptureFlags ? 'revenue_captured' : null,

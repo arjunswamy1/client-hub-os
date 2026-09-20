@@ -298,13 +298,15 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
       try {
         const adsetInsights = await fetchInsights(
           accountId, accessToken, since, until, "adset",
-          "campaign_id,campaign_name,adset_id,adset_name,",
+          "campaign_id,campaign_name,adset_id,adset_name,reach,frequency,",
         );
         if (adsetInsights) {
           const adsetStatusMap = await fetchEntityStatuses(accountId, accessToken, "adsets");
+          const adsetConfigs = await fetchEntityConfigs(accountId, accessToken, "adsets");
           const batch = adsetInsights.map((a: any) => {
             const m = extractMetrics(a, governingEvent);
             recordEvents(a, "adset", a.adset_id ?? null, a.adset_name ?? null);
+            const cfg = adsetConfigs.get(a.adset_id) || {};
             return {
               client_id: clientId,
               platform: "meta",

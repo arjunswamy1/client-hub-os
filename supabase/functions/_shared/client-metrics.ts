@@ -414,21 +414,37 @@ export async function computeClientMetrics(
     note: revenueNote, sources: callTables,
   });
 
-  // ── profit and margin, gated on revenue ──────────────────────────────────
-  const canDoProfit = revenueValue !== null && spendRows > 0;
+  // ── spend coverage ───────────────────────────────────────────────────────
+  // Absent applies to the cost side too. If calls arrived on days that carry no
+  // spend row, the spend total is a PARTIAL cost against a FULL revenue, and any
+  // margin computed from the pair flatters the account. Name the gap and withhold.
+  const callDays = new Set(calls.map((c) => c.day).filter(Boolean));
+  const daysWithCallsNoSpend = [...callDays].filter((d) => !spendDays.has(d)).sort();
+  const spendCoverageIncomplete = spendRows > 0 && daysWithCallsNoSpend.length > 0;
+  const coverageNote = spendCoverageIncomplete
+    ? `Spend covers ${spendDays.size} day(s) but calls arrived on ${callDays.size}. ${daysWithCallsNoSpend.length} day(s) have calls and no spend row (${daysWithCallsNoSpend.slice(0, 6).join(', ')}${daysWithCallsNoSpend.length > 6 ? '…' : ''}) — that is missing spend data, not free traffic.`
+    : '';
+
+  // ── profit and margin, gated on revenue AND on spend coverage ────────────
+  const canDoProfit = revenueValue !== null && spendRows > 0 && !spendCoverageIncomplete;
+  const withheldBecause = revenueValue === null
+    ? 'revenue is unknown for at least one call in the window. Stating it would mean treating unreported calls as having earned nothing.'
+    : spendRows === 0
+      ? 'no spend rows arrived for this window, so the cost side is unknown — not zero.'
+      : `the spend feed does not cover every day that produced calls. ${coverageNote} Publishing a margin here would compare full revenue against partial cost.`;
   metrics.push({
     key: 'profit', label: 'Profit', value: canDoProfit ? revenueValue! - spend : null,
-    display: canDoProfit ? money(revenueValue! - spend) : 'UNKNOWN — revenue is not established for this window',
+    display: canDoProfit ? money(revenueValue! - spend) : 'UNKNOWN — cannot be stated for this window',
     note: canDoProfit
       ? `Revenue ${money(revenueValue!)} − media spend ${money(spend)}.${client.engagement_type === 'performance_media' ? ' Downside is capped at media spend: a negative figure is profit not earned, never a debt.' : ''}`
-      : 'Profit is withheld because revenue is unknown for at least one call in the window. Stating it would mean treating unreported calls as having earned nothing.',
+      : `Profit is withheld because ${withheldBecause}`,
     sources: [...spendTables, ...callTables],
   });
   metrics.push({
     key: 'margin_pct', label: 'Margin %',
     value: canDoProfit && revenueValue! > 0 ? ((revenueValue! - spend) / revenueValue!) * 100 : null,
-    display: canDoProfit && revenueValue! > 0 ? `${(((revenueValue! - spend) / revenueValue!) * 100).toFixed(1)}%` : 'UNKNOWN — revenue is not established for this window',
-    note: canDoProfit && revenueValue! > 0 ? 'Profit ÷ revenue.' : 'Withheld for the same reason as profit.',
+    display: canDoProfit && revenueValue! > 0 ? `${(((revenueValue! - spend) / revenueValue!) * 100).toFixed(1)}%` : 'UNKNOWN — cannot be stated for this window',
+    note: canDoProfit && revenueValue! > 0 ? 'Profit ÷ revenue.' : `Withheld because ${withheldBecause}`,
     sources: [...spendTables, ...callTables],
   });
 

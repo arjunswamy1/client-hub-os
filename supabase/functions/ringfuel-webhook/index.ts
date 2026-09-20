@@ -21,10 +21,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ringfuel-secret',
 };
 
+/**
+ * An unfilled RingFuel macro — "{{event_name}}", "[tag:revenue]" — is ABSENT, not a
+ * value. Storing the literal would flag a call as captured and record a nonsense
+ * label, so it is treated exactly like a missing field.
+ */
+const UNFILLED_MACRO_RE = /^\s*(?:\{\{?[^{}]*\}?\}|\[[^\][]*\]|%%[^%]*%%)\s*$/;
+const isPlaceholder = (v: unknown) => typeof v === 'string' && UNFILLED_MACRO_RE.test(v);
+
+/** Key lookup that ignores case, spaces, underscores and hyphens: "Event Type" === "event_type". */
+const normKey = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const usable = (v: unknown) => v !== undefined && v !== null && v !== '' && !isPlaceholder(v);
   for (const k of keys) {
-    const v = obj?.[k];
-    if (v !== undefined && v !== null && v !== '') return v as T;
+    const v = obj[k];
+    if (usable(v)) return v as T;
+  }
+  // Fall back to a normalised match so a name we did not spell exactly still lands.
+  const wanted = new Set(keys.map(normKey));
+  for (const [key, v] of Object.entries(obj)) {
+    if (wanted.has(normKey(key)) && usable(v)) return v as T;
   }
   return undefined;
 }

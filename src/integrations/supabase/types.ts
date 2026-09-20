@@ -7851,6 +7851,10 @@ export type Database = {
         Args: { p_event?: string; p_row: Json }
         Returns: Json
       }
+      ringfuel_merge_calls: {
+        Args: { p_event?: string; p_rows: Json }
+        Returns: Json
+      }
       working_hours_between: {
         Args: { p_end: string; p_start: string }
         Returns: number

@@ -16,6 +16,7 @@ import {
   useSpektrafinRokuFreshness,
   SpektrafinCall,
 } from "@/hooks/useSpektrafinData";
+import { resolveClientRevenue } from "@/lib/mediaBrain/clientRevenue";
 
 const fmtMoney = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
 const fmtMoney2 = (n: number) => (n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`);
@@ -41,8 +42,16 @@ const prTime = (iso: string) => format(prShift(iso), "MMM d, HH:mm");
  */
 export const SPEKTRAFIN_PAYOUT_PER_CONVERTED_CALL = 16;
 
+/**
+ * Spektrafin is `performance_media`, so `resolveClientRevenue` reads the REVENUE
+ * column — never payout, which carries a token $5.00 total on this account.
+ * The engagement type decides the field; this dashboard does not choose it.
+ */
+const SPEKTRAFIN_CLIENT = { engagement_type: "performance_media" } as const;
+const money = (c: SpektrafinCall) => resolveClientRevenue(SPEKTRAFIN_CLIENT, c);
+
 /** Revenue arrived for this call, as opposed to simply not having been sent. */
-const captured = (c: SpektrafinCall) => c.revenue_captured !== false;
+const captured = (c: SpektrafinCall) => money(c).captured;
 
 function aggregate(calls: SpektrafinCall[], spend: number) {
   const total = calls.length;
@@ -53,7 +62,7 @@ function aggregate(calls: SpektrafinCall[], spend: number) {
   // would turn a roughly break-even account into a fabricated catastrophe.
   const withRevenue = calls.filter(captured);
   const uncaptured = total - withRevenue.length;
-  const revenue = withRevenue.reduce((s, c) => s + Number(c.revenue || 0), 0);
+  const revenue = withRevenue.reduce((s, c) => s + (money(c).amount ?? 0), 0);
   const convertedCalls = withRevenue.filter((c) => c.converted === true).length;
 
   const duration = calls.reduce((s, c) => s + (c.connection_duration_seconds || c.duration_seconds || 0), 0);

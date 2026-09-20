@@ -147,6 +147,51 @@ export function useSpektrafinNumbers() {
   });
 }
 
+export interface RingFuelBreakdownRow {
+  dimension: "did" | "campaign" | "publisher";
+  key: string;
+  calls: number;
+  connected: number;
+  converted: number;
+  revenue_known: number;
+  revenue: number;
+  duration_seconds: number;
+}
+
+/**
+ * Revenue by tracking number, RingFuel campaign and publisher. Rolled up in the
+ * database rather than the browser because the publisher only exists inside each
+ * call's stored payload, and pulling ten thousand payloads to the client to read
+ * one field each would be wasteful. Test deliveries are excluded server-side, and
+ * revenue counts ONLY calls RingFuel actually reported a figure for.
+ */
+export function useSpektrafinBreakdowns() {
+  const { startTs, endTs } = useDates();
+  return useQuery({
+    queryKey: ["spektrafin-breakdowns", startTs, endTs],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("ringfuel_breakdown", {
+        p_client_id: SPEKTRAFIN_CLIENT_ID,
+        p_start: startTs,
+        p_end: endTs,
+      });
+      if (error) throw error;
+      return ((data || []) as any[]).map((r) => ({
+        dimension: r.dimension,
+        key: r.key,
+        calls: Number(r.calls || 0),
+        connected: Number(r.connected || 0),
+        converted: Number(r.converted || 0),
+        revenue_known: Number(r.revenue_known || 0),
+        revenue: Number(r.revenue || 0),
+        duration_seconds: Number(r.duration_seconds || 0),
+      })) as RingFuelBreakdownRow[];
+    },
+  });
+}
+
+
 /**
  * When Roku spend was last pulled. Distinct from the browser's own query time —
  * Roku revises same-day spend upward through the day, so freshness of the pull

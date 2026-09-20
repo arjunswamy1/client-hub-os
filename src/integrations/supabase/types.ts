@@ -2479,6 +2479,8 @@ export type Database = {
           color: string | null
           communication_channel: string | null
           created_at: string
+          daily_update_enabled: boolean
+          daily_update_suppressed_reason: string | null
           data_model_note: string | null
           engagement_type: string | null
           expected_sources: string[]
@@ -2494,6 +2496,8 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          daily_update_enabled?: boolean
+          daily_update_suppressed_reason?: string | null
           data_model_note?: string | null
           engagement_type?: string | null
           expected_sources?: string[]
@@ -2509,6 +2513,8 @@ export type Database = {
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          daily_update_enabled?: boolean
+          daily_update_suppressed_reason?: string | null
           data_model_note?: string | null
           engagement_type?: string | null
           expected_sources?: string[]
@@ -7851,6 +7857,19 @@ export type Database = {
           message: Json
           msg_id: number
           read_ct: number
+        }[]
+      }
+      ringfuel_breakdown: {
+        Args: { p_client_id: string; p_end: string; p_start: string }
+        Returns: {
+          calls: number
+          connected: number
+          converted: number
+          dimension: string
+          duration_seconds: number
+          key: string
+          revenue: number
+          revenue_known: number
         }[]
       }
       ringfuel_merge_call: {

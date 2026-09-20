@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin, AlertTriangle,
+  Hash, Users,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -14,9 +15,13 @@ import {
   useSpektrafinCalls,
   useSpektrafinRokuSpend,
   useSpektrafinRokuFreshness,
+  useSpektrafinBreakdowns,
   SpektrafinCall,
+  RingFuelBreakdownRow,
 } from "@/hooks/useSpektrafinData";
+import { parseRokuCampaignName } from "@/lib/mediaBrain/rokuCampaignAttributes";
 import { resolveClientRevenue } from "@/lib/mediaBrain/clientRevenue";
+
 
 const fmtMoney = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
 const fmtMoney2 = (n: number) => (n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`);
@@ -107,10 +112,91 @@ function KPI({ label, value, sub, icon: Icon, accent }: any) {
   );
 }
 
+/**
+ * Spektrafin's confidence floor, taken from its Media Brain record (gap 0.57 →
+ * 8 ÷ gap² = 25 calls). A row below it cannot be ranked against another: the
+ * difference between two noisy estimates needs more calls than either alone.
+ */
+const MIN_CALLS_TO_RANK = 25;
+
+/** Shared table for the revenue splits: tracking number, RingFuel campaign, publisher. */
+function BreakdownTable({
+  rows,
+  label,
+  empty,
+}: {
+  rows: RingFuelBreakdownRow[];
+  label: string;
+  empty: string;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/40">
+          <tr className="text-left">
+            <th className="px-3 py-2 font-medium">{label}</th>
+            <th className="px-3 py-2 text-right font-medium">Calls</th>
+            <th className="px-3 py-2 text-right font-medium">Connect rate</th>
+            <th className="px-3 py-2 text-right font-medium">Converted</th>
+            <th className="px-3 py-2 text-right font-medium">Avg duration</th>
+            <th className="px-3 py-2 text-right font-medium">Revenue</th>
+            <th className="px-3 py-2 text-right font-medium">Revenue / call</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">{empty}</td></tr>
+          ) : rows.map((r) => {
+            const known = r.revenue_known;
+            const unknown = r.calls - known;
+            const rpc = known ? r.revenue / known : null;
+            // Too few calls to rank — shown, greyed, and labelled rather than hidden.
+            const thin = r.calls < MIN_CALLS_TO_RANK;
+            return (
+              <tr key={r.key} className={`border-t ${thin ? "text-muted-foreground" : ""}`}>
+                <td className="px-3 py-2 font-medium font-mono text-xs">
+                  {r.key}
+                  {thin && <span className="ml-2 font-sans text-xs">not enough calls to rank</span>}
+                </td>
+                <td className="px-3 py-2 text-right">{r.calls.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">{fmtPct(r.calls ? r.connected / r.calls : 0)}</td>
+                <td className="px-3 py-2 text-right">{known ? r.converted.toLocaleString() : "unknown"}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {fmtDuration(r.connected ? Math.round(r.duration_seconds / r.connected) : 0)}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {known ? fmtMoney(r.revenue) : <span className="text-amber-600">unknown</span>}
+                  {known > 0 && unknown > 0 && (
+                    <span className="ml-1 text-xs text-amber-600" title={`Revenue unknown for ${unknown} of ${r.calls} calls`}>
+                      ({unknown.toLocaleString()} unknown)
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right">{rpc !== null ? fmtMoney2(rpc) : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
+
 export default function SpektrafinDashboard() {
   const { data: calls = [], isLoading, dataUpdatedAt, refetch: refetchCalls } = useSpektrafinCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useSpektrafinRokuSpend();
   const { data: rokuFreshness, refetch: refetchFreshness } = useSpektrafinRokuFreshness();
+  const { data: breakdowns = [], refetch: refetchBreakdowns } = useSpektrafinBreakdowns();
+
+  const split = (dimension: RingFuelBreakdownRow["dimension"]) =>
+    breakdowns
+      .filter((r) => r.dimension === dimension)
+      .sort((a, b) => b.revenue - a.revenue || b.calls - a.calls);
+  const byNumber = useMemo(() => split("did"), [breakdowns]);
+  const byRingFuelCampaign = useMemo(() => split("campaign"), [breakdowns]);
+  const byPublisher = useMemo(() => split("publisher"), [breakdowns]);
+
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + r.spend, 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);
@@ -137,7 +223,11 @@ export default function SpektrafinDashboard() {
       cur.completions += r.video_completions;
       map.set(campaign, cur);
     }
-    return Array.from(map.values()).sort((a, b) => b.spend - a.spend);
+    return Array.from(map.values())
+      // The buying setup lives in the name the buyer typed — Roku's feed carries no
+      // bid-strategy or audience object to read instead.
+      .map((r) => ({ ...r, attributes: parseRokuCampaignName(r.campaign) }))
+      .sort((a, b) => b.spend - a.spend);
   }, [spendRows]);
 
   const trend = useMemo(() => {
@@ -197,7 +287,7 @@ export default function SpektrafinDashboard() {
         <p className="text-xs text-muted-foreground">
           Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
         </p>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); }}>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); refetchBreakdowns(); }}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>
@@ -260,7 +350,10 @@ export default function SpektrafinDashboard() {
         <div className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto scrollbar-none">
           <TabsList>
             <TabsTrigger value="creative" className="gap-1.5 text-xs"><Layers className="h-3.5 w-3.5" />Creative</TabsTrigger>
+            <TabsTrigger value="numbers" className="gap-1.5 text-xs"><Hash className="h-3.5 w-3.5" />Numbers</TabsTrigger>
+            <TabsTrigger value="publishers" className="gap-1.5 text-xs"><Users className="h-3.5 w-3.5" />Publishers</TabsTrigger>
             <TabsTrigger value="campaigns" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Roku campaigns</TabsTrigger>
+
             <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
             <TabsTrigger value="geo" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" />Geo</TabsTrigger>
             <TabsTrigger value="calls" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Call log</TabsTrigger>
@@ -312,36 +405,96 @@ export default function SpektrafinDashboard() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="campaigns">
-          <Card className="overflow-hidden">
+        <TabsContent value="numbers" className="space-y-3">
+          <Card className="p-3 text-xs text-muted-foreground">
+            Revenue by tracking number, then by the RingFuel campaign the call belonged to. A number tells you which
+            buy the call came from, not which advert the caller watched — several Roku campaigns share the same number,
+            so a number reads at buy level and never at creative level.
+          </Card>
+          <BreakdownTable
+            rows={byNumber}
+            label="Tracking number"
+            empty="No calls in this range. Numbers appear here as soon as RingFuel posts calls against them."
+          />
+          <BreakdownTable
+            rows={byRingFuelCampaign}
+            label="RingFuel campaign"
+            empty="No calls in this range."
+          />
+        </TabsContent>
+
+        <TabsContent value="publishers" className="space-y-3">
+          <Card className="p-3 text-xs text-muted-foreground">
+            Publisher is read from what RingFuel sends with each call. CPM buys this media directly, so one publisher
+            is expected — anything else here means traffic is arriving from a source we did not buy.
+          </Card>
+          <BreakdownTable
+            rows={byPublisher}
+            label="Publisher"
+            empty="No calls in this range."
+          />
+        </TabsContent>
+
+        <TabsContent value="campaigns" className="space-y-3">
+          <Card className="p-3 text-xs text-muted-foreground">
+            Roku reports delivery only — spend, impressions and completions. The buying setup below (daily cap, time
+            zone, hours, geography, intent, genre target) is <span className="font-medium">read from the campaign name
+            the buyer typed</span>, not confirmed by Roku, so treat a blank as "not written in the name". Calls cannot be
+            split across these campaigns: every call carries one RingFuel campaign and a number shared by several buys,
+            so cost per call is a whole-account figure and these rows are judged on delivery.
+          </Card>
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr className="text-left">
                   <th className="px-3 py-2 font-medium">Roku campaign</th>
+                  <th className="px-3 py-2 font-medium">Daily cap</th>
+                  <th className="px-3 py-2 font-medium">Zone / hours</th>
+                  <th className="px-3 py-2 font-medium">Geography</th>
+                  <th className="px-3 py-2 font-medium">Intent</th>
+                  <th className="px-3 py-2 font-medium">Genre target</th>
+                  <th className="px-3 py-2 font-medium">Number in name</th>
                   <th className="px-3 py-2 text-right font-medium">Spend</th>
                   <th className="px-3 py-2 text-right font-medium">Impressions</th>
                   <th className="px-3 py-2 text-right font-medium">Completions</th>
+                  <th className="px-3 py-2 text-right font-medium">Completion rate</th>
                   <th className="px-3 py-2 text-right font-medium">CPM</th>
+                  <th className="px-3 py-2 text-right font-medium">Cost / 1k completions</th>
                 </tr>
               </thead>
               <tbody>
                 {byCampaign.length === 0 ? (
-                  <tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
+                  <tr><td colSpan={13} className="px-3 py-8 text-center text-muted-foreground">
                     No Roku delivery synced for this range — link the Roku account and sync on the Setup tab.
                   </td></tr>
-                ) : byCampaign.map((r) => (
-                  <tr key={r.campaign} className="border-t">
-                    <td className="px-3 py-2 font-medium">{r.campaign}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney2(r.spend)}</td>
-                    <td className="px-3 py-2 text-right">{r.impressions.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{r.completions.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtMoney2((r.spend / r.impressions) * 1000) : "—"}</td>
-                  </tr>
-                ))}
+                ) : byCampaign.map((r) => {
+                  const a = r.attributes;
+                  const dash = <span className="text-muted-foreground">—</span>;
+                  return (
+                    <tr key={r.campaign} className="border-t align-top">
+                      <td className="px-3 py-2 font-medium">{r.campaign}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{a.dailyBudget !== null ? `${fmtMoney(a.dailyBudget)}/day` : dash}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {a.timezone || a.daypart ? `${a.timezone ?? ""}${a.timezone && a.daypart ? " · " : ""}${a.daypart ?? ""}` : dash}
+                      </td>
+                      <td className="px-3 py-2">{a.geo || dash}</td>
+                      <td className="px-3 py-2">{a.intent || dash}</td>
+                      <td className="px-3 py-2">{a.genreTarget || dash}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{a.did || dash}</td>
+                      <td className="px-3 py-2 text-right">{fmtMoney2(r.spend)}</td>
+                      <td className="px-3 py-2 text-right">{r.impressions.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right">{r.completions.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtPct(r.completions / r.impressions) : "—"}</td>
+                      <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtMoney2((r.spend / r.impressions) * 1000) : "—"}</td>
+                      <td className="px-3 py-2 text-right">{r.completions > 0 ? fmtMoney2((r.spend / r.completions) * 1000) : "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </Card>
         </TabsContent>
+
 
         <TabsContent value="trend">
           <Card className="p-4">

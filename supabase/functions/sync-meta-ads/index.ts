@@ -323,6 +323,17 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
               cpc: m.clicks > 0 ? m.spend / m.clicks : null,
               ctr: m.impressions > 0 ? (m.clicks / m.impressions) * 100 : null,
               cpa: m.conversions > 0 ? m.spend / m.conversions : null,
+              reach: Number(a.reach) || null,
+              frequency: Number(a.frequency) || null,
+              bid_strategy: cfg.bid_strategy || null,
+              bid_amount: minorToMajor(cfg.bid_amount),
+              billing_event: cfg.billing_event || null,
+              optimization_goal: cfg.optimization_goal || null,
+              daily_budget: minorToMajor(cfg.daily_budget),
+              lifetime_budget: minorToMajor(cfg.lifetime_budget),
+              targeting: cfg.targeting ?? null,
+              promoted_object: cfg.promoted_object ?? null,
+              audience_summary: summarizeTargeting(cfg.targeting),
             };
           });
           await batchUpsert(supabase, "ad_sets", batch, "client_id,platform,campaign_name,adset_name,date");

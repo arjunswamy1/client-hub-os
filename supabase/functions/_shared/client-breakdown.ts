@@ -232,7 +232,7 @@ export async function computeClientBreakdown(
       g.publishers.set(pubKey, (g.publishers.get(pubKey) || 0) + 1);
       if (!pubFilter.keep(publisher)) { g.otherPublisherCalls++; continue; }
       g.calls++;
-      g.callDays.add(spec.isTimestamp ? reportingDay(r[spec.dateCol], tz) : String(r[spec.dateCol] ?? '').slice(0, 10));
+      g.callDays.add(reportingDay(r[spec.dateCol], tz));
 
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
       if (!thin) { g.connectedKnown++; if (r.connected === true) g.connected++; }

@@ -377,7 +377,7 @@ export async function computeClientMetrics(
     note: client.slug === 'jacuzzi'
       ? `Paid per lead: ${jacuzziLeads ?? 0} leads from jacuzzi_leads (calls and QR scans counted identically, never split). ${totalCalls} of them appear as tracked calls in ringfuel_calls.`
       : callTables.length
-        ? `Counted from ${callTables.join(' + ')}${testRowsExcluded ? `; ${testRowsExcluded} flagged test row(s) excluded` : ''}.${
+        ? `Counted from ${callTables.join(' + ')} over ${window.from} to ${window.to} inclusive — ${callDays.size} day(s) of calls. ${reportingDayNote(tz)}${testRowsExcluded ? ` ${testRowsExcluded} flagged test row(s) excluded.` : ''}${
           pub.excludedCalls
             ? ` ${pub.excludedCalls} call(s) from other publishers were excluded — this is CPM's volume, not the tracking campaign's total.`
             : ''

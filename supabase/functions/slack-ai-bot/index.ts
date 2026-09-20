@@ -445,7 +445,7 @@ function buildSystemPrompt(args: {
   metricsBlock: string;
   supportingBlock: string;
   sqlBlock: string;
-  roster: string;
+  teamRoster: string;
 }): string {
   const roster = args.clients.map((c) => `${c.name} (${c.engagement_type || 'engagement type not recorded'})`).join('; ');
 
@@ -470,6 +470,7 @@ WHAT MONEY MEANS, PER ACCOUNT TYPE
 
 CLIENT SCOPE
 Active clients: ${roster}
+CPM team (use these names when someone is referred to by a nickname): ${args.teamRoster.replace(/\n/g, ' | ')}
 ${args.client
     ? `This question resolved to: ${args.client.name}.`
     : args.candidates.length
@@ -585,7 +586,7 @@ async function composeAnswer(args: {
     metricsBlock,
     supportingBlock,
     sqlBlock,
-    roster,
+    teamRoster: roster,
   });
 
   const conversation = args.conversation?.length ? args.conversation : [{ role: 'user', content: args.question }];

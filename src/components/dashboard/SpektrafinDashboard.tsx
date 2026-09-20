@@ -187,6 +187,16 @@ export default function SpektrafinDashboard() {
   const { data: calls = [], isLoading, dataUpdatedAt, refetch: refetchCalls } = useSpektrafinCalls();
   const { data: spendRows = [], refetch: refetchSpend } = useSpektrafinRokuSpend();
   const { data: rokuFreshness, refetch: refetchFreshness } = useSpektrafinRokuFreshness();
+  const { data: breakdowns = [], refetch: refetchBreakdowns } = useSpektrafinBreakdowns();
+
+  const split = (dimension: RingFuelBreakdownRow["dimension"]) =>
+    breakdowns
+      .filter((r) => r.dimension === dimension)
+      .sort((a, b) => b.revenue - a.revenue || b.calls - a.calls);
+  const byNumber = useMemo(() => split("did"), [breakdowns]);
+  const byRingFuelCampaign = useMemo(() => split("campaign"), [breakdowns]);
+  const byPublisher = useMemo(() => split("publisher"), [breakdowns]);
+
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + r.spend, 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);
@@ -336,7 +346,10 @@ export default function SpektrafinDashboard() {
         <div className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto scrollbar-none">
           <TabsList>
             <TabsTrigger value="creative" className="gap-1.5 text-xs"><Layers className="h-3.5 w-3.5" />Creative</TabsTrigger>
+            <TabsTrigger value="numbers" className="gap-1.5 text-xs"><Hash className="h-3.5 w-3.5" />Numbers</TabsTrigger>
+            <TabsTrigger value="publishers" className="gap-1.5 text-xs"><Users className="h-3.5 w-3.5" />Publishers</TabsTrigger>
             <TabsTrigger value="campaigns" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Roku campaigns</TabsTrigger>
+
             <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
             <TabsTrigger value="geo" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" />Geo</TabsTrigger>
             <TabsTrigger value="calls" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Call log</TabsTrigger>

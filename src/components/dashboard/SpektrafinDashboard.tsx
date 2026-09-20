@@ -26,38 +26,53 @@ const fmtDuration = (s: number) => {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/** Spektrafin payout terms (client-confirmed 2026-09-14): $16 per raw call — every call pays. */
-export const SPEKTRAFIN_PAYOUT_PER_RAW_CALL = 16;
+/**
+ * Spektrafin payout terms, confirmed by AJ: $16 per CONVERTED call — not per raw
+ * call. It was $23 until 2026-09-09. Roughly three calls in four convert; the rest
+ * earn nothing. Kept for reference only: revenue is READ from RingFuel's own
+ * revenue field, never multiplied out here, and conversion is NEVER inferred from
+ * duration (converted and non-converted calls overlap completely on duration).
+ */
+export const SPEKTRAFIN_PAYOUT_PER_CONVERTED_CALL = 16;
 
-/** RingFuel reports in America/Puerto_Rico (fixed UTC-4), so days are bucketed there too. */
-const PR_OFFSET_MS = 4 * 60 * 60 * 1000;
-const prShift = (iso: string) => new Date(new Date(iso).getTime() - PR_OFFSET_MS);
-const prDay = (iso: string) => prShift(iso).toISOString().slice(0, 10);
-const prTime = (iso: string) => format(prShift(iso), "MMM d, HH:mm");
-
+/** Revenue arrived for this call, as opposed to simply not having been sent. */
+const captured = (c: SpektrafinCall) => c.revenue_captured !== false;
 
 function aggregate(calls: SpektrafinCall[], spend: number) {
   const total = calls.length;
   const connected = calls.filter((c) => c.connected === true).length;
-  const paid = total; // every raw call pays $16
-  const revenue = total * SPEKTRAFIN_PAYOUT_PER_RAW_CALL;
+
+  // ABSENT IS NOT ZERO. Rows the live webhook delivered carry no revenue field, so
+  // they are excluded from revenue and counted separately — reading them as $0
+  // would turn a roughly break-even account into a fabricated catastrophe.
+  const withRevenue = calls.filter(captured);
+  const uncaptured = total - withRevenue.length;
+  const revenue = withRevenue.reduce((s, c) => s + Number(c.revenue || 0), 0);
+  const convertedCalls = withRevenue.filter((c) => c.converted === true).length;
+
   const duration = calls.reduce((s, c) => s + (c.connection_duration_seconds || c.duration_seconds || 0), 0);
-  const rpc = total ? revenue / total : 0;
+  // Revenue-denominated reads cover only the calls whose revenue we actually have.
+  const rpc = withRevenue.length ? revenue / withRevenue.length : null;
   const costPerCall = total ? spend / total : 0;
+  const revenueComplete = uncaptured === 0 && total > 0;
   return {
     calls: total,
     connected,
     connectRate: total ? connected / total : 0,
-    paid,
-    paidRate: connected ? paid / connected : 0,
+    callsWithRevenue: withRevenue.length,
+    uncapturedRevenueCalls: uncaptured,
+    revenueComplete,
+    convertedCalls,
+    conversionRate: withRevenue.length ? convertedCalls / withRevenue.length : null,
     revenue,
     spend,
-    profit: revenue - spend,
+    // Profit and margin are published ONLY when every call's revenue is known.
+    profit: revenueComplete ? revenue - spend : null,
     rpc,
     costPerCall,
-    costPerPaidCall: paid ? spend / paid : 0,
-    marginPerCall: rpc - costPerCall,
-    marginPct: revenue > 0 ? (revenue - spend) / revenue : 0,
+    costPerConvertedCall: convertedCalls ? spend / convertedCalls : 0,
+    marginPerCall: revenueComplete && rpc !== null ? rpc - costPerCall : null,
+    marginPct: revenueComplete && revenue > 0 ? (revenue - spend) / revenue : null,
     avgDuration: connected ? Math.round(duration / connected) : 0,
   };
 }

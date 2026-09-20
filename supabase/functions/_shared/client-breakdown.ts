@@ -399,21 +399,27 @@ function renderBlock(
   byCampaign: BreakdownRow[],
   notes: string[],
   revenueField: string | null,
+  pub: PubRender,
 ): string {
   const lines: string[] = [
     `--- BREAKDOWN: ${client.name} per vertical and per campaign (${window.from} to ${window.to}) ---`,
     'Calls are assigned by the campaign name on the call; spend by the campaign name on the spend row. A group with any uncaptured money row publishes NO revenue, profit or margin. UNCLASSIFIED means the name matched no vertical — report it, never fold it into another vertical.',
+    pub.blocked
+      ? `PUBLISHER GATE: no revenue, profit or margin may be stated for any row below, because ${pub.reason}`
+      : pub.show
+        ? 'Only calls published under CPM\'s own publisher name are counted in these rows. The publisher mix shown per group is the whole tracking campaign, which is a larger number than ours and must never be reported as our delivery.'
+        : null,
     '',
     'BY VERTICAL:',
-  ];
+  ].filter((l): l is string => l !== null);
   if (!byVertical.length) lines.push('  (nothing in this window)');
   for (const v of byVertical) {
-    lines.push(`  [${v.key}] ${renderRow(v, revenueField)}`);
+    lines.push(`  [${v.key}] ${renderRow(v, revenueField, pub)}`);
     lines.push(`      campaigns: ${v.members.join(' | ')}`);
   }
   lines.push('', 'BY CAMPAIGN:');
   if (!byCampaign.length) lines.push('  (nothing in this window)');
-  for (const g of byCampaign.slice(0, 40)) lines.push(`  [${g.key}] ${renderRow(g, revenueField)}`);
+  for (const g of byCampaign.slice(0, 40)) lines.push(`  [${g.key}] ${renderRow(g, revenueField, pub)}`);
   if (byCampaign.length > 40) lines.push(`  …${byCampaign.length - 40} further campaigns not listed.`);
   if (notes.length) {
     lines.push('', 'BREAKDOWN CAVEATS THE ANSWER MUST CARRY:');

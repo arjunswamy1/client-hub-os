@@ -230,9 +230,6 @@ export default function SpektrafinDashboard() {
       .sort((a, b) => b.spend - a.spend);
   }, [spendRows]);
 
-    return Array.from(map.values()).sort((a, b) => b.spend - a.spend);
-  }, [spendRows]);
-
   const trend = useMemo(() => {
     const byDate = new Map<string, { calls: number; converted: number; spend: number; revenue: number; uncaptured: number }>();
     const row = (d: string) => byDate.get(d) ?? { calls: 0, converted: 0, spend: 0, revenue: 0, uncaptured: 0 };

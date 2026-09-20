@@ -71,6 +71,8 @@ export function useSpektrafinCalls() {
             "id, call_id, did, caller_number, caller_state, caller_city, creative_label, campaign_name, call_start, duration_seconds, connection_duration_seconds, connected, converted, payout, revenue, disposition, buyer_name, target_name, recording_url, revenue_captured, conversion_captured, payload_shape",
           )
           .eq("client_id", SPEKTRAFIN_CLIENT_ID)
+          // Flagged test deliveries never count as real calls.
+          .eq("is_test", false)
           .gte("call_start", startTs)
           .lte("call_start", endTs)
           .order("call_start", { ascending: false })

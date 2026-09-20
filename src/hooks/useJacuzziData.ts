@@ -463,6 +463,7 @@ export function useJacuzziRingfuelGeo() {
         .from("ringfuel_calls")
         .select("call_start, caller_state, caller_city, connected, duration_seconds")
         .eq("client_id", JACUZZI_CLIENT_ID)
+        .eq("is_test", false)
         .gte("call_start", `${from}T00:00:00`)
         .lte("call_start", `${to}T23:59:59`)
         .limit(10000);

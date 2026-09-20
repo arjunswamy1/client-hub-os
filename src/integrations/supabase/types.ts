@@ -5473,6 +5473,8 @@ export type Database = {
           event_type: string | null
           events_seen: string[]
           id: string
+          is_test: boolean
+          payload_history: Json[]
           payload_shape: string | null
           payout: number
           raw_payload: Json | null
@@ -5504,6 +5506,8 @@ export type Database = {
           event_type?: string | null
           events_seen?: string[]
           id?: string
+          is_test?: boolean
+          payload_history?: Json[]
           payload_shape?: string | null
           payout?: number
           raw_payload?: Json | null
@@ -5535,6 +5539,8 @@ export type Database = {
           event_type?: string | null
           events_seen?: string[]
           id?: string
+          is_test?: boolean
+          payload_history?: Json[]
           payload_shape?: string | null
           payout?: number
           raw_payload?: Json | null
@@ -7855,6 +7861,7 @@ export type Database = {
         Args: { p_event?: string; p_rows: Json }
         Returns: Json
       }
+      ringfuel_payload_is_rich: { Args: { p_payload: Json }; Returns: boolean }
       working_hours_between: {
         Args: { p_end: string; p_start: string }
         Returns: number

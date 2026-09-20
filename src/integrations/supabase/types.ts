@@ -2566,6 +2566,7 @@ export type Database = {
           id: string
           logo_url: string | null
           name: string
+          reporting_timezone: string | null
           revenue_field: string | null
           slug: string
           spend_source_tables: string[]
@@ -2588,6 +2589,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name: string
+          reporting_timezone?: string | null
           revenue_field?: string | null
           slug: string
           spend_source_tables?: string[]
@@ -2610,6 +2612,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name?: string
+          reporting_timezone?: string | null
           revenue_field?: string | null
           slug?: string
           spend_source_tables?: string[]

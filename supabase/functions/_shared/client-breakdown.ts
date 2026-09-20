@@ -71,6 +71,10 @@ export interface BreakdownRow {
   clicks: number;
   impressions: number;
   platforms: Set<string>;
+  /** Every publisher that delivered calls to this group, counted — ours and theirs. */
+  publishers: Map<string, number>;
+  /** Calls on this group that another publisher delivered, excluded from the figures. */
+  otherPublisherCalls: number;
 }
 
 export interface ClientBreakdown {
@@ -87,6 +91,7 @@ function blank(key: string): BreakdownRow {
     key, members: [], calls: 0, callDays: new Set(), connectedKnown: 0, connected: 0,
     convertedKnown: 0, converted: 0, revenue: null, capturedRevenue: 0, uncaptured: 0,
     spend: null, spendDays: new Set(), clicks: 0, impressions: 0, platforms: new Set(),
+    publishers: new Map(), otherPublisherCalls: 0,
   };
 }
 

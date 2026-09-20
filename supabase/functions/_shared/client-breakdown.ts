@@ -276,9 +276,14 @@ export async function computeClientBreakdown(
     }
   }
 
-  // Gate each campaign's revenue on its own capture coverage.
+  // Gate each campaign's revenue on its own capture coverage AND on the publisher
+  // question: money that may belong to another publisher is never published here.
+  const pub = pubFilter.summary();
+  for (const n of pub.notes) notes.push(n);
   for (const g of campaigns.values()) {
-    g.revenue = g.calls > 0 && g.uncaptured === 0 && revenueField !== null ? g.capturedRevenue : null;
+    g.revenue = !pub.moneyBlocked && g.calls > 0 && g.uncaptured === 0 && revenueField !== null
+      ? g.capturedRevenue
+      : null;
   }
 
   // ── roll campaigns up into verticals ──────────────────────────────────────
@@ -302,11 +307,15 @@ export async function computeClientBreakdown(
     v.convertedKnown += g.convertedKnown; v.converted += g.converted;
     v.capturedRevenue += g.capturedRevenue; v.uncaptured += g.uncaptured;
     v.clicks += g.clicks; v.impressions += g.impressions;
+    v.otherPublisherCalls += g.otherPublisherCalls;
+    g.publishers.forEach((n, p) => v.publishers.set(p, (v.publishers.get(p) || 0) + n));
     g.platforms.forEach((p) => v.platforms.add(p));
     if (g.spend !== null) v.spend = (v.spend ?? 0) + g.spend;
   }
   for (const v of verticalRows.values()) {
-    v.revenue = v.calls > 0 && v.uncaptured === 0 && revenueField !== null ? v.capturedRevenue : null;
+    v.revenue = !pub.moneyBlocked && v.calls > 0 && v.uncaptured === 0 && revenueField !== null
+      ? v.capturedRevenue
+      : null;
   }
 
   const byCampaign = [...campaigns.values()].sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0) || b.calls - a.calls);

@@ -415,9 +415,12 @@ client_daily_updates(id, client_id, for_date, kind, draft_text, final_text, stat
 data_integrity_exceptions(id, client_id, check_key, reason, created_by_id, expires_at, created_at)
 `;
 
-async function maybeRunSqlFallback(question: string, clientName: string | null, roster: string): Promise<{ sql: string; rows: unknown[] } | null> {
-  if (METRIC_WORDS.test(question)) return null;
-
+async function planSql(
+  question: string,
+  clientName: string | null,
+  roster: string,
+  previous?: { sql: string; error: string },
+): Promise<string | null> {
   const plan = await callAnthropic([
     {
       role: 'system',
@@ -431,29 +434,50 @@ literally, look up which roster name it belongs to and filter on that name or em
 ${roster}
 Reply with json only: {"sql": "..."} or {"sql": null} when a query is not the right tool.`,
     },
-    { role: 'user', content: `Client in scope: ${clientName || 'none resolved'}\nQuestion: ${question}` },
+    {
+      role: 'user',
+      content: `Client in scope: ${clientName || 'none resolved'}\nQuestion: ${question}${
+        previous
+          ? `\n\nYour previous attempt was rejected by the database. Correct it using the column lists above.\nprevious sql: ${previous.sql}\nerror: ${previous.error}`
+          : ''
+      }`,
+    },
   ], { max_tokens: 400, temperature: 0 });
 
   if (!plan.ok || !plan.content) {
     console.warn('SQL planner unavailable:', plan.error || 'no content');
     return null;
   }
-  let sql: string | null = null;
   try {
     const cleaned = plan.content.replace(/```json\s*/g, '').replace(/```/g, '').trim();
-    sql = JSON.parse(cleaned)?.sql ?? null;
+    return JSON.parse(cleaned)?.sql ?? null;
   } catch {
     return null;
   }
+}
+
+async function maybeRunSqlFallback(question: string, clientName: string | null, roster: string): Promise<{ sql: string; rows: unknown[] } | null> {
+  if (METRIC_WORDS.test(question)) return null;
+
+  let sql = await planSql(question, clientName, roster);
   if (!sql) {
     console.log('SQL planner declined for question:', question.slice(0, 120));
     return null;
   }
 
-  const out = await runReadOnlySql(supabase, sql, 50);
+  let out = await runReadOnlySql(supabase, sql, 50);
   if (!out.ok) {
-    console.warn('SQL fallback rejected:', out.error);
-    return null;
+    // One correction attempt with the database's own complaint handed back. A
+    // rejected query is a planning mistake, not an answer of "no data".
+    console.warn('SQL fallback rejected, retrying once:', out.error);
+    const retry = await planSql(question, clientName, roster, { sql, error: out.error ?? 'unknown error' });
+    if (!retry) return null;
+    sql = retry;
+    out = await runReadOnlySql(supabase, sql, 50);
+    if (!out.ok) {
+      console.warn('SQL fallback rejected after retry:', out.error);
+      return null;
+    }
   }
   return { sql: out.sql, rows: out.rows };
 }

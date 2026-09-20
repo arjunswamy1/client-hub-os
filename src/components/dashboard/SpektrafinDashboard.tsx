@@ -26,6 +26,12 @@ const fmtDuration = (s: number) => {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
 
+/** RingFuel reports in America/Puerto_Rico (fixed UTC-4), so days are bucketed there too. */
+const PR_OFFSET_MS = 4 * 60 * 60 * 1000;
+const prShift = (iso: string) => new Date(new Date(iso).getTime() - PR_OFFSET_MS);
+const prDay = (iso: string) => prShift(iso).toISOString().slice(0, 10);
+const prTime = (iso: string) => format(prShift(iso), "MMM d, HH:mm");
+
 /**
  * Spektrafin payout terms, confirmed by AJ: $16 per CONVERTED call — not per raw
  * call. It was $23 until 2026-09-09. Roughly three calls in four convert; the rest

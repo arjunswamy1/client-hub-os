@@ -609,6 +609,19 @@ export interface ResolvedRevenue {
   qualifyingPayoutCalls: number;
   /** Non-zero payouts BELOW the threshold — the telco-cost tail. */
   subThresholdPayoutCalls: number;
+  /** Total calls considered, captured and uncaptured alike. */
+  totalCalls: number;
+  /**
+   * Calls whose revenue the source never delivered. These are EXCLUDED from
+   * `revenue` and are not zeros — the figure below covers only the rest.
+   */
+  uncapturedRevenueCalls: number;
+  /**
+   * True only when every call's revenue was actually captured. False means
+   * `revenue` is a PARTIAL total and no profit or margin point estimate may be
+   * published from it — report the coverage instead.
+   */
+  revenueComplete: boolean;
   /** Plain-language statement of where the number came from. Always rendered. */
   note: string;
 }

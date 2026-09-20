@@ -10,6 +10,7 @@
 import * as engine from './engine';
 import type { RevenueSource } from './engine';
 import { MACRO_LITERAL_RE } from './clickKeyReadiness';
+import { resolveClientRevenue } from './clientRevenue';
 
 /** Canonical call shape every rule in the framework reads. @see 01_Decision_Engine.md §3 */
 export interface CanonicalCall {
@@ -372,7 +373,7 @@ export function readPublisher(row: RawCallRow): string | null {
 /** `ringba_calls` → canonical. @see §3 */
 export const fromRingba: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
-  const payout = payoutAmount(row.payout, row.revenue);
+  const payout = clientMoney(row, opts, row.payout, row.revenue);
   const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
@@ -406,7 +407,7 @@ export const fromRingba: CallMapper = (row, opts) => {
 /** `ringba_calls_4js` → canonical. @see §3 */
 export const fromRingba4js: CallMapper = (row, opts) => {
   const duration = num(row.call_duration_seconds);
-  const payout = payoutAmount(row.payout);
+  const payout = clientMoney(row, opts, row.payout);
   const revenueCaptured = row.revenue_captured !== false;
   return {
     call_id: str(row.ringba_call_id) ?? str(row.id) ?? '',
@@ -440,7 +441,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
   // value and must not decide. A row whose revenue was never captured keeps 0
   // but is flagged uncaptured, so the engine excludes it instead of reading it
   // as "earned nothing".
-  const payout = amountPreferNonZero(row.revenue, row.payout);
+  const payout = clientMoney(row, opts, row.revenue, row.payout);
   const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
@@ -471,7 +472,7 @@ export const fromRingfuel: CallMapper = (row, opts) => {
 /** `moja_calls` → canonical. @see §3 */
 export const fromMoja: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
-  const payout = payoutAmount(row.payout, row.revenue);
+  const payout = clientMoney(row, opts, row.payout, row.revenue);
   const revenueCaptured = row.revenue_captured !== false;
   const converted = bool(row.converted);
   return {
@@ -502,7 +503,7 @@ export const fromMoja: CallMapper = (row, opts) => {
 /** `cannaball_calls` → canonical. @see §3 */
 export const fromCannaball: CallMapper = (row, opts) => {
   const duration = num(row.duration_seconds);
-  const payout = payoutAmount(row.payout);
+  const payout = clientMoney(row, opts, row.payout);
   const revenueCaptured = row.revenue_captured !== false;
   return {
     call_id: str(row.call_id) ?? str(row.id) ?? '',

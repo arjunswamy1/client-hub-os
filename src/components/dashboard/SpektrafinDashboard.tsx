@@ -459,7 +459,7 @@ export default function SpektrafinDashboard() {
                   <th className="px-3 py-2 text-right font-medium">Completions</th>
                   <th className="px-3 py-2 text-right font-medium">Completion rate</th>
                   <th className="px-3 py-2 text-right font-medium">CPM</th>
-                  <th className="px-3 py-2 text-right font-medium">Cost / completion</th>
+                  <th className="px-3 py-2 text-right font-medium">Cost / 1k completions</th>
                 </tr>
               </thead>
               <tbody>
@@ -486,7 +486,7 @@ export default function SpektrafinDashboard() {
                       <td className="px-3 py-2 text-right">{r.completions.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtPct(r.completions / r.impressions) : "—"}</td>
                       <td className="px-3 py-2 text-right">{r.impressions > 0 ? fmtMoney2((r.spend / r.impressions) * 1000) : "—"}</td>
-                      <td className="px-3 py-2 text-right">{r.completions > 0 ? fmtMoney2(r.spend / r.completions) : "—"}</td>
+                      <td className="px-3 py-2 text-right">{r.completions > 0 ? fmtMoney2((r.spend / r.completions) * 1000) : "—"}</td>
                     </tr>
                   );
                 })}

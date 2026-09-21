@@ -168,8 +168,17 @@ export async function collectClientMetrics(
     m.set(date, (m.get(date) ?? 0) + spend);
   };
 
+  // Impressions are delivery evidence: they are what separates "the campaign
+  // was dark" from "the spend feed is stale" on a $0 day.
+  const impressionsByDay = new Map<string, number>();
+  let impressionsAvailable = false;
+  const addImpressions = (date: string, n: number) => {
+    impressionsAvailable = true;
+    impressionsByDay.set(date, (impressionsByDay.get(date) ?? 0) + n);
+  };
+
   const { data: roku, error: rokuErr } = await db.from('roku_daily_metrics')
-    .select('date, campaign_name, entity_name, spend')
+    .select('date, campaign_name, entity_name, spend, impressions')
     .eq('client_id', clientId).eq('entity', 'campaign')
     .gte('date', windowStart).lte('date', forDate);
   if (rokuErr) throw new Error(`roku_daily_metrics: ${rokuErr.message}`);
@@ -177,6 +186,7 @@ export async function collectClientMetrics(
     spendSources.push('Roku (roku_daily_metrics)');
     for (const r of roku) {
       addSpend(String(r.date), String(r.campaign_name ?? r.entity_name ?? 'unnamed campaign'), Number(r.spend ?? 0));
+      if (r.impressions !== null && r.impressions !== undefined) addImpressions(String(r.date), Number(r.impressions));
     }
   }
 
@@ -189,6 +199,7 @@ export async function collectClientMetrics(
     for (const r of adDaily) {
       const platform = String(r.platform ?? 'unknown');
       spendByDay.set(String(r.date), (spendByDay.get(String(r.date)) ?? 0) + Number(r.spend ?? 0));
+      if (r.impressions !== null && r.impressions !== undefined) addImpressions(String(r.date), Number(r.impressions));
       if (String(r.date) === forDate) platformSpend.set(platform, (platformSpend.get(platform) ?? 0) + Number(r.spend ?? 0));
     }
     const platforms = [...new Set(adDaily.map((r) => String(r.platform ?? 'unknown')))];

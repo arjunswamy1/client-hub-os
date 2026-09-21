@@ -448,6 +448,18 @@ export async function buildDigests(
     const client = t.client_id ? clientById.get(t.client_id as string) : undefined;
     const lane = laneForTask(t, client?.engagement_type ?? null, member);
     const last = latestActivity(String(t.created_at), newest.get(`task:${t.id}`));
+    // The creative lane carries the production queue and Henry's brief-creation
+    // intake — nothing else. Any other task assigned to a creative-lane person
+    // stays in the hub and out of the morning message.
+    if (lane === 'creative' && !isIntakeTask(t)) {
+      excluded.push({
+        member: member.name,
+        kind: 'task',
+        title: String(t.title ?? '').trim(),
+        reason: 'creative lane carries production-queue briefs and brief-creation intake only',
+      });
+      continue;
+    }
     if (isStale(last)) {
       excluded.push({
         member: member.name,
@@ -457,6 +469,7 @@ export async function buildDigests(
       });
       continue;
     }
+
     push(member.id, lane, {
       kind: 'task',
       id: t.id as string,

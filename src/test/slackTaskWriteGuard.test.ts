@@ -18,12 +18,19 @@ import { dirname, join, normalize } from "node:path";
 
 const ENTRY = "supabase/functions/sync-slack/index.ts";
 
-/** `.from('tasks')` followed — within a few chained calls — by insert/upsert. */
+/**
+ * `.from('tasks')` followed — within a few chained calls — by insert/upsert.
+ * The gap may not contain another `.from(`: a read of `tasks` followed later by
+ * an insert into a DIFFERENT table is not a task write, and matching it hid a
+ * real signal behind a false alarm.
+ */
+const GAP = String.raw`(?:(?!\.from\()[\s\S]){0,200}?`;
 const TASK_WRITE = [
-  /\.from\(\s*['"`]tasks['"`]\s*\)[\s\S]{0,200}?\.(insert|upsert)\s*\(/,
-  /\.(insert|upsert)\s*\([\s\S]{0,200}?\)\s*\.from\(\s*['"`]tasks['"`]\s*\)/,
+  new RegExp(String.raw`\.from\(\s*['"\`]tasks['"\`]\s*\)${GAP}\.(insert|upsert)\s*\(`),
+  new RegExp(String.raw`\.(insert|upsert)\s*\(${GAP}\)\s*\.from\(\s*['"\`]tasks['"\`]\s*\)`),
   /\.rpc\(\s*['"`][^'"`]*create_task[^'"`]*['"`]/,
 ];
+
 
 function localImports(file: string, body: string): string[] {
   const out: string[] = [];

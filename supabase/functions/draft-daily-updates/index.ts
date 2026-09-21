@@ -472,6 +472,10 @@ Deno.serve(async (req) => {
       drafts: results.filter((r) => r.kind === 'draft').length,
       prompts: results.filter((r) => r.kind === 'prompt').length,
       not_posted: skipped,
+      suppressed: suppressed.map((c) => ({
+        client: c.name,
+        reason: c.daily_update_suppressed_reason ?? 'daily updates turned off, no reason recorded',
+      })),
       errors: results.filter((r) => r.error).length,
       results,
     });

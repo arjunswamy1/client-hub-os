@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { format } from "date-fns";
+import { CALLGRID_REPORTING_TZ, zonedTimeToUtcISO } from "@/lib/reportingDay";
 
 export const PPC_MEDIA_CLIENT_ID = "eb8b053a-321f-4747-933c-74cab7613a13";
 

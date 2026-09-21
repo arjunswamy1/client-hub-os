@@ -107,12 +107,13 @@ Deno.serve(async (req) => {
       const dateRaw = pickStr(r, ["date", "day", "report_date", "start_date", "datetime", "timestamp"]) ?? ymd(end);
       const spendRaw = pickNum(r, ["spend", "cost", "amount_spent", "total_spend", "spend_usd"]);
       const micros = pickNum(r, ["spend_micros", "cost_micros"]);
+      const rawCampaign = pickStr(r, ["campaign_name", "campaign"]) ??
+        (level === "campaign" ? pickStr(r, ["name"]) : pickStr(r, ["campaign_id"]));
       return {
         client_id: clientId,
         date: dateRaw.slice(0, 10),
         platform: "universal_ads",
-        campaign_name: pickStr(r, ["campaign_name", "campaign"]) ??
-          (level === "campaign" ? pickStr(r, ["name"]) : pickStr(r, ["campaign_id"])),
+        campaign_name: (rawCampaign && campaignNames.get(rawCampaign)) ?? rawCampaign,
         creative_name: level === "ad" ? pickStr(r, ["ad_name", "ad", "creative_name", "name", "ad_id"]) : null,
         spend: spendRaw || micros / 1_000_000,
         impressions: Math.round(pickNum(r, ["impressions", "impression", "total_impressions"])),

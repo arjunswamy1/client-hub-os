@@ -165,7 +165,7 @@ export function labelParts(
  */
 export function renderCreativeTitle(brief: BriefFields, clientName: string | null): string {
   const title = String(brief.title ?? '').trim();
-  if (!looksLikeAssetLabel(title)) return title;
+  if (!looksLikeAssetLabel(title, clientName)) return title;
 
   const formats = [
     ...(Array.isArray(brief.creative_types) ? brief.creative_types : []),
@@ -179,7 +179,10 @@ export function renderCreativeTitle(brief: BriefFields, clientName: string | nul
   const done = Number(brief.delivered_count ?? 0);
   const outstanding = asked > 0 ? Math.max(asked - done, 0) : 0;
   const { owner, subject: rawSubject } = labelParts(title, clientName);
-  const prefix = owner ? `${owner} — ` : '';
+  // The message renderer already puts the client in front of each item, so a
+  // prefix here is added only when the name came from the label itself — a
+  // brief with no client on it.
+  const prefix = owner && !clientName ? `${owner} — ` : '';
   // The format is already named in the rendered phrase; keep it out of the
   // subject so nothing reads "3 statics Q3 statics".
   const formatWords = new Set(formats.flatMap((f) => [f.toLowerCase(), `${f.toLowerCase()}s`]));

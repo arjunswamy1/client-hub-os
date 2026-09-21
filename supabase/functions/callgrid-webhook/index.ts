@@ -203,6 +203,11 @@ Deno.serve(async (req) => {
       clientId = client.id;
     }
 
+    const callerNumber = pick<string>(payload, [
+      'caller', 'caller_number', 'from', 'from_number', 'ani',
+      'InboundNumber', 'InboundNumberNoPlus', 'CallerId', 'CallerNumber',
+    ]) ?? null;
+
     const row: Record<string, unknown> = {
       client_id: clientId,
       call_id,

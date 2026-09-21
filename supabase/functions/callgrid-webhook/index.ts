@@ -89,37 +89,9 @@ Deno.serve(async (req) => {
     });
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
-
-  // Which client these calls belong to. Validated, never guessed.
-  const requestedClientId = url.searchParams.get('client_id');
-  let clientId = CANNABALL_CLIENT_ID;
-  if (requestedClientId) {
-    if (!UUID_RE.test(requestedClientId)) {
-      return new Response(JSON.stringify({ error: 'client_id must be a uuid' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
-      .select('id')
-      .eq('id', requestedClientId)
-      .maybeSingle();
-    if (clientError) {
-      return new Response(JSON.stringify({ error: 'Client lookup failed', details: clientError.message }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    if (!client) {
-      return new Response(JSON.stringify({ error: 'Unknown client_id' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    clientId = client.id;
-  }
+  // CallGrid holds the live caller until this endpoint answers, so nothing that
+  // touches the database may happen before the 200 goes out. Parse the body (fast,
+  // in-memory), answer immediately, then persist in the background.
 
   let payload: any = {};
   try {
@@ -142,157 +114,185 @@ Deno.serve(async (req) => {
   // Some CallGrid setups pass the ad tags on the URL rather than in the body.
   // Body values win; query values only fill what the body left absent.
   for (const [k, v] of url.searchParams.entries()) {
-    if (k === 'secret' || k === 'client_id') continue;
+    if (k === 'secret' || k === 'client_id' || k === 'sync') continue;
     if (payload[k] === undefined || payload[k] === '') payload[k] = v;
   }
   payload = flattenTagBags(payload);
 
-
-  // Map common CallGrid field names (docs vary; we're permissive).
-  const call_id = String(
-    pick(payload, ['call_id', 'callId', 'id', 'uuid', 'call_uuid']) ??
-    crypto.randomUUID()
-  );
-
-  const duration_seconds = toInt(pick(payload, ['duration', 'call_duration', 'duration_seconds', 'total_duration']));
-  const connection_duration_seconds = toInt(
-    pick(payload, ['connection_duration', 'talk_time', 'talk_duration', 'billable_duration'])
-  );
-  const connectedRaw = pick(payload, ['connected', 'answered', 'is_connected']);
-  const connected =
-    connectedRaw === true || connectedRaw === 'true' || connectedRaw === 1 || connectedRaw === '1' ||
-    connection_duration_seconds > 0;
-
-  const rawDid = pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did']) ?? null;
-  const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
-
-  const row: Record<string, unknown> = {
-    client_id: clientId,
-    call_id,
-    caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani']) ?? null,
-    did: didDigits || rawDid,
-    caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state']) ?? null,
-    caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city']) ?? null,
-    caller_zip: pick<string>(payload, ['caller_zip', 'zip', 'zip_code', 'postal_code', 'caller_postal']) ?? null,
-    caller_area_code: pick<string>(payload, ['caller_area_code', 'area_code', 'npa']) ?? null,
-    call_start: toIso(pick(payload, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at'])),
-    duration_seconds,
-    connected,
-    connection_duration_seconds,
-    payout: toNumber(pick(payload, ['payout', 'revenue', 'amount', 'price'])),
-    disposition: pick<string>(payload, ['disposition', 'status', 'result']) ?? null,
-    campaign_name: pick<string>(payload, ['campaign', 'campaign_name', 'source']) ?? null,
-    creative_name: pick<string>(payload, ['creative', 'creative_name', 'ad_name']) ?? null,
-    recording_url: pick<string>(payload, ['recording_url', 'recording', 'audio_url']) ?? null,
-    raw_payload: payload,
-  };
-
-  // Account separation guard. Each CallGrid account posts to its own `client_id`.
-  // If the dialed number is registered to a DIFFERENT client, the URL is pointed at
-  // the wrong account: reject rather than file one client's call under another.
-  // Numbers that belong to nobody yet are accepted (unmapped DIDs are normal).
-  if (didDigits) {
-    const { data: allDids } = await supabase
-      .from('client_dids')
-      .select('client_id, did, did_formatted, creative_name, campaign_name');
-
-    const norm = (v: unknown) => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-    const owners = (allDids || []).filter(
-      (d: any) => norm(d.did) === didDigits || norm(d.did_formatted) === didDigits,
-    );
-
-    if (owners.length > 0 && !owners.some((d: any) => d.client_id === clientId)) {
-      console.error('callgrid-webhook DID ownership mismatch', { didDigits, clientId });
-      return new Response(
-        JSON.stringify({
-          error: 'Number belongs to a different client',
-          details: `Dialed number ${didDigits} is registered to another client. Check the client_id on this CallGrid postback URL.`,
-          did: didDigits,
-          posted_to_client_id: clientId,
-          registered_client_id: owners[0].client_id,
-        }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // Fill creative/campaign from this client's DID assignment grid when CallGrid doesn't send them
-    if (!row.creative_name || !row.campaign_name) {
-      const match = owners.find((d: any) => d.client_id === clientId);
-      if (match) {
-        row.creative_name = row.creative_name || (match as any).creative_name || null;
-        row.campaign_name = row.campaign_name || (match as any).campaign_name || null;
-      }
-    }
-  }
-
-
-  // CallGrid fires multiple events per call (Call Initiated, Call Billable, …).
-  // Each event lands on the same (client_id, call_id) row: merge, never overwrite.
-  // A later event that omits a field must not blank what an earlier one delivered.
-  const mergeStr = (next: unknown, prev: unknown) =>
-    next !== null && next !== undefined && next !== '' ? next : (prev ?? null);
-  const mergeNum = (next: number, prev: unknown) => (next > 0 ? next : Number(prev) || 0);
-
-  const { data: existing } = await supabase
-    .from('cannaball_calls')
-    .select('*')
-    .eq('client_id', clientId)
-    .eq('call_id', call_id)
-    .maybeSingle();
-
-  if (existing) {
-    row.caller_number = mergeStr(row.caller_number, existing.caller_number);
-    row.did = mergeStr(row.did, existing.did);
-    row.caller_state = mergeStr(row.caller_state, existing.caller_state);
-    row.caller_city = mergeStr(row.caller_city, existing.caller_city);
-    row.caller_zip = mergeStr(row.caller_zip, existing.caller_zip);
-    row.caller_area_code = mergeStr(row.caller_area_code, existing.caller_area_code);
-    // Call Initiated fires first and carries the true start time; keep it.
-    row.call_start = existing.call_start ?? row.call_start;
-    row.duration_seconds = mergeNum(duration_seconds, existing.duration_seconds);
-    row.connection_duration_seconds = mergeNum(
-      connection_duration_seconds, existing.connection_duration_seconds,
-    );
-    row.connected = Boolean(existing.connected) || row.connected;
-    // The Billable event is the one that usually carries payout; a non-zero wins.
-    row.payout = mergeNum(toNumber(row.payout), existing.payout);
-    row.disposition = mergeStr(row.disposition, existing.disposition);
-    row.campaign_name = mergeStr(row.campaign_name, existing.campaign_name);
-    row.creative_name = mergeStr(row.creative_name, existing.creative_name);
-    row.recording_url = mergeStr(row.recording_url, existing.recording_url);
-    row.raw_payload = { ...((existing.raw_payload as Record<string, any>) ?? {}), ...payload };
-  }
-
-  const { error } = await supabase
-    .from('cannaball_calls')
-    .upsert(row, { onConflict: 'client_id,call_id' });
-
-  if (error) {
-    console.error('cannaball_calls upsert failed', error);
-    return new Response(JSON.stringify({ error: 'DB insert failed', details: error.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  const requestedClientId = url.searchParams.get('client_id');
+  if (requestedClientId && !UUID_RE.test(requestedClientId)) {
+    return new Response(JSON.stringify({ error: 'client_id must be a uuid' }), {
+      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  // Echo back what was actually read, so a CallGrid test call shows immediately
-  // whether the ad tags and the payout arrived — no silent blanks.
-  return new Response(
-    JSON.stringify({
-      ok: true,
-      call_id,
-      client_id: clientId,
-      received: {
-        did: row.did ?? null,
-        duration_seconds,
-        connection_duration_seconds,
-        payout: row.payout,
-        utm_source: pick(payload, ['utm_source', 'utmSource']) ?? null,
-        utm_campaign: pick(payload, ['utm_campaign', 'utmCampaign']) ?? null,
-        utm_content: pick(payload, ['utm_content', 'utmContent']) ?? null,
-        creative_id: pick(payload, ['creative_id', 'ad_id', 'platform_ad_id']) ?? null,
-      },
-    }),
-    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  const call_id = String(
+    pick(payload, ['call_id', 'callId', 'id', 'uuid', 'call_uuid', 'CallId']) ??
+    crypto.randomUUID()
   );
 
+  const duration_seconds = toInt(pick(payload, ['duration', 'call_duration', 'duration_seconds', 'total_duration', 'CallDuration']));
+  const connection_duration_seconds = toInt(
+    pick(payload, ['connection_duration', 'talk_time', 'talk_duration', 'billable_duration', 'CallDurationFromConnect'])
+  );
+  const payout = toNumber(pick(payload, ['payout', 'revenue', 'amount', 'price', 'RevenueAmount']));
+  const rawDid = pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did', 'SourceNumber']) ?? null;
+  const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
+
+  // Answer CallGrid now; the write happens after the response is on the wire.
+  const ack = {
+    ok: true,
+    call_id,
+    client_id: requestedClientId ?? CANNABALL_CLIENT_ID,
+    queued: true,
+    received: {
+      did: didDigits || rawDid || null,
+      duration_seconds,
+      connection_duration_seconds,
+      payout,
+      utm_source: pick(payload, ['utm_source', 'utmSource']) ?? null,
+      utm_campaign: pick(payload, ['utm_campaign', 'utmCampaign']) ?? null,
+      utm_content: pick(payload, ['utm_content', 'utmContent']) ?? null,
+      creative_id: pick(payload, ['creative_id', 'ad_id', 'platform_ad_id']) ?? null,
+    },
+  };
+
+  const persist = async () => {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+
+    // Which client these calls belong to. Validated, never guessed.
+    let clientId = CANNABALL_CLIENT_ID;
+    if (requestedClientId) {
+      const { data: client, error: clientError } = await supabase
+        .from('clients').select('id').eq('id', requestedClientId).maybeSingle();
+      if (clientError) {
+        console.error('callgrid-webhook client lookup failed', { call_id, error: clientError.message });
+        return;
+      }
+      if (!client) {
+        console.error('callgrid-webhook unknown client_id', { call_id, requestedClientId });
+        return;
+      }
+      clientId = client.id;
+    }
+
+    const row: Record<string, unknown> = {
+      client_id: clientId,
+      call_id,
+      caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani', 'InboundNumber', 'CallerId']) ?? null,
+      did: didDigits || rawDid,
+      caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state', 'InboundStateCode']) ?? null,
+      caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city', 'InboundCity']) ?? null,
+      caller_zip: pick<string>(payload, ['caller_zip', 'zip', 'zip_code', 'postal_code', 'caller_postal', 'InboundZipCode']) ?? null,
+      caller_area_code: pick<string>(payload, ['caller_area_code', 'area_code', 'npa', 'InboundAreaCode']) ?? null,
+      call_start: toIso(pick(payload, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at', 'UTCISODate'])),
+      duration_seconds,
+      connected: (() => {
+        const c = pick(payload, ['connected', 'answered', 'is_connected', 'CallConnected']);
+        return c === true || c === 'true' || c === 1 || c === '1' || connection_duration_seconds > 0;
+      })(),
+      connection_duration_seconds,
+      payout,
+      disposition: pick<string>(payload, ['disposition', 'status', 'result', 'CallStatus']) ?? null,
+      campaign_name: pick<string>(payload, ['campaign', 'campaign_name', 'source', 'CampaignName']) ?? null,
+      creative_name: pick<string>(payload, ['creative', 'creative_name', 'ad_name']) ?? null,
+      recording_url: pick<string>(payload, ['recording_url', 'recording', 'audio_url']) ?? null,
+      raw_payload: payload,
+    };
+
+    // Account separation guard. Each CallGrid account posts to its own `client_id`.
+    // If the dialed number is registered to a DIFFERENT client, the URL is pointed at
+    // the wrong account: skip rather than file one client's call under another.
+    if (didDigits) {
+      const { data: allDids } = await supabase
+        .from('client_dids')
+        .select('client_id, did, did_formatted, creative_name, campaign_name');
+
+      const norm = (v: unknown) => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      const owners = (allDids || []).filter(
+        (d: any) => norm(d.did) === didDigits || norm(d.did_formatted) === didDigits,
+      );
+
+      if (owners.length > 0 && !owners.some((d: any) => d.client_id === clientId)) {
+        console.error('callgrid-webhook DID ownership mismatch', {
+          didDigits, clientId, registered_client_id: owners[0].client_id,
+        });
+        return;
+      }
+
+      // Fill creative/campaign from this client's DID assignment grid when CallGrid doesn't send them
+      if (!row.creative_name || !row.campaign_name) {
+        const match = owners.find((d: any) => d.client_id === clientId);
+        if (match) {
+          row.creative_name = row.creative_name || (match as any).creative_name || null;
+          row.campaign_name = row.campaign_name || (match as any).campaign_name || null;
+        }
+      }
+    }
+
+    // CallGrid fires multiple events per call (Call Initiated, Call Billable, …).
+    // Each event lands on the same (client_id, call_id) row: merge, never overwrite.
+    // A later event that omits a field must not blank what an earlier one delivered.
+    const mergeStr = (next: unknown, prev: unknown) =>
+      next !== null && next !== undefined && next !== '' ? next : (prev ?? null);
+    const mergeNum = (next: number, prev: unknown) => (next > 0 ? next : Number(prev) || 0);
+
+    const { data: existing } = await supabase
+      .from('cannaball_calls')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('call_id', call_id)
+      .maybeSingle();
+
+    if (existing) {
+      row.caller_number = mergeStr(row.caller_number, existing.caller_number);
+      row.did = mergeStr(row.did, existing.did);
+      row.caller_state = mergeStr(row.caller_state, existing.caller_state);
+      row.caller_city = mergeStr(row.caller_city, existing.caller_city);
+      row.caller_zip = mergeStr(row.caller_zip, existing.caller_zip);
+      row.caller_area_code = mergeStr(row.caller_area_code, existing.caller_area_code);
+      // Call Initiated fires first and carries the true start time; keep it.
+      row.call_start = existing.call_start ?? row.call_start;
+      row.duration_seconds = mergeNum(duration_seconds, existing.duration_seconds);
+      row.connection_duration_seconds = mergeNum(
+        connection_duration_seconds, existing.connection_duration_seconds,
+      );
+      row.connected = Boolean(existing.connected) || row.connected;
+      // The Billable event is the one that usually carries payout; a non-zero wins.
+      row.payout = mergeNum(payout, existing.payout);
+      row.disposition = mergeStr(row.disposition, existing.disposition);
+      row.campaign_name = mergeStr(row.campaign_name, existing.campaign_name);
+      row.creative_name = mergeStr(row.creative_name, existing.creative_name);
+      row.recording_url = mergeStr(row.recording_url, existing.recording_url);
+      row.raw_payload = { ...((existing.raw_payload as Record<string, any>) ?? {}), ...payload };
+    }
+
+    const { error } = await supabase
+      .from('cannaball_calls')
+      .upsert(row, { onConflict: 'client_id,call_id' });
+
+    if (error) console.error('cannaball_calls upsert failed', { call_id, error: error.message });
+  };
+
+  // `?sync=1` keeps the old blocking behaviour for manual testing, where seeing the
+  // write outcome matters more than latency. Live CallGrid traffic never sets it.
+  if (url.searchParams.get('sync') === '1') {
+    await persist();
+    return new Response(JSON.stringify({ ...ack, queued: false }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Keeps the isolate alive for the write after the response is returned.
+  (globalThis as any).EdgeRuntime?.waitUntil?.(
+    persist().catch((e) => console.error('callgrid-webhook persist failed', { call_id, e: String(e) })),
+  ) ?? persist().catch((e) => console.error('callgrid-webhook persist failed', { call_id, e: String(e) }));
+
+  return new Response(JSON.stringify(ack), {
+    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 });
+

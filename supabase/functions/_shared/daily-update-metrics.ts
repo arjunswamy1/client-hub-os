@@ -265,6 +265,7 @@ export async function collectClientMetrics(
     trend.push({
       date, spend, calls,
       cost_per_call: calls > 0 && spend > 0 ? round(spend / calls) : null,
+      impressions: impressionsAvailable ? impressionsByDay.get(date) ?? 0 : null,
       bands,
       band_pct: Object.fromEntries(
         Object.entries(bands).map(([k, v]) => [k, calls > 0 ? round((v / calls) * 100, 1) : 0]),

@@ -73,12 +73,29 @@ export interface DigestItem {
   client: string | null;
   due_date: string | null;
   overdue: boolean;
+  /** Days past due, for the "late 4d" flag. 0 when due today or not overdue. */
+  late_days?: number;
   created_at: string;
   /** Last human event on the item — see RECENCY_DAYS. */
   last_activity?: string;
   /** Original title, when the displayed one was rendered from brief fields. */
   raw_title?: string;
 }
+
+/**
+ * The creative production queue. A brief is a designer's work only while it sits
+ * in one of these states. `approved` and `delivered` are NOT on the queue: the
+ * work is signed off or already out, and a morning list that resurfaces them is
+ * exactly the noise AJ objected to.
+ */
+export const PRODUCTION_QUEUE_STATUSES = ['submitted', 'in_design', 'ready_for_review'] as const;
+
+/** Whole days between two ISO dates (yyyy-mm-dd), never negative. */
+export function daysLate(dueDate: string, today: string): number {
+  const d = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueDate}T00:00:00Z`)) / 86_400_000);
+  return d > 0 ? d : 0;
+}
+
 
 export interface BriefFields {
   title: string;
@@ -241,7 +258,18 @@ export function laneForTask(
   return 'media';
 }
 
+/**
+ * Henry's intake: a creative request pinged at him in an internal channel became
+ * a task to WRITE the brief. It belongs in the creative channel with the
+ * designers, but it is his and it reads as "create the brief", not production.
+ */
+export function isIntakeTask(task: { type_data?: Record<string, unknown> | null }): boolean {
+  const td = (task.type_data ?? {}) as Record<string, unknown>;
+  return td.source === 'slack_henry_intake' || td.creative_intake === true;
+}
+
 /** Overdue first, oldest overdue leading; then the newest work. */
+
 export function sortItems(items: DigestItem[]): DigestItem[] {
   return [...items].sort((a, b) => {
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
@@ -268,8 +296,12 @@ export function buildMessageText(opts: {
   lines.push('Today');
   shown.forEach((item, i) => {
     const prefix = item.client ? `${item.client} — ` : '';
-    lines.push(`  ${i + 1}. ${prefix}${item.title}`);
+    // Due today reads plainly; anything past due says how far, so today's work
+    // and what has slipped are one glance apart.
+    const late = item.late_days && item.late_days > 0 ? ` — late ${item.late_days}d` : '';
+    lines.push(`  ${i + 1}. ${prefix}${item.title}${late}`);
   });
+
   if (hidden > 0) lines.push(`  +${hidden} more · <${HUB_TASKS_URL}|open in the hub>`);
   lines.push('');
   lines.push(FOOTER);
@@ -353,8 +385,10 @@ export async function buildDigests(
     .not('assignee_id', 'is', null);
   if (taskErr) throw taskErr;
 
-  // Creative briefs are the creative team's real queue; their tasks table rows
-  // are only part of the picture.
+  // The creative lane has an explicit rule, not a heuristic: a brief is a
+  // designer's work only while it is ON the production queue AND due today or
+  // late. Two explicit fields decide it — `status` and `due_date` — so nothing
+  // is inferred from activity here (the media lane keeps that logic).
   //
   // `presumed_complete_at` is a closed state: the work was judged done from its
   // own deliverable evidence, and a digest must never resurface it.
@@ -364,15 +398,14 @@ export async function buildDigests(
       'id, title, client_id, due_date, created_at, assigned_to_id, status, delivered_at, deleted_at, ' +
         'presumed_complete_at, submitted_at, approved_at, trafficked_at, creative_type, creative_types, num_concepts, sizes',
     )
-    .is('delivered_at', null)
+    .in('status', PRODUCTION_QUEUE_STATUSES as unknown as string[])
+    .not('due_date', 'is', null)
+    .lte('due_date', todayEastern)
     .is('deleted_at', null)
     .is('presumed_complete_at', null)
     .not('assigned_to_id', 'is', null);
   if (briefErr) throw briefErr;
 
-  // `delivered` means the work went out. It is closed unless something
-  // explicitly reopened it (which moves the status back off `delivered`).
-  const BRIEF_CLOSED = new Set(['delivered', 'trafficked', 'archived', 'cancelled', 'draft']);
 
   // --- last real activity --------------------------------------------------
   // Human events only. `updated_at` is bumped by a trigger, so it cannot tell
@@ -426,6 +459,18 @@ export async function buildDigests(
     const client = t.client_id ? clientById.get(t.client_id as string) : undefined;
     const lane = laneForTask(t, client?.engagement_type ?? null, member);
     const last = latestActivity(String(t.created_at), newest.get(`task:${t.id}`));
+    // The creative lane carries the production queue and Henry's brief-creation
+    // intake — nothing else. Any other task assigned to a creative-lane person
+    // stays in the hub and out of the morning message.
+    if (lane === 'creative' && !isIntakeTask(t)) {
+      excluded.push({
+        member: member.name,
+        kind: 'task',
+        title: String(t.title ?? '').trim(),
+        reason: 'creative lane carries production-queue briefs and brief-creation intake only',
+      });
+      continue;
+    }
     if (isStale(last)) {
       excluded.push({
         member: member.name,
@@ -435,6 +480,7 @@ export async function buildDigests(
       });
       continue;
     }
+
     push(member.id, lane, {
       kind: 'task',
       id: t.id as string,
@@ -442,24 +488,18 @@ export async function buildDigests(
       client: client?.name ?? null,
       due_date: (t.due_date as string | null) ?? null,
       overdue: !!t.due_date && String(t.due_date) < todayEastern,
+      late_days: t.due_date ? daysLate(String(t.due_date), todayEastern) : 0,
       created_at: String(t.created_at),
       last_activity: last,
     });
+
   }
 
   for (const b of briefs ?? []) {
     const member = memberById.get(b.assigned_to_id as string);
     if (!member) continue;
     const rawTitle = String(b.title ?? '').trim();
-    if (BRIEF_CLOSED.has(String(b.status ?? ''))) {
-      excluded.push({
-        member: member.name,
-        kind: 'brief',
-        title: rawTitle,
-        reason: `status is ${b.status} — closed work`,
-      });
-      continue;
-    }
+    // No status or staleness test here: the query already applied the rule.
     const last = latestActivity(
       String(b.created_at),
       b.submitted_at as string | null,
@@ -467,15 +507,6 @@ export async function buildDigests(
       b.trafficked_at as string | null,
       newest.get(`brief:${b.id}`),
     );
-    if (isStale(last)) {
-      excluded.push({
-        member: member.name,
-        kind: 'brief',
-        title: rawTitle,
-        reason: `no activity since ${last.slice(0, 10)} (older than ${RECENCY_DAYS} days)`,
-      });
-      continue;
-    }
     const client = b.client_id ? clientById.get(b.client_id as string) : undefined;
     const shown = renderCreativeTitle(
       {
@@ -488,18 +519,21 @@ export async function buildDigests(
       },
       client?.name ?? null,
     );
+    const due = (b.due_date as string | null) ?? null;
     push(member.id, 'creative', {
       kind: 'brief',
       id: b.id as string,
       title: shown,
       raw_title: shown === rawTitle ? undefined : rawTitle,
       client: client?.name ?? null,
-      due_date: (b.due_date as string | null) ?? null,
-      overdue: !!b.due_date && String(b.due_date) < todayEastern,
+      due_date: due,
+      overdue: !!due && String(due) < todayEastern,
+      late_days: due ? daysLate(String(due), todayEastern) : 0,
       created_at: String(b.created_at),
       last_activity: last,
     });
   }
+
 
   const messages: DigestMessage[] = [];
   for (const [memberId, lanes] of byMember) {

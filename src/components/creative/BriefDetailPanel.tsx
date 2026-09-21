@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Download, Pencil, Paperclip, Trash2, Film, FolderOutput } from 'lucide-react';
 import { format } from 'date-fns';
+import { isHttpUrl } from '@/lib/utils';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { useAuth } from '@/contexts/AuthContext';
@@ -334,18 +335,32 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
             {(brief.raw_footage_url || brief.final_assets_url) && (
               <div className="grid gap-2 sm:grid-cols-2">
                 {brief.raw_footage_url && (
-                  <a href={brief.raw_footage_url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-primary hover:bg-accent transition-colors">
-                    <Film className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate"><span className="font-medium">Raw footage</span> — {brief.raw_footage_url}</span>
-                  </a>
+                  isHttpUrl(brief.raw_footage_url) ? (
+                    <a href={brief.raw_footage_url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-primary hover:bg-accent transition-colors">
+                      <Film className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate"><span className="font-medium">Raw footage</span> — {brief.raw_footage_url}</span>
+                    </a>
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-muted-foreground">
+                      <Film className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate"><span className="font-medium text-foreground">Raw footage</span> — {brief.raw_footage_url}</span>
+                    </div>
+                  )
                 )}
                 {brief.final_assets_url && (
-                  <a href={brief.final_assets_url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-primary hover:bg-accent transition-colors">
-                    <FolderOutput className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate"><span className="font-medium">Final assets</span> — {brief.final_assets_url}</span>
-                  </a>
+                  isHttpUrl(brief.final_assets_url) ? (
+                    <a href={brief.final_assets_url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-primary hover:bg-accent transition-colors">
+                      <FolderOutput className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate"><span className="font-medium">Final assets</span> — {brief.final_assets_url}</span>
+                    </a>
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-lg border p-2.5 text-xs text-muted-foreground">
+                      <FolderOutput className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate"><span className="font-medium text-foreground">Final assets</span> — {brief.final_assets_url}</span>
+                    </div>
+                  )
                 )}
               </div>
             )}
@@ -381,10 +396,16 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                           <img src={href} alt={ref.file_name || ''} className="w-full max-h-64 object-contain rounded bg-muted" />
                         )}
                         <div className="flex items-center justify-between gap-2">
-                          <a href={href} target="_blank" rel="noopener noreferrer"
-                            className="text-xs text-primary hover:underline truncate flex-1">
-                            {ref.file_name || href}
-                          </a>
+                          {isHttpUrl(href) ? (
+                            <a href={href} target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline truncate flex-1">
+                              {ref.file_name || href}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground truncate flex-1" title={ref.file_name || href || ''}>
+                              {ref.file_name || href} <span className="italic">(note, not a link)</span>
+                            </span>
+                          )}
                           {ref.source === 'upload' && (
                             <button
                               type="button"

@@ -396,10 +396,16 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                           <img src={href} alt={ref.file_name || ''} className="w-full max-h-64 object-contain rounded bg-muted" />
                         )}
                         <div className="flex items-center justify-between gap-2">
-                          <a href={href} target="_blank" rel="noopener noreferrer"
-                            className="text-xs text-primary hover:underline truncate flex-1">
-                            {ref.file_name || href}
-                          </a>
+                          {isHttpUrl(href) ? (
+                            <a href={href} target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline truncate flex-1">
+                              {ref.file_name || href}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground truncate flex-1" title={ref.file_name || href || ''}>
+                              {ref.file_name || href} <span className="italic">(note, not a link)</span>
+                            </span>
+                          )}
                           {ref.source === 'upload' && (
                             <button
                               type="button"

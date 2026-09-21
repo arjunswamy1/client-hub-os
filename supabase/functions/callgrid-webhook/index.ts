@@ -206,12 +206,15 @@ Deno.serve(async (req) => {
     const row: Record<string, unknown> = {
       client_id: clientId,
       call_id,
-      caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani', 'InboundNumber', 'CallerId']) ?? null,
+      caller_number: callerNumber,
       did: didDigits || rawDid,
-      caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state', 'InboundStateCode']) ?? null,
-      caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city', 'InboundCity']) ?? null,
-      caller_zip: pick<string>(payload, ['caller_zip', 'zip', 'zip_code', 'postal_code', 'caller_postal', 'InboundZipCode']) ?? null,
-      caller_area_code: pick<string>(payload, ['caller_area_code', 'area_code', 'npa', 'InboundAreaCode']) ?? null,
+      caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state', 'InboundStateCode', 'InboundState', 'CallerState']) ?? null,
+      caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city', 'InboundCity', 'InboundCityName', 'CallerCity']) ?? null,
+      caller_zip: pick<string>(payload, ['caller_zip', 'zip', 'zip_code', 'postal_code', 'caller_postal', 'InboundZipCode', 'InboundZip', 'InboundPostalCode']) ?? null,
+      // Area code is a substring of the caller's own number, so when the token is
+      // unfilled we read it off the number rather than leaving the column blank.
+      caller_area_code: pick<string>(payload, ['caller_area_code', 'area_code', 'npa', 'InboundAreaCode']) ??
+        (callerNumber && normNumber(callerNumber)?.length === 10 ? normNumber(callerNumber)!.slice(0, 3) : null),
       call_start: toIso(pick(payload, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at', 'UTCISODate'])),
       duration_seconds,
       connected: (() => {

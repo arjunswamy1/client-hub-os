@@ -163,7 +163,7 @@ export default function PpcMediaDashboard() {
       return map.get(d)!;
     };
     for (const c of calls) {
-      const d = (c.call_start || "").slice(0, 10);
+      const d = c.call_start ? reportingDay(c.call_start, CALLGRID_REPORTING_TZ) : "";
       if (!d) continue;
       const row = touch(d);
       row.calls += 1;

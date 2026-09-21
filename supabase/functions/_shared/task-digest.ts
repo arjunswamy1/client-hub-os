@@ -473,15 +473,7 @@ export async function buildDigests(
     const member = memberById.get(b.assigned_to_id as string);
     if (!member) continue;
     const rawTitle = String(b.title ?? '').trim();
-    if (BRIEF_CLOSED.has(String(b.status ?? ''))) {
-      excluded.push({
-        member: member.name,
-        kind: 'brief',
-        title: rawTitle,
-        reason: `status is ${b.status} — closed work`,
-      });
-      continue;
-    }
+    // No status or staleness test here: the query already applied the rule.
     const last = latestActivity(
       String(b.created_at),
       b.submitted_at as string | null,
@@ -489,15 +481,6 @@ export async function buildDigests(
       b.trafficked_at as string | null,
       newest.get(`brief:${b.id}`),
     );
-    if (isStale(last)) {
-      excluded.push({
-        member: member.name,
-        kind: 'brief',
-        title: rawTitle,
-        reason: `no activity since ${last.slice(0, 10)} (older than ${RECENCY_DAYS} days)`,
-      });
-      continue;
-    }
     const client = b.client_id ? clientById.get(b.client_id as string) : undefined;
     const shown = renderCreativeTitle(
       {
@@ -510,18 +493,21 @@ export async function buildDigests(
       },
       client?.name ?? null,
     );
+    const due = (b.due_date as string | null) ?? null;
     push(member.id, 'creative', {
       kind: 'brief',
       id: b.id as string,
       title: shown,
       raw_title: shown === rawTitle ? undefined : rawTitle,
       client: client?.name ?? null,
-      due_date: (b.due_date as string | null) ?? null,
-      overdue: !!b.due_date && String(b.due_date) < todayEastern,
+      due_date: due,
+      overdue: !!due && String(due) < todayEastern,
+      late_days: due ? daysLate(String(due), todayEastern) : 0,
       created_at: String(b.created_at),
       last_activity: last,
     });
   }
+
 
   const messages: DigestMessage[] = [];
   for (const [memberId, lanes] of byMember) {

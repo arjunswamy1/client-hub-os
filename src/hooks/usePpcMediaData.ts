@@ -91,8 +91,9 @@ export function usePpcCalls() {
             "call_id, call_start, campaign_name, creative_name, caller_number, caller_state, caller_zip, did, duration_seconds, connection_duration_seconds, connected, payout, disposition",
           )
           .eq("client_id", PPC_MEDIA_CLIENT_ID)
-          .gte("call_start", `${from}T00:00:00`)
-          .lte("call_start", `${to}T23:59:59`)
+          // CallGrid reports this account in US/Eastern — the day is cut there, not at UTC midnight.
+          .gte("call_start", zonedTimeToUtcISO(from, "00:00:00", CALLGRID_REPORTING_TZ))
+          .lte("call_start", zonedTimeToUtcISO(to, "23:59:59", CALLGRID_REPORTING_TZ))
           .order("call_start", { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1);
         if (error) throw error;

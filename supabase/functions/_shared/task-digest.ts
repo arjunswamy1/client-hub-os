@@ -285,8 +285,12 @@ export function buildMessageText(opts: {
   lines.push('Today');
   shown.forEach((item, i) => {
     const prefix = item.client ? `${item.client} — ` : '';
-    lines.push(`  ${i + 1}. ${prefix}${item.title}`);
+    // Due today reads plainly; anything past due says how far, so today's work
+    // and what has slipped are one glance apart.
+    const late = item.late_days && item.late_days > 0 ? ` — late ${item.late_days}d` : '';
+    lines.push(`  ${i + 1}. ${prefix}${item.title}${late}`);
   });
+
   if (hidden > 0) lines.push(`  +${hidden} more · <${HUB_TASKS_URL}|open in the hub>`);
   lines.push('');
   lines.push(FOOTER);

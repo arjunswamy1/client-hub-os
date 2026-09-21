@@ -13,6 +13,29 @@ export const HUB_TASKS_URL = 'https://hub.connectpaidmedia.com/tasks';
 /** Hard cap on listed items; the rest collapse into "+N more". */
 export const MAX_ITEMS = 5;
 
+/**
+ * Recency backstop. A daily message says "here is today"; work whose last real
+ * activity is older than this belongs in a weekly review, not here.
+ *
+ * "Real activity" is deliberately NOT `updated_at`: a trigger bumps that on any
+ * write, so every row looks fresh and a staleness read built on it is wrong.
+ * We use only events a person caused — a status milestone, a comment, or a
+ * deliverable upload — falling back to creation.
+ */
+export const RECENCY_DAYS = 30;
+
+export const isStale = (lastActivityIso: string, now = new Date()): boolean =>
+  new Date(lastActivityIso).getTime() < now.getTime() - RECENCY_DAYS * 86_400_000;
+
+/** Latest of a set of timestamps, ignoring nulls. Always returns a value. */
+export function latestActivity(fallback: string, ...stamps: (string | null | undefined)[]): string {
+  let best = fallback;
+  for (const s of stamps) {
+    if (s && String(s) > best) best = String(s);
+  }
+  return best;
+}
+
 export const LANES = ['media', 'creative'] as const;
 export type Lane = (typeof LANES)[number];
 
@@ -51,6 +74,129 @@ export interface DigestItem {
   due_date: string | null;
   overdue: boolean;
   created_at: string;
+  /** Last human event on the item — see RECENCY_DAYS. */
+  last_activity?: string;
+  /** Original title, when the displayed one was rendered from brief fields. */
+  raw_title?: string;
+}
+
+export interface BriefFields {
+  title: string;
+  creative_type?: string | null;
+  creative_types?: string[] | null;
+  num_concepts?: number | null;
+  sizes?: unknown;
+  delivered_count?: number;
+}
+
+/**
+ * True when a title is a filename rather than an instruction: once the client
+ * name and separators are removed, one single token is left — "Cannaball_
+ * PersonalDebt_", "Leadgen_FE_4", "Connatria_HVAC". A title with real words in
+ * it ("Health Share FE CTV_60-90seconds") is left exactly as written: half-
+ * rewriting prose reads worse than the filename does.
+ */
+export function looksLikeAssetLabel(title: string, clientName: string | null = null): boolean {
+  const t = title.trim();
+  if (!t) return false;
+  const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clientKey = compact(clientName ?? '');
+  const tokens = t
+    .split(/\s+/)
+    .filter((w) => !/^[—–-]$/.test(w))
+    .filter((w) => !(clientKey && compact(w) === clientKey));
+  if (tokens.length !== 1) return false;
+  return /_/.test(tokens[0]);
+}
+
+const FORMAT_WORD: Record<string, string> = {
+  video: 'video',
+  static: 'static',
+  statics: 'static',
+  carousel: 'carousel',
+  gif: 'GIF',
+  script: 'script',
+};
+
+/** Lower-case ordinary words, leave acronyms and numbers as they are (FE, CTV). */
+const softLower = (w: string) => (/^[A-Z][a-z]+$/.test(w) ? w.toLowerCase() : w);
+
+/**
+ * Split a label into the name in front of it and what it is about:
+ * "Cannaball_PersonalDebt_" -> { owner: 'Cannaball', subject: 'personal debt' }
+ * "LeadGen — Leadgen_FE_4"  -> { owner: 'LeadGen',   subject: 'FE 4' }
+ * The owner is dropped from the subject so a client prefix is never doubled.
+ */
+export function labelParts(
+  title: string,
+  clientName: string | null,
+): { owner: string | null; subject: string } {
+  const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clientKey = compact(clientName ?? '');
+  const clientWords = new Set(
+    (clientName ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean),
+  );
+
+  // Drop the client's own name before splitting CamelCase, so "Leadgen_FE_4"
+  // under client "LeadGen" does not survive as "lead gen".
+  const words = title
+    .replace(/[—–]/g, ' ')
+    .replace(/[_]+/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w && !(clientKey && compact(w) === clientKey))
+    .flatMap((w) => w.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(' '))
+    .filter(Boolean);
+
+  let rest = words.filter((w) => !clientWords.has(w.toLowerCase()));
+  let owner = clientName;
+  // No client on the brief: the label's own leading token is the best name we
+  // have, and it is stated rather than guessed.
+  if (!owner && rest.length > 1) {
+    owner = rest[0];
+    rest = rest.slice(1);
+  }
+  return { owner, subject: rest.map(softLower).join(' ').trim() };
+}
+
+/**
+ * Render a creative item as an action, using only what the brief states.
+ * Where there is nothing to build an action from, the label is kept and merely
+ * prefixed with the client — guessing a deliverable is worse than a filename.
+ */
+export function renderCreativeTitle(brief: BriefFields, clientName: string | null): string {
+  const title = String(brief.title ?? '').trim();
+  if (!looksLikeAssetLabel(title, clientName)) return title;
+
+  const formats = [
+    ...(Array.isArray(brief.creative_types) ? brief.creative_types : []),
+    ...(brief.creative_type ? [brief.creative_type] : []),
+  ]
+    .map((f) => FORMAT_WORD[String(f).toLowerCase()] ?? String(f).toLowerCase())
+    .filter(Boolean);
+  const format = formats[0] ?? null;
+
+  const asked = Number(brief.num_concepts ?? 0);
+  const done = Number(brief.delivered_count ?? 0);
+  const outstanding = asked > 0 ? Math.max(asked - done, 0) : 0;
+  const { owner, subject: rawSubject } = labelParts(title, clientName);
+  // The message renderer already puts the client in front of each item, so a
+  // prefix here is added only when the name came from the label itself — a
+  // brief with no client on it.
+  const prefix = owner && !clientName ? `${owner} — ` : '';
+  // The format is already named in the rendered phrase; keep it out of the
+  // subject so nothing reads "3 statics Q3 statics".
+  const formatWords = new Set(formats.flatMap((f) => [f.toLowerCase(), `${f.toLowerCase()}s`]));
+  const subject = rawSubject
+    .split(' ')
+    .filter((w) => w && !formatWords.has(w.toLowerCase()))
+    .join(' ');
+
+  if (format && outstanding > 0) {
+    const noun = outstanding === 1 ? format : `${format}s`;
+    return `${prefix}deliver ${outstanding} ${subject ? `${subject} ` : ''}${noun}`.replace(/\s+/g, ' ');
+  }
+  if (format && subject) return `${prefix}${subject} ${format}`;
+  return `${prefix}${title}`;
 }
 
 export interface DigestMessage {
@@ -177,8 +323,13 @@ export async function buildDigests(
   supabase: any,
   todayEastern: string,
   weekdayLong: string,
-): Promise<{ messages: DigestMessage[]; skipped: { member: string; reason: string }[] }> {
+): Promise<{
+  messages: DigestMessage[];
+  skipped: { member: string; reason: string }[];
+  excluded: { member: string; kind: string; title: string; reason: string }[];
+}> {
   const skipped: { member: string; reason: string }[] = [];
+  const excluded: { member: string; kind: string; title: string; reason: string }[] = [];
 
   const { data: members, error: memberErr } = await supabase
     .from('team_members')
@@ -204,15 +355,59 @@ export async function buildDigests(
 
   // Creative briefs are the creative team's real queue; their tasks table rows
   // are only part of the picture.
+  //
+  // `presumed_complete_at` is a closed state: the work was judged done from its
+  // own deliverable evidence, and a digest must never resurface it.
   const { data: briefs, error: briefErr } = await supabase
     .from('creative_briefs')
-    .select('id, title, client_id, due_date, created_at, assigned_to_id, status, delivered_at, deleted_at')
+    .select(
+      'id, title, client_id, due_date, created_at, assigned_to_id, status, delivered_at, deleted_at, ' +
+        'presumed_complete_at, submitted_at, approved_at, trafficked_at, creative_type, creative_types, num_concepts, sizes',
+    )
     .is('delivered_at', null)
     .is('deleted_at', null)
+    .is('presumed_complete_at', null)
     .not('assigned_to_id', 'is', null);
   if (briefErr) throw briefErr;
 
+  // `delivered` means the work went out. It is closed unless something
+  // explicitly reopened it (which moves the status back off `delivered`).
   const BRIEF_CLOSED = new Set(['delivered', 'trafficked', 'archived', 'cancelled', 'draft']);
+
+  // --- last real activity --------------------------------------------------
+  // Human events only. `updated_at` is bumped by a trigger, so it cannot tell
+  // stale work from a row that was merely rewritten.
+  const briefIds = (briefs ?? []).map((b: any) => b.id as string);
+  const taskIds = (tasks ?? []).map((t: any) => t.id as string);
+  const newest = new Map<string, string>();
+  const note = (key: string, stamp: unknown) => {
+    const s = stamp ? String(stamp) : '';
+    if (!s) return;
+    if (!newest.has(key) || s > newest.get(key)!) newest.set(key, s);
+  };
+  const deliveredCount = new Map<string, number>();
+
+  const chunk = <T>(xs: T[], n = 200) =>
+    Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+
+  for (const ids of chunk(briefIds)) {
+    const [{ data: comments }, { data: delivs }] = await Promise.all([
+      supabase.from('creative_brief_comments').select('brief_id, created_at').in('brief_id', ids),
+      supabase.from('creative_deliverables').select('brief_id, uploaded_at').in('brief_id', ids),
+    ]);
+    for (const c of comments ?? []) note(`brief:${c.brief_id}`, c.created_at);
+    for (const d of delivs ?? []) {
+      note(`brief:${d.brief_id}`, d.uploaded_at);
+      deliveredCount.set(String(d.brief_id), (deliveredCount.get(String(d.brief_id)) ?? 0) + 1);
+    }
+  }
+  for (const ids of chunk(taskIds)) {
+    const { data: comments } = await supabase
+      .from('task_comments')
+      .select('task_id, created_at')
+      .in('task_id', ids);
+    for (const c of comments ?? []) note(`task:${c.task_id}`, c.created_at);
+  }
 
   // member id -> lane -> items
   const byMember = new Map<string, Map<Lane, DigestItem[]>>();
@@ -230,6 +425,16 @@ export async function buildDigests(
     if (!source) continue; // never went through the gate
     const client = t.client_id ? clientById.get(t.client_id as string) : undefined;
     const lane = laneForTask(t, client?.engagement_type ?? null, member);
+    const last = latestActivity(String(t.created_at), newest.get(`task:${t.id}`));
+    if (isStale(last)) {
+      excluded.push({
+        member: member.name,
+        kind: 'task',
+        title: String(t.title ?? '').trim(),
+        reason: `no activity since ${last.slice(0, 10)} (older than ${RECENCY_DAYS} days)`,
+      });
+      continue;
+    }
     push(member.id, lane, {
       kind: 'task',
       id: t.id as string,
@@ -238,22 +443,61 @@ export async function buildDigests(
       due_date: (t.due_date as string | null) ?? null,
       overdue: !!t.due_date && String(t.due_date) < todayEastern,
       created_at: String(t.created_at),
+      last_activity: last,
     });
   }
 
   for (const b of briefs ?? []) {
-    if (BRIEF_CLOSED.has(String(b.status ?? ''))) continue;
     const member = memberById.get(b.assigned_to_id as string);
     if (!member) continue;
+    const rawTitle = String(b.title ?? '').trim();
+    if (BRIEF_CLOSED.has(String(b.status ?? ''))) {
+      excluded.push({
+        member: member.name,
+        kind: 'brief',
+        title: rawTitle,
+        reason: `status is ${b.status} — closed work`,
+      });
+      continue;
+    }
+    const last = latestActivity(
+      String(b.created_at),
+      b.submitted_at as string | null,
+      b.approved_at as string | null,
+      b.trafficked_at as string | null,
+      newest.get(`brief:${b.id}`),
+    );
+    if (isStale(last)) {
+      excluded.push({
+        member: member.name,
+        kind: 'brief',
+        title: rawTitle,
+        reason: `no activity since ${last.slice(0, 10)} (older than ${RECENCY_DAYS} days)`,
+      });
+      continue;
+    }
     const client = b.client_id ? clientById.get(b.client_id as string) : undefined;
+    const shown = renderCreativeTitle(
+      {
+        title: rawTitle,
+        creative_type: b.creative_type as string | null,
+        creative_types: b.creative_types as string[] | null,
+        num_concepts: b.num_concepts as number | null,
+        sizes: b.sizes,
+        delivered_count: deliveredCount.get(String(b.id)) ?? 0,
+      },
+      client?.name ?? null,
+    );
     push(member.id, 'creative', {
       kind: 'brief',
       id: b.id as string,
-      title: String(b.title ?? '').trim(),
+      title: shown,
+      raw_title: shown === rawTitle ? undefined : rawTitle,
       client: client?.name ?? null,
       due_date: (b.due_date as string | null) ?? null,
       overdue: !!b.due_date && String(b.due_date) < todayEastern,
       created_at: String(b.created_at),
+      last_activity: last,
     });
   }
 
@@ -288,5 +532,5 @@ export async function buildDigests(
   }
 
   messages.sort((a, b) => a.lane.localeCompare(b.lane) || a.member.name.localeCompare(b.member.name));
-  return { messages, skipped };
+  return { messages, skipped, excluded };
 }

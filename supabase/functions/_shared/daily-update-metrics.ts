@@ -23,8 +23,78 @@ export interface DayRow {
   spend: number;
   calls: number;
   cost_per_call: number | null;
+  /** null where no spend source for this client carries an impression column. */
+  impressions: number | null;
   bands: Record<string, number>;
   band_pct: Record<string, number>;
+}
+
+/**
+ * Why a reporting day shows no spend. Zero spend has two entirely different
+ * causes and telling the lead the wrong one points at a plumbing problem that
+ * does not exist while hiding one that does.
+ *
+ * - `dark`    — the campaign genuinely did not run: no spend, no impressions
+ *               (or, where impressions are unavailable, call volume collapsed
+ *               alongside). A real finding for the lead.
+ * - `stale`   — spend is missing but delivery evidence says it ran: impressions
+ *               non-zero, or call volume held up. A feed problem.
+ * - `ok`      — spend landed.
+ */
+export type SpendDeliveryState = 'ok' | 'dark' | 'stale';
+
+export interface SpendDelivery {
+  state: SpendDeliveryState;
+  /** Which test decided it, so the note can say so. */
+  test: 'impressions' | 'call volume' | 'none';
+  detail: string;
+}
+
+/**
+ * Classify the reporting day. Impressions decide when we have them; otherwise
+ * the call-volume comparison decides alone and the note says which was used.
+ */
+export function spendDelivery(m: ClientMetrics): SpendDelivery {
+  const y = m.yesterday;
+  if (!y) return { state: 'ok', test: 'none', detail: 'no reporting day row' };
+  if (y.spend > 0) return { state: 'ok', test: 'none', detail: 'spend landed' };
+
+  const prior = m.trend.filter((d) => d.date !== m.for_date);
+  const priorCalls = prior.map((d) => d.calls).filter((n) => n > 0);
+  const typical = priorCalls.length
+    ? priorCalls.slice().sort((a, b) => a - b)[Math.floor(priorCalls.length / 2)]
+    : 0;
+  const collapsed = typical > 0 ? y.calls <= Math.max(1, typical * 0.2) : false;
+
+  if (y.impressions !== null) {
+    if (y.impressions === 0) {
+      return {
+        state: 'dark',
+        test: 'impressions',
+        detail: `$0 spend and 0 impressions on ${m.for_date}${
+          collapsed ? `, with calls down to ${y.calls} against a typical ${typical}` : ''
+        }`,
+      };
+    }
+    return {
+      state: 'stale',
+      test: 'impressions',
+      detail: `$0 spend but ${y.impressions.toLocaleString()} impressions on ${m.for_date} — it delivered, the spend row has not landed`,
+    };
+  }
+
+  if (collapsed) {
+    return {
+      state: 'dark',
+      test: 'call volume',
+      detail: `$0 spend and calls down to ${y.calls} from a typical ${typical} (no impression column on this account's spend source, so call volume was the only test)`,
+    };
+  }
+  return {
+    state: 'stale',
+    test: 'call volume',
+    detail: `$0 spend but ${y.calls} calls still arrived, in line with the week (no impression column on this account's spend source, so call volume was the only test)`,
+  };
 }
 
 export interface ClientMetrics {
@@ -98,8 +168,17 @@ export async function collectClientMetrics(
     m.set(date, (m.get(date) ?? 0) + spend);
   };
 
+  // Impressions are delivery evidence: they are what separates "the campaign
+  // was dark" from "the spend feed is stale" on a $0 day.
+  const impressionsByDay = new Map<string, number>();
+  let impressionsAvailable = false;
+  const addImpressions = (date: string, n: number) => {
+    impressionsAvailable = true;
+    impressionsByDay.set(date, (impressionsByDay.get(date) ?? 0) + n);
+  };
+
   const { data: roku, error: rokuErr } = await db.from('roku_daily_metrics')
-    .select('date, campaign_name, entity_name, spend')
+    .select('date, campaign_name, entity_name, spend, impressions')
     .eq('client_id', clientId).eq('entity', 'campaign')
     .gte('date', windowStart).lte('date', forDate);
   if (rokuErr) throw new Error(`roku_daily_metrics: ${rokuErr.message}`);
@@ -107,6 +186,7 @@ export async function collectClientMetrics(
     spendSources.push('Roku (roku_daily_metrics)');
     for (const r of roku) {
       addSpend(String(r.date), String(r.campaign_name ?? r.entity_name ?? 'unnamed campaign'), Number(r.spend ?? 0));
+      if (r.impressions !== null && r.impressions !== undefined) addImpressions(String(r.date), Number(r.impressions));
     }
   }
 
@@ -119,6 +199,7 @@ export async function collectClientMetrics(
     for (const r of adDaily) {
       const platform = String(r.platform ?? 'unknown');
       spendByDay.set(String(r.date), (spendByDay.get(String(r.date)) ?? 0) + Number(r.spend ?? 0));
+      if (r.impressions !== null && r.impressions !== undefined) addImpressions(String(r.date), Number(r.impressions));
       if (String(r.date) === forDate) platformSpend.set(platform, (platformSpend.get(platform) ?? 0) + Number(r.spend ?? 0));
     }
     const platforms = [...new Set(adDaily.map((r) => String(r.platform ?? 'unknown')))];
@@ -184,6 +265,7 @@ export async function collectClientMetrics(
     trend.push({
       date, spend, calls,
       cost_per_call: calls > 0 && spend > 0 ? round(spend / calls) : null,
+      impressions: impressionsAvailable ? impressionsByDay.get(date) ?? 0 : null,
       bands,
       band_pct: Object.fromEntries(
         Object.entries(bands).map(([k, v]) => [k, calls > 0 ? round((v / calls) * 100, 1) : 0]),

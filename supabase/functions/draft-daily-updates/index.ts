@@ -13,7 +13,12 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createOpenAI } from 'npm:@ai-sdk/openai';
 import { streamText } from 'npm:ai';
 import { postToSlack } from '../_shared/slack-post.ts';
-import { collectClientMetrics, type ClientMetrics, type DayRow } from '../_shared/daily-update-metrics.ts';
+import {
+  collectClientMetrics,
+  spendDelivery,
+  type ClientMetrics,
+  type DayRow,
+} from '../_shared/daily-update-metrics.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,9 +87,13 @@ function weeklyDirection(trend: DayRow[], forDate: string): { series: string; di
   };
 }
 
-/** True when calls arrived on the reporting day but no spend has landed for it. */
-const spendMissingForDay = (m: ClientMetrics) =>
-  !!m.yesterday && m.yesterday.calls > 0 && m.yesterday.spend <= 0;
+/**
+ * True when spend for the reporting day cannot be trusted — the feed is stale.
+ * A genuinely dark day (no spend, no impressions, volume collapsed) is NOT this:
+ * its $0 is real, and it is a finding for the lead rather than a plumbing fault.
+ * Either way "$0 spend" never reaches client-facing copy.
+ */
+const spendMissingForDay = (m: ClientMetrics) => spendDelivery(m).state !== 'ok';
 
 /** The measured facts, written out so the model never has to derive a number. */
 function factSheet(m: ClientMetrics): string {
@@ -143,8 +152,11 @@ function factSheet(m: ClientMetrics): string {
  */
 function buildAmNotes(m: ClientMetrics): string {
   const notes: string[] = [];
-  if (spendMissingForDay(m)) {
-    notes.push(`No spend landed for ${pretty(m.for_date)} even though calls came in — spend feed looks stale, so cost per call and any "campaign at $0" reading are unreliable for this day and were kept out of the draft`);
+  const delivery = spendDelivery(m);
+  if (delivery.state === 'dark') {
+    notes.push(`NO DELIVERY on ${pretty(m.for_date)} — the campaign was dark: ${delivery.detail}. Tested on ${delivery.test}. This is a real finding, not a feed problem; spend language was kept out of the draft`);
+  } else if (delivery.state === 'stale') {
+    notes.push(`No spend landed for ${pretty(m.for_date)} even though it delivered — spend feed looks stale (${delivery.detail}; tested on ${delivery.test}), so cost per call and any "campaign at $0" reading are unreliable for this day and were kept out of the draft`);
   }
   if (m.spend_sources.length) notes.push(`Spend read from: ${m.spend_sources.join('; ')}`);
   if (m.call_sources.length) notes.push(`Calls read from: ${m.call_sources.join('; ')}`);
@@ -159,7 +171,11 @@ function buildAmNotes(m: ClientMetrics): string {
     notes.push(`No duration mix for ${noQuality.join(', ')} — no calls recorded`);
   }
   if (m.anomalies.length) {
-    const qualifier = spendMissingForDay(m) ? ' (unverified — spend feed stale for this day)' : '';
+    const qualifier = delivery.state === 'stale'
+      ? ' (unverified — spend feed stale for this day)'
+      : delivery.state === 'dark'
+        ? ' (the account was dark this day — these are genuinely not delivering)'
+        : '';
     notes.push(`${m.anomalies.length} campaign${m.anomalies.length === 1 ? '' : 's'} with no spend yesterday${qualifier}: ${m.anomalies.map((a) => a.campaign).join(', ')}`);
   }
   if (!m.campaign_breakdown.length && m.spend_sources.length) {
@@ -312,7 +328,10 @@ Deno.serve(async (req) => {
       (mappings ?? []).map((m: any) => [m.client_id as string, { id: m.channel_id as string, name: m.channel_name as string }]),
     );
 
-    const { data: clients, error: clientErr } = await supabase.from('clients').select('id, name');
+    // The off switch is read here, not somewhere downstream: a suppressed
+    // account must never reach the drafting or posting path at all.
+    const { data: clients, error: clientErr } = await supabase.from('clients')
+      .select('id, name, daily_update_enabled, daily_update_suppressed_reason');
     if (clientErr) throw clientErr;
 
     // Fetched separately rather than as an embed: the embed silently yields no
@@ -346,12 +365,24 @@ Deno.serve(async (req) => {
     // Scope: any client with an internal channel, plus any client with data in
     // the window even if no channel is registered yet — an account with the best
     // data in the agency must never be silently skipped.
-    let candidates = (clients ?? []) as { id: string; name: string }[];
+    let candidates = (clients ?? []) as {
+      id: string;
+      name: string;
+      daily_update_enabled?: boolean | null;
+      daily_update_suppressed_reason?: string | null;
+    }[];
     if (onlyClients) candidates = candidates.filter((c) => onlyClients.includes(c.id));
     if (onlyNames) {
       const wanted = onlyNames.map((n) => n.toLowerCase());
       candidates = candidates.filter((c) => wanted.includes(c.name.toLowerCase()));
     }
+
+    // Suppressed accounts are reported, never silently missing: a run summary
+    // that omits them looks identical to one where the account simply had no
+    // data, and the difference matters.
+    const suppressed = candidates.filter((c) => c.daily_update_enabled === false);
+    candidates = candidates.filter((c) => c.daily_update_enabled !== false);
+
 
     const targets: { id: string; name: string; reason: string }[] = [];
     for (const c of candidates) {
@@ -441,6 +472,10 @@ Deno.serve(async (req) => {
       drafts: results.filter((r) => r.kind === 'draft').length,
       prompts: results.filter((r) => r.kind === 'prompt').length,
       not_posted: skipped,
+      suppressed: suppressed.map((c) => ({
+        client: c.name,
+        reason: c.daily_update_suppressed_reason ?? 'daily updates turned off, no reason recorded',
+      })),
       errors: results.filter((r) => r.error).length,
       results,
     });

@@ -13,7 +13,12 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createOpenAI } from 'npm:@ai-sdk/openai';
 import { streamText } from 'npm:ai';
 import { postToSlack } from '../_shared/slack-post.ts';
-import { collectClientMetrics, type ClientMetrics, type DayRow } from '../_shared/daily-update-metrics.ts';
+import {
+  collectClientMetrics,
+  spendDelivery,
+  type ClientMetrics,
+  type DayRow,
+} from '../_shared/daily-update-metrics.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,9 +87,13 @@ function weeklyDirection(trend: DayRow[], forDate: string): { series: string; di
   };
 }
 
-/** True when calls arrived on the reporting day but no spend has landed for it. */
-const spendMissingForDay = (m: ClientMetrics) =>
-  !!m.yesterday && m.yesterday.calls > 0 && m.yesterday.spend <= 0;
+/**
+ * True when spend for the reporting day cannot be trusted — the feed is stale.
+ * A genuinely dark day (no spend, no impressions, volume collapsed) is NOT this:
+ * its $0 is real, and it is a finding for the lead rather than a plumbing fault.
+ * Either way "$0 spend" never reaches client-facing copy.
+ */
+const spendMissingForDay = (m: ClientMetrics) => spendDelivery(m).state !== 'ok';
 
 /** The measured facts, written out so the model never has to derive a number. */
 function factSheet(m: ClientMetrics): string {

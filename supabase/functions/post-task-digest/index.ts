@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
 
     // ---------------------------------------------------------------- digest
     if (mode === 'digest') {
-      const { messages, skipped } = await buildDigests(supabase, et.date, et.weekdayLong);
+      const { messages, skipped, excluded } = await buildDigests(supabase, et.date, et.weekdayLong);
       const scoped = onlyLane ? messages.filter((m) => m.lane === onlyLane) : messages;
       const posted: PostedRow[] = [];
       for (const msg of scoped) {
@@ -175,6 +175,8 @@ Deno.serve(async (req) => {
         posted_count: posted.filter((p) => p.posted).length,
         by_channel: grouped,
         skipped_people: skipped,
+        excluded_items: excluded.length,
+        excluded_detail: dryRun ? excluded : undefined,
       });
     }
 

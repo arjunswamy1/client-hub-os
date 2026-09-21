@@ -1,0 +1,1 @@
+UPDATE public.clients SET reporting_timezone = 'America/New_York' WHERE slug IN ('cannaball', 'ppc-media') AND reporting_timezone IS NULL;

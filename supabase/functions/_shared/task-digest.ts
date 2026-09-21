@@ -97,9 +97,6 @@ export interface BriefFields {
 export function looksLikeAssetLabel(title: string): boolean {
   const t = title.trim();
   if (!t) return false;
-  if (/[_]/.test(t) && !/\s/.test(t.replace(/_/g, ' ')) === false) {
-    // fallthrough — handled by the checks below
-  }
   if (/[_-]\s*$/.test(t)) return true;
   if (!/\s/.test(t)) return true; // one token, e.g. "Leadgen_FE_4"
   // "LeadGen — Leadgen_FE_4" style: every whitespace-separated word that is not

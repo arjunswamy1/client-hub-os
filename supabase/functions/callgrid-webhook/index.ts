@@ -32,12 +32,30 @@ function flattenTagBags(payload: Record<string, any>): Record<string, any> {
 }
 
 
+/**
+ * A merge token CallGrid never filled arrives either empty or as the literal token
+ * text ("[[InboundStateCode]]", "{{zip}}", "%zip%"). Neither is data: storing the
+ * literal would look like a real value and quietly poison the field.
+ */
+function isUnfilled(v: unknown): boolean {
+  if (v === undefined || v === null || v === '') return true;
+  const s = String(v).trim();
+  if (s === '') return true;
+  return /^(\[\[.*\]\]|\{\{.*\}\}|%[\w:.]+%)$/.test(s);
+}
+
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
   for (const k of keys) {
     const v = obj?.[k];
-    if (v !== undefined && v !== null && v !== '') return v as T;
+    if (!isUnfilled(v)) return v as T;
   }
   return undefined;
+}
+
+/** Digits only, US 1-prefix dropped. */
+function normNumber(v: unknown): string | null {
+  const d = String(v ?? '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  return d || null;
 }
 
 function toInt(v: unknown): number {

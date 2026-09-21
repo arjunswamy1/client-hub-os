@@ -491,5 +491,5 @@ export async function buildDigests(
   }
 
   messages.sort((a, b) => a.lane.localeCompare(b.lane) || a.member.name.localeCompare(b.member.name));
-  return { messages, skipped };
+  return { messages, skipped, excluded };
 }

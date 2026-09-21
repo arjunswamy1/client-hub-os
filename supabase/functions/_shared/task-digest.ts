@@ -13,6 +13,29 @@ export const HUB_TASKS_URL = 'https://hub.connectpaidmedia.com/tasks';
 /** Hard cap on listed items; the rest collapse into "+N more". */
 export const MAX_ITEMS = 5;
 
+/**
+ * Recency backstop. A daily message says "here is today"; work whose last real
+ * activity is older than this belongs in a weekly review, not here.
+ *
+ * "Real activity" is deliberately NOT `updated_at`: a trigger bumps that on any
+ * write, so every row looks fresh and a staleness read built on it is wrong.
+ * We use only events a person caused — a status milestone, a comment, or a
+ * deliverable upload — falling back to creation.
+ */
+export const RECENCY_DAYS = 30;
+
+export const isStale = (lastActivityIso: string, now = new Date()): boolean =>
+  new Date(lastActivityIso).getTime() < now.getTime() - RECENCY_DAYS * 86_400_000;
+
+/** Latest of a set of timestamps, ignoring nulls. Always returns a value. */
+export function latestActivity(fallback: string, ...stamps: (string | null | undefined)[]): string {
+  let best = fallback;
+  for (const s of stamps) {
+    if (s && String(s) > best) best = String(s);
+  }
+  return best;
+}
+
 export const LANES = ['media', 'creative'] as const;
 export type Lane = (typeof LANES)[number];
 
@@ -51,6 +74,91 @@ export interface DigestItem {
   due_date: string | null;
   overdue: boolean;
   created_at: string;
+  /** Last human event on the item — see RECENCY_DAYS. */
+  last_activity?: string;
+  /** Original title, when the displayed one was rendered from brief fields. */
+  raw_title?: string;
+}
+
+export interface BriefFields {
+  title: string;
+  creative_type?: string | null;
+  creative_types?: string[] | null;
+  num_concepts?: number | null;
+  sizes?: unknown;
+  delivered_count?: number;
+}
+
+/**
+ * True when a title is an asset/folder label rather than an instruction:
+ * underscore- or dash-joined tokens, a trailing separator, or a single
+ * whitespace-free token. Nobody can act on a filename at 9am.
+ */
+export function looksLikeAssetLabel(title: string): boolean {
+  const t = title.trim();
+  if (!t) return false;
+  if (/[_]/.test(t) && !/\s/.test(t.replace(/_/g, ' ')) === false) {
+    // fallthrough — handled by the checks below
+  }
+  if (/[_-]\s*$/.test(t)) return true;
+  if (!/\s/.test(t)) return true; // one token, e.g. "Leadgen_FE_4"
+  // "LeadGen — Leadgen_FE_4" style: every whitespace-separated word that is not
+  // a separator is itself an underscored token.
+  const words = t.split(/\s+/).filter((w) => !/^[—–-]$/.test(w));
+  return words.length > 0 && words.every((w) => /_/.test(w));
+}
+
+const FORMAT_WORD: Record<string, string> = {
+  video: 'video',
+  static: 'static',
+  statics: 'static',
+  carousel: 'carousel',
+  gif: 'GIF',
+  script: 'script',
+};
+
+/** "Cannaball_PersonalDebt_" -> "personal debt"; drops the client token. */
+export function labelSubject(title: string, clientName: string | null): string {
+  const cleaned = title.replace(/[—–]/g, ' ').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const clientWords = new Set(
+    (clientName ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean),
+  );
+  const words = cleaned
+    .split(' ')
+    .flatMap((w) => w.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(' '))
+    .filter((w) => w && !clientWords.has(w.toLowerCase()));
+  return words.join(' ').toLowerCase().trim();
+}
+
+/**
+ * Render a creative item as an action, using only what the brief states.
+ * Where there is nothing to build an action from, the label is kept and merely
+ * prefixed with the client — guessing a deliverable is worse than a filename.
+ */
+export function renderCreativeTitle(brief: BriefFields, clientName: string | null): string {
+  const title = String(brief.title ?? '').trim();
+  if (!looksLikeAssetLabel(title)) return title;
+
+  const formats = [
+    ...(Array.isArray(brief.creative_types) ? brief.creative_types : []),
+    ...(brief.creative_type ? [brief.creative_type] : []),
+  ]
+    .map((f) => FORMAT_WORD[String(f).toLowerCase()] ?? String(f).toLowerCase())
+    .filter(Boolean);
+  const format = formats[0] ?? null;
+
+  const asked = Number(brief.num_concepts ?? 0);
+  const done = Number(brief.delivered_count ?? 0);
+  const outstanding = asked > 0 ? Math.max(asked - done, 0) : 0;
+  const subject = labelSubject(title, clientName);
+  const prefix = clientName ? `${clientName} — ` : '';
+
+  if (format && outstanding > 0) {
+    const noun = outstanding === 1 ? format : `${format}s`;
+    return `${prefix}deliver ${outstanding} ${subject ? `${subject} ` : ''}${noun}`.replace(/\s+/g, ' ');
+  }
+  if (format && subject) return `${prefix}${subject} ${format}`;
+  return `${prefix}${title}`;
 }
 
 export interface DigestMessage {

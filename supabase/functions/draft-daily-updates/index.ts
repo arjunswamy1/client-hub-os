@@ -152,8 +152,11 @@ function factSheet(m: ClientMetrics): string {
  */
 function buildAmNotes(m: ClientMetrics): string {
   const notes: string[] = [];
-  if (spendMissingForDay(m)) {
-    notes.push(`No spend landed for ${pretty(m.for_date)} even though calls came in — spend feed looks stale, so cost per call and any "campaign at $0" reading are unreliable for this day and were kept out of the draft`);
+  const delivery = spendDelivery(m);
+  if (delivery.state === 'dark') {
+    notes.push(`NO DELIVERY on ${pretty(m.for_date)} — the campaign was dark: ${delivery.detail}. Tested on ${delivery.test}. This is a real finding, not a feed problem; spend language was kept out of the draft`);
+  } else if (delivery.state === 'stale') {
+    notes.push(`No spend landed for ${pretty(m.for_date)} even though it delivered — spend feed looks stale (${delivery.detail}; tested on ${delivery.test}), so cost per call and any "campaign at $0" reading are unreliable for this day and were kept out of the draft`);
   }
   if (m.spend_sources.length) notes.push(`Spend read from: ${m.spend_sources.join('; ')}`);
   if (m.call_sources.length) notes.push(`Calls read from: ${m.call_sources.join('; ')}`);
@@ -168,7 +171,11 @@ function buildAmNotes(m: ClientMetrics): string {
     notes.push(`No duration mix for ${noQuality.join(', ')} — no calls recorded`);
   }
   if (m.anomalies.length) {
-    const qualifier = spendMissingForDay(m) ? ' (unverified — spend feed stale for this day)' : '';
+    const qualifier = delivery.state === 'stale'
+      ? ' (unverified — spend feed stale for this day)'
+      : delivery.state === 'dark'
+        ? ' (the account was dark this day — these are genuinely not delivering)'
+        : '';
     notes.push(`${m.anomalies.length} campaign${m.anomalies.length === 1 ? '' : 's'} with no spend yesterday${qualifier}: ${m.anomalies.map((a) => a.campaign).join(', ')}`);
   }
   if (!m.campaign_breakdown.length && m.spend_sources.length) {

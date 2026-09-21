@@ -154,8 +154,14 @@ Deno.serve(async (req) => {
     pick(payload, ['connection_duration', 'talk_time', 'talk_duration', 'billable_duration', 'CallDurationFromConnect'])
   );
   const payout = toNumber(pick(payload, ['payout', 'revenue', 'amount', 'price', 'RevenueAmount']));
-  const rawDid = pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did', 'SourceNumber']) ?? null;
-  const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
+  // CallGrid names the dialed tracking number several ways depending on the template
+  // token chosen; accept all of them so a template edit on their side can't blank it.
+  const rawDid = pick<string>(payload, [
+    'did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did',
+    'SourceNumber', 'SourceNumberNoPlus', 'TrackingNumber', 'TrackingNumberNoPlus',
+    'DialedNumber', 'DestinationNumber',
+  ]) ?? null;
+  const didDigits = normNumber(rawDid);
 
   // Answer CallGrid now; the write happens after the response is on the wire.
   const ack = {

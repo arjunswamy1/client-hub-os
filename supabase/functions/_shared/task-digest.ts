@@ -384,6 +384,16 @@ export async function buildDigests(
     if (!source) continue; // never went through the gate
     const client = t.client_id ? clientById.get(t.client_id as string) : undefined;
     const lane = laneForTask(t, client?.engagement_type ?? null, member);
+    const last = latestActivity(String(t.created_at), newest.get(`task:${t.id}`));
+    if (isStale(last)) {
+      excluded.push({
+        member: member.name,
+        kind: 'task',
+        title: String(t.title ?? '').trim(),
+        reason: `no activity since ${last.slice(0, 10)} (older than ${RECENCY_DAYS} days)`,
+      });
+      continue;
+    }
     push(member.id, lane, {
       kind: 'task',
       id: t.id as string,
@@ -392,22 +402,61 @@ export async function buildDigests(
       due_date: (t.due_date as string | null) ?? null,
       overdue: !!t.due_date && String(t.due_date) < todayEastern,
       created_at: String(t.created_at),
+      last_activity: last,
     });
   }
 
   for (const b of briefs ?? []) {
-    if (BRIEF_CLOSED.has(String(b.status ?? ''))) continue;
     const member = memberById.get(b.assigned_to_id as string);
     if (!member) continue;
+    const rawTitle = String(b.title ?? '').trim();
+    if (BRIEF_CLOSED.has(String(b.status ?? ''))) {
+      excluded.push({
+        member: member.name,
+        kind: 'brief',
+        title: rawTitle,
+        reason: `status is ${b.status} — closed work`,
+      });
+      continue;
+    }
+    const last = latestActivity(
+      String(b.created_at),
+      b.submitted_at as string | null,
+      b.approved_at as string | null,
+      b.trafficked_at as string | null,
+      newest.get(`brief:${b.id}`),
+    );
+    if (isStale(last)) {
+      excluded.push({
+        member: member.name,
+        kind: 'brief',
+        title: rawTitle,
+        reason: `no activity since ${last.slice(0, 10)} (older than ${RECENCY_DAYS} days)`,
+      });
+      continue;
+    }
     const client = b.client_id ? clientById.get(b.client_id as string) : undefined;
+    const shown = renderCreativeTitle(
+      {
+        title: rawTitle,
+        creative_type: b.creative_type as string | null,
+        creative_types: b.creative_types as string[] | null,
+        num_concepts: b.num_concepts as number | null,
+        sizes: b.sizes,
+        delivered_count: deliveredCount.get(String(b.id)) ?? 0,
+      },
+      client?.name ?? null,
+    );
     push(member.id, 'creative', {
       kind: 'brief',
       id: b.id as string,
-      title: String(b.title ?? '').trim(),
+      title: shown,
+      raw_title: shown === rawTitle ? undefined : rawTitle,
       client: client?.name ?? null,
       due_date: (b.due_date as string | null) ?? null,
       overdue: !!b.due_date && String(b.due_date) < todayEastern,
       created_at: String(b.created_at),
+      last_activity: last,
     });
   }
 

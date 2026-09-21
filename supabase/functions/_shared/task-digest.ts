@@ -258,7 +258,18 @@ export function laneForTask(
   return 'media';
 }
 
+/**
+ * Henry's intake: a creative request pinged at him in an internal channel became
+ * a task to WRITE the brief. It belongs in the creative channel with the
+ * designers, but it is his and it reads as "create the brief", not production.
+ */
+export function isIntakeTask(task: { type_data?: Record<string, unknown> | null }): boolean {
+  const td = (task.type_data ?? {}) as Record<string, unknown>;
+  return td.source === 'slack_henry_intake' || td.creative_intake === true;
+}
+
 /** Overdue first, oldest overdue leading; then the newest work. */
+
 export function sortItems(items: DigestItem[]): DigestItem[] {
   return [...items].sort((a, b) => {
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;

@@ -314,15 +314,59 @@ export async function buildDigests(
 
   // Creative briefs are the creative team's real queue; their tasks table rows
   // are only part of the picture.
+  //
+  // `presumed_complete_at` is a closed state: the work was judged done from its
+  // own deliverable evidence, and a digest must never resurface it.
   const { data: briefs, error: briefErr } = await supabase
     .from('creative_briefs')
-    .select('id, title, client_id, due_date, created_at, assigned_to_id, status, delivered_at, deleted_at')
+    .select(
+      'id, title, client_id, due_date, created_at, assigned_to_id, status, delivered_at, deleted_at, ' +
+        'presumed_complete_at, submitted_at, approved_at, trafficked_at, creative_type, creative_types, num_concepts, sizes',
+    )
     .is('delivered_at', null)
     .is('deleted_at', null)
+    .is('presumed_complete_at', null)
     .not('assigned_to_id', 'is', null);
   if (briefErr) throw briefErr;
 
+  // `delivered` means the work went out. It is closed unless something
+  // explicitly reopened it (which moves the status back off `delivered`).
   const BRIEF_CLOSED = new Set(['delivered', 'trafficked', 'archived', 'cancelled', 'draft']);
+
+  // --- last real activity --------------------------------------------------
+  // Human events only. `updated_at` is bumped by a trigger, so it cannot tell
+  // stale work from a row that was merely rewritten.
+  const briefIds = (briefs ?? []).map((b: any) => b.id as string);
+  const taskIds = (tasks ?? []).map((t: any) => t.id as string);
+  const newest = new Map<string, string>();
+  const note = (key: string, stamp: unknown) => {
+    const s = stamp ? String(stamp) : '';
+    if (!s) return;
+    if (!newest.has(key) || s > newest.get(key)!) newest.set(key, s);
+  };
+  const deliveredCount = new Map<string, number>();
+
+  const chunk = <T>(xs: T[], n = 200) =>
+    Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+
+  for (const ids of chunk(briefIds)) {
+    const [{ data: comments }, { data: delivs }] = await Promise.all([
+      supabase.from('creative_brief_comments').select('brief_id, created_at').in('brief_id', ids),
+      supabase.from('creative_deliverables').select('brief_id, uploaded_at').in('brief_id', ids),
+    ]);
+    for (const c of comments ?? []) note(`brief:${c.brief_id}`, c.created_at);
+    for (const d of delivs ?? []) {
+      note(`brief:${d.brief_id}`, d.uploaded_at);
+      deliveredCount.set(String(d.brief_id), (deliveredCount.get(String(d.brief_id)) ?? 0) + 1);
+    }
+  }
+  for (const ids of chunk(taskIds)) {
+    const { data: comments } = await supabase
+      .from('task_comments')
+      .select('task_id, created_at')
+      .in('task_id', ids);
+    for (const c of comments ?? []) note(`task:${c.task_id}`, c.created_at);
+  }
 
   // member id -> lane -> items
   const byMember = new Map<string, Map<Lane, DigestItem[]>>();

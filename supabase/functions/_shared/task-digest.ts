@@ -114,17 +114,38 @@ const FORMAT_WORD: Record<string, string> = {
   script: 'script',
 };
 
-/** "Cannaball_PersonalDebt_" -> "personal debt"; drops the client token. */
-export function labelSubject(title: string, clientName: string | null): string {
-  const cleaned = title.replace(/[—–]/g, ' ').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+/** Lower-case ordinary words, leave acronyms and numbers as they are (FE, CTV). */
+const softLower = (w: string) => (/^[A-Z][a-z]+$/.test(w) ? w.toLowerCase() : w);
+
+/**
+ * Split a label into the name in front of it and what it is about:
+ * "Cannaball_PersonalDebt_" -> { owner: 'Cannaball', subject: 'personal debt' }
+ * "LeadGen — Leadgen_FE_4"  -> { owner: 'LeadGen',   subject: 'FE 4' }
+ * The owner is dropped from the subject so a client prefix is never doubled.
+ */
+export function labelParts(
+  title: string,
+  clientName: string | null,
+): { owner: string | null; subject: string } {
+  const words = title
+    .replace(/[—–]/g, ' ')
+    .replace(/[_]+/g, ' ')
+    .split(/\s+/)
+    .flatMap((w) => w.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(' '))
+    .filter(Boolean);
+
   const clientWords = new Set(
     (clientName ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean),
   );
-  const words = cleaned
-    .split(' ')
-    .flatMap((w) => w.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(' '))
-    .filter((w) => w && !clientWords.has(w.toLowerCase()));
-  return words.join(' ').toLowerCase().trim();
+  let rest = words.filter((w) => !clientWords.has(w.toLowerCase()));
+  let owner = clientName;
+  // No client on the brief: the label's own leading token is the best name we
+  // have, and it is stated rather than guessed.
+  if (!owner && rest.length > 1) {
+    owner = rest[0];
+    rest = rest.slice(1);
+  }
+  return { owner, subject: rest.map(softLower).join(' ').trim() };
 }
 
 /**

@@ -99,10 +99,9 @@ export function looksLikeAssetLabel(title: string): boolean {
   if (!t) return false;
   if (/[_-]\s*$/.test(t)) return true;
   if (!/\s/.test(t)) return true; // one token, e.g. "Leadgen_FE_4"
-  // "LeadGen — Leadgen_FE_4" style: every whitespace-separated word that is not
-  // a separator is itself an underscored token.
-  const words = t.split(/\s+/).filter((w) => !/^[—–-]$/.test(w));
-  return words.length > 0 && words.every((w) => /_/.test(w));
+  // An underscored token anywhere is a filename, not a sentence:
+  // "LeadGen — Leadgen_FE_4".
+  return t.split(/\s+/).some((w) => /_/.test(w));
 }
 
 const FORMAT_WORD: Record<string, string> = {

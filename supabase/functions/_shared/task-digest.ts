@@ -126,16 +126,22 @@ export function labelParts(
   title: string,
   clientName: string | null,
 ): { owner: string | null; subject: string } {
+  const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clientKey = compact(clientName ?? '');
+  const clientWords = new Set(
+    (clientName ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean),
+  );
+
+  // Drop the client's own name before splitting CamelCase, so "Leadgen_FE_4"
+  // under client "LeadGen" does not survive as "lead gen".
   const words = title
     .replace(/[—–]/g, ' ')
     .replace(/[_]+/g, ' ')
     .split(/\s+/)
+    .filter((w) => w && !(clientKey && compact(w) === clientKey))
     .flatMap((w) => w.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(' '))
     .filter(Boolean);
 
-  const clientWords = new Set(
-    (clientName ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean),
-  );
   let rest = words.filter((w) => !clientWords.has(w.toLowerCase()));
   let owner = clientName;
   // No client on the brief: the label's own leading token is the best name we

@@ -125,24 +125,29 @@ Examples:
 - "@Henry can we put in the brief for Cannaball debt for AI production with those edits today please?" -> "personal debt AI production, with the discussed edits"
 - "@Henry I would love to request 1 or 2 more variations of aggressive scripts that edit the main video" -> "1-2 more aggressive script variations edited from the main video"`;
 
-/** Model-written action phrases, keyed by dedupe key. Empty map on failure. */
+/**
+ * Model-written action phrases, keyed by dedupe key. `ok` false means the model
+ * never answered, which is the only case where a deterministic phrase is used —
+ * a key the model deliberately left empty is NOT a creative request and is
+ * dropped rather than guessed at.
+ */
 async function titlePhrases(
   batch: { key: string; text: string }[],
   apiKey: string,
-): Promise<Record<string, string>> {
-  if (batch.length === 0 || !apiKey) return {};
+): Promise<{ ok: boolean; phrases: Record<string, string> }> {
+  if (batch.length === 0 || !apiKey) return { ok: false, phrases: {} };
   const prompt = `Write the action phrase for each Slack message below. Reply with json only, shaped {"titles": {"<key>": "<phrase>"}}.\n\n${
     JSON.stringify(batch.map((b) => ({ key: b.key, message: cleanText(b.text).slice(0, 1200) })))
   }`;
   const out = await askModel(TITLE_SYSTEM, prompt, apiKey);
   const titles = out?.titles;
-  if (!titles || typeof titles !== 'object') return {};
+  if (!titles || typeof titles !== 'object') return { ok: false, phrases: {} };
   const clean: Record<string, string> = {};
   for (const [k, v] of Object.entries(titles)) {
     const s = String(v ?? '').replace(/\s+/g, ' ').replace(/[\s.]+$/, '').trim();
     if (s) clean[k] = s;
   }
-  return clean;
+  return { ok: true, phrases: clean };
 }
 
 
@@ -287,16 +292,33 @@ Deno.serve(async (req) => {
     // raw Slack text pasted in. The model does it in one call; if it is
     // unavailable the deterministic phrase keeps the candidate readable.
     const apiKeyForTitles = Deno.env.get('LOVABLE_API_KEY') ?? '';
-    const phrases = await titlePhrases(
+    const titled = await titlePhrases(
       rows.map((r) => ({ key: String(r.dedupe_key), text: String(r.raw_text) })),
       apiKeyForTitles,
     );
+    const kept: Record<string, unknown>[] = [];
     for (const r of rows) {
-      const phrase = phrases[String(r.dedupe_key)] || askPhrase(String(r.raw_text));
+      const key = String(r.dedupe_key);
+      const modelPhrase = titled.phrases[key];
+      if (titled.ok && !modelPhrase) {
+        // The model read it and found no creative request in it. Drop it — a
+        // missed intake costs one Slack message, a false one costs trust.
+        considered.push({
+          channel: `#${String((r.source_ref as any).channel_name)}`,
+          author: String((r.source_ref as any).author ?? 'unknown'),
+          reason: 'mentions Henry and sounds like an ask, but is not a request for creative work',
+          text: String(r.raw_text).replace(/\s+/g, ' ').slice(0, 120),
+        });
+        continue;
+      }
+      const phrase = modelPhrase || askPhrase(String(r.raw_text));
       const clientSuffix = r._client_name ? ` — ${String(r._client_name)}` : '';
       r.proposed_title = `Create brief: ${phrase}${clientSuffix}`.slice(0, 200);
       delete r._client_name;
+      kept.push(r);
     }
+    rows.length = 0;
+    rows.push(...kept);
 
 
     // The dedupe index is partial, so ON CONFLICT cannot target it — drop keys

@@ -374,8 +374,10 @@ export async function buildDigests(
     .not('assignee_id', 'is', null);
   if (taskErr) throw taskErr;
 
-  // Creative briefs are the creative team's real queue; their tasks table rows
-  // are only part of the picture.
+  // The creative lane has an explicit rule, not a heuristic: a brief is a
+  // designer's work only while it is ON the production queue AND due today or
+  // late. Two explicit fields decide it — `status` and `due_date` — so nothing
+  // is inferred from activity here (the media lane keeps that logic).
   //
   // `presumed_complete_at` is a closed state: the work was judged done from its
   // own deliverable evidence, and a digest must never resurface it.
@@ -385,15 +387,14 @@ export async function buildDigests(
       'id, title, client_id, due_date, created_at, assigned_to_id, status, delivered_at, deleted_at, ' +
         'presumed_complete_at, submitted_at, approved_at, trafficked_at, creative_type, creative_types, num_concepts, sizes',
     )
-    .is('delivered_at', null)
+    .in('status', PRODUCTION_QUEUE_STATUSES as unknown as string[])
+    .not('due_date', 'is', null)
+    .lte('due_date', todayEastern)
     .is('deleted_at', null)
     .is('presumed_complete_at', null)
     .not('assigned_to_id', 'is', null);
   if (briefErr) throw briefErr;
 
-  // `delivered` means the work went out. It is closed unless something
-  // explicitly reopened it (which moves the status back off `delivered`).
-  const BRIEF_CLOSED = new Set(['delivered', 'trafficked', 'archived', 'cancelled', 'draft']);
 
   // --- last real activity --------------------------------------------------
   // Human events only. `updated_at` is bumped by a trigger, so it cannot tell

@@ -259,7 +259,6 @@ Deno.serve(async (req) => {
 
       const client = it.client_id ? clientName.get(String(it.client_id)) ?? null : null;
       const permalink = meta.permalink ?? (await permalinkFor(token, channelId, ts));
-      const title = `Create brief: ${askPhrase(text)}${client ? ` — ${client}` : ''}`;
 
       rows.push({
         client_id: it.client_id ?? null,
@@ -274,14 +273,31 @@ Deno.serve(async (req) => {
           requested_of: 'Henry',
         },
         raw_text: text,
-        proposed_title: title.slice(0, 200),
+        proposed_title: '',
         proposed_assignee_id: henry.id,
         owner_raw: henry.name,
         owner_side: 'cpm',
         status: 'pending',
         dedupe_key: key,
+        _client_name: client,
       });
     }
+
+    // Titles are written as the ACTION, from the message's own words — never the
+    // raw Slack text pasted in. The model does it in one call; if it is
+    // unavailable the deterministic phrase keeps the candidate readable.
+    const apiKeyForTitles = Deno.env.get('LOVABLE_API_KEY') ?? '';
+    const phrases = await titlePhrases(
+      rows.map((r) => ({ key: String(r.dedupe_key), text: String(r.raw_text) })),
+      apiKeyForTitles,
+    );
+    for (const r of rows) {
+      const phrase = phrases[String(r.dedupe_key)] || askPhrase(String(r.raw_text));
+      const clientSuffix = r._client_name ? ` — ${r._client_name}` : '';
+      r.proposed_title = `Create brief: ${phrase}${clientSuffix}`.slice(0, 200);
+      delete r._client_name;
+    }
+
 
     // The dedupe index is partial, so ON CONFLICT cannot target it — drop keys
     // we already hold instead.

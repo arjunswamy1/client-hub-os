@@ -92,7 +92,6 @@ Deno.serve(async (req) => {
   // CallGrid holds the live caller until this endpoint answers, so nothing that
   // touches the database may happen before the 200 goes out. Parse the body (fast,
   // in-memory), answer immediately, then persist in the background.
-  const url = new URL(req.url);
 
   let payload: any = {};
   try {

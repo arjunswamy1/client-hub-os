@@ -90,18 +90,23 @@ export interface BriefFields {
 }
 
 /**
- * True when a title is an asset/folder label rather than an instruction:
- * underscore- or dash-joined tokens, a trailing separator, or a single
- * whitespace-free token. Nobody can act on a filename at 9am.
+ * True when a title is a filename rather than an instruction: once the client
+ * name and separators are removed, one single token is left — "Cannaball_
+ * PersonalDebt_", "Leadgen_FE_4", "Connatria_HVAC". A title with real words in
+ * it ("Health Share FE CTV_60-90seconds") is left exactly as written: half-
+ * rewriting prose reads worse than the filename does.
  */
-export function looksLikeAssetLabel(title: string): boolean {
+export function looksLikeAssetLabel(title: string, clientName: string | null = null): boolean {
   const t = title.trim();
   if (!t) return false;
-  if (/[_-]\s*$/.test(t)) return true;
-  if (!/\s/.test(t)) return true; // one token, e.g. "Leadgen_FE_4"
-  // An underscored token anywhere is a filename, not a sentence:
-  // "LeadGen — Leadgen_FE_4".
-  return t.split(/\s+/).some((w) => /_/.test(w));
+  const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clientKey = compact(clientName ?? '');
+  const tokens = t
+    .split(/\s+/)
+    .filter((w) => !/^[—–-]$/.test(w))
+    .filter((w) => !(clientKey && compact(w) === clientKey));
+  if (tokens.length !== 1) return false;
+  return /_/.test(tokens[0]);
 }
 
 const FORMAT_WORD: Record<string, string> = {

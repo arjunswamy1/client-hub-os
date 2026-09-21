@@ -107,6 +107,12 @@ Deno.serve(async (req) => {
     const action = typeof body.action === "string" ? body.action : "verify";
     const adaccountId = typeof body.adaccount_id === "string" ? body.adaccount_id : "";
 
+    if (action === "authorization_url") {
+      const APP_ID = Deno.env.get("UNIVERSAL_ADS_APP_ID");
+      if (!APP_ID) return json({ error: "UNIVERSAL_ADS_APP_ID is not configured." }, 400);
+      return json({ success: true, url: `https://manage.universalads.com/apps/${APP_ID}/authorize` });
+    }
+
     if (action === "list_adaccounts") {
       const { status, parsed, text } = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/adaccounts");
       if (status >= 400) {

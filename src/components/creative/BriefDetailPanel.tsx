@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Download, Pencil, Paperclip, Trash2, Film, FolderOutput } from 'lucide-react';
 import { format } from 'date-fns';
+import { isHttpUrl } from '@/lib/utils';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { useAuth } from '@/contexts/AuthContext';

@@ -167,8 +167,15 @@ export function renderCreativeTitle(brief: BriefFields, clientName: string | nul
   const asked = Number(brief.num_concepts ?? 0);
   const done = Number(brief.delivered_count ?? 0);
   const outstanding = asked > 0 ? Math.max(asked - done, 0) : 0;
-  const { owner, subject } = labelParts(title, clientName);
+  const { owner, subject: rawSubject } = labelParts(title, clientName);
   const prefix = owner ? `${owner} — ` : '';
+  // The format is already named in the rendered phrase; keep it out of the
+  // subject so nothing reads "3 statics Q3 statics".
+  const formatWords = new Set(formats.flatMap((f) => [f.toLowerCase(), `${f.toLowerCase()}s`]));
+  const subject = rawSubject
+    .split(' ')
+    .filter((w) => w && !formatWords.has(w.toLowerCase()))
+    .join(' ');
 
   if (format && outstanding > 0) {
     const noun = outstanding === 1 ? format : `${format}s`;

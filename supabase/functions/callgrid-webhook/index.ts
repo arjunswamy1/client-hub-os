@@ -32,12 +32,30 @@ function flattenTagBags(payload: Record<string, any>): Record<string, any> {
 }
 
 
+/**
+ * A merge token CallGrid never filled arrives either empty or as the literal token
+ * text ("[[InboundStateCode]]", "{{zip}}", "%zip%"). Neither is data: storing the
+ * literal would look like a real value and quietly poison the field.
+ */
+function isUnfilled(v: unknown): boolean {
+  if (v === undefined || v === null || v === '') return true;
+  const s = String(v).trim();
+  if (s === '') return true;
+  return /^(\[\[.*\]\]|\{\{.*\}\}|%[\w:.]+%)$/.test(s);
+}
+
 function pick<T = unknown>(obj: Record<string, any>, keys: string[]): T | undefined {
   for (const k of keys) {
     const v = obj?.[k];
-    if (v !== undefined && v !== null && v !== '') return v as T;
+    if (!isUnfilled(v)) return v as T;
   }
   return undefined;
+}
+
+/** Digits only, US 1-prefix dropped. */
+function normNumber(v: unknown): string | null {
+  const d = String(v ?? '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  return d || null;
 }
 
 function toInt(v: unknown): number {
@@ -136,8 +154,14 @@ Deno.serve(async (req) => {
     pick(payload, ['connection_duration', 'talk_time', 'talk_duration', 'billable_duration', 'CallDurationFromConnect'])
   );
   const payout = toNumber(pick(payload, ['payout', 'revenue', 'amount', 'price', 'RevenueAmount']));
-  const rawDid = pick<string>(payload, ['did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did', 'SourceNumber']) ?? null;
-  const didDigits = rawDid ? String(rawDid).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : null;
+  // CallGrid names the dialed tracking number several ways depending on the template
+  // token chosen; accept all of them so a template edit on their side can't blank it.
+  const rawDid = pick<string>(payload, [
+    'did', 'to', 'to_number', 'tracking_number', 'dnis', 'tracking_did',
+    'SourceNumber', 'SourceNumberNoPlus', 'TrackingNumber', 'TrackingNumberNoPlus',
+    'DialedNumber', 'DestinationNumber',
+  ]) ?? null;
+  const didDigits = normNumber(rawDid);
 
   // Answer CallGrid now; the write happens after the response is on the wire.
   const ack = {
@@ -179,15 +203,23 @@ Deno.serve(async (req) => {
       clientId = client.id;
     }
 
+    const callerNumber = pick<string>(payload, [
+      'caller', 'caller_number', 'from', 'from_number', 'ani',
+      'InboundNumber', 'InboundNumberNoPlus', 'CallerId', 'CallerNumber',
+    ]) ?? null;
+
     const row: Record<string, unknown> = {
       client_id: clientId,
       call_id,
-      caller_number: pick<string>(payload, ['caller', 'caller_number', 'from', 'from_number', 'ani', 'InboundNumber', 'CallerId']) ?? null,
+      caller_number: callerNumber,
       did: didDigits || rawDid,
-      caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state', 'InboundStateCode']) ?? null,
-      caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city', 'InboundCity']) ?? null,
-      caller_zip: pick<string>(payload, ['caller_zip', 'zip', 'zip_code', 'postal_code', 'caller_postal', 'InboundZipCode']) ?? null,
-      caller_area_code: pick<string>(payload, ['caller_area_code', 'area_code', 'npa', 'InboundAreaCode']) ?? null,
+      caller_state: pick<string>(payload, ['caller_state', 'state', 'from_state', 'InboundStateCode', 'InboundState', 'CallerState']) ?? null,
+      caller_city: pick<string>(payload, ['caller_city', 'city', 'from_city', 'InboundCity', 'InboundCityName', 'CallerCity']) ?? null,
+      caller_zip: pick<string>(payload, ['caller_zip', 'zip', 'zip_code', 'postal_code', 'caller_postal', 'InboundZipCode', 'InboundZip', 'InboundPostalCode']) ?? null,
+      // Area code is a substring of the caller's own number, so when the token is
+      // unfilled we read it off the number rather than leaving the column blank.
+      caller_area_code: pick<string>(payload, ['caller_area_code', 'area_code', 'npa', 'InboundAreaCode']) ??
+        (callerNumber && normNumber(callerNumber)?.length === 10 ? normNumber(callerNumber)!.slice(0, 3) : null),
       call_start: toIso(pick(payload, ['call_start', 'start_time', 'started_at', 'timestamp', 'created_at', 'UTCISODate'])),
       duration_seconds,
       connected: (() => {

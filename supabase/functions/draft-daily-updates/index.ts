@@ -328,7 +328,10 @@ Deno.serve(async (req) => {
       (mappings ?? []).map((m: any) => [m.client_id as string, { id: m.channel_id as string, name: m.channel_name as string }]),
     );
 
-    const { data: clients, error: clientErr } = await supabase.from('clients').select('id, name');
+    // The off switch is read here, not somewhere downstream: a suppressed
+    // account must never reach the drafting or posting path at all.
+    const { data: clients, error: clientErr } = await supabase.from('clients')
+      .select('id, name, daily_update_enabled, daily_update_suppressed_reason');
     if (clientErr) throw clientErr;
 
     // Fetched separately rather than as an embed: the embed silently yields no

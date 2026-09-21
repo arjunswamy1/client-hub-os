@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
         start_date: fmt(start),
         end_date: fmt(end),
         date_aggregation: "DAY",
-        limit: "1000",
+        limit: "20",
       });
       if (status >= 400) {
         return json({ error: "Campaign report failed", status, details: parsed || text }, status);

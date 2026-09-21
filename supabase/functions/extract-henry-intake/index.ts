@@ -56,6 +56,23 @@ const NOT_A_REQUEST = ['fyi', 'thank you', 'thanks', 'nice work', 'heads up', 'c
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ');
 
+/**
+ * The message with Slack furniture removed: mentions, links, emoji shortcodes.
+ * Every test below reads THIS, so "@Henry FYI …" is judged on the "FYI".
+ */
+export function cleanText(text: string): string {
+  return String(text)
+    .replace(/<@[A-Z0-9]+>/g, ' ')
+    .replace(/<#[A-Z0-9]+\|([^>]*)>/g, ' ')
+    .replace(/@[A-Z][a-z]+(\s[A-Z][a-z]+)?/g, ' ')
+    .replace(/<([^|>]+)\|([^>]*)>/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/:[a-z0-9_+-]+:/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/^[\s,:;.!-]+/, '')
+    .trim();
+}
+
 /** True when the message names Henry — by mention, alias, or first name. */
 export function mentionsHenry(text: string): boolean {
   const t = norm(text);
@@ -71,35 +88,63 @@ export function mentionsHenry(text: string): boolean {
  * and junk captured straight out of Slack is exactly what was objected to.
  */
 export function isCreativeRequest(text: string): boolean {
-  const t = norm(text);
+  const t = norm(cleanText(text));
   if (!t) return false;
-  if (t.startsWith('fyi') || NOT_A_REQUEST.some((p) => t.startsWith(p))) return false;
+  if (NOT_A_REQUEST.some((p) => t.startsWith(p))) return false;
   if (!ASK_CUES.some((c) => t.includes(c))) return false;
   return CREATIVE_NOUNS.some((n) => new RegExp(`(^|[^a-z])${n}([^a-z]|$)`).test(t));
 }
 
-/** The asked-for thing, as a short action phrase — never the raw Slack text. */
+/**
+ * Fallback action phrase, used when the model is unavailable. The model writes
+ * the title normally; this keeps the candidate readable rather than raw.
+ */
 export function askPhrase(text: string): string {
-  let t = String(text)
-    .replace(/<@[A-Z0-9]+>/g, ' ')
-    .replace(/@[A-Z][a-z]+( [A-Z][a-z]+)?/g, ' ')
-    .replace(/<([^|>]+)\|[^>]*>/g, ' ')
-    .replace(/https?:\/\/\S+/g, ' ')
-    .replace(/:[a-z0-9_+-]+:/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  // First sentence only — a whole Slack paragraph is not a title.
-  t = t.split(/(?<=[.!?])\s|\n/)[0].trim();
+  let t = cleanText(text).split(/(?<=[.!?])\s|\n/)[0].trim();
   t = t.replace(
-    /^(hey|hi|hello|ok|okay|also|and|so|just|quick one|quick|wanted to|wanting to|i wanted to)[\s,]+/i,
+    /^(hey|hi|hello|ok|okay|also|and|so|just|quick one|quick|wanted to|wanting to|i wanted to|i want to|putting)[\s,]+/i,
     '',
   );
-  t = t.replace(/^(can|could|would) (you|we) (please )?/i, '');
+  t = t.replace(/^(can|could|would)\s+(you|we)\s+(please\s+)?/i, '');
   t = t.replace(/^please\s+/i, '');
   t = t.replace(/[\s.,;:]+$/, '');
   if (t.length > 90) t = `${t.slice(0, 87).trimEnd()}…`;
   return t.charAt(0).toLowerCase() + t.slice(1);
 }
+
+const TITLE_SYSTEM = `You write one short task title for a creative lead named Henry, whose job here is to WRITE THE BRIEF for a request made in Slack.
+Return json only: {"titles": {"<key>": "<action phrase>"}}.
+
+The action phrase completes the sentence "Create brief: ___". Rules:
+- Say only what the message actually asks for. Never invent a deliverable, a count, a format or a deadline that is not stated.
+- 3 to 12 words, lower case start, no trailing punctuation, no Slack names, no @mentions.
+- Do not include the client name; it is appended separately.
+- If the message does not ask for creative work at all, return an empty string for that key.
+
+Examples:
+- "@Henry can we put in the brief for Cannaball debt for AI production with those edits today please?" -> "personal debt AI production, with the discussed edits"
+- "@Henry I would love to request 1 or 2 more variations of aggressive scripts that edit the main video" -> "1-2 more aggressive script variations edited from the main video"`;
+
+/** Model-written action phrases, keyed by dedupe key. Empty map on failure. */
+async function titlePhrases(
+  batch: { key: string; text: string }[],
+  apiKey: string,
+): Promise<Record<string, string>> {
+  if (batch.length === 0 || !apiKey) return {};
+  const prompt = JSON.stringify(
+    batch.map((b) => ({ key: b.key, message: cleanText(b.text).slice(0, 1200) })),
+  );
+  const out = await askModel(TITLE_SYSTEM, prompt, apiKey);
+  const titles = out?.titles;
+  if (!titles || typeof titles !== 'object') return {};
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(titles)) {
+    const s = String(v ?? '').replace(/\s+/g, ' ').replace(/[\s.]+$/, '').trim();
+    if (s) clean[k] = s;
+  }
+  return clean;
+}
+
 
 async function permalinkFor(token: string | null, channelId: string, ts: string): Promise<string | null> {
   if (!token) return null;

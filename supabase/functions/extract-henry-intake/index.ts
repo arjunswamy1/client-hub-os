@@ -17,7 +17,7 @@
 //
 // Nothing is posted to Slack here. Slack is read-only in this function.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { gateCandidates, type CandidateRow } from '../_shared/task-gate.ts';
+import { askModel, gateCandidates, type CandidateRow } from '../_shared/task-gate.ts';
 import { getValidBotToken } from '../_shared/slack-token.ts';
 
 const corsHeaders = {
@@ -293,7 +293,7 @@ Deno.serve(async (req) => {
     );
     for (const r of rows) {
       const phrase = phrases[String(r.dedupe_key)] || askPhrase(String(r.raw_text));
-      const clientSuffix = r._client_name ? ` — ${r._client_name}` : '';
+      const clientSuffix = r._client_name ? ` — ${String(r._client_name)}` : '';
       r.proposed_title = `Create brief: ${phrase}${clientSuffix}`.slice(0, 200);
       delete r._client_name;
     }

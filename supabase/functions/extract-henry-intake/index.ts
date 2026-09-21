@@ -74,8 +74,7 @@ export function isCreativeRequest(text: string): boolean {
   const t = norm(text);
   if (!t) return false;
   if (t.startsWith('fyi') || NOT_A_REQUEST.some((p) => t.startsWith(p))) return false;
-  const asks = ASK_CUES.some((c) => t.includes(c)) || /\?\s*$/.test(t.trim()) === false && false;
-  if (!asks) return false;
+  if (!ASK_CUES.some((c) => t.includes(c))) return false;
   return CREATIVE_NOUNS.some((n) => new RegExp(`(^|[^a-z])${n}([^a-z]|$)`).test(t));
 }
 

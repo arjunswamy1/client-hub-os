@@ -73,12 +73,29 @@ export interface DigestItem {
   client: string | null;
   due_date: string | null;
   overdue: boolean;
+  /** Days past due, for the "late 4d" flag. 0 when due today or not overdue. */
+  late_days?: number;
   created_at: string;
   /** Last human event on the item — see RECENCY_DAYS. */
   last_activity?: string;
   /** Original title, when the displayed one was rendered from brief fields. */
   raw_title?: string;
 }
+
+/**
+ * The creative production queue. A brief is a designer's work only while it sits
+ * in one of these states. `approved` and `delivered` are NOT on the queue: the
+ * work is signed off or already out, and a morning list that resurfaces them is
+ * exactly the noise AJ objected to.
+ */
+export const PRODUCTION_QUEUE_STATUSES = ['submitted', 'in_design', 'ready_for_review'] as const;
+
+/** Whole days between two ISO dates (yyyy-mm-dd), never negative. */
+export function daysLate(dueDate: string, today: string): number {
+  const d = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueDate}T00:00:00Z`)) / 86_400_000);
+  return d > 0 ? d : 0;
+}
+
 
 export interface BriefFields {
   title: string;

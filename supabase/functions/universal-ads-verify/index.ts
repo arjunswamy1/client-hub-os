@@ -113,6 +113,25 @@ Deno.serve(async (req) => {
       return json({ success: true, url: `https://manage.universalads.com/apps/${APP_ID}/authorize` });
     }
 
+    if (action === "report_campaign") {
+      if (!adaccountId) return json({ error: "Missing adaccount_id" }, 400);
+      const days = Math.min(Math.max(Number(body.days ?? 30), 1), 120);
+      const end = new Date();
+      const start = new Date(end.getTime() - (days - 1) * 86400000);
+      const fmt = (d: Date) => d.toISOString().slice(0, 19);
+      const { status, parsed, text } = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/report/campaign", {
+        adaccount_id: adaccountId,
+        start_date: fmt(start),
+        end_date: fmt(end),
+        date_aggregation: "DAY",
+        limit: "20",
+      });
+      if (status >= 400) {
+        return json({ error: "Campaign report failed", status, details: parsed || text }, status);
+      }
+      return json({ success: true, report: parsed });
+    }
+
     if (action === "list_adaccounts") {
       const { status, parsed, text } = await signedFetch(API_KEY, PRIVATE_KEY, "GET", "/me/adaccounts");
       if (status >= 400) {

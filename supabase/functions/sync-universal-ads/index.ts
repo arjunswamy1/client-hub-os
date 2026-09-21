@@ -96,16 +96,25 @@ Deno.serve(async (req) => {
       if (pageRows.length < PAGE) break;
     }
 
+    // Campaign id → name map (ad-level rows only carry the campaign's id).
+    const campaignNames = new Map<string, string>();
+    const camps = await uaFetch(API_KEY, PRIVATE_KEY, "GET", "/campaign", { adaccount_id: adaccountId, limit: "100" });
+    for (const c of camps.parsed?.data ?? []) {
+      if (c?.id && c?.name) campaignNames.set(String(c.id), String(c.name));
+    }
+
     const upserts = rows.map((r) => {
       const dateRaw = pickStr(r, ["date", "day", "report_date", "start_date", "datetime", "timestamp"]) ?? ymd(end);
       const spendRaw = pickNum(r, ["spend", "cost", "amount_spent", "total_spend", "spend_usd"]);
       const micros = pickNum(r, ["spend_micros", "cost_micros"]);
+      const rawCampaign = pickStr(r, ["campaign_name", "campaign"]) ??
+        (level === "campaign" ? pickStr(r, ["name"]) : pickStr(r, ["campaign_id"]));
       return {
         client_id: clientId,
         date: dateRaw.slice(0, 10),
         platform: "universal_ads",
-        campaign_name: pickStr(r, ["campaign_name", "campaign", "campaign_id"]),
-        creative_name: level === "ad" ? pickStr(r, ["ad_name", "ad", "creative_name", "ad_id"]) : null,
+        campaign_name: (rawCampaign && campaignNames.get(rawCampaign)) ?? rawCampaign,
+        creative_name: level === "ad" ? pickStr(r, ["ad_name", "ad", "creative_name", "name", "ad_id"]) : null,
         spend: spendRaw || micros / 1_000_000,
         impressions: Math.round(pickNum(r, ["impressions", "impression", "total_impressions"])),
         clicks: Math.round(pickNum(r, ["clicks", "click", "total_clicks"])),

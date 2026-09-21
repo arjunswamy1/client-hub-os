@@ -96,6 +96,13 @@ Deno.serve(async (req) => {
       if (pageRows.length < PAGE) break;
     }
 
+    // Campaign id → name map (ad-level rows only carry the campaign's id).
+    const campaignNames = new Map<string, string>();
+    const camps = await uaFetch(API_KEY, PRIVATE_KEY, "GET", "/campaign", { adaccount_id: adaccountId, limit: "100" });
+    for (const c of camps.parsed?.data ?? []) {
+      if (c?.id && c?.name) campaignNames.set(String(c.id), String(c.name));
+    }
+
     const upserts = rows.map((r) => {
       const dateRaw = pickStr(r, ["date", "day", "report_date", "start_date", "datetime", "timestamp"]) ?? ymd(end);
       const spendRaw = pickNum(r, ["spend", "cost", "amount_spent", "total_spend", "spend_usd"]);

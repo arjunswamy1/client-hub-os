@@ -282,8 +282,13 @@ export async function buildDigests(
   supabase: any,
   todayEastern: string,
   weekdayLong: string,
-): Promise<{ messages: DigestMessage[]; skipped: { member: string; reason: string }[] }> {
+): Promise<{
+  messages: DigestMessage[];
+  skipped: { member: string; reason: string }[];
+  excluded: { member: string; kind: string; title: string; reason: string }[];
+}> {
   const skipped: { member: string; reason: string }[] = [];
+  const excluded: { member: string; kind: string; title: string; reason: string }[] = [];
 
   const { data: members, error: memberErr } = await supabase
     .from('team_members')

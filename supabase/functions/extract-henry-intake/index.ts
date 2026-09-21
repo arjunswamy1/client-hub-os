@@ -131,9 +131,9 @@ async function titlePhrases(
   apiKey: string,
 ): Promise<Record<string, string>> {
   if (batch.length === 0 || !apiKey) return {};
-  const prompt = JSON.stringify(
-    batch.map((b) => ({ key: b.key, message: cleanText(b.text).slice(0, 1200) })),
-  );
+  const prompt = `Write the action phrase for each Slack message below. Reply with json only, shaped {"titles": {"<key>": "<phrase>"}}.\n\n${
+    JSON.stringify(batch.map((b) => ({ key: b.key, message: cleanText(b.text).slice(0, 1200) })))
+  }`;
   const out = await askModel(TITLE_SYSTEM, prompt, apiKey);
   const titles = out?.titles;
   if (!titles || typeof titles !== 'object') return {};

@@ -270,10 +270,16 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {refs.map((r: any, i: number) => (
                   <div key={i} className="flex items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5 text-xs">
-                    <a href={r.drive_url || r.url} target="_blank" rel="noopener noreferrer"
-                      className="text-primary hover:underline truncate flex-1">
-                      {r.file_name || r.drive_url || r.url}
-                    </a>
+                    {isHttpUrl(r.drive_url || r.url) ? (
+                      <a href={r.drive_url || r.url} target="_blank" rel="noopener noreferrer"
+                        className="text-primary hover:underline truncate flex-1">
+                        {r.file_name || r.drive_url || r.url}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground truncate flex-1">
+                        {r.file_name || r.drive_url || r.url} <span className="italic">(note, not a link)</span>
+                      </span>
+                    )}
                     {r.size && <span className="text-muted-foreground shrink-0">{(r.size / 1024).toFixed(0)} KB</span>}
                     <button type="button" onClick={() => removeRef(i)} className="text-muted-foreground hover:text-destructive shrink-0">
                       <Trash2 className="h-3.5 w-3.5" />

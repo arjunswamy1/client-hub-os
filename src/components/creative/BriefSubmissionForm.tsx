@@ -32,6 +32,7 @@ interface BriefFormData {
   final_assets_url: string;
   due_date: string;
   priority: string;
+  assigned_to_id: string;
   custom_width: string;
   custom_height: string;
 }
@@ -56,7 +57,7 @@ const INITIAL_FORM: BriefFormData = {
   title: '', client_id: '', format: '', platforms: [], sizes: [],
   num_concepts: 1, description: '', reference_urls: '',
   raw_footage_url: '', final_assets_url: '',
-  due_date: '', priority: 'medium', custom_width: '', custom_height: '',
+  due_date: '', priority: 'medium', assigned_to_id: '', custom_width: '', custom_height: '',
 };
 
 interface Props {
@@ -129,6 +130,14 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
     },
   });
 
+  // Designers first, then anyone else who can pick up creative work.
+  const designers = [...teamMembers]
+    .filter((m: any) => ['designer', 'creative_director', 'admin', 'account_manager'].includes(m.role))
+    .sort((a: any, b: any) => {
+      const rank = (r: string) => (r === 'designer' ? 0 : 1);
+      return rank(a.role) - rank(b.role) || String(a.name).localeCompare(String(b.name));
+    });
+
   const set = (field: keyof BriefFormData, value: any) => setForm(f => ({ ...f, [field]: value }));
 
   const togglePlatform = (value: string) => {
@@ -167,8 +176,10 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
 
   const createBrief = useMutation({
     mutationFn: async () => {
-      const designer = teamMembers.find((m: any) => m.role === 'designer');
-      const assignedTo = designer?.id || null;
+      // Whoever the brief was pointed at. Left unset it stays unassigned, so it
+      // shows up as intake to hand out rather than silently landing on whichever
+      // designer happened to be first in the list.
+      const assignedTo = form.assigned_to_id || null;
       const urlRefs = form.reference_urls
         ? form.reference_urls.split('\n').filter(Boolean).map(url => ({ source: 'url', drive_url: url.trim(), note: '' }))
         : [];
@@ -316,6 +327,23 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
               rows={10}
               placeholder="Write everything Malena needs: concept, script, hooks, copy, do's and don'ts, references. One box — dump it all here."
             />
+          </div>
+
+          {/* Designer */}
+          <div className="space-y-2">
+            <Label>Assign to designer</Label>
+            <Select
+              value={form.assigned_to_id || 'unassigned'}
+              onValueChange={v => set('assigned_to_id', v === 'unassigned' ? '' : v)}
+            >
+              <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned — decide later</SelectItem>
+                {designers.map((d: any) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Priority + due date */}

@@ -365,12 +365,24 @@ Deno.serve(async (req) => {
     // Scope: any client with an internal channel, plus any client with data in
     // the window even if no channel is registered yet — an account with the best
     // data in the agency must never be silently skipped.
-    let candidates = (clients ?? []) as { id: string; name: string }[];
+    let candidates = (clients ?? []) as {
+      id: string;
+      name: string;
+      daily_update_enabled?: boolean | null;
+      daily_update_suppressed_reason?: string | null;
+    }[];
     if (onlyClients) candidates = candidates.filter((c) => onlyClients.includes(c.id));
     if (onlyNames) {
       const wanted = onlyNames.map((n) => n.toLowerCase());
       candidates = candidates.filter((c) => wanted.includes(c.name.toLowerCase()));
     }
+
+    // Suppressed accounts are reported, never silently missing: a run summary
+    // that omits them looks identical to one where the account simply had no
+    // data, and the difference matters.
+    const suppressed = candidates.filter((c) => c.daily_update_enabled === false);
+    candidates = candidates.filter((c) => c.daily_update_enabled !== false);
+
 
     const targets: { id: string; name: string; reason: string }[] = [];
     for (const c of candidates) {

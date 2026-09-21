@@ -104,8 +104,9 @@ Deno.serve(async (req) => {
         client_id: clientId,
         date: dateRaw.slice(0, 10),
         platform: "universal_ads",
-        campaign_name: pickStr(r, ["campaign_name", "campaign", "campaign_id"]),
-        creative_name: level === "ad" ? pickStr(r, ["ad_name", "ad", "creative_name", "ad_id"]) : null,
+        campaign_name: pickStr(r, ["campaign_name", "campaign"]) ??
+          (level === "campaign" ? pickStr(r, ["name"]) : pickStr(r, ["campaign_id"])),
+        creative_name: level === "ad" ? pickStr(r, ["ad_name", "ad", "creative_name", "name", "ad_id"]) : null,
         spend: spendRaw || micros / 1_000_000,
         impressions: Math.round(pickNum(r, ["impressions", "impression", "total_impressions"])),
         clicks: Math.round(pickNum(r, ["clicks", "click", "total_clicks"])),

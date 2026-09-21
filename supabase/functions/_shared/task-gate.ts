@@ -111,7 +111,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * the same treatment Slack's rate limits get in sync-slack. Every other status
  * is terminal per the gateway error contract.
  */
-async function askModel(
+export async function askModel(
   instructions: string,
   prompt: string,
   apiKey: string,

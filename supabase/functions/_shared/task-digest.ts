@@ -464,9 +464,11 @@ export async function buildDigests(
       client: client?.name ?? null,
       due_date: (t.due_date as string | null) ?? null,
       overdue: !!t.due_date && String(t.due_date) < todayEastern,
+      late_days: t.due_date ? daysLate(String(t.due_date), todayEastern) : 0,
       created_at: String(t.created_at),
       last_activity: last,
     });
+
   }
 
   for (const b of briefs ?? []) {

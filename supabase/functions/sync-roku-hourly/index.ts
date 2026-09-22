@@ -340,17 +340,18 @@ Deno.serve(async (req) => {
     const csvRes = await fetch(downloadUrl);
     if (!csvRes.ok) throw new Error(`Report download failed (${csvRes.status})`);
     const csv = await csvRes.text();
-    const counts = await persist(admin, clientId, parseCsv(csv));
+    const counts = await persist(admin, clientId, parseCsv(csv), clientId === JACUZZI_CLIENT_ID);
 
-    await admin
-      .from("platform_connections")
-      .update({
-        metadata: { ...meta, pending_report_uid: null, hourly_synced_at: new Date().toISOString() },
-        last_synced_at: new Date().toISOString(),
-        sync_error: null,
-        status: "active",
-      })
-      .eq("id", conn.id);
+    // `last_synced_at` is the freshness of the DAILY spend pull on dashboards, so
+    // only Jacuzzi — whose daily rows this function writes — advances it here.
+    const update: Record<string, unknown> = {
+      metadata: { ...meta, pending_report_uid: null, hourly_synced_at: new Date().toISOString() },
+      sync_error: null,
+      status: "active",
+    };
+    if (clientId === JACUZZI_CLIENT_ID) update.last_synced_at = new Date().toISOString();
+    await admin.from("platform_connections").update(update).eq("id", conn.id);
+
 
     return json({ success: true, status, report_uid: uid, range: { startAt, endAt }, ...counts });
   } catch (e) {

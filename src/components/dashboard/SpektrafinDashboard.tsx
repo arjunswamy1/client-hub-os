@@ -93,12 +93,14 @@ function aggregate(calls: SpektrafinCall[], spend: number) {
     revenue,
     spend,
     // Profit and margin are published ONLY when every call's revenue is known.
-    profit: revenueComplete ? revenue - spend : null,
+    // Spektrafin's deal: CPM keeps the upside when revenue beats spend, but a
+    // losing day is never CPM's loss — so CPM profit floors at zero.
+    profit: revenueComplete ? Math.max(revenue - spend, 0) : null,
     rpc,
     costPerCall,
     costPerConvertedCall: convertedCalls ? spend / convertedCalls : 0,
-    marginPerCall: revenueComplete && rpc !== null ? rpc - costPerCall : null,
-    marginPct: revenueComplete && revenue > 0 ? (revenue - spend) / revenue : null,
+    marginPerCall: revenueComplete && rpc !== null ? Math.max(rpc - costPerCall, 0) : null,
+    marginPct: revenueComplete && revenue > 0 ? Math.max(revenue - spend, 0) / revenue : null,
     avgDuration: connected ? Math.round(duration / connected) : 0,
   };
 }

@@ -58,20 +58,21 @@ export function useBuyologyCalls() {
     queryFn: async () => {
       const publishers = await fetchAttributedPublishers();
       if (publishers.length === 0) return [] as BuyologyCall[];
-      const { data, error } = await supabase
-        .from("ringba_calls")
-        .select(
-          "call_id, call_date, campaign_name, target_name, caller_number, inbound_number, duration_seconds, connected, converted, revenue, payout, metadata"
-        )
-        .eq("client_id", BUYOLOGY_CLIENT_ID)
-        .or(publisherFilter(publishers))
-        .gte("call_date", `${from}T00:00:00`)
-        .lte("call_date", `${to}T23:59:59`)
-        .order("call_date", { ascending: true })
-        .limit(20000);
-      if (error) throw error;
-      return (data || []) as BuyologyCall[];
+      return fetchAllRows<BuyologyCall>((offset, size) =>
+        supabase
+          .from("ringba_calls")
+          .select(
+            "call_id, call_date, campaign_name, target_name, caller_number, inbound_number, duration_seconds, connected, converted, revenue, payout, metadata"
+          )
+          .eq("client_id", BUYOLOGY_CLIENT_ID)
+          .or(publisherFilter(publishers))
+          .gte("call_date", `${from}T00:00:00`)
+          .lte("call_date", `${to}T23:59:59`)
+          .order("call_date", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      );
     },
+
   });
 }
 

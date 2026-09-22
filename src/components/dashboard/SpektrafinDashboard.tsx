@@ -433,7 +433,7 @@ export default function SpektrafinDashboard() {
         <KPI
           label="CPM Profit"
           value={overall.profit !== null ? fmtMoney(overall.profit) : "—"}
-          sub={overall.profit === null ? "revenue incomplete" : "floored at $0 — CPM never takes the loss"}
+          sub={overall.profit === null ? "revenue incomplete" : "settled daily — losing days count $0"}
           icon={TrendingUp}
           accent={overall.profit !== null ? "text-emerald-500" : undefined}
         />

@@ -3687,6 +3687,66 @@ export type Database = {
         }
         Relationships: []
       }
+      improvement_proposals: {
+        Row: {
+          applied_at: string | null
+          applied_note: string | null
+          category: string
+          created_at: string
+          evidence: Json
+          feedback_ids: string[]
+          generated_prompt: string
+          id: string
+          injection_suspected: boolean
+          occurrences: number
+          problem_statement: string
+          proposed_change: string
+          recurred_after_apply: boolean | null
+          status: string
+          target_surface: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          applied_at?: string | null
+          applied_note?: string | null
+          category: string
+          created_at?: string
+          evidence?: Json
+          feedback_ids?: string[]
+          generated_prompt: string
+          id?: string
+          injection_suspected?: boolean
+          occurrences?: number
+          problem_statement: string
+          proposed_change: string
+          recurred_after_apply?: boolean | null
+          status?: string
+          target_surface: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          applied_at?: string | null
+          applied_note?: string | null
+          category?: string
+          created_at?: string
+          evidence?: Json
+          feedback_ids?: string[]
+          generated_prompt?: string
+          id?: string
+          injection_suspected?: boolean
+          occurrences?: number
+          problem_statement?: string
+          proposed_change?: string
+          recurred_after_apply?: boolean | null
+          status?: string
+          target_surface?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       jacuzzi_delivery: {
         Row: {
           campaign_name: string | null
@@ -7156,39 +7216,84 @@ export type Database = {
         Row: {
           action: string
           candidate_id: string | null
+          captured_at: string | null
+          category: string | null
+          category_confidence: number | null
           comment: string | null
           corrected_text: string | null
           created_at: string
+          daily_update_id: string | null
+          digest_post_id: string | null
           distilled_into_rule_id: string | null
           id: string
+          injection_signals: Json | null
+          injection_suspected: boolean
           original_text: string | null
+          permalink: string | null
+          proposal_id: string | null
+          slack_channel_id: string | null
+          slack_thread_ts: string | null
+          slack_ts: string | null
+          slack_user_id: string | null
+          source_kind: string | null
           surface: string
+          surface_target: string | null
           task_id: string | null
           team_member_id: string | null
         }
         Insert: {
           action: string
           candidate_id?: string | null
+          captured_at?: string | null
+          category?: string | null
+          category_confidence?: number | null
           comment?: string | null
           corrected_text?: string | null
           created_at?: string
+          daily_update_id?: string | null
+          digest_post_id?: string | null
           distilled_into_rule_id?: string | null
           id?: string
+          injection_signals?: Json | null
+          injection_suspected?: boolean
           original_text?: string | null
+          permalink?: string | null
+          proposal_id?: string | null
+          slack_channel_id?: string | null
+          slack_thread_ts?: string | null
+          slack_ts?: string | null
+          slack_user_id?: string | null
+          source_kind?: string | null
           surface: string
+          surface_target?: string | null
           task_id?: string | null
           team_member_id?: string | null
         }
         Update: {
           action?: string
           candidate_id?: string | null
+          captured_at?: string | null
+          category?: string | null
+          category_confidence?: number | null
           comment?: string | null
           corrected_text?: string | null
           created_at?: string
+          daily_update_id?: string | null
+          digest_post_id?: string | null
           distilled_into_rule_id?: string | null
           id?: string
+          injection_signals?: Json | null
+          injection_suspected?: boolean
           original_text?: string | null
+          permalink?: string | null
+          proposal_id?: string | null
+          slack_channel_id?: string | null
+          slack_thread_ts?: string | null
+          slack_ts?: string | null
+          slack_user_id?: string | null
+          source_kind?: string | null
           surface?: string
+          surface_target?: string | null
           task_id?: string | null
           team_member_id?: string | null
         }
@@ -7198,6 +7303,27 @@ export type Database = {
             columns: ["candidate_id"]
             isOneToOne: false
             referencedRelation: "task_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_feedback_daily_update_id_fkey"
+            columns: ["daily_update_id"]
+            isOneToOne: false
+            referencedRelation: "client_daily_updates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_feedback_digest_post_id_fkey"
+            columns: ["digest_post_id"]
+            isOneToOne: false
+            referencedRelation: "task_digest_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_feedback_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "improvement_proposals"
             referencedColumns: ["id"]
           },
           {

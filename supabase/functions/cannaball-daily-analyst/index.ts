@@ -233,13 +233,23 @@ interface Derived {
   profit: number | null;
   roas: number | null;
   roi: number | null;
+  /** Connected ÷ all attempts. Depressed by attempts that never reached a buyer. */
   connectRate: number | null;
+  /**
+   * Connected ÷ attempts that were actually ROUTED to a buyer. This is the
+   * consumer-response number: a NO_ROUTE attempt says nothing about whether a
+   * consumer engaged, so letting 307 of them sit in the denominator reports a
+   * routing failure as though response had collapsed. Both are published.
+   */
+  routedConnectRate: number | null;
+  routedAttempts: number;
   qualifiedRate: number | null;
 }
 
 /** Every cost-derived metric is null unless spend actually landed. One gate. */
 function derive(s: PlatformStats): Derived {
   const spend = s.spendComplete ? s.spend : null;
+  const routed = Math.max(0, s.attempts - s.noRoute);
   return {
     cpm: spend !== null && s.impressions ? (spend / s.impressions) * 1000 : null,
     frequency: s.impressions && s.reach ? s.impressions / s.reach : null,
@@ -250,6 +260,8 @@ function derive(s: PlatformStats): Derived {
     roas: spend !== null ? div(s.revenue, spend) : null,
     roi: spend !== null ? div(s.revenue - spend, spend) : null,
     connectRate: div(s.connected, s.attempts),
+    routedConnectRate: div(s.connected, routed),
+    routedAttempts: routed,
     qualifiedRate: div(s.over60, s.connected),
   };
 }

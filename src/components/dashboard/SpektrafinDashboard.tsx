@@ -413,6 +413,8 @@ export default function SpektrafinDashboard() {
             <TabsTrigger value="numbers" className="gap-1.5 text-xs"><Hash className="h-3.5 w-3.5" />Numbers</TabsTrigger>
             <TabsTrigger value="publishers" className="gap-1.5 text-xs"><Users className="h-3.5 w-3.5" />Publishers</TabsTrigger>
             <TabsTrigger value="campaigns" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Roku campaigns</TabsTrigger>
+            <TabsTrigger value="hourly" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Hourly</TabsTrigger>
+
 
             <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
             <TabsTrigger value="geo" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" />Geo</TabsTrigger>

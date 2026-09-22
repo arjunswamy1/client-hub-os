@@ -141,6 +141,7 @@ Deno.serve(async (req) => {
     const captured: Array<Record<string, unknown>> = [];
     const skipped: Array<Record<string, unknown>> = [];
 
+    console.log(`capture-slack-feedback: examining ${posts.length} bot posts`);
     for (const post of posts) {
       if (!post.channel_id || !post.ts) continue;
 
@@ -158,7 +159,11 @@ Deno.serve(async (req) => {
           if (!text) continue;
           const member = msg.user ? bySlack.get(msg.user) : undefined;
           const screen = screenForInjection(text);
-          const link = await slackRead(token, 'chat.getPermalink', { channel: post.channel_id, message_ts: msg.ts });
+          // Permalinks are one extra read per reply; skipped on a dry run so the
+          // check stays fast.
+          const link = dryRun
+            ? { ok: false as boolean, permalink: null as string | null }
+            : await slackRead(token, 'chat.getPermalink', { channel: post.channel_id, message_ts: msg.ts });
           captured.push({
             action: 'feedback',
             surface: 'slack',

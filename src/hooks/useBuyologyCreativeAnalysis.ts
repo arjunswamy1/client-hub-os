@@ -3,8 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { format } from "date-fns";
 import { BUYOLOGY_CLIENT_ID, BuyologyCall } from "./useBuyologyData";
-import {
 import { fetchAllRows } from "@/lib/fetchAllRows";
+import {
   ProductLine,
   classifyCreative,
   classifyName,

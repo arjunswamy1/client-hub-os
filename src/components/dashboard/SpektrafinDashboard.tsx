@@ -330,18 +330,28 @@ export default function SpektrafinDashboard() {
   const spendAge = rokuFreshness?.last_synced_at
     ? `${Math.round((Date.now() - new Date(rokuFreshness.last_synced_at).getTime()) / 60000)} min ago`
     : "never pulled";
+  const hourlyAge = hourlyFreshness?.hourly_synced_at
+    ? `${Math.round((Date.now() - new Date(hourlyFreshness.hourly_synced_at).getTime()) / 60000)} min ago`
+    : "never pulled";
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
+          Roku spend (pulled {spendAge}) · hourly delivery (pulled {hourlyAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
         </p>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); refetchBreakdowns(); }}>
-          <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={syncingHourly} onClick={runHourlySync}>
+            <Clock className="h-3.5 w-3.5" />
+            {syncingHourly ? "Syncing…" : "Sync Roku hourly"}
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); refetchBreakdowns(); refetchHourly(); }}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
       </div>
+
 
       {overall.uncapturedRevenueCalls > 0 && (
         <Card className="border-amber-500/40 bg-amber-500/5 p-3">

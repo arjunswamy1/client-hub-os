@@ -102,16 +102,18 @@ export function useCannaballBreakdowns() {
     queryKey: ["cannaball-roku-breakdowns", from, to],
     refetchInterval: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("roku_daily_metrics")
-        .select("date, entity, entity_name, campaign_name, spend, impressions")
-        .eq("client_id", CANNABALL_CLIENT_ID)
-        .in("entity", ["state", "dma", "placement"])
-        .gte("date", from)
-        .lte("date", to)
-        .limit(20000);
-      if (error) throw error;
-      return (data || []).map((r: any) => ({
+      const rows = await fetchAllRows<any>((offset, size) =>
+        supabase
+          .from("roku_daily_metrics")
+          .select("date, entity, entity_name, campaign_name, spend, impressions")
+          .eq("client_id", CANNABALL_CLIENT_ID)
+          .in("entity", ["state", "dma", "placement"])
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      );
+      return rows.map((r: any) => ({
         date: r.date,
         entity: r.entity,
         entity_name: r.entity_name ?? "Unknown",
@@ -120,6 +122,7 @@ export function useCannaballBreakdowns() {
         impressions: Number(r.impressions || 0),
       })) as CannaballBreakdownRow[];
     },
+
   });
 }
 

@@ -1,26 +1,32 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 import {
   RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin, AlertTriangle,
-  Hash, Users,
+  Hash, Users, Clock,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from "recharts";
 import { format } from "date-fns";
 import SpektrafinSetup from "./SpektrafinSetup";
+import SpektrafinHourly, { HourCallStats } from "./SpektrafinHourly";
 import {
   useSpektrafinCalls,
   useSpektrafinRokuSpend,
   useSpektrafinRokuFreshness,
   useSpektrafinBreakdowns,
+  useSpektrafinHourly,
+  useSpektrafinHourlyFreshness,
+  useSyncSpektrafinHourly,
   SpektrafinCall,
   RingFuelBreakdownRow,
 } from "@/hooks/useSpektrafinData";
 import { parseRokuCampaignName } from "@/lib/mediaBrain/rokuCampaignAttributes";
 import { resolveClientRevenue } from "@/lib/mediaBrain/clientRevenue";
+
 
 
 const fmtMoney = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);

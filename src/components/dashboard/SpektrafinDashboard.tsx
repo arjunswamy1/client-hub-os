@@ -253,6 +253,37 @@ export default function SpektrafinDashboard() {
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + r.spend, 0), [spendRows]);
   const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);
 
+  // CPM profit is settled per day: a losing day contributes $0, never a
+  // negative, so the lifetime total is the SUM of daily floored profits —
+  // a $10K down day followed by a $1K up day nets $1K, not −$9K.
+  const dailyCpmProfit = useMemo(() => {
+    const revByDay = new Map<string, { revenue: number; uncaptured: number }>();
+    for (const c of calls) {
+      const d = prDay(c.call_start);
+      const cur = revByDay.get(d) ?? { revenue: 0, uncaptured: 0 };
+      if (captured(c)) cur.revenue += money(c).amount ?? 0;
+      else cur.uncaptured += 1;
+      revByDay.set(d, cur);
+    }
+    const spendByDay = new Map<string, number>();
+    for (const s of spendRows) spendByDay.set(s.date, (spendByDay.get(s.date) ?? 0) + s.spend);
+    const days = new Set([...revByDay.keys(), ...spendByDay.keys()]);
+    let total = 0;
+    let complete = true;
+    for (const d of days) {
+      const rev = revByDay.get(d);
+      if (rev && rev.uncaptured > 0) complete = false;
+      total += Math.max((rev?.revenue ?? 0) - (spendByDay.get(d) ?? 0), 0);
+    }
+    return { total, complete: complete && overall.revenueComplete };
+  }, [calls, spendRows, overall.revenueComplete]);
+
+  if (overall.profit !== null && dailyCpmProfit.complete) {
+    overall.profit = dailyCpmProfit.total;
+    overall.marginPct = overall.revenue > 0 ? dailyCpmProfit.total / overall.revenue : null;
+    overall.marginPerCall = overall.calls > 0 ? dailyCpmProfit.total / overall.calls : null;
+  }
+
   const byCreative = useMemo(() => {
     const map = new Map<string, SpektrafinCall[]>();
     for (const c of calls) {

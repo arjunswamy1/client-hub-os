@@ -226,3 +226,94 @@ export function useSyncSpektrafinRoku() {
     return data as { metric_rows?: number };
   };
 }
+
+export interface SpektrafinHourlyRow {
+  date: string;
+  hour: number;
+  campaign_uid: string;
+  campaign_name: string | null;
+  impressions: number;
+  spend: number;
+  video_completions: number;
+}
+
+/**
+ * Roku hourly delivery per campaign. Roku reports the hour in the ad account's
+ * own clock, which is the clock the campaign daypart was set in — stored as sent,
+ * never shifted, so "6-6 EST" can be checked against what actually delivered.
+ */
+export function useSpektrafinHourly() {
+  const { from, to } = useDates();
+  return useQuery({
+    queryKey: ["spektrafin-roku-hourly", from, to],
+    refetchInterval: 10 * 60 * 1000,
+    queryFn: async () => {
+      const rows: SpektrafinHourlyRow[] = [];
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from("roku_hourly_metrics")
+          .select("date, hour, campaign_uid, campaign_name, impressions, spend, video_completions")
+          .eq("client_id", SPEKTRAFIN_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) throw error;
+        rows.push(
+          ...((data || []) as any[]).map((r) => ({
+            date: r.date as string,
+            hour: Number(r.hour || 0),
+            campaign_uid: r.campaign_uid as string,
+            campaign_name: (r.campaign_name ?? null) as string | null,
+            impressions: Number(r.impressions || 0),
+            spend: Number(r.spend || 0),
+            video_completions: Number(r.video_completions || 0),
+          })),
+        );
+        if (!data || data.length < PAGE_SIZE) break;
+      }
+      return rows;
+    },
+  });
+}
+
+/** When the hourly Roku report last landed — distinct from the daily spend pull. */
+export function useSpektrafinHourlyFreshness() {
+  return useQuery({
+    queryKey: ["spektrafin-roku-hourly-freshness"],
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_connections")
+        .select("metadata, sync_error")
+        .eq("platform", "roku")
+        .eq("client_id", SPEKTRAFIN_CLIENT_ID)
+        .maybeSingle();
+      if (error) throw error;
+      const meta = ((data?.metadata ?? {}) as Record<string, any>) || {};
+      return {
+        hourly_synced_at: (meta.hourly_synced_at ?? null) as string | null,
+        pending: Boolean(meta.pending_report_uid),
+        sync_error: (data?.sync_error ?? null) as string | null,
+      };
+    },
+  });
+}
+
+/** Kicks the asynchronous Roku hourly report for Spektrafin. */
+export function useSyncSpektrafinHourly() {
+  const qc = useQueryClient();
+  return async (days = 7) => {
+    const { data, error } = await supabase.functions.invoke("sync-roku-hourly", {
+      body: { client_id: SPEKTRAFIN_CLIENT_ID, days },
+    });
+    if (error) throw error;
+    if ((data as any)?.error) throw new Error((data as any).error);
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["spektrafin-roku-hourly"] }),
+      qc.invalidateQueries({ queryKey: ["spektrafin-roku-hourly-freshness"] }),
+    ]);
+    return data as { success?: boolean; pending?: boolean; status?: string; campaign_hours?: number };
+  };
+}
+

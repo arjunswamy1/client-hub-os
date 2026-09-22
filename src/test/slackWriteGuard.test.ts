@@ -22,12 +22,16 @@ const ALLOWED = ["supabase/functions/_shared/slack-post.ts"];
 
 /**
  * Files allowed to build a Slack API URL dynamically. Only read-only helpers
- * belong here — the posting helper and sync-slack's `slackRead` wrapper.
+ * belong here — the posting helper, sync-slack's `slackRead` wrapper, and the
+ * feedback capture poller (conversations.replies / reactions.get / getPermalink,
+ * all reads; feedbackSafety.test.ts asserts it calls no write method).
  */
 const DYNAMIC_URL_ALLOWED = [
   "supabase/functions/_shared/slack-post.ts",
   "supabase/functions/sync-slack/index.ts",
+  "supabase/functions/capture-slack-feedback/index.ts",
 ];
+
 
 /**
  * A dynamically built method name (`api/${m}`) hides the literal, so also flag

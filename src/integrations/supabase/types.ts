@@ -5809,6 +5809,59 @@ export type Database = {
           },
         ]
       }
+      roku_hourly_metrics: {
+        Row: {
+          campaign_name: string | null
+          campaign_uid: string
+          client_id: string
+          created_at: string
+          date: string
+          hour: number
+          id: string
+          impressions: number
+          source: string
+          spend: number
+          updated_at: string
+          video_completions: number
+        }
+        Insert: {
+          campaign_name?: string | null
+          campaign_uid?: string
+          client_id: string
+          created_at?: string
+          date: string
+          hour: number
+          id?: string
+          impressions?: number
+          source?: string
+          spend?: number
+          updated_at?: string
+          video_completions?: number
+        }
+        Update: {
+          campaign_name?: string | null
+          campaign_uid?: string
+          client_id?: string
+          created_at?: string
+          date?: string
+          hour?: number
+          id?: string
+          impressions?: number
+          source?: string
+          spend?: number
+          updated_at?: string
+          video_completions?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roku_hourly_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       search_terms: {
         Row: {
           campaign_name: string | null

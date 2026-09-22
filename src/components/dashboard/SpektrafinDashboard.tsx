@@ -1,26 +1,32 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 import {
   RefreshCw, Phone, DollarSign, TrendingUp, PhoneCall, Target, Layers, FileText, Plug, MapPin, AlertTriangle,
-  Hash, Users,
+  Hash, Users, Clock,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from "recharts";
 import { format } from "date-fns";
 import SpektrafinSetup from "./SpektrafinSetup";
+import SpektrafinHourly, { HourCallStats } from "./SpektrafinHourly";
 import {
   useSpektrafinCalls,
   useSpektrafinRokuSpend,
   useSpektrafinRokuFreshness,
   useSpektrafinBreakdowns,
+  useSpektrafinHourly,
+  useSpektrafinHourlyFreshness,
+  useSyncSpektrafinHourly,
   SpektrafinCall,
   RingFuelBreakdownRow,
 } from "@/hooks/useSpektrafinData";
 import { parseRokuCampaignName } from "@/lib/mediaBrain/rokuCampaignAttributes";
 import { resolveClientRevenue } from "@/lib/mediaBrain/clientRevenue";
+
 
 
 const fmtMoney = (n: number) => (n < 0 ? `-$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
@@ -188,6 +194,50 @@ export default function SpektrafinDashboard() {
   const { data: spendRows = [], refetch: refetchSpend } = useSpektrafinRokuSpend();
   const { data: rokuFreshness, refetch: refetchFreshness } = useSpektrafinRokuFreshness();
   const { data: breakdowns = [], refetch: refetchBreakdowns } = useSpektrafinBreakdowns();
+  const { data: hourlyRows = [], refetch: refetchHourly } = useSpektrafinHourly();
+  const { data: hourlyFreshness, refetch: refetchHourlyFreshness } = useSpektrafinHourlyFreshness();
+  const syncHourly = useSyncSpektrafinHourly();
+  const [syncingHourly, setSyncingHourly] = useState(false);
+
+  const runHourlySync = async () => {
+    setSyncingHourly(true);
+    try {
+      const res = await syncHourly(14);
+      if (res?.pending) toast.info("Roku is still building the hourly report — it'll land shortly.");
+      else toast.success(`Hourly delivery synced (${res?.campaign_hours ?? 0} campaign-hours)`);
+      refetchHourly();
+      refetchHourlyFreshness();
+    } catch (e: any) {
+      toast.error(e.message || "Hourly sync failed");
+    } finally {
+      setSyncingHourly(false);
+    }
+  };
+
+  /**
+   * Calls per hour of day in Puerto Rico time — the clock RingFuel reports in.
+   * Revenue we were never sent is counted as unknown, never as zero.
+   */
+  const callsByHour = useMemo<HourCallStats[]>(() => {
+    const rows: HourCallStats[] = Array.from({ length: 24 }, (_, hour) => ({
+      hour, calls: 0, connected: 0, converted: 0, revenue: 0, revenueUnknown: 0,
+    }));
+    for (const c of calls) {
+      const hour = prShift(c.call_start).getUTCHours();
+      const r = rows[hour];
+      if (!r) continue;
+      r.calls += 1;
+      if (c.connected === true) r.connected += 1;
+      if (captured(c)) {
+        r.revenue += money(c).amount ?? 0;
+        if (c.converted === true) r.converted += 1;
+      } else {
+        r.revenueUnknown += 1;
+      }
+    }
+    return rows;
+  }, [calls]);
+
 
   const split = (dimension: RingFuelBreakdownRow["dimension"]) =>
     breakdowns
@@ -280,18 +330,28 @@ export default function SpektrafinDashboard() {
   const spendAge = rokuFreshness?.last_synced_at
     ? `${Math.round((Date.now() - new Date(rokuFreshness.last_synced_at).getTime()) / 60000)} min ago`
     : "never pulled";
+  const hourlyAge = hourlyFreshness?.hourly_synced_at
+    ? `${Math.round((Date.now() - new Date(hourlyFreshness.hourly_synced_at).getTime()) / 60000)} min ago`
+    : "never pulled";
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Roku spend (pulled {spendAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
+          Roku spend (pulled {spendAge}) · hourly delivery (pulled {hourlyAge}) · RingFuel calls (Puerto Rico time, matching RingFuel) · revenue as RingFuel reports it, $16 per converted call — screen updated {lastSync}
         </p>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); refetchBreakdowns(); }}>
-          <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={syncingHourly} onClick={runHourlySync}>
+            <Clock className="h-3.5 w-3.5" />
+            {syncingHourly ? "Syncing…" : "Sync Roku hourly"}
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { refetchCalls(); refetchSpend(); refetchFreshness(); refetchBreakdowns(); refetchHourly(); }}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
       </div>
+
 
       {overall.uncapturedRevenueCalls > 0 && (
         <Card className="border-amber-500/40 bg-amber-500/5 p-3">
@@ -353,6 +413,8 @@ export default function SpektrafinDashboard() {
             <TabsTrigger value="numbers" className="gap-1.5 text-xs"><Hash className="h-3.5 w-3.5" />Numbers</TabsTrigger>
             <TabsTrigger value="publishers" className="gap-1.5 text-xs"><Users className="h-3.5 w-3.5" />Publishers</TabsTrigger>
             <TabsTrigger value="campaigns" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Roku campaigns</TabsTrigger>
+            <TabsTrigger value="hourly" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" />Hourly</TabsTrigger>
+
 
             <TabsTrigger value="trend" className="gap-1.5 text-xs"><TrendingUp className="h-3.5 w-3.5" />Trend</TabsTrigger>
             <TabsTrigger value="geo" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" />Geo</TabsTrigger>
@@ -496,7 +558,12 @@ export default function SpektrafinDashboard() {
         </TabsContent>
 
 
+        <TabsContent value="hourly">
+          <SpektrafinHourly hourlyRows={hourlyRows} dailyRows={spendRows} callsByHour={callsByHour} />
+        </TabsContent>
+
         <TabsContent value="trend">
+
           <Card className="p-4">
             <h3 className="mb-1 text-sm font-medium">Daily spend, revenue and calls</h3>
             <p className="mb-3 text-xs text-muted-foreground">

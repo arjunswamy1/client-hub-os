@@ -400,9 +400,9 @@ export default function SpektrafinDashboard() {
           accent={overall.marginPerCall !== null && overall.marginPerCall >= 0 ? "text-emerald-500" : overall.marginPerCall !== null ? "text-destructive" : undefined}
         />
         <KPI
-          label="Profit"
+          label="CPM Profit"
           value={overall.profit !== null ? fmtMoney(overall.profit) : "—"}
-          sub={overall.profit === null ? "revenue incomplete" : undefined}
+          sub={overall.profit === null ? "revenue incomplete" : "floored at $0 — CPM never takes the loss"}
           icon={TrendingUp}
           accent={overall.profit !== null && overall.profit >= 0 ? "text-emerald-500" : overall.profit !== null ? "text-destructive" : undefined}
         />

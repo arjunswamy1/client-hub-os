@@ -365,7 +365,9 @@ function platformBlock(label: string, s: PlatformStats, d: Derived, prev: Platfo
     );
   }
   lines.push(
-    `• ${s.attempts} attempts → ${s.connected} connected (${d.connectRate !== null ? pct(d.connectRate) : 'n/a'})` +
+    `• ${s.attempts} attempts (${d.routedAttempts} routed to a buyer) → ${s.connected} connected` +
+      `${d.routedConnectRate !== null ? ` — ${pct(d.routedConnectRate)} of routed attempts` : ''}` +
+      `${s.noRoute && d.connectRate !== null ? `, ${pct(d.connectRate)} of all attempts` : ''}` +
       ` → ${s.over10} over 10s → ${s.over60} qualified (60s+)` +
       `${s.avgConnectedDuration !== null ? `, avg connected ${Math.round(s.avgConnectedDuration)}s` : ''}`,
   );

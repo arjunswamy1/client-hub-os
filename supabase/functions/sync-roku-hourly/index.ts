@@ -263,7 +263,7 @@ async function persist(admin: any, clientId: string, rows: string[][], isJacuzzi
     if (error) throw error;
   }
 
-  return { hourly: hourlyRows.length, daily: dailyRows.length };
+  return { hourly: hourlyRows.length, daily: dailyRows.length, campaign_hours: campaignRows.length };
 }
 
 Deno.serve(async (req) => {

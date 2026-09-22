@@ -558,7 +558,12 @@ export default function SpektrafinDashboard() {
         </TabsContent>
 
 
+        <TabsContent value="hourly">
+          <SpektrafinHourly hourlyRows={hourlyRows} dailyRows={spendRows} callsByHour={callsByHour} />
+        </TabsContent>
+
         <TabsContent value="trend">
+
           <Card className="p-4">
             <h3 className="mb-1 text-sm font-medium">Daily spend, revenue and calls</h3>
             <p className="mb-3 text-xs text-muted-foreground">

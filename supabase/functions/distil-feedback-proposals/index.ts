@@ -195,7 +195,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: openProposals } = await supabase.from('improvement_proposals')
-      .select('id, title, target_surface, category, problem_statement, feedback_ids, occurrences, status, applied_at')
+      .select('id, title, target_surface, category, problem_statement, feedback_ids, occurrences, status, applied_at, injection_suspected')
       .in('status', ['open', 'approved', 'applied']);
 
     const produced: Array<Record<string, unknown>> = [];
@@ -241,9 +241,9 @@ Deno.serve(async (req) => {
       const feedbackIds = items.map((i) => i.id).filter(Boolean) as string[];
 
       if (match) {
-        const recurred = match.status === 'applied' && match.applied_at
-          ? items.some((i) => !i.id || true)   // any new matching report after applied_at
-          : false;
+        // The same complaint arriving after a fix was marked applied means the fix
+        // did not work. Reopen and say so — a loop that cannot tell is a suggestion box.
+        const recurred = match.status === 'applied' && !!match.applied_at;
         produced.push({
           action: 'attached_to_existing', proposal_id: match.id, title: match.title,
           occurrences: (match.occurrences ?? 1) + items.length,

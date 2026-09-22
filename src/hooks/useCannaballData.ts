@@ -50,19 +50,18 @@ export function useCannaballCalls() {
   return useQuery({
     queryKey: ["cannaball-calls", from, to],
     refetchInterval: 5 * 60 * 1000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("cannaball_calls" as any)
-        .select("id, call_id, did, caller_number, caller_state, caller_city, caller_zip, caller_area_code, call_start, duration_seconds, connected, connection_duration_seconds, payout, campaign_name, creative_name, platform, disposition, recording_url")
-        .eq("client_id", CANNABALL_CLIENT_ID)
-        // CallGrid reports this account in US/Eastern, so the day is cut there, not at UTC midnight.
-        .gte("call_start", zonedTimeToUtcISO(from, "00:00:00", CALLGRID_REPORTING_TZ))
-        .lte("call_start", zonedTimeToUtcISO(to, "23:59:59", CALLGRID_REPORTING_TZ))
-        .order("call_start", { ascending: false })
-        .limit(5000);
-      if (error) throw error;
-      return (data || []) as unknown as CannaballCall[];
-    },
+    queryFn: async () =>
+      fetchAllRows<CannaballCall>((offset, size) =>
+        supabase
+          .from("cannaball_calls" as any)
+          .select("id, call_id, did, caller_number, caller_state, caller_city, caller_zip, caller_area_code, call_start, duration_seconds, connected, connection_duration_seconds, payout, campaign_name, creative_name, platform, disposition, recording_url")
+          .eq("client_id", CANNABALL_CLIENT_ID)
+          // CallGrid reports this account in US/Eastern, so the day is cut there, not at UTC midnight.
+          .gte("call_start", zonedTimeToUtcISO(from, "00:00:00", CALLGRID_REPORTING_TZ))
+          .lte("call_start", zonedTimeToUtcISO(to, "23:59:59", CALLGRID_REPORTING_TZ))
+          .order("call_start", { ascending: false })
+          .range(offset, offset + size - 1) as any,
+      ),
   });
 }
 
@@ -70,18 +69,20 @@ export function useCannaballSpend() {
   const { from, to } = useDates();
   return useQuery({
     queryKey: ["cannaball-spend", from, to],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("cannaball_spend" as any)
-        .select("date, platform, campaign_name, creative_name, spend, impressions, clicks")
-        .eq("client_id", CANNABALL_CLIENT_ID)
-        .gte("date", from)
-        .lte("date", to);
-      if (error) throw error;
-      return (data || []) as unknown as CannaballSpend[];
-    },
+    queryFn: async () =>
+      fetchAllRows<CannaballSpend>((offset, size) =>
+        supabase
+          .from("cannaball_spend" as any)
+          .select("date, platform, campaign_name, creative_name, spend, impressions, clicks")
+          .eq("client_id", CANNABALL_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      ),
   });
 }
+
 
 export interface CannaballBreakdownRow {
   date: string;

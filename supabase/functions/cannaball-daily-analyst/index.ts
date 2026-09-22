@@ -390,7 +390,12 @@ function platformBlock(label: string, s: PlatformStats, d: Derived, prev: Platfo
 
 function geoBlock(s: PlatformStats): string {
   const judged = s.states.filter((x) => x.attempts >= 10);
-  if (!judged.length) return '';
+  // Sample size is weighted heavily: no state is classified on a thin day. When
+  // nothing clears the bar we say so, and still report what geo excluded.
+  if (!judged.length) {
+    if (!s.attempts) return '';
+    return `*GEO (${s.platform})*\n  • No state reached 10 calls, so none is classified. ${s.geoExcluded} of ${s.attempts} calls carried no caller state and are excluded from geo.`;
+  }
   const rows = judged.slice(0, 8).map((x) => {
     const qr = x.connected ? pct(x.over60 / x.connected) : 'n/a';
     return `  • ${x.state}: ${x.attempts} calls, ${x.connected} connected, ${x.over60} qualified (${qr}), ${money2(x.revenue)}` +

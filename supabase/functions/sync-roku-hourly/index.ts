@@ -155,17 +155,57 @@ async function getReport(token: string, uid: string) {
   return { status: attrs.status as string, downloadUrl: attrs.download_url as string | null };
 }
 
-/** Store hourly rows, then roll spend/impressions up into the daily table. */
-async function persist(admin: any, clientId: string, rows: string[][]) {
-  if (!rows.length) return { hourly: 0, daily: 0 };
+/**
+ * Store hourly rows for every Roku client in `roku_hourly_metrics` (day × hour ×
+ * campaign), then — for Jacuzzi only — keep its station-coded hourly table and
+ * daily roll-up, which its dashboard and the client's own sheet both rely on.
+ */
+async function persist(admin: any, clientId: string, rows: string[][], isJacuzzi: boolean) {
+  if (!rows.length) return { hourly: 0, daily: 0, campaign_hours: 0 };
   const header = rows[0].map((h) => h.trim().toLowerCase());
   const col = (...names: string[]) => header.findIndex((h) => names.some((n) => h === n || h.includes(n)));
   const iDate = col("date");
   const iHour = col("hour");
   const iCamp = col("campaign_name", "campaign");
+  const iCampUid = header.findIndex((h) => h === "campaign_uid");
   const iImp = col("impressions");
   const iSpend = col("spend");
+  const iComp = col("video_completions", "completions");
   if (iDate < 0 || iHour < 0) throw new Error(`Report CSV missing date/hour columns: ${header.join(",")}`);
+
+  // Campaign grain — the grain every Roku client can read, since campaign names
+  // carry the daypart and time zone the buy was set in.
+  const campaignMap = new Map<string, any>();
+  for (const r of rows.slice(1)) {
+    const date = normDate(r[iDate] ?? "");
+    const hour = normHour(r[iHour] ?? "");
+    if (!date || hour === null) continue;
+    const name = (iCamp >= 0 ? r[iCamp] ?? "" : "").trim();
+    // Roku's hourly report exposes no campaign id, so the name is the key. An
+    // unnamed row is kept under a labelled bucket rather than dropped.
+    const uid = (iCampUid >= 0 ? r[iCampUid] ?? "" : "").trim() || name || "(unattributed)";
+    const key = `${date}|${hour}|${uid}`;
+    const cur = campaignMap.get(key) ?? {
+      client_id: clientId, date, hour, campaign_uid: uid, campaign_name: name || null,
+      impressions: 0, spend: 0, video_completions: 0, source: "roku_api",
+    };
+    cur.impressions += iImp >= 0 ? Math.round(num(r[iImp] ?? "")) : 0;
+    cur.spend += iSpend >= 0 ? num(r[iSpend] ?? "") : 0;
+    cur.video_completions += iComp >= 0 ? Math.round(num(r[iComp] ?? "")) : 0;
+    campaignMap.set(key, cur);
+  }
+
+  const campaignRows = Array.from(campaignMap.values());
+  if (campaignRows.length) {
+    for (let i = 0; i < campaignRows.length; i += 500) {
+      const { error } = await admin
+        .from("roku_hourly_metrics")
+        .upsert(campaignRows.slice(i, i + 500), { onConflict: "client_id,date,hour,campaign_uid" });
+      if (error) throw error;
+    }
+  }
+
+  if (!isJacuzzi) return { hourly: 0, daily: 0, campaign_hours: campaignRows.length };
 
   const hourlyMap = new Map<string, any>();
   for (const r of rows.slice(1)) {
@@ -190,6 +230,7 @@ async function persist(admin: any, clientId: string, rows: string[][]) {
       .upsert(hourlyRows, { onConflict: "client_id,date,hour,station_code" });
     if (error) throw error;
   }
+
 
   // Daily roll-up — never overwrite rows the client sheet provided.
   const dailyMap = new Map<string, any>();

@@ -87,11 +87,12 @@ export default function ImprovementProposalsPage() {
 
   const setStatus = useMutation({
     mutationFn: async ({ id, status, note }: { id: string; status: string; note?: string }) => {
-      const patch: Record<string, unknown> = { status };
-      if (status === 'applied') {
-        patch.applied_at = new Date().toISOString();
-        patch.applied_note = note ?? null;
-      }
+      const patch = {
+        status,
+        ...(status === 'applied'
+          ? { applied_at: new Date().toISOString(), applied_note: note ?? null }
+          : {}),
+      };
       const { error } = await supabase.from('improvement_proposals').update(patch).eq('id', id);
       if (error) throw new Error(error.message);
     },

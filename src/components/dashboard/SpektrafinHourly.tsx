@@ -377,6 +377,8 @@ export default function SpektrafinHourly({
               {int(IMPRESSION_TOLERANCE)} impressions (or 1%) are treated as rounding. Roku dates its daily report in
               UTC and its hourly report in the account's own clock, so the latest day or two routinely differ by the
               evening's spend landing on either side of midnight — a gap on an older day is the one worth chasing.
+            </p>
+
 
           </div>
           <div className="flex items-center gap-2">

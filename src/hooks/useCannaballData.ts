@@ -144,15 +144,17 @@ export function useCannaballUniversalGeo() {
     queryKey: ["cannaball-universal-geo", from, to],
     refetchInterval: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("universal_ads_geo_metrics" as any)
-        .select("date, entity, entity_name, campaign_name, creative_name, spend, impressions, clicks")
-        .eq("client_id", CANNABALL_CLIENT_ID)
-        .gte("date", from)
-        .lte("date", to)
-        .limit(20000);
-      if (error) throw error;
-      return ((data || []) as any[]).map((r) => ({
+      const rows = await fetchAllRows<any>((offset, size) =>
+        supabase
+          .from("universal_ads_geo_metrics" as any)
+          .select("date, entity, entity_name, campaign_name, creative_name, spend, impressions, clicks")
+          .eq("client_id", CANNABALL_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      );
+      return rows.map((r: any) => ({
         date: r.date,
         entity: r.entity,
         entity_name: r.entity_name ?? "Unknown",
@@ -163,6 +165,7 @@ export function useCannaballUniversalGeo() {
         clicks: Number(r.clicks || 0),
       })) as UniversalGeoRow[];
     },
+
   });
 }
 

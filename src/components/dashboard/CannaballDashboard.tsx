@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { CALLGRID_REPORTING_TZ, reportingDay } from "@/lib/reportingDay";
 
 const fmtMoney = (n: number) => n === 0 ? "$0" : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
@@ -99,7 +100,7 @@ export default function CannaballDashboard() {
   const trend = useMemo(() => {
     const byDate = new Map<string, { calls: number; spend: number }>();
     for (const c of calls) {
-      const d = c.call_start.slice(0, 10);
+      const d = reportingDay(c.call_start, CALLGRID_REPORTING_TZ);
       const row = byDate.get(d) || { calls: 0, spend: 0 };
       row.calls += 1;
       byDate.set(d, row);

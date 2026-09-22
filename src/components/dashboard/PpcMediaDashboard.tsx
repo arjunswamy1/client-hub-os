@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from "recharts";
 import { format } from "date-fns";
+import { CALLGRID_REPORTING_TZ, reportingDay } from "@/lib/reportingDay";
 import { AlertTriangle, DollarSign, Layers, MapPin, Phone, PhoneCall, Sparkles, Target, TrendingUp } from "lucide-react";
 import PpcMetaPerformance from "@/components/dashboard/PpcMetaPerformance";
 import {
@@ -163,7 +164,7 @@ export default function PpcMediaDashboard() {
       return map.get(d)!;
     };
     for (const c of calls) {
-      const d = (c.call_start || "").slice(0, 10);
+      const d = c.call_start ? reportingDay(c.call_start, CALLGRID_REPORTING_TZ) : "";
       if (!d) continue;
       const row = touch(d);
       row.calls += 1;

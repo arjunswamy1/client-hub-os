@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { format } from "date-fns";
+import { CALLGRID_REPORTING_TZ, zonedTimeToUtcISO } from "@/lib/reportingDay";
 
 export const CANNABALL_CLIENT_ID = "a1dabea1-5518-4c7f-a29d-23739cb52f9b";
 
@@ -54,8 +55,9 @@ export function useCannaballCalls() {
         .from("cannaball_calls" as any)
         .select("id, call_id, did, caller_number, caller_state, caller_city, caller_zip, caller_area_code, call_start, duration_seconds, connected, connection_duration_seconds, payout, campaign_name, creative_name, platform, disposition, recording_url")
         .eq("client_id", CANNABALL_CLIENT_ID)
-        .gte("call_start", `${from}T00:00:00Z`)
-        .lte("call_start", `${to}T23:59:59Z`)
+        // CallGrid reports this account in US/Eastern, so the day is cut there, not at UTC midnight.
+        .gte("call_start", zonedTimeToUtcISO(from, "00:00:00", CALLGRID_REPORTING_TZ))
+        .lte("call_start", zonedTimeToUtcISO(to, "23:59:59", CALLGRID_REPORTING_TZ))
         .order("call_start", { ascending: false })
         .limit(5000);
       if (error) throw error;

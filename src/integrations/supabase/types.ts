@@ -1899,6 +1899,156 @@ export type Database = {
           },
         ]
       }
+      cannaball_daily_metrics: {
+        Row: {
+          anomalies: Json
+          anomalies_present: boolean
+          anonymous_callers: number
+          attempts: number
+          avg_connected_duration: number | null
+          busy: number
+          buyer_acceptance_rate: number | null
+          buyer_accepted: number | null
+          buyer_rejected: number | null
+          calls_over_10s: number
+          calls_over_60s: number
+          client_id: string
+          connect_failed: number
+          connect_rate: number | null
+          connected: number
+          cost_per_10s: number | null
+          cost_per_60s: number | null
+          cost_per_connected: number | null
+          cpm: number | null
+          created_at: string
+          date: string
+          did_breakdown: Json
+          distinct_callers: number | null
+          duplicates: number
+          frequency: number | null
+          geo_excluded_calls: number
+          id: string
+          impressions: number | null
+          no_answer: number
+          no_route: number
+          notes: string | null
+          platform: string
+          profit: number | null
+          qualified_rate: number | null
+          reach: number | null
+          revenue: number | null
+          revenue_calls_captured: number
+          revenue_calls_uncaptured: number
+          roas: number | null
+          roi: number | null
+          spend: number | null
+          spend_complete: boolean
+          state_breakdown: Json
+          unavailable_metrics: Json
+          updated_at: string
+          vendor_breakdown: Json
+          was_dark: boolean
+        }
+        Insert: {
+          anomalies?: Json
+          anomalies_present?: boolean
+          anonymous_callers?: number
+          attempts?: number
+          avg_connected_duration?: number | null
+          busy?: number
+          buyer_acceptance_rate?: number | null
+          buyer_accepted?: number | null
+          buyer_rejected?: number | null
+          calls_over_10s?: number
+          calls_over_60s?: number
+          client_id: string
+          connect_failed?: number
+          connect_rate?: number | null
+          connected?: number
+          cost_per_10s?: number | null
+          cost_per_60s?: number | null
+          cost_per_connected?: number | null
+          cpm?: number | null
+          created_at?: string
+          date: string
+          did_breakdown?: Json
+          distinct_callers?: number | null
+          duplicates?: number
+          frequency?: number | null
+          geo_excluded_calls?: number
+          id?: string
+          impressions?: number | null
+          no_answer?: number
+          no_route?: number
+          notes?: string | null
+          platform: string
+          profit?: number | null
+          qualified_rate?: number | null
+          reach?: number | null
+          revenue?: number | null
+          revenue_calls_captured?: number
+          revenue_calls_uncaptured?: number
+          roas?: number | null
+          roi?: number | null
+          spend?: number | null
+          spend_complete?: boolean
+          state_breakdown?: Json
+          unavailable_metrics?: Json
+          updated_at?: string
+          vendor_breakdown?: Json
+          was_dark?: boolean
+        }
+        Update: {
+          anomalies?: Json
+          anomalies_present?: boolean
+          anonymous_callers?: number
+          attempts?: number
+          avg_connected_duration?: number | null
+          busy?: number
+          buyer_acceptance_rate?: number | null
+          buyer_accepted?: number | null
+          buyer_rejected?: number | null
+          calls_over_10s?: number
+          calls_over_60s?: number
+          client_id?: string
+          connect_failed?: number
+          connect_rate?: number | null
+          connected?: number
+          cost_per_10s?: number | null
+          cost_per_60s?: number | null
+          cost_per_connected?: number | null
+          cpm?: number | null
+          created_at?: string
+          date?: string
+          did_breakdown?: Json
+          distinct_callers?: number | null
+          duplicates?: number
+          frequency?: number | null
+          geo_excluded_calls?: number
+          id?: string
+          impressions?: number | null
+          no_answer?: number
+          no_route?: number
+          notes?: string | null
+          platform?: string
+          profit?: number | null
+          qualified_rate?: number | null
+          reach?: number | null
+          revenue?: number | null
+          revenue_calls_captured?: number
+          revenue_calls_uncaptured?: number
+          roas?: number | null
+          roi?: number | null
+          spend?: number | null
+          spend_complete?: boolean
+          state_breakdown?: Json
+          unavailable_metrics?: Json
+          updated_at?: string
+          vendor_breakdown?: Json
+          was_dark?: boolean
+        }
+        Relationships: []
+      }
       cannaball_spend: {
         Row: {
           campaign_name: string | null

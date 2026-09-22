@@ -71,18 +71,18 @@ export function useJacuzziLeads() {
     queryKey: ["jacuzzi-leads", from, to],
     refetchInterval: 5 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("jacuzzi_leads")
-        .select(
-          "id, transaction_id, transaction_date, transaction_time, lead_type, station_code, attributed_station, toll_free_number, caller_ani, billing_city, billing_state, billing_zip, call_status, payout_rate, source"
-        )
-        .eq("client_id", JACUZZI_CLIENT_ID)
-        .gte("transaction_date", from)
-        .lte("transaction_date", to)
-        .order("transaction_date", { ascending: false })
-        .limit(5000);
-      if (error) throw error;
-      return (data || []) as JacuzziLead[];
+      return fetchAllRows<JacuzziLead>((offset, size) =>
+        supabase
+          .from("jacuzzi_leads")
+          .select(
+            "id, transaction_id, transaction_date, transaction_time, lead_type, station_code, attributed_station, toll_free_number, caller_ani, billing_city, billing_state, billing_zip, call_status, payout_rate, source"
+          )
+          .eq("client_id", JACUZZI_CLIENT_ID)
+          .gte("transaction_date", from)
+          .lte("transaction_date", to)
+          .order("transaction_date", { ascending: false })
+          .range(offset, offset + size - 1) as any,
+      );
     },
   });
 }
@@ -92,16 +92,16 @@ export function useJacuzziDelivery() {
   return useQuery({
     queryKey: ["jacuzzi-delivery", from, to],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("jacuzzi_delivery")
-        .select("date, station_code, campaign_name, impressions, spend, cpm")
-        .eq("client_id", JACUZZI_CLIENT_ID)
-        .gte("date", from)
-        .lte("date", to)
-        .order("date", { ascending: true })
-        .limit(5000);
-      if (error) throw error;
-      return (data || []) as JacuzziDelivery[];
+      return fetchAllRows<JacuzziDelivery>((offset, size) =>
+        supabase
+          .from("jacuzzi_delivery")
+          .select("date, station_code, campaign_name, impressions, spend, cpm")
+          .eq("client_id", JACUZZI_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      );
     },
   });
 }
@@ -111,16 +111,16 @@ export function useJacuzziHourly() {
   return useQuery({
     queryKey: ["jacuzzi-hourly", from, to],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("jacuzzi_hourly_delivery")
-        .select("date, hour, station_code, impressions, spend")
-        .eq("client_id", JACUZZI_CLIENT_ID)
-        .gte("date", from)
-        .lte("date", to)
-        .order("date", { ascending: true })
-        .limit(10000);
-      if (error) throw error;
-      return (data || []) as JacuzziHourly[];
+      return fetchAllRows<JacuzziHourly>((offset, size) =>
+        supabase
+          .from("jacuzzi_hourly_delivery")
+          .select("date, hour, station_code, impressions, spend")
+          .eq("client_id", JACUZZI_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      );
     },
   });
 }
@@ -355,18 +355,17 @@ export function useJacuzziReconMatches(onlyExceptions = true) {
   return useQuery({
     queryKey: ["jacuzzi-recon-matches", from, to, onlyExceptions],
     queryFn: async () => {
-      let q = supabase
-        .from("jacuzzi_reconciliation_matches")
-        .select("id, date, status, match_method, transaction_id, lead_type, lead_station, ringfuel_call_id, ringfuel_did, ringfuel_station, caller_number, station_agrees, lead_payout_rate, expected_rate, rate_agrees, notes")
-        .eq("client_id", JACUZZI_CLIENT_ID)
-        .gte("date", from)
-        .lte("date", to)
-        .order("date", { ascending: false })
-        .limit(2000);
-      if (onlyExceptions) q = q.neq("status", "matched");
-      const { data, error } = await q;
-      if (error) throw error;
-      return (data || []) as unknown as ReconMatch[];
+      return fetchAllRows<ReconMatch>((offset, size) => {
+        let q = supabase
+          .from("jacuzzi_reconciliation_matches")
+          .select("id, date, status, match_method, transaction_id, lead_type, lead_station, ringfuel_call_id, ringfuel_did, ringfuel_station, caller_number, station_agrees, lead_payout_rate, expected_rate, rate_agrees, notes")
+          .eq("client_id", JACUZZI_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: false });
+        if (onlyExceptions) q = q.neq("status", "matched");
+        return q.range(offset, offset + size - 1) as any;
+      });
     },
   });
 }
@@ -406,14 +405,16 @@ export function useRokuBreakdowns() {
     queryKey: ["jacuzzi-roku-breakdowns", from, to],
     refetchInterval: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("roku_daily_metrics")
-        .select("date, entity, entity_name, spend, impressions")
-        .eq("client_id", JACUZZI_CLIENT_ID)
-        .gte("date", from)
-        .lte("date", to)
-        .limit(20000);
-      if (error) throw error;
+      const data = await fetchAllRows<any>((offset, size) =>
+        supabase
+          .from("roku_daily_metrics")
+          .select("date, entity, entity_name, spend, impressions")
+          .eq("client_id", JACUZZI_CLIENT_ID)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      );
       return (data || []).map((r: any) => ({
         date: r.date,
         entity: r.entity,
@@ -460,15 +461,17 @@ export function useJacuzziRingfuelGeo() {
   return useQuery({
     queryKey: ["jacuzzi-ringfuel-geo", from, to],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("ringfuel_calls")
-        .select("call_start, caller_state, caller_city, connected, duration_seconds")
-        .eq("client_id", JACUZZI_CLIENT_ID)
-        .eq("is_test", false)
-        .gte("call_start", `${from}T00:00:00`)
-        .lte("call_start", `${to}T23:59:59`)
-        .limit(10000);
-      if (error) throw error;
+      const data = await fetchAllRows<any>((offset, size) =>
+        supabase
+          .from("ringfuel_calls")
+          .select("call_start, caller_state, caller_city, connected, duration_seconds")
+          .eq("client_id", JACUZZI_CLIENT_ID)
+          .eq("is_test", false)
+          .gte("call_start", `${from}T00:00:00`)
+          .lte("call_start", `${to}T23:59:59`)
+          .order("call_start", { ascending: true })
+          .range(offset, offset + size - 1) as any,
+      );
       return (data || []) as {
         call_start: string; caller_state: string | null; caller_city: string | null;
         connected: boolean | null; duration_seconds: number | null;

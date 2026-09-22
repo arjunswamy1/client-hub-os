@@ -552,15 +552,16 @@ Deno.serve(async (req) => {
 
     parts.push(
       `*TOTAL PROGRAM*\n` +
-        (totals.spend !== null
-          ? `• Spend ${money(totals.spend)} (${totals.spendLandedFor.join(', ')} only)`
-          : '• Spend: none landed, so no program cost metrics') +
         (totals.spendWithheldFor.length
-          ? `\n• ⚠️ ${totals.spendWithheldFor.join(', ')} spend has not landed — its cost metrics, profit and ROAS are withheld, and the program ROAS below covers only the platforms whose spend is in.`
-          : '') +
+          ? `• Spend: incomplete — ${totals.spendWithheldFor.join(', ')} has not reported, so program spend, profit, ROAS and ROI are *withheld* for the day. ${money(totalSpend)} is in from ${totals.spendLandedFor.join(', ')}, which is a fraction of what ran and must not be used as the program's cost.`
+          : totals.spend !== null
+            ? `• Spend ${money(totals.spend)}`
+            : '• Spend: none landed, so no program cost metrics') +
         `\n• ${totals.attempts} attempts → ${totals.connected} connected → ${totals.over60} qualified (60s+)` +
         `\n• Revenue ${money2(totals.revenue)}` +
-        (totals.profit !== null ? ` · partial-coverage profit ${money2(totals.profit)} · ROAS ${totals.roas!.toFixed(2)}x` : ' · profit and ROAS unavailable'),
+        (totals.profit !== null
+          ? ` · profit ${money2(totals.profit)} · ROAS ${totals.roas!.toFixed(2)}x`
+          : ' · profit and ROAS unavailable until spend is complete'),
     );
 
     if (roku && rokuD) parts.push(platformBlock('ROKU', roku, rokuD, platformOf(prevStats, ROKU)));

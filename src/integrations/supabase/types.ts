@@ -5675,6 +5675,66 @@ export type Database = {
           },
         ]
       }
+      ringfuel_import_staging: {
+        Row: {
+          buyer_name: string | null
+          call_id: string
+          call_start: string | null
+          caller_city: string | null
+          caller_number: string | null
+          caller_state: string | null
+          campaign_name: string | null
+          connection_duration_seconds: string | null
+          converted: string | null
+          did: string | null
+          did_name: string | null
+          disposition: string | null
+          duration_seconds: string | null
+          publisher_name: string | null
+          recording_url: string | null
+          revenue: string | null
+          target_name: string | null
+        }
+        Insert: {
+          buyer_name?: string | null
+          call_id: string
+          call_start?: string | null
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_name?: string | null
+          connection_duration_seconds?: string | null
+          converted?: string | null
+          did?: string | null
+          did_name?: string | null
+          disposition?: string | null
+          duration_seconds?: string | null
+          publisher_name?: string | null
+          recording_url?: string | null
+          revenue?: string | null
+          target_name?: string | null
+        }
+        Update: {
+          buyer_name?: string | null
+          call_id?: string
+          call_start?: string | null
+          caller_city?: string | null
+          caller_number?: string | null
+          caller_state?: string | null
+          campaign_name?: string | null
+          connection_duration_seconds?: string | null
+          converted?: string | null
+          did?: string | null
+          did_name?: string | null
+          disposition?: string | null
+          duration_seconds?: string | null
+          publisher_name?: string | null
+          recording_url?: string | null
+          revenue?: string | null
+          target_name?: string | null
+        }
+        Relationships: []
+      }
       ringfuel_numbers: {
         Row: {
           campaign_label: string

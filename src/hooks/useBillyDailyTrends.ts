@@ -5,6 +5,7 @@ import { useClient } from "@/contexts/ClientContext";
 import { useVertical } from "@/contexts/VerticalContext";
 import { matchesVertical } from "@/config/billyVerticals";
 import { format, eachDayOfInterval } from "date-fns";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 
 export interface DailyFunnelRow {
   date: string;
@@ -60,12 +61,16 @@ export function useBillyDailyTrends() {
           .eq("client_id", clientId!)
           .gte("date", fromStr)
           .lte("date", toStr),
-        supabase
-          .from("ringba_calls")
-          .select("call_date, campaign_name, target_name, revenue, connected, converted, duration_seconds")
-          .eq("client_id", clientId!)
-          .gte("call_date", `${fromStr}T00:00:00`)
-          .lte("call_date", `${toStr}T23:59:59`),
+        fetchAllRows<any>((offset, size) =>
+          supabase
+            .from("ringba_calls")
+            .select("call_date, campaign_name, target_name, revenue, connected, converted, duration_seconds")
+            .eq("client_id", clientId!)
+            .gte("call_date", `${fromStr}T00:00:00`)
+            .lte("call_date", `${toStr}T23:59:59`)
+            .order("call_date", { ascending: true })
+            .range(offset, offset + size - 1) as any,
+        ).then((data) => ({ data, error: null as any })),
       ]);
 
       if (campaignRes.error) throw campaignRes.error;

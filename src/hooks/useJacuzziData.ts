@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { format } from "date-fns";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 
 export const JACUZZI_CLIENT_ID = "dc25f274-20f4-4650-b0cc-654073b925f4";
 

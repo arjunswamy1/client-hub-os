@@ -239,11 +239,12 @@ export default function SpektrafinHourly({
           ))}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Hours are as Roku reports them, in the ad account's own clock — the same clock the campaign daypart was set
-          in, so a buy written "6-6 EST" can be read straight off these hours. Calls are stamped in Puerto Rico time,
-          matching RingFuel, and are a whole-account figure: a call carries its tracking number, not the Roku campaign,
-          so filtering by campaign changes delivery only.
+          Hours are exactly as Roku reports them, in the ad account's own clock — we don't shift them, so read daypart
+          compliance against Roku's clock rather than assuming Eastern. Calls are stamped in Puerto Rico time, matching
+          RingFuel, and are a whole-account figure: a call carries its tracking number, not the Roku campaign, so
+          filtering by campaign changes delivery only.
         </p>
+
       </Card>
 
       <Card className="p-4">

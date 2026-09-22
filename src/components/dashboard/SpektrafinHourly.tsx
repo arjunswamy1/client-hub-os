@@ -374,8 +374,10 @@ export default function SpektrafinHourly({
             <p className="text-sm font-medium">Hourly vs daily reconciliation</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Hourly roll-up compared with the daily Roku spend per day. Differences under {money2(SPEND_TOLERANCE)} /{" "}
-              {int(IMPRESSION_TOLERANCE)} impressions (or 1%) are treated as rounding.
-            </p>
+              {int(IMPRESSION_TOLERANCE)} impressions (or 1%) are treated as rounding. Roku dates its daily report in
+              UTC and its hourly report in the account's own clock, so the latest day or two routinely differ by the
+              evening's spend landing on either side of midnight — a gap on an older day is the one worth chasing.
+
           </div>
           <div className="flex items-center gap-2">
             {flagged.length === 0 ? (

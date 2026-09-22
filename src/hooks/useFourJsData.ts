@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { format, differenceInDays, subDays } from "date-fns";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 
 const FOURJS_CLIENT_ID = "a9fce72e-87d5-4c45-9d94-03d78be7e42d";
 
@@ -47,16 +48,16 @@ export function useFourJsCalls() {
     queryKey: ["fourjs-calls", from, to],
     refetchInterval: 5 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("ringba_calls_4js")
-        .select("id, ringba_call_id, did, caller_state, call_start, call_duration_seconds, connected, connection_duration_seconds, payout, platform, creative_name, audience_cluster, campaign_name")
-        .eq("client_id", FOURJS_CLIENT_ID)
-        .gte("call_start", `${from}T00:00:00Z`)
-        .lte("call_start", `${to}T23:59:59Z`)
-        .order("call_start", { ascending: false })
-        .limit(5000);
-      if (error) throw error;
-      return (data || []) as FourJsCall[];
+      return fetchAllRows<FourJsCall>((offset, size) =>
+        supabase
+          .from("ringba_calls_4js")
+          .select("id, ringba_call_id, did, caller_state, call_start, call_duration_seconds, connected, connection_duration_seconds, payout, platform, creative_name, audience_cluster, campaign_name")
+          .eq("client_id", FOURJS_CLIENT_ID)
+          .gte("call_start", `${from}T00:00:00Z`)
+          .lte("call_start", `${to}T23:59:59Z`)
+          .order("call_start", { ascending: false })
+          .range(offset, offset + size - 1) as any,
+      );
     },
   });
 }

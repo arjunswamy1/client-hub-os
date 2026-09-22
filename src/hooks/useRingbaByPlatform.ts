@@ -5,6 +5,7 @@ import { useClient } from "@/contexts/ClientContext";
 import { useVertical } from "@/contexts/VerticalContext";
 import { matchesVertical } from "@/config/billyVerticals";
 import { format, differenceInDays, subDays } from "date-fns";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 
 /**
  * Ringba calls attributed to a specific ad platform.
@@ -29,17 +30,19 @@ export function useRingbaByPlatform(platform: "meta" | "google") {
     queryFn: async () => {
       // Fetch all Ringba calls for the period
       async function fetchCalls(from: string, to: string) {
-        const { data, error } = await supabase
-          .from("ringba_calls")
-          .select("campaign_name, target_name, revenue, payout, connected, converted, duration_seconds, metadata")
-          .eq("client_id", clientId!)
-          .gte("call_date", `${from}T00:00:00`)
-          .lte("call_date", `${to}T23:59:59`);
-
-        if (error) throw error;
+        const data = await fetchAllRows<any>((offset, size) =>
+          supabase
+            .from("ringba_calls")
+            .select("campaign_name, target_name, revenue, payout, connected, converted, duration_seconds, metadata")
+            .eq("client_id", clientId!)
+            .gte("call_date", `${from}T00:00:00`)
+            .lte("call_date", `${to}T23:59:59`)
+            .order("call_date", { ascending: true })
+            .range(offset, offset + size - 1) as any,
+        );
 
         // Filter by vertical
-        const filtered = (data || []).filter((call) =>
+        const filtered = (data || []).filter((call: any) =>
           matchesVertical(
             call.campaign_name || "",
             activeVertical,

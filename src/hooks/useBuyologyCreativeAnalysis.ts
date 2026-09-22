@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { format } from "date-fns";
 import { BUYOLOGY_CLIENT_ID, BuyologyCall } from "./useBuyologyData";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import {
   ProductLine,
   classifyCreative,
@@ -111,15 +112,18 @@ export function useBuyologyCreativeAnalysis() {
           )
           .eq("client_id", BUYOLOGY_CLIENT_ID),
         publishers.length === 0
-          ? Promise.resolve({ data: [], error: null })
-          : supabase
-              .from("ringba_calls")
-              .select(
-                "call_id, call_date, campaign_name, target_name, caller_number, inbound_number, duration_seconds, connected, converted, revenue, payout, metadata"
-              )
-              .eq("client_id", BUYOLOGY_CLIENT_ID)
-              .or(publishers.map((p) => `metadata->>publisher.eq.${p}`).join(","))
-              .limit(50000),
+          ? Promise.resolve({ data: [] as any[], error: null })
+          : fetchAllRows<any>((offset, size) =>
+              supabase
+                .from("ringba_calls")
+                .select(
+                  "call_id, call_date, campaign_name, target_name, caller_number, inbound_number, duration_seconds, connected, converted, revenue, payout, metadata"
+                )
+                .eq("client_id", BUYOLOGY_CLIENT_ID)
+                .or(publishers.map((p) => `metadata->>publisher.eq.${p}`).join(","))
+                .order("call_date", { ascending: true })
+                .range(offset, offset + size - 1) as any,
+            ).then((data) => ({ data, error: null as any })),
       ]);
       if (creativesRes.error) throw creativesRes.error;
       if (callsRes.error) throw callsRes.error;

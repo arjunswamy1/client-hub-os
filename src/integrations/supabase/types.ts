@@ -1941,6 +1941,8 @@ export type Database = {
           revenue_calls_uncaptured: number
           roas: number | null
           roi: number | null
+          slack_channel_id: string | null
+          slack_ts: string | null
           spend: number | null
           spend_complete: boolean
           state_breakdown: Json
@@ -1990,6 +1992,8 @@ export type Database = {
           revenue_calls_uncaptured?: number
           roas?: number | null
           roi?: number | null
+          slack_channel_id?: string | null
+          slack_ts?: string | null
           spend?: number | null
           spend_complete?: boolean
           state_breakdown?: Json
@@ -2039,6 +2043,8 @@ export type Database = {
           revenue_calls_uncaptured?: number
           roas?: number | null
           roi?: number | null
+          slack_channel_id?: string | null
+          slack_ts?: string | null
           spend?: number | null
           spend_complete?: boolean
           state_breakdown?: Json

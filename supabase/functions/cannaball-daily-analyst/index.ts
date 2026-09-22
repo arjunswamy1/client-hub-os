@@ -527,16 +527,21 @@ Deno.serve(async (req) => {
     const totalSpend = spendComplete.reduce((a, s) => a + (s.spend ?? 0), 0);
     const totalRevenue = today.reduce((a, s) => a + s.revenue, 0);
     const revenueFromCompleteSpend = spendComplete.reduce((a, s) => a + s.revenue, 0);
+    // A program ROAS is only honest when EVERY delivering platform's spend is in.
+    // With one platform's spend missing, a program figure computed on the rest is
+    // a ROAS against partial spend — exactly the number we must never publish.
+    const missingSpend = today.filter((s) => !s.spendComplete && !s.wasDark && s.attempts > 0).map((s) => s.platform);
+    const programCoverageComplete = missingSpend.length === 0 && spendComplete.length > 0;
     const totals = {
       attempts: today.reduce((a, s) => a + s.attempts, 0),
       connected: today.reduce((a, s) => a + s.connected, 0),
       over60: today.reduce((a, s) => a + s.over60, 0),
       revenue: totalRevenue,
       spendLandedFor: spendComplete.map((s) => s.platform),
-      spendWithheldFor: today.filter((s) => !s.spendComplete && s.attempts > 0).map((s) => s.platform),
+      spendWithheldFor: missingSpend,
       spend: spendComplete.length ? totalSpend : null,
-      profit: spendComplete.length ? revenueFromCompleteSpend - totalSpend : null,
-      roas: spendComplete.length && totalSpend > 0 ? revenueFromCompleteSpend / totalSpend : null,
+      profit: programCoverageComplete ? revenueFromCompleteSpend - totalSpend : null,
+      roas: programCoverageComplete && totalSpend > 0 ? revenueFromCompleteSpend / totalSpend : null,
     };
 
     // ── Draft ────────────────────────────────────────────────────────────────

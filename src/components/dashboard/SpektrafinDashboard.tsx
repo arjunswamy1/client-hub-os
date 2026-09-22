@@ -194,6 +194,50 @@ export default function SpektrafinDashboard() {
   const { data: spendRows = [], refetch: refetchSpend } = useSpektrafinRokuSpend();
   const { data: rokuFreshness, refetch: refetchFreshness } = useSpektrafinRokuFreshness();
   const { data: breakdowns = [], refetch: refetchBreakdowns } = useSpektrafinBreakdowns();
+  const { data: hourlyRows = [], refetch: refetchHourly } = useSpektrafinHourly();
+  const { data: hourlyFreshness, refetch: refetchHourlyFreshness } = useSpektrafinHourlyFreshness();
+  const syncHourly = useSyncSpektrafinHourly();
+  const [syncingHourly, setSyncingHourly] = useState(false);
+
+  const runHourlySync = async () => {
+    setSyncingHourly(true);
+    try {
+      const res = await syncHourly(14);
+      if (res?.pending) toast.info("Roku is still building the hourly report — it'll land shortly.");
+      else toast.success(`Hourly delivery synced (${res?.campaign_hours ?? 0} campaign-hours)`);
+      refetchHourly();
+      refetchHourlyFreshness();
+    } catch (e: any) {
+      toast.error(e.message || "Hourly sync failed");
+    } finally {
+      setSyncingHourly(false);
+    }
+  };
+
+  /**
+   * Calls per hour of day in Puerto Rico time — the clock RingFuel reports in.
+   * Revenue we were never sent is counted as unknown, never as zero.
+   */
+  const callsByHour = useMemo<HourCallStats[]>(() => {
+    const rows: HourCallStats[] = Array.from({ length: 24 }, (_, hour) => ({
+      hour, calls: 0, connected: 0, converted: 0, revenue: 0, revenueUnknown: 0,
+    }));
+    for (const c of calls) {
+      const hour = prShift(c.call_start).getUTCHours();
+      const r = rows[hour];
+      if (!r) continue;
+      r.calls += 1;
+      if (c.connected === true) r.connected += 1;
+      if (captured(c)) {
+        r.revenue += money(c).amount ?? 0;
+        if (c.converted === true) r.converted += 1;
+      } else {
+        r.revenueUnknown += 1;
+      }
+    }
+    return rows;
+  }, [calls]);
+
 
   const split = (dimension: RingFuelBreakdownRow["dimension"]) =>
     breakdowns

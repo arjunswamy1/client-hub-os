@@ -404,7 +404,7 @@ export default function SpektrafinDashboard() {
           value={overall.profit !== null ? fmtMoney(overall.profit) : "—"}
           sub={overall.profit === null ? "revenue incomplete" : "floored at $0 — CPM never takes the loss"}
           icon={TrendingUp}
-          accent={overall.profit !== null && overall.profit >= 0 ? "text-emerald-500" : overall.profit !== null ? "text-destructive" : undefined}
+          accent={overall.profit !== null ? "text-emerald-500" : undefined}
         />
       </div>
 

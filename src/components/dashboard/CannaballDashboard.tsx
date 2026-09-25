@@ -234,6 +234,14 @@ export default function CannaballDashboard() {
         </div>
       </div>
 
+      {overall.excludedCalls > 0 && (
+        <Card className="border-destructive/40 bg-destructive/5 p-3 text-xs">
+          <p className="font-medium text-destructive">Spend has not landed for {missingDays.length} platform-day{missingDays.length === 1 ? "" : "s"} that took calls</p>
+          <p className="mt-1 text-muted-foreground">
+            {missingDays.join(" · ")}. The {overall.excludedCalls.toLocaleString()} calls on those days are left out of cost per call, cost per connected call, profit and ROAS until the spend arrives. Calls, connected and revenue still count them.
+          </p>
+        </Card>
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <KPI label="Spend" value={fmtMoney(overall.spend)} icon={DollarSign} accent="text-blue-500" />
         <KPI label="Calls" value={overall.calls.toLocaleString()} icon={Phone} accent="text-indigo-500" />

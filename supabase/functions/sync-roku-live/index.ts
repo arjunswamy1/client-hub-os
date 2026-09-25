@@ -185,6 +185,21 @@ Deno.serve(async (req) => {
     const token = await ensureToken(admin, conn);
     const meta = (conn.metadata ?? {}) as Record<string, any>;
 
+    // Re-list the ad accounts on every run: a client can open a new ad account
+    // in the same organization (Cannaball's invoicing account) after connecting,
+    // and a list cached at connect time would silently miss its spend.
+    try {
+      const parsed = await apiGet(token, "/developer/accounts");
+      const fresh: any[] = parsed.data ?? parsed.accounts ?? [];
+      if (fresh.length) {
+        const byUid = new Map<string, any>();
+        for (const a of [...(meta.accounts ?? []), ...fresh]) if (a?.uid) byUid.set(a.uid, a);
+        meta.accounts = [...byUid.values()];
+      }
+    } catch (e) {
+      console.warn("accounts refresh failed:", (e as Error).message);
+    }
+
     // Field discovery — also handy on its own for verifying what Roku exposes.
     let available: string[] = [];
     try {

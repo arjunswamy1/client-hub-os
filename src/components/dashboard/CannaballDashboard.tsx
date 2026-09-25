@@ -80,7 +80,47 @@ export default function CannaballDashboard() {
   );
 
   const totalSpend = useMemo(() => spendRows.reduce((s, r) => s + Number(r.spend || 0), 0), [spendRows]);
-  const overall = useMemo(() => aggregate(calls, totalSpend), [calls, totalSpend]);
+
+  // A platform-day with calls but no spend means the spend feed has not landed,
+  // not that the media was free. Those calls are left out of every cost-derived
+  // metric so cost per call, profit and ROAS are not flattered by missing spend.
+  const missingSpend = useMemo(() => {
+    const spendBy = new Map<string, number>();
+    for (const s of spendRows) {
+      const k = `${s.date}|${s.platform}`;
+      spendBy.set(k, (spendBy.get(k) || 0) + Number(s.spend || 0));
+    }
+    const callsBy = new Map<string, number>();
+    for (const c of calls) {
+      if (!c.platform) continue;
+      const k = `${reportingDay(c.call_start, CALLGRID_REPORTING_TZ)}|${c.platform}`;
+      callsBy.set(k, (callsBy.get(k) || 0) + 1);
+    }
+    const keys = new Set<string>();
+    for (const [k, n] of callsBy) if (n >= 5 && !(spendBy.get(k) || 0)) keys.add(k);
+    return keys;
+  }, [calls, spendRows]);
+
+  const overall = useMemo(() => {
+    const all = aggregate(calls, totalSpend);
+    if (!missingSpend.size) return { ...all, excludedCalls: 0 };
+    const priced = calls.filter(
+      (c) => !c.platform || !missingSpend.has(`${reportingDay(c.call_start, CALLGRID_REPORTING_TZ)}|${c.platform}`),
+    );
+    const p = aggregate(priced, totalSpend);
+    return {
+      ...all,
+      profit: p.profit,
+      roas: p.roas,
+      cpc: p.cpc,
+      cpcConn: p.cpcConn,
+      excludedCalls: calls.length - priced.length,
+    };
+  }, [calls, totalSpend, missingSpend]);
+  const missingDays = useMemo(
+    () => [...missingSpend].sort().map((k) => { const [d, p] = k.split("|"); return `${d} ${channelLabel(p)}`; }),
+    [missingSpend],
+  );
 
   const byCreative = useMemo(() => {
     const map = new Map<string, CannaballCall[]>();
@@ -194,6 +234,14 @@ export default function CannaballDashboard() {
         </div>
       </div>
 
+      {overall.excludedCalls > 0 && (
+        <Card className="border-destructive/40 bg-destructive/5 p-3 text-xs">
+          <p className="font-medium text-destructive">Spend has not landed for {missingDays.length} platform-day{missingDays.length === 1 ? "" : "s"} that took calls</p>
+          <p className="mt-1 text-muted-foreground">
+            {missingDays.join(" · ")}. The {overall.excludedCalls.toLocaleString()} calls on those days are left out of cost per call, cost per connected call, profit and ROAS until the spend arrives. Calls, connected and revenue still count them.
+          </p>
+        </Card>
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <KPI label="Spend" value={fmtMoney(overall.spend)} icon={DollarSign} accent="text-blue-500" />
         <KPI label="Calls" value={overall.calls.toLocaleString()} icon={Phone} accent="text-indigo-500" />

@@ -43,17 +43,19 @@ async function handle(payload: any) {
   const validBrief = /^[0-9a-f-]{36}$/i.test(briefId);
 
   // Claim the trigger_id first. A conflict means Slack retried this exact click.
-  const { data: claim } = await db.from('slack_interaction_log').upsert({
+  // The unique index is partial (trigger_id IS NOT NULL), so ON CONFLICT cannot infer it — insert and read 23505.
+  const { data: claim, error: claimErr } = await db.from('slack_interaction_log').insert({
     trigger_id: triggerId, action_id: action.action_id, actor_slack_user_id: slackUser,
     brief_id: validBrief ? briefId : null, outcome: 'error', detail: 'processing', raw_payload: payload,
-  }, { onConflict: 'trigger_id', ignoreDuplicates: true }).select('id').maybeSingle();
-  if (triggerId && !claim) {
+  }).select('id').maybeSingle();
+  if (claimErr?.code === '23505') {
     await db.from('slack_interaction_log').insert({
       trigger_id: null, action_id: action.action_id, actor_slack_user_id: slackUser,
       brief_id: validBrief ? briefId : null, outcome: 'duplicate_retry', detail: `retry of trigger ${triggerId}`,
     });
     return;
   }
+  if (claimErr || !claim) throw new Error(`could not log interaction: ${claimErr?.message}`);
   const finish = (outcome: string, detail: string, actorId?: string | null) =>
     db.from('slack_interaction_log').update({ outcome, detail, actor_team_member_id: actorId ?? null }).eq('id', claim!.id);
 

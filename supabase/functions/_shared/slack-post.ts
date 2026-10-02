@@ -226,3 +226,122 @@ async function uploadFile(token: string, opts: PostOptions): Promise<SlackPostRe
   if (!doneData.ok) return { ok: false, error: `Slack upload completion failed: ${doneData.error || done.status}` };
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// postDirectMessage — the second (and only other) Slack write entrypoint.
+//
+// A DM channel never appears in slack_channel_mappings, so routing DMs through
+// postToSlack() would mean weakening its allowlist. Instead this function has a
+// STRUCTURAL guarantee: it accepts only a Slack USER id (U…/W…) and rejects any
+// channel-shaped id outright. It opens the IM itself via conversations.open, so
+// it cannot address a channel — and therefore cannot reach a client channel.
+// The user id must also belong to a row in team_members.slack_user_id; anyone
+// else (external or unknown) is refused and logged.
+//
+// Modes:
+//   send              conversations.open → chat.postMessage
+//   update            conversations.open → chat.update on a ts in THAT IM only
+//   interaction_reply ephemeral reply to a button click via Slack's response_url
+//                     (hooks.slack.com/actions/… only — Slack scopes it to the
+//                     clicker; used for refusals, including unknown actors).
+//
+// dryRun returns the exact calls that would be made and touches nothing.
+// ---------------------------------------------------------------------------
+
+const USER_ID = /^[UW][A-Z0-9]{6,}$/;
+const CHANNEL_SHAPED = /^[CGD][A-Z0-9]+$/;
+
+export type DirectMessageOptions =
+  | { kind: 'send'; userId: string; text: string; blocks?: unknown[]; dryRun?: boolean }
+  | { kind: 'update'; userId: string; channel: string; ts: string; text: string; blocks?: unknown[]; dryRun?: boolean }
+  | { kind: 'interaction_reply'; userId: string; responseUrl: string; text: string; dryRun?: boolean };
+
+export interface DirectMessageResult {
+  ok: boolean;
+  refused?: boolean;
+  reason?: string;
+  error?: string;
+  /** Slack error code, e.g. missing_scope — callers record it, never crash on it. */
+  slackError?: string;
+  channel?: string;
+  ts?: string;
+  dryRun?: boolean;
+  wouldCall?: { method: string; body: Record<string, unknown> }[];
+}
+
+export async function postDirectMessage(opts: DirectMessageOptions): Promise<DirectMessageResult> {
+  const method = `dm.${opts.kind}`;
+  const userId = (opts.userId || '').trim();
+
+  if (CHANNEL_SHAPED.test(userId)) {
+    await logRefusal(userId, null, method, 'dm_target_is_channel_id');
+    return { ok: false, refused: true, reason: 'dm_target_is_channel_id' };
+  }
+  if (!USER_ID.test(userId)) {
+    await logRefusal(userId || '(empty)', null, method, 'dm_target_not_user_id');
+    return { ok: false, refused: true, reason: 'dm_target_not_user_id' };
+  }
+
+  if (opts.kind === 'interaction_reply') {
+    let host = '', path = '';
+    try { const u = new URL(opts.responseUrl); host = u.hostname; path = u.pathname; } catch { /* invalid */ }
+    if (host !== 'hooks.slack.com' || !path.startsWith('/actions/')) {
+      await logRefusal(userId, null, method, 'response_url_not_slack_actions');
+      return { ok: false, refused: true, reason: 'response_url_not_slack_actions' };
+    }
+    const body = { response_type: 'ephemeral', replace_original: false, text: opts.text };
+    if (opts.dryRun) return { ok: true, dryRun: true, wouldCall: [{ method: 'response_url', body }] };
+    const res = await fetch(opts.responseUrl, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    return res.ok ? { ok: true } : { ok: false, error: `response_url ${res.status}` };
+  }
+
+  const { data: member, error: memberErr } = await admin()
+    .from('team_members').select('id, name').eq('slack_user_id', userId).maybeSingle();
+  if (memberErr) return { ok: false, error: `team_members lookup failed: ${memberErr.message}` };
+  if (!member) {
+    await logRefusal(userId, null, method, 'dm_user_not_internal_team_member');
+    return { ok: false, refused: true, reason: 'dm_user_not_internal_team_member' };
+  }
+
+  const openBody = { users: userId };
+  const writeMethod = opts.kind === 'send' ? 'chat.postMessage' : 'chat.update';
+  const writeBody: Record<string, unknown> = opts.kind === 'send'
+    ? { channel: '<im from conversations.open>', text: opts.text, ...(opts.blocks ? { blocks: opts.blocks } : {}), unfurl_links: false }
+    : { channel: opts.channel, ts: opts.ts, text: opts.text, blocks: opts.blocks ?? [] };
+  if (opts.dryRun) {
+    return { ok: true, dryRun: true, wouldCall: [{ method: 'conversations.open', body: openBody }, { method: writeMethod, body: writeBody }] };
+  }
+
+  let token: string;
+  try { token = await getValidBotToken(); } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  const call = async (m: string, body: Record<string, unknown>) => {
+    const res = await fetch(`https://slack.com/api/${m}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify(body),
+    });
+    const data: any = await res.json().catch(() => ({}));
+    return { ok: res.ok && data.ok === true, data, status: res.status };
+  };
+
+  const open = await call('conversations.open', openBody);
+  if (!open.ok) {
+    const code = open.data?.error || `http_${open.status}`;
+    return { ok: false, slackError: code, error: `conversations.open failed: ${code}` };
+  }
+  const im = open.data.channel?.id as string;
+  if (opts.kind === 'update' && im !== opts.channel) {
+    await logRefusal(opts.channel, null, method, 'update_channel_is_not_this_users_im');
+    return { ok: false, refused: true, reason: 'update_channel_is_not_this_users_im' };
+  }
+  const out = await call(writeMethod, { ...writeBody, channel: im });
+  if (!out.ok) {
+    const code = out.data?.error || `http_${out.status}`;
+    return { ok: false, slackError: code, error: `${writeMethod} failed: ${code}`, channel: im };
+  }
+  return { ok: true, channel: im, ts: (out.data.ts as string) ?? (opts.kind === 'update' ? opts.ts : undefined) };
+}

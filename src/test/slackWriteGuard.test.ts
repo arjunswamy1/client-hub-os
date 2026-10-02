@@ -76,4 +76,30 @@ describe("Slack write guard", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it("slack-post.ts exports exactly two writers: postToSlack and postDirectMessage", () => {
+    const body = readFileSync("supabase/functions/_shared/slack-post.ts", "utf8");
+    const exported = [...body.matchAll(/export\s+async\s+function\s+(\w+)/g)].map((m) => m[1]).sort();
+    // canPostToChannel is a read-only guard check, not a writer.
+    expect(exported).toEqual(["canPostToChannel", "postDirectMessage", "postToSlack"]);
+  });
+
+  it("no file outside slack-post.ts posts to a Slack response_url", () => {
+    const offenders: string[] = [];
+    for (const file of [...walk("src"), ...walk("supabase/functions")]) {
+      const rel = file.replace(/\\/g, "/");
+      if (ALLOWED.includes(rel) || rel.startsWith("src/test/")) continue;
+      const body = readFileSync(file, "utf8");
+      if (/fetch\(\s*[\w.]*response_?url/i.test(body) || body.includes("hooks.slack.com")) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the guard catches a writer outside the module", () => {
+    const fake = "await fetch('https://slack.com/api/chat.postMessage', {})";
+    const hit = WRITE_METHODS.some((m) => fake.includes(`slack.com/api/${m}`));
+    const dyn = DYNAMIC_SLACK_URL.some((p) => p.test("fetch(`https://slack.com/api/${m}`)"));
+    expect(hit).toBe(true);
+    expect(dyn).toBe(true);
+  });
 });

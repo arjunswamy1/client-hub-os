@@ -11,7 +11,7 @@ import { X, CheckCircle2, Send, Image as ImageIcon, Sparkles, Upload, Clock, Dow
 import { format } from 'date-fns';
 import { isHttpUrl } from '@/lib/utils';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
-import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries } from '@/hooks/useCreativeBriefs';
+import { useCreativeDeliverables, useCreativeReviews, useBriefComments, useBriefMutations, useTimeEntries, useBriefNotifications } from '@/hooks/useCreativeBriefs';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -25,12 +25,13 @@ interface Props {
 
 export function BriefDetailPanel({ brief, onClose }: Props) {
   const { teamMember, isDesigner } = useAuth();
+  const { data: notifications = [] } = useBriefNotifications(brief?.id ?? null);
   const queryClient = useQueryClient();
   const { data: deliverables = [] } = useCreativeDeliverables(brief.id);
   const { data: reviews = [] } = useCreativeReviews(brief.id);
   const { data: comments = [] } = useBriefComments(brief.id);
   const { data: timeEntries = [] } = useTimeEntries(brief.id);
-  const { updateStatus, addComment, addReview } = useBriefMutations();
+  const { updateStatus, addComment, addReview, acceptBrief } = useBriefMutations();
 
   const [reviewComments, setReviewComments] = useState('');
   const [commentText, setCommentText] = useState('');
@@ -426,6 +427,21 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
               )}
             </div>
 
+            {/* Acceptance + Slack notification state */}
+            {brief.accepted_at && (
+              <p className="text-xs text-muted-foreground">
+                Accepted by <span className="font-medium text-foreground">{brief.accepted_by?.name || 'a team member'}</span>{' '}
+                on {format(new Date(brief.accepted_at), 'MMM d, h:mm a')}{brief.accepted_via ? ` (via ${brief.accepted_via === 'slack' ? 'Slack' : 'the hub'})` : ''}
+              </p>
+            )}
+            {notifications.filter((n: any) => n.status === 'skipped_no_slack_mapping' || n.status === 'failed').map((n: any) => (
+              <div key={n.id} className="text-xs rounded-md border border-destructive/30 bg-destructive/5 text-destructive px-3 py-2">
+                {n.status === 'skipped_no_slack_mapping'
+                  ? `Slack notification not sent: ${n.recipient?.name || 'the recipient'} has no Slack ID set up in Team settings.`
+                  : `Slack notification to ${n.recipient?.name || 'the recipient'} failed${n.attempts >= 5 ? '' : ' — will retry'}: ${n.last_error || 'unknown error'}`}
+              </div>
+            ))}
+
             {/* Status actions */}
             <div className="flex gap-2 flex-wrap pt-2 border-t">
               {brief.status === 'draft' && (
@@ -434,8 +450,8 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
               {brief.status === 'submitted' && !isDesigner && (
                 <Button size="sm" onClick={() => updateStatus.mutate({ id: brief.id, status: 'in_design' })}>Start Design</Button>
               )}
-              {brief.status === 'submitted' && isDesigner && (
-                <Button size="sm" onClick={() => updateStatus.mutate({ id: brief.id, status: 'in_design' })}>Pick Up</Button>
+              {brief.status === 'submitted' && isDesigner && teamMember?.id === brief.assigned_to_id && !brief.accepted_at && (
+                <Button size="sm" disabled={acceptBrief.isPending} onClick={() => acceptBrief.mutate(brief.id)}>Accept Brief</Button>
               )}
               {brief.status === 'in_design' && isDesigner && (
                 <Button size="sm"

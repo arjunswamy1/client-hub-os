@@ -88,6 +88,12 @@ export default function CreativePage() {
     }
   }, [searchParams, setSearchParams]);
 
+  // Deep link from the Slack "View Brief" button (?brief=<id>)
+  useEffect(() => {
+    const id = searchParams.get('brief');
+    if (id) setSelectedId(id);
+  }, [searchParams]);
+
   const selected = briefs.find((b: any) => b.id === selectedId);
 
   // Designer gets their own workspace

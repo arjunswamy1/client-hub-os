@@ -18,7 +18,8 @@ export function useCreativeBriefs(options?: { allClients?: boolean }) {
           *,
           client:clients!creative_briefs_client_id_fkey(id, name, color),
           assigned_to:team_members!creative_briefs_assigned_to_id_fkey(id, name, email, avatar_url),
-          created_by:team_members!creative_briefs_created_by_id_fkey(id, name)
+          created_by:team_members!creative_briefs_created_by_id_fkey(id, name),
+          accepted_by:team_members!creative_briefs_accepted_by_id_fkey(id, name)
         `)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
@@ -153,10 +154,31 @@ export function useBriefMutations() {
       }
       const { error } = await supabase.from('creative_briefs').update(updates as any).eq('id', id);
       if (error) throw error;
+      // The database queued the designer DM on the transition into submitted; ask
+      // for delivery. A Slack problem never blocks the submission.
+      if (status === 'submitted') deliverBriefNotifications(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      queryClient.invalidateQueries({ queryKey: ['brief_notifications'] });
       toast.success('Status updated');
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  // Same conditional accept statement the Slack button uses (accepted_via = 'tracker').
+  const acceptBrief = useMutation({
+    mutationFn: async (briefId: string) => {
+      const { data, error } = await supabase.rpc('accept_creative_brief', { p_brief_id: briefId });
+      if (error) throw error;
+      const r = data as any;
+      if (r?.outcome !== 'accepted') throw new Error(refusalMessage(r));
+      deliverBriefNotifications(briefId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creative_briefs'] });
+      queryClient.invalidateQueries({ queryKey: ['brief_notifications'] });
+      toast.success('Brief accepted');
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -214,5 +236,34 @@ export function useBriefMutations() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  return { updateStatus, addComment, addReview };
+  return { updateStatus, addComment, addReview, acceptBrief };
+}
+
+function deliverBriefNotifications(briefId: string) {
+  supabase.functions.invoke('brief-notifications', { body: { action: 'deliver', brief_id: briefId } })
+    .catch((e) => console.warn('brief notification delivery deferred:', e));
+}
+
+function refusalMessage(r: any): string {
+  switch (r?.outcome) {
+    case 'rejected_already_accepted': return `Already accepted${r.accepted_by ? ` by ${r.accepted_by}` : ''}.`;
+    case 'rejected_not_assignee': return r.current_assignee ? `This brief is assigned to ${r.current_assignee}.` : 'This brief is not assigned to you.';
+    case 'rejected_not_submitted': return `This brief is ${String(r.status ?? 'no longer submitted').replace(/_/g, ' ')}.`;
+    case 'rejected_unknown_actor': return 'Your account is not linked to a team member.';
+    default: return 'Could not accept this brief.';
+  }
+}
+
+export function useBriefNotifications(briefId: string | null) {
+  return useQuery({
+    queryKey: ['brief_notifications', briefId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('brief_notifications')
+        .select('id, kind, status, last_error, attempts, recipient:team_members!brief_notifications_recipient_team_member_id_fkey(name)')
+        .eq('brief_id', briefId!).order('created_at');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!briefId,
+  });
 }

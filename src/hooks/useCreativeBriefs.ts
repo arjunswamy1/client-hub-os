@@ -18,7 +18,8 @@ export function useCreativeBriefs(options?: { allClients?: boolean }) {
           *,
           client:clients!creative_briefs_client_id_fkey(id, name, color),
           assigned_to:team_members!creative_briefs_assigned_to_id_fkey(id, name, email, avatar_url),
-          created_by:team_members!creative_briefs_created_by_id_fkey(id, name)
+          created_by:team_members!creative_briefs_created_by_id_fkey(id, name),
+          accepted_by:team_members!creative_briefs_accepted_by_id_fkey(id, name)
         `)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });

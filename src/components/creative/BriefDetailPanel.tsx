@@ -31,7 +31,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
   const { data: reviews = [] } = useCreativeReviews(brief.id);
   const { data: comments = [] } = useBriefComments(brief.id);
   const { data: timeEntries = [] } = useTimeEntries(brief.id);
-  const { updateStatus, addComment, addReview } = useBriefMutations();
+  const { updateStatus, addComment, addReview, acceptBrief } = useBriefMutations();
 
   const [reviewComments, setReviewComments] = useState('');
   const [commentText, setCommentText] = useState('');

@@ -1364,6 +1364,72 @@ export type Database = {
           },
         ]
       }
+      brief_notifications: {
+        Row: {
+          attempts: number
+          brief_id: string
+          created_at: string
+          dedupe_key: string
+          id: string
+          kind: string
+          last_error: string | null
+          message_text: string | null
+          recipient_slack_user_id: string | null
+          recipient_team_member_id: string | null
+          slack_channel_id: string | null
+          slack_ts: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          brief_id: string
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          kind: string
+          last_error?: string | null
+          message_text?: string | null
+          recipient_slack_user_id?: string | null
+          recipient_team_member_id?: string | null
+          slack_channel_id?: string | null
+          slack_ts?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          brief_id?: string
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          kind?: string
+          last_error?: string | null
+          message_text?: string | null
+          recipient_slack_user_id?: string | null
+          recipient_team_member_id?: string | null
+          slack_channel_id?: string | null
+          slack_ts?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brief_notifications_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brief_notifications_recipient_team_member_id_fkey"
+            columns: ["recipient_team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_action_items: {
         Row: {
           assignee_id: string | null
@@ -3019,6 +3085,9 @@ export type Database = {
       }
       creative_briefs: {
         Row: {
+          accepted_at: string | null
+          accepted_by_id: string | null
+          accepted_via: string | null
           approved_at: string | null
           assigned_to_id: string | null
           brand_guidelines_url: string | null
@@ -3063,6 +3132,9 @@ export type Database = {
           video_scripts: Json | null
         }
         Insert: {
+          accepted_at?: string | null
+          accepted_by_id?: string | null
+          accepted_via?: string | null
           approved_at?: string | null
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
@@ -3107,6 +3179,9 @@ export type Database = {
           video_scripts?: Json | null
         }
         Update: {
+          accepted_at?: string | null
+          accepted_by_id?: string | null
+          accepted_via?: string | null
           approved_at?: string | null
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
@@ -3151,6 +3226,13 @@ export type Database = {
           video_scripts?: Json | null
         }
         Relationships: [
+          {
+            foreignKeyName: "creative_briefs_accepted_by_id_fkey"
+            columns: ["accepted_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "creative_briefs_assigned_to_id_fkey"
             columns: ["assigned_to_id"]
@@ -6732,6 +6814,60 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      slack_interaction_log: {
+        Row: {
+          action_id: string | null
+          actor_slack_user_id: string | null
+          actor_team_member_id: string | null
+          brief_id: string | null
+          created_at: string
+          detail: string | null
+          id: string
+          outcome: string
+          raw_payload: Json | null
+          trigger_id: string | null
+        }
+        Insert: {
+          action_id?: string | null
+          actor_slack_user_id?: string | null
+          actor_team_member_id?: string | null
+          brief_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          outcome: string
+          raw_payload?: Json | null
+          trigger_id?: string | null
+        }
+        Update: {
+          action_id?: string | null
+          actor_slack_user_id?: string | null
+          actor_team_member_id?: string | null
+          brief_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          outcome?: string
+          raw_payload?: Json | null
+          trigger_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_interaction_log_actor_team_member_id_fkey"
+            columns: ["actor_team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_interaction_log_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
             referencedColumns: ["id"]
           },
         ]

@@ -8421,6 +8421,11 @@ export type Database = {
       }
     }
     Functions: {
+      accept_creative_brief: { Args: { p_brief_id: string }; Returns: Json }
+      accept_creative_brief_as: {
+        Args: { p_actor: string; p_brief_id: string; p_via: string }
+        Returns: Json
+      }
       bot_readonly_select: {
         Args: { p_row_limit?: number; p_sql: string }
         Returns: Json

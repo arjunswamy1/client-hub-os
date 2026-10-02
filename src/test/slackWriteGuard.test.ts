@@ -16,7 +16,6 @@ const WRITE_METHODS = [
   "files.upload",
   "files.completeUploadExternal",
   "files.getUploadURLExternal",
-  "response_url",
 ];
 
 const ALLOWED = ["supabase/functions/_shared/slack-post.ts"];

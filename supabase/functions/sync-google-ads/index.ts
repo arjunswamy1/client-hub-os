@@ -1,3 +1,4 @@
+import { recordSpendObservations } from "../_shared/metric-revision-log.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2/cors";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
@@ -271,6 +272,7 @@ async function syncGoogleForUser(supabase: any, userId: string, accessToken: str
                 };
               });
               await supabase.from("ad_daily_metrics").upsert(batch, { onConflict: "client_id,platform,date" });
+              await recordSpendObservations(supabase, clientId, "ad_daily_metrics", batch.map((r: any) => r.date));
               totalRecords += batch.length;
             }
           } catch (err) {

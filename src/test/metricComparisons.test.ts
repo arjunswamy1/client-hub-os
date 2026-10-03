@@ -121,6 +121,6 @@ describe("polarity wording", () => {
     const set: ComparisonSet = { client: "S", engagement: "performance_media", forDate: "2026-10-03", reliableFrom: null,
       day: snap("2026-10-03"), provisional: { provisional: false, reason: null },
       comparisons: [compare("vs_same_weekday", snap("2026-10-03", { spend: 14503 }), snap("2026-09-26", { spend: 16114 }), PM)] };
-    expect(headlineDelta(set)).toMatch(/vs last Fri/);
+    expect(headlineDelta(set)).toBe("Spend −10% vs last Sat.");
   });
 });

@@ -62,7 +62,7 @@ describe("triggers and forms", () => {
     const r = evaluateTriggers({ forDate: "2026-10-02", history: steady, delivery: "ok", gaps: [], hasData: true, context: [], unansweredQuestions: [] });
     expect(r.triggers).toEqual([]);
     expect(oneLiner({ client: "Cannaball", forDate: "2026-10-02", day: steady.at(-1)!, trend: steady.slice(-7), delivery: "ok", weekdayQuiet: false }))
-      .toBe("Cannaball — steady. 142 calls, $11.97 cost per call, in line with the week. No action.");
+      .toBe("Cannaball — steady. 142 calls, $11.97 cost per call, qualified-call cost in line with the week. No action.");
   });
   it("a 20% move in cost per qualified call fires", () => {
     const h = steady.map((d) => (d.date === "2026-10-02" ? { ...d, spend: 2200 } : d));
@@ -147,5 +147,13 @@ describe("digest", () => {
     expect(roots.get("c")).toBe(null);
     const cyc = resolveMergeRoots(new Map([["a", "b"], ["b", "a"]]));
     expect(cyc.get("a")).toBe("b");
+  });
+});
+
+describe("change detector", () => {
+  it("catches the Connatria budget sentence and ignores a reporting note", async () => {
+    const { CHANGE_RE } = await import("../../supabase/functions/_shared/daily-update-rules");
+    expect(CHANGE_RE.test("initially with a daily budget of $20 per vertical, later increasing to $100 per day")).toBe(true);
+    expect(CHANGE_RE.test("CPFBR is aligned with Meta's reported Cost per Facebook Lead")).toBe(false);
   });
 });

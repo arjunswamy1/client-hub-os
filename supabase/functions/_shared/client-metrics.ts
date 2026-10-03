@@ -53,6 +53,34 @@ export interface ClientMetrics {
   economicsNote: string | null;
   /** A compact block for the model prompt. */
   promptBlock: string;
+  /**
+   * The same figures, one row per calendar day of the window (reporting timezone).
+   * Each day's spend / calls / revenue equals what this function returns for that
+   * day alone — metricAgreement.test.ts holds that. The daily update reads these
+   * rows instead of counting calls itself.
+   */
+  days: DayFigures[];
+}
+
+export const DURATION_BANDS = [['d10', 10], ['d25', 25], ['d60', 60], ['d90', 90], ['d600', 600], ['d1200', 1200]] as const;
+export type BandKey = typeof DURATION_BANDS[number][0];
+
+export interface DayFigures {
+  date: string;
+  /** Spend rows that exist for the date — 0 means nothing was recorded. */
+  spendRows: number;
+  /** null = no spend row (unknown), never $0. */
+  spend: number | null;
+  /** The account's call metric (Jacuzzi: leads). null = no call feed. */
+  calls: number | null;
+  /** Tracked calls after publisher scoping (equals calls except on Jacuzzi). */
+  trackedCalls: number;
+  connected: number | null;
+  converted: number | null;
+  /** null unless every call that day carries captured revenue and the money is CPM's. */
+  revenue: number | null;
+  /** Calls at or beyond each duration floor. */
+  bands: Record<BandKey, number>;
 }
 
 // ─── Source registry ────────────────────────────────────────────────────────
@@ -182,6 +210,12 @@ function money(v: number): string {
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function nextDay(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function num(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -222,6 +256,7 @@ export async function computeClientMetrics(
   let latestSpendDate: string | null = null;
   /** Which calendar days actually carry a spend row — a missing day is UNKNOWN spend, not $0. */
   const spendDays = new Set<string>();
+  const spendByDay = new Map<string, { rows: number; spend: number }>();
 
   for (const table of spendTables) {
     // Every recorded spend table is read the same way: date, spend, and a
@@ -248,6 +283,9 @@ export async function computeClientMetrics(
       spendByPlatform[p] = (spendByPlatform[p] || 0) + num(r.spend);
       spendRows++;
       spendDays.add(String(r.date).slice(0, 10));
+      const sd = spendByDay.get(String(r.date).slice(0, 10)) ?? { rows: 0, spend: 0 };
+      sd.rows++; sd.spend += num(r.spend);
+      spendByDay.set(String(r.date).slice(0, 10), sd);
       if (!latestSpendDate || r.date > latestSpendDate) latestSpendDate = r.date;
     }
   }
@@ -283,6 +321,8 @@ export async function computeClientMetrics(
     payload_shape: string | null;
     /** Calendar day of the call, for comparing against the days spend covers. */
     day: string;
+    /** Publisher as recorded on the row, for the per-day dedicated-feed check. */
+    publisher: string | null;
   }
   const calls: CallRow[] = [];
   let testRowsExcluded = 0;
@@ -315,7 +355,8 @@ export async function computeClientMetrics(
 
     for (const r of rows as any[]) {
       if (spec.testFlagCol && r[spec.testFlagCol] === true) { testRowsExcluded++; continue; }
-      if (!pubFilter.keep(readPublisher(tableKey, r))) continue;
+      const publisher = readPublisher(tableKey, r);
+      if (!pubFilter.keep(publisher)) continue;
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
       calls.push({
         connected: r.connected ?? null,
@@ -333,6 +374,7 @@ export async function computeClientMetrics(
         revenue_captured: spec.hasCaptureFlags ? (r.revenue_captured ?? null) : null,
         payload_shape: spec.hasCaptureFlags ? (r.payload_shape ?? null) : null,
         day: spec.isTimestamp ? reportingDay(r[spec.dateCol], tz) : String(r[spec.dateCol] ?? '').slice(0, 10),
+        publisher,
       });
     }
   }
@@ -340,11 +382,16 @@ export async function computeClientMetrics(
   // Jacuzzi is paid per LEAD: calls and QR scans count identically and are
   // never separated. The lead sheet is the count; calls are only a subset of it.
   let jacuzziLeads: number | null = null;
+  const leadsByDay = new Map<string, number>();
   if (client.slug === 'jacuzzi') {
     const leadRows = await fetchAll((f, t) =>
       supabase.from('jacuzzi_leads').select('transaction_date, lead_type').eq('client_id', client.id)
         .gte('transaction_date', window.from).lte('transaction_date', window.to).range(f, t));
     jacuzziLeads = leadRows.length;
+    for (const l of leadRows as any[]) {
+      const d = String(l.transaction_date ?? '').slice(0, 10);
+      leadsByDay.set(d, (leadsByDay.get(d) ?? 0) + 1);
+    }
   }
 
   const pub: PublisherFilterSummary = pubFilter.summary();
@@ -448,7 +495,10 @@ export async function computeClientMetrics(
   let uncaptured = 0;
   let capturedRevenue = 0;
   let capturedCalls = 0;
+  const dayRevenue = new Map<string, { captured: number; uncaptured: number }>();
   for (const c of calls) {
+    const dr = dayRevenue.get(c.day) ?? { captured: 0, uncaptured: 0 };
+    dayRevenue.set(c.day, dr);
     const r = resolveClientRevenue({ engagement_type: client.engagement_type, revenue_field: client.revenue_field }, {
       payout: c.payout, revenue: c.revenue, revenue_captured: c.revenue_captured,
     });
@@ -456,8 +506,10 @@ export async function computeClientMetrics(
     if (r.captured && r.amount !== null && !(revenueField === 'revenue' && shapeThin && c.revenue_captured !== true)) {
       capturedRevenue += r.amount;
       capturedCalls++;
+      dr.captured += r.amount;
     } else {
       uncaptured++;
+      dr.uncaptured++;
     }
   }
   const hadUncapturedData = uncaptured > 0;
@@ -576,7 +628,35 @@ export async function computeClientMetrics(
     '--- END CANONICAL METRICS ---',
   ].filter((l) => l !== null).join('\n');
 
+  // ── per-day rows: the same gates, applied to one day at a time ────────────
+  const days: DayFigures[] = [];
+  const noCallMetric = callTables.length === 0 && jacuzziLeads === null;
+  for (let d = window.from; d <= window.to; d = nextDay(d)) {
+    const dayCalls = calls.filter((c) => c.day === d);
+    const sd = spendByDay.get(d);
+    const connKnownDay = dayCalls.filter((c) => c.connectionKnown);
+    const convKnownDay = dayCalls.filter((c) => c.conversionKnown);
+    const dr = dayRevenue.get(d) ?? { captured: 0, uncaptured: 0 };
+    // The money gate as it would read for this day alone: the scope's own block,
+    // or a "dedicated" feed that shows more than one named publisher that day.
+    const namedThatDay = new Set(dayCalls.map((c) => c.publisher).filter((p): p is string => !!p));
+    const dayBlocked = pubScope.moneyBlocked || (pubScope.scoping === 'not_required_dedicated_campaigns' && namedThatDay.size > 1);
+    const revenueOk = revenueField !== null && callTables.length > 0 && !dayBlocked && dr.uncaptured === 0 && dayCalls.length > 0;
+    days.push({
+      date: d,
+      spendRows: sd?.rows ?? 0,
+      spend: sd && sd.rows > 0 ? sd.spend : null,
+      calls: noCallMetric ? null : client.slug === 'jacuzzi' ? (leadsByDay.get(d) ?? 0) : dayCalls.length,
+      trackedCalls: dayCalls.length,
+      connected: callTables.length && connKnownDay.length ? connKnownDay.filter((c) => c.connected === true).length : null,
+      converted: callTables.length && convKnownDay.length ? convKnownDay.filter((c) => c.converted === true).length : null,
+      revenue: revenueOk ? dr.captured : null,
+      bands: Object.fromEntries(DURATION_BANDS.map(([k, floor]) => [k, dayCalls.filter((c) => c.duration >= floor).length])) as Record<BandKey, number>,
+    });
+  }
+
   return {
+    days,
     clientId: client.id,
     clientName: client.name,
     engagementType: client.engagement_type,

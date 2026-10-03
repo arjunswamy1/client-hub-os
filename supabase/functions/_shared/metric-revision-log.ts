@@ -14,6 +14,8 @@ const SPEND_TABLES = {
   cannaball_spend: { entityCampaign: false },
 } as const;
 export type ObservedSource = keyof typeof SPEND_TABLES;
+/** Spend sources whose syncs log observations — the only ones provisionality can be judged on. */
+export const LOGGED_SPEND_SOURCES = Object.keys(SPEND_TABLES) as readonly ObservedSource[];
 
 /** Never throws: a failed observation must not fail the sync that called it. */
 export async function recordSpendObservations(

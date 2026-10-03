@@ -13,17 +13,15 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createOpenAI } from 'npm:@ai-sdk/openai';
 import { streamText } from 'npm:ai';
 import { postToSlack } from '../_shared/slack-post.ts';
-import { buildComparisonSet, type ComparisonClient } from '../_shared/metric-comparison-data.ts';
-import { comparisonPromptBlock, headlineDelta, renderFullComparison, type ComparisonSet } from '../_shared/metric-comparisons.ts';
-import {
-  collectClientMetrics,
-  spendDelivery,
-  type ClientMetrics,
-  type DayRow,
-} from '../_shared/daily-update-metrics.ts';
+import { buildComparisonSet, loadDailySeries, snapshotFrom, type ComparisonClient, type DailySeries } from '../_shared/metric-comparison-data.ts';
+import { comparisonPromptBlock, headlineDelta, renderDailyComparison, type ComparisonSet } from '../_shared/metric-comparisons.ts';
+import { collectClientMetrics, type ClientMetrics, type DayRow } from '../_shared/daily-update-metrics.ts';
+import { effectiveMode, isClientCallDay, renderHolding } from '../_shared/client-cadence.ts';
+import { CLIENT_REPORTING_COLUMNS } from '../_shared/client-resolve.ts';
+import { addDays, dayEndsAt, reportingTimeZone, reportingWindowBounds, reportingYesterday } from '../_shared/reporting-day.ts';
 import {
   capText, contextBlock, degenerateRate, evaluateTriggers, FULL_UPDATE_CHAR_CAP, isPriced, MIN_TREND_DAYS,
-  oneLiner, pctChange, weekdayName, type ContextItem, type Trigger,
+  oneLiner, pctChange, weekdayName, weekdayQuiet, type ContextItem, type Trigger,
 } from '../_shared/daily-update-rules.ts';
 import { ownBotIdentity, type OwnBotIdentity } from '../_shared/slack-identity.ts';
 import { getValidBotToken } from '../_shared/slack-token.ts';
@@ -52,12 +50,6 @@ function easternNow(): { hour: number; weekday: string; date: string } {
   };
 }
 
-function easternYesterday(): string {
-  const today = easternNow().date;
-  const d = new Date(`${today}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
 
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pretty = (iso: string) =>
@@ -98,18 +90,13 @@ function weeklyDirection(trend: DayRow[], forDate: string): { series: string; di
   };
 }
 
-/**
- * True when spend for the reporting day cannot be trusted — the feed is stale.
- * A genuinely dark day (no spend, no impressions, volume collapsed) is NOT this:
- * its $0 is real, and it is a finding for the lead rather than a plumbing fault.
- * Either way "$0 spend" never reaches client-facing copy.
- */
-const spendMissingForDay = (m: ClientMetrics) => spendDelivery(m).state !== 'ok';
 
 /** The measured facts, written out so the model never has to derive a number. */
 function factSheet(m: ClientMetrics, triggers: Trigger[], context: ContextItem[]): string {
   const y = m.yesterday;
-  const noSpend = spendMissingForDay(m);
+  // The fact sheet is only built in performance mode, i.e. on an available day.
+  // A dark or unrecorded day is a holding update and never reaches this function.
+  const noSpend = false;
   const lines: string[] = [];
   lines.push(`Client: ${m.client_name}`);
   lines.push(`Reporting day: ${m.for_date} (7-day window from ${m.window_start})`);
@@ -173,16 +160,14 @@ function factSheet(m: ClientMetrics, triggers: Trigger[], context: ContextItem[]
  * Internal notes. Everything the lead needs and the client should not read:
  * which systems the numbers came from, what we could not compute, what is dark.
  */
-function buildAmNotes(m: ClientMetrics, weekday: { quiet: boolean; seen: number; dark: number }, triggers: Trigger[]): string {
+function buildAmNotes(m: ClientMetrics, series: DailySeries, triggers: Trigger[], extra: string[] = []): string {
   const notes: string[] = [];
-  const delivery = spendDelivery(m);
+  const day = series.days[series.days.length - 1];
   if (triggers.length) notes.push(`Full update because: ${triggers.map((t) => t.headline).join('; ')}`);
-  if (delivery.state === 'dark' && weekday.quiet) {
-    notes.push(`Quiet ${weekdayName(m.for_date)} — normal for this account (the same weekday was dark in ${weekday.dark} of the last ${weekday.seen} weeks). Not a finding`);
-  } else if (delivery.state === 'dark') {
-    notes.push(`NO DELIVERY on ${pretty(m.for_date)} — the campaign was dark: ${delivery.detail}. Tested on ${delivery.test}. This is a real finding, not a feed problem; spend language was kept out of the draft`);
-  } else if (delivery.state === 'stale') {
-    notes.push(`No spend landed for ${pretty(m.for_date)} even though it delivered — spend feed looks stale (${delivery.detail}; tested on ${delivery.test}), so cost per call and any "campaign at $0" reading are unreliable for this day and were kept out of the draft`);
+  for (const e of extra) notes.push(e);
+  for (const st of day?.sourceStates ?? []) {
+    if (st.state === 'no_delivery') notes.push(`${st.source}: rows recorded at $0 for ${pretty(m.for_date)} — dark`);
+    if (st.state === 'missing') notes.push(`${st.source}: no rows at all for ${pretty(m.for_date)} — no data recorded (not zero)`);
   }
   if (m.spend_sources.length) notes.push(`Spend read from: ${m.spend_sources.join('; ')}`);
   if (m.call_sources.length) notes.push(`Calls read from: ${m.call_sources.join('; ')}`);
@@ -204,11 +189,7 @@ function buildAmNotes(m: ClientMetrics, weekday: { quiet: boolean; seen: number;
     notes.push(`No duration mix for ${noQuality.join(', ')} — no calls recorded`);
   }
   if (m.anomalies.length) {
-    const qualifier = delivery.state === 'stale'
-      ? ' (unverified — spend feed stale for this day)'
-      : delivery.state === 'dark'
-        ? ' (the account was dark this day — these are genuinely not delivering)'
-        : '';
+    const qualifier = '';
     notes.push(`${m.anomalies.length} campaign${m.anomalies.length === 1 ? '' : 's'} with no spend yesterday${qualifier}: ${m.anomalies.map((a) => a.campaign).join(', ')}`);
   }
   if (!m.campaign_breakdown.length && m.spend_sources.length) {
@@ -288,9 +269,8 @@ async function draftWithModel(facts: string, style: { guidance: string; example_
  * numbers; it never becomes one. Our own bot's posts are excluded here too
  * (belt and braces — sync-slack already skips them at ingest).
  */
-async function collectContext(db: SupabaseClient, clientId: string, forDate: string, ownBot: OwnBotIdentity): Promise<ContextItem[]> {
-  const endOfDay = new Date(`${forDate}T00:00:00Z`);
-  endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
+async function collectContext(db: SupabaseClient, clientId: string, forDate: string, tz: string, ownBot: OwnBotIdentity): Promise<ContextItem[]> {
+  const endOfDay = dayEndsAt(forDate, tz);
   // 48 hours: the reporting day plus the day before it, and anything since.
   const since = new Date(endOfDay.getTime() - 48 * 3600_000).toISOString();
   const { data, error } = await db.from('context_items')
@@ -342,7 +322,9 @@ async function unansweredQuestions(db: SupabaseClient, clientId: string): Promis
 }
 
 /** Cheap presence check so a client without a Slack channel is still covered. */
-async function hasRecentActivity(db: SupabaseClient, clientId: string, windowStart: string, endIso: string) {
+async function hasRecentActivity(db: SupabaseClient, clientId: string, forDate: string, tz: string) {
+  const windowStart = addDays(forDate, -6);
+  const { startTs, endTs } = reportingWindowBounds({ from: windowStart, to: forDate }, tz);
   const dated: [string, string][] = [['roku_daily_metrics', 'date'], ['ad_daily_metrics', 'date']];
   for (const [table, col] of dated) {
     const { count } = await db.from(table).select('client_id', { count: 'exact', head: true })
@@ -355,10 +337,24 @@ async function hasRecentActivity(db: SupabaseClient, clientId: string, windowSta
   ];
   for (const [table, col] of calls) {
     const { count } = await db.from(table).select('client_id', { count: 'exact', head: true })
-      .eq('client_id', clientId).gte(col, `${windowStart}T00:00:00Z`).lt(col, endIso);
+      .eq('client_id', clientId).gte(col, startTs).lte(col, endTs);
     if ((count ?? 0) > 0) return true;
   }
   return false;
+}
+
+/** The latest date before `before` on which any spend source recorded spend > 0. */
+async function lastDeliveryDate(db: SupabaseClient, client: ComparisonClient, before: string): Promise<string | null> {
+  let best: string | null = null;
+  for (const table of client.spend_source_tables ?? []) {
+    if (!['ad_daily_metrics', 'roku_daily_metrics', 'cannaball_spend'].includes(table)) continue;
+    let q = db.from(table).select('date').eq('client_id', client.id).gt('spend', 0).lt('date', before);
+    if (table === 'roku_daily_metrics') q = q.eq('entity', 'campaign');
+    const { data } = await q.order('date', { ascending: false }).limit(1).maybeSingle();
+    const d = data?.date ? String(data.date).slice(0, 10) : null;
+    if (d && (!best || d > best)) best = d;
+  }
+  return best;
 }
 
 Deno.serve(async (req) => {
@@ -388,7 +384,8 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     const dryRun = body.dry_run === true;
     const force = body.force === true;
-    const forDate = typeof body.for_date === 'string' ? body.for_date : easternYesterday();
+    // Each account's reporting day is D-1 in its own reporting timezone.
+    const explicitDate = typeof body.for_date === 'string' ? body.for_date : null;
     const onlyClients: string[] | null = Array.isArray(body.client_ids) ? body.client_ids as string[] : null;
     const forceFull: string[] = Array.isArray(body.force_full) ? (body.force_full as string[]).map((n) => n.toLowerCase()) : [];
     const onlyNames: string[] | null = Array.isArray(body.client_names) ? body.client_names as string[] : null;
@@ -419,7 +416,7 @@ Deno.serve(async (req) => {
     // The off switch is read here, not somewhere downstream: a suppressed
     // account must never reach the drafting or posting path at all.
     const { data: clients, error: clientErr } = await supabase.from('clients')
-      .select('id, name, daily_update_enabled, daily_update_suppressed_reason');
+      .select(`${CLIENT_REPORTING_COLUMNS}, daily_update_enabled, daily_update_suppressed_reason`);
     if (clientErr) throw clientErr;
 
     // Fetched separately rather than as an embed: the embed silently yields no
@@ -443,22 +440,15 @@ Deno.serve(async (req) => {
       }),
     );
 
-    const windowStartDate = new Date(`${forDate}T00:00:00Z`);
-    windowStartDate.setUTCDate(windowStartDate.getUTCDate() - 6);
-    const windowStart = windowStartDate.toISOString().slice(0, 10);
-    const endDate = new Date(`${forDate}T00:00:00Z`);
-    endDate.setUTCDate(endDate.getUTCDate() + 1);
-    const endIso = endDate.toISOString();
+    const forDateOf = (c: { reporting_timezone?: string | null }) => explicitDate ?? reportingYesterday(reportingTimeZone(c));
 
     // Scope: any client with an internal channel, plus any client with data in
     // the window even if no channel is registered yet — an account with the best
     // data in the agency must never be silently skipped.
-    let candidates = (clients ?? []) as {
-      id: string;
-      name: string;
+    let candidates = (clients ?? []) as unknown as (ComparisonClient & {
       daily_update_enabled?: boolean | null;
       daily_update_suppressed_reason?: string | null;
-    }[];
+    })[];
     if (onlyClients) candidates = candidates.filter((c) => onlyClients.includes(c.id));
     if (onlyNames) {
       const wanted = onlyNames.map((n) => n.toLowerCase());
@@ -472,10 +462,10 @@ Deno.serve(async (req) => {
     candidates = candidates.filter((c) => c.daily_update_enabled !== false);
 
 
-    const targets: { id: string; name: string; reason: string }[] = [];
+    const targets: (ComparisonClient & { reason: string })[] = [];
     for (const c of candidates) {
       if (channelByClient.has(c.id)) targets.push({ ...c, reason: 'internal channel registered' });
-      else if (await hasRecentActivity(supabase, c.id, windowStart, endIso)) {
+      else if (await hasRecentActivity(supabase, c.id, forDateOf(c), reportingTimeZone(c))) {
         targets.push({ ...c, reason: 'has data in window, no internal channel registered' });
       }
     }
@@ -492,63 +482,109 @@ Deno.serve(async (req) => {
       try {
         const lead = leadByClient.get(clientId);
         const channel = channelByClient.get(clientId);
-        const metrics = await collectClientMetrics(supabase, clientId, clientName, forDate);
-        // One comparison implementation, shared with the CPM bot.
+        const forDate = forDateOf(target);
+        const tz = reportingTimeZone(target);
+        // ONE canonical read: the same engine and day cuts the CPM bot uses.
+        const series = await loadDailySeries(supabase, target, forDate);
+        const metrics = await collectClientMetrics(supabase, series);
         let cmp: ComparisonSet | null = null;
         let cmpError: string | null = null;
-        try {
-          const { data: row } = await supabase.from('clients')
-            .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from')
-            .eq('id', clientId).single();
-          if (row) cmp = await buildComparisonSet(supabase, row as ComparisonClient, forDate);
-        } catch (e) { cmpError = e instanceof Error ? e.message : String(e); console.error('comparison failed', clientName, cmpError); }
+        try { cmp = await buildComparisonSet(supabase, target, forDate, series); }
+        catch (e) { cmpError = e instanceof Error ? e.message : String(e); console.error('comparison failed', clientName, cmpError); }
 
         // Never @-mention nobody: an unowned account is reported, not posted.
         const blockers: string[] = [];
         if (!lead?.slack && !lead?.name) blockers.push('no media_buyer assigned — account needs an owner');
         if (!channel) blockers.push('no internal Slack channel registered for this client');
 
-        const kind = metrics.has_data ? 'draft' : 'prompt';
-        const delivery = spendDelivery(metrics);
-        const context = await collectContext(supabase, clientId, forDate, ownBot);
+        const day = series.days[series.days.length - 1];
+        const context = await collectContext(supabase, clientId, forDate, tz, ownBot);
         const questions = await unansweredQuestions(supabase, clientId);
+        // The three-state classification is the only delivery test. Performance
+        // mode runs only on an available day; anything else is a holding update.
+        const performance = day?.state === 'available';
+        const weekdayQuietDay = !performance && day?.state === 'no_delivery' && weekdayQuiet(metrics.history, forDate).quiet;
         const evald = evaluateTriggers({
-          forDate, history: metrics.history, delivery: delivery.state, gaps: metrics.gaps,
+          forDate, history: metrics.history, delivery: performance ? 'ok' : 'dark', gaps: metrics.gaps,
           hasData: metrics.has_data, context, unansweredQuestions: questions,
         });
-        // Dry-run only: render the full form for a steady account so the two can be compared.
-        if (dryRun && kind === 'draft' && !evald.triggers.length && forceFull.includes(clientName.toLowerCase())) {
-          evald.triggers.push({ code: 'cost_move', headline: 'Comparison render (dry run, nothing fired)', detail: 'no trigger fired; full form rendered on request for comparison' });
-        }
-        const form: 'one_line' | 'full' | 'prompt' = kind === 'prompt' ? 'prompt' : evald.triggers.length ? 'full' : 'one_line';
-        const yDay = metrics.history.find((d) => d.date === forDate) ?? null;
-        const oneLine = kind === 'draft'
-          ? oneLiner({
-              client: clientName, forDate, day: yDay, trend: metrics.history.slice(-7),
-              delivery: delivery.state, weekdayQuiet: evald.weekday.quiet,
-            })
-          : null;
+        const callDay = isClientCallDay(target, addDays(forDate, 1));
+        const mode = effectiveMode(target, series.days);
+        const extraNotes: string[] = [`Daily comparison: ${mode.mode === 'same_weekday' ? 'same weekday last week' : 'prior day'} (${mode.source}: ${mode.reason})`];
+        if (target.client_call_day === null || target.client_call_day === undefined) extraNotes.push('No client call day recorded — weekly rollup is never shown until one is set');
+        else if (callDay) extraNotes.push('Client call day — weekly rollup included');
+        if (cmp && cmp.provisional.tracked === false) extraNotes.push("This account's spend feed is not revision-logged, so whether the day has settled cannot be judged");
+
+        let kind: 'draft' | 'prompt' = metrics.has_data || !performance ? 'draft' : 'prompt';
+        let form: 'one_line' | 'full' | 'prompt';
+        let updateMode: 'performance' | 'holding' = 'performance';
+        let oneLine: string | null = null;
         let draftText: string;
-        if (form === 'prompt') draftText = promptSkeleton(clientName, metrics);
-        else if (form === 'one_line') {
-          // At most one delta: same weekday, most material metric.
-          const delta = cmp ? headlineDelta(cmp) : null;
-          draftText = delta ? `${oneLine!} ${delta}` : oneLine!;
+        if (!performance && weekdayQuietDay) {
+          form = 'one_line';
+          draftText = oneLiner({ client: clientName, forDate, day: null, trend: [], delivery: 'dark', weekdayQuiet: true });
+          oneLine = draftText;
+        } else if (!performance) {
+          // HOLDING: no delivery on any spend source. Say how long, which kind,
+          // the last day that delivered, and what we are working on.
+          updateMode = 'holding';
+          form = 'full';
+          let run = 0, dark = 0, missing = 0, broke = false;
+          for (let i = series.days.length - 1; i >= 0; i--) {
+            const d = series.days[i];
+            if (d.state === 'available') { broke = true; break; }
+            run++; if (d.state === 'no_delivery') dark++; else missing++;
+          }
+          let last: { date: string; spend: number | null; calls: number | null; revenue: number | null } | null = null;
+          const lastAvail = [...series.days].reverse().find((d) => d.state === 'available');
+          if (lastAvail) {
+            last = { date: lastAvail.date, spend: lastAvail.spend, calls: lastAvail.calls, revenue: lastAvail.revenue };
+          } else {
+            const lastDate = await lastDeliveryDate(supabase, target, addDays(forDate, -28));
+            if (lastDate) {
+              const older = await loadDailySeries(supabase, target, lastDate);
+              const s1 = snapshotFrom(older.days, lastDate, lastDate);
+              last = { date: lastDate, spend: s1.spend, calls: s1.calls, revenue: s1.revenue };
+            }
+          }
+          draftText = renderHolding({
+            client: clientName, forDate, sourceStates: day?.sourceStates ?? [],
+            daysWithoutDelivery: broke ? run : null, darkDays: dark, missingDays: missing,
+            callsOnDay: day?.trackedCalls ?? null, lastDelivery: last,
+            focus: { text: target.current_focus ?? null, updatedAt: target.current_focus_updated_at ?? null },
+            now: new Date(),
+          });
         } else {
-          const why = `Why you're reading this: ${evald.triggers.map((t) => t.headline).join(' · ')}.`;
-          const block = cmp ? renderFullComparison(cmp) : '';
-          const sheet = factSheet(metrics, evald.triggers, context)
-            + (cmp ? `\n\n${comparisonPromptBlock(cmp)}\nThe comparison block above is printed above your prose already — do not repeat its numbers; explain them only where the context says why.` : '');
-          const body = await draftWithModel(sheet, style as { guidance: string; example_text: string });
-          const room = Math.max(150, FULL_UPDATE_CHAR_CAP - why.length - (block ? block.length + 2 : 0) - 2);
-          draftText = [why, block, capText(body, room)].filter(Boolean).join('\n\n');
+          // Dry-run only: render the full form for a steady account so the two can be compared.
+          if (dryRun && !evald.triggers.length && forceFull.includes(clientName.toLowerCase())) {
+            evald.triggers.push({ code: 'cost_move', headline: 'Comparison render (dry run, nothing fired)', detail: 'no trigger fired; full form rendered on request for comparison' });
+          }
+          if (callDay && !evald.triggers.length) {
+            evald.triggers.push({ code: 'cost_move', headline: 'Client call today — weekly rollup', detail: 'the client call day carries the full update with the trailing-7 comparison' });
+          }
+          kind = 'draft';
+          form = evald.triggers.length ? 'full' : 'one_line';
+          const yDay = metrics.history.find((d) => d.date === forDate) ?? null;
+          oneLine = oneLiner({ client: clientName, forDate, day: yDay, trend: metrics.history.slice(-7), delivery: 'ok', weekdayQuiet: false });
+          if (form === 'one_line') {
+            const delta = cmp ? headlineDelta(cmp, mode.mode) : null;
+            draftText = delta ? `${oneLine} ${delta}` : oneLine;
+          } else {
+            const why = `Why you're reading this: ${evald.triggers.map((t) => t.headline).join(' · ')}.`;
+            const block = cmp ? renderDailyComparison(cmp, { mode: mode.mode, weekly: callDay }) : '';
+            const sheet = factSheet(metrics, evald.triggers, context)
+              + (cmp ? `\n\n${comparisonPromptBlock(cmp)}\nThe comparison block above is printed above your prose already — do not repeat its numbers; explain them only where the context says why.${callDay ? '' : ' Do not mention the 7-day comparison: it is for the client call.'}` : '');
+            const body = await draftWithModel(sheet, style as { guidance: string; example_text: string });
+            const room = Math.max(120, FULL_UPDATE_CHAR_CAP - why.length - (block ? block.length + 2 : 0) - 2);
+            draftText = [why, block, capText(body, room)].filter(Boolean).join('\n\n');
+          }
         }
-        const amNotes = buildAmNotes(metrics, evald.weekday, evald.triggers);
+        const amNotes = buildAmNotes(metrics, series, evald.triggers, extraNotes);
 
         const { data: saved, error: saveErr } = await supabase.from('client_daily_updates')
           .upsert({
             client_id: clientId, for_date: forDate, kind, draft_text: draftText,
-            form, triggers: evald.triggers as unknown as Record<string, unknown>[],
+            form, update_mode: updateMode, triggers: evald.triggers as unknown as Record<string, unknown>[],
             context_used: context as unknown as Record<string, unknown>[],
             am_notes: amNotes || null, status: 'draft',
             metrics: metrics as unknown as Record<string, unknown>,
@@ -588,7 +624,7 @@ Deno.serve(async (req) => {
         }
 
         results.push({
-          client: clientName, client_id: clientId, kind,
+          client: clientName, client_id: clientId, kind, for_date: forDate, update_mode: updateMode, comparison_mode: mode,
           channel: channel?.name ?? null, lead: lead?.name ?? null,
           blockers, form, triggers: evald.triggers, one_line: oneLine, draft_text: draftText, am_notes: amNotes,
           comparisons: cmp, comparison_error: cmpError,
@@ -605,7 +641,7 @@ Deno.serve(async (req) => {
     }
 
     return json({
-      success: true, for_date: forDate, dry_run: dryRun,
+      success: true, for_date: explicitDate ?? 'D-1 in each account\'s reporting timezone', dry_run: dryRun,
       drafts: results.filter((r) => r.kind === 'draft').length,
       prompts: results.filter((r) => r.kind === 'prompt').length,
       not_posted: skipped,

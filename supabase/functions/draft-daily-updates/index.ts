@@ -385,6 +385,7 @@ Deno.serve(async (req) => {
     const force = body.force === true;
     const forDate = typeof body.for_date === 'string' ? body.for_date : easternYesterday();
     const onlyClients: string[] | null = Array.isArray(body.client_ids) ? body.client_ids as string[] : null;
+    const forceFull: string[] = Array.isArray(body.force_full) ? (body.force_full as string[]).map((n) => n.toLowerCase()) : [];
     const onlyNames: string[] | null = Array.isArray(body.client_names) ? body.client_names as string[] : null;
 
     // The cron runs hourly and gates on the Eastern clock so the 9am slot holds
@@ -501,6 +502,10 @@ Deno.serve(async (req) => {
           forDate, history: metrics.history, delivery: delivery.state, gaps: metrics.gaps,
           hasData: metrics.has_data, context, unansweredQuestions: questions,
         });
+        // Dry-run only: render the full form for a steady account so the two can be compared.
+        if (dryRun && kind === 'draft' && !evald.triggers.length && forceFull.includes(clientName.toLowerCase())) {
+          evald.triggers.push({ code: 'cost_move', headline: 'Comparison render (dry run, nothing fired)', detail: 'no trigger fired; full form rendered on request for comparison' });
+        }
         const form: 'one_line' | 'full' | 'prompt' = kind === 'prompt' ? 'prompt' : evald.triggers.length ? 'full' : 'one_line';
         const yDay = metrics.history.find((d) => d.date === forDate) ?? null;
         const oneLine = kind === 'draft'

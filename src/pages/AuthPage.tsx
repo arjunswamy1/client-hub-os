@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,25 @@ export default function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const rawNext = searchParams.get('next');
+  const nextPath = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null;
+  const goNext = () => {
+    if (nextPath) window.location.href = nextPath;
+    else navigate('/');
+  };
+  const returnUrl = nextPath
+    ? `${window.location.origin}/auth?next=${encodeURIComponent(nextPath)}`
+    : window.location.origin;
+
+  useEffect(() => {
+    if (!nextPath) return;
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session && !data.session.user?.user_metadata?.must_change_password) {
+        window.location.href = nextPath;
+      }
+    });
+  }, [nextPath]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +47,7 @@ export default function AuthPage() {
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({
           email, password,
-          options: { emailRedirectTo: window.location.origin }
+          options: { emailRedirectTo: returnUrl }
         });
         if (error) throw error;
         toast.success('Check your email to confirm your account');
@@ -42,7 +61,7 @@ export default function AuthPage() {
           setIsLoading(false);
           return;
         }
-        navigate('/');
+        goNext();
       }
     } catch (err: any) {
       toast.error(err.message);
@@ -69,7 +88,7 @@ export default function AuthPage() {
       });
       if (error) throw error;
       toast.success('Password updated');
-      navigate('/');
+      goNext();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -96,7 +115,7 @@ export default function AuthPage() {
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: returnUrl }
     });
     if (error) toast.error(error.message);
   };

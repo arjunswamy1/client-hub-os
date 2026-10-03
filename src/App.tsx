@@ -13,6 +13,7 @@ import AuthPage from "./pages/AuthPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import ClientDashboardRoute from "./pages/ClientDashboardRoute";
+import OAuthConsent from "./pages/OAuthConsent";
 import TasksPage from "./pages/TasksPage";
 import TaskReviewPage from "./pages/TaskReviewPage";
 import ImprovementProposalsPage from "./pages/ImprovementProposalsPage";
@@ -197,6 +198,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
+            <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/demo" element={<DemoPage />} />
             <Route path="/demo/dashboard" element={<DemoDashboardPage />} />

@@ -321,6 +321,8 @@ export async function computeClientMetrics(
     payload_shape: string | null;
     /** Calendar day of the call, for comparing against the days spend covers. */
     day: string;
+    /** Publisher as recorded on the row, for the per-day dedicated-feed check. */
+    publisher: string | null;
   }
   const calls: CallRow[] = [];
   let testRowsExcluded = 0;
@@ -353,7 +355,8 @@ export async function computeClientMetrics(
 
     for (const r of rows as any[]) {
       if (spec.testFlagCol && r[spec.testFlagCol] === true) { testRowsExcluded++; continue; }
-      if (!pubFilter.keep(readPublisher(tableKey, r))) continue;
+      const publisher = readPublisher(tableKey, r);
+      if (!pubFilter.keep(publisher)) continue;
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
       calls.push({
         connected: r.connected ?? null,
@@ -371,6 +374,7 @@ export async function computeClientMetrics(
         revenue_captured: spec.hasCaptureFlags ? (r.revenue_captured ?? null) : null,
         payload_shape: spec.hasCaptureFlags ? (r.payload_shape ?? null) : null,
         day: spec.isTimestamp ? reportingDay(r[spec.dateCol], tz) : String(r[spec.dateCol] ?? '').slice(0, 10),
+        publisher,
       });
     }
   }
@@ -633,7 +637,11 @@ export async function computeClientMetrics(
     const connKnownDay = dayCalls.filter((c) => c.connectionKnown);
     const convKnownDay = dayCalls.filter((c) => c.conversionKnown);
     const dr = dayRevenue.get(d) ?? { captured: 0, uncaptured: 0 };
-    const revenueOk = revenueField !== null && callTables.length > 0 && !pub.moneyBlocked && dr.uncaptured === 0 && dayCalls.length > 0;
+    // The money gate as it would read for this day alone: the scope's own block,
+    // or a "dedicated" feed that shows more than one named publisher that day.
+    const namedThatDay = new Set(dayCalls.map((c) => c.publisher).filter((p): p is string => !!p));
+    const dayBlocked = pubScope.moneyBlocked || (pubScope.scoping === 'not_required_dedicated_campaigns' && namedThatDay.size > 1);
+    const revenueOk = revenueField !== null && callTables.length > 0 && !dayBlocked && dr.uncaptured === 0 && dayCalls.length > 0;
     days.push({
       date: d,
       spendRows: sd?.rows ?? 0,

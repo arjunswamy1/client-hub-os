@@ -10,13 +10,10 @@
 // detail, and the latest Media Brain review. Neither feeds a headline number.
 //
 // Read-only: this module never writes to a call or ad-sync table.
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { QUALIFIED_BAND, type SeriesDay as RuleDay } from './daily-update-rules.ts';
 import type { DailySeries } from './metric-comparison-data.ts';
 import { addDays } from './reporting-day.ts';
-
-export const admin = (): SupabaseClient =>
-  createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
 export interface DayRow {
   date: string;

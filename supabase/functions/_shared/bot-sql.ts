@@ -19,6 +19,9 @@ export const SQL_BLOCKED_PATTERNS: RegExp[] = [
   /token|secret|password|decrypted/i,
 ];
 
+/** Call tables shared by two accounts. */
+export const SHARED_CALL_TABLES = /\b(ringfuel_calls|cannaball_calls)\b/i;
+
 const WRITE_KEYWORDS = /\b(insert|update|delete|drop|alter|create|grant|revoke|truncate|copy|merge|call|do|vacuum|reindex|cluster|comment|listen|notify|lock|prepare|execute|set|reset|import)\b/i;
 
 export interface SqlResult {
@@ -37,6 +40,12 @@ export function screenSql(sqlRaw: string): { ok: true; sql: string } | { ok: fal
   if (WRITE_KEYWORDS.test(sql)) return { ok: false, error: 'the query contains a forbidden keyword' };
   for (const p of SQL_BLOCKED_PATTERNS) {
     if (p.test(sql)) return { ok: false, error: `the query touches blocked data (${p.source})` };
+  }
+  // ringfuel_calls holds Spektrafin AND Jacuzzi; cannaball_calls holds Cannaball
+  // AND PPC Media. An aggregate over either without a client filter mixes two
+  // accounts — it has already produced a wrong conclusion here once.
+  if (SHARED_CALL_TABLES.test(sql) && !/\bclient_id\b/i.test(sql)) {
+    return { ok: false, error: 'ringfuel_calls and cannaball_calls hold more than one account — filter on client_id' };
   }
   return { ok: true, sql };
 }

@@ -47,7 +47,7 @@ export default function AuthPage() {
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({
           email, password,
-          options: { emailRedirectTo: window.location.origin }
+          options: { emailRedirectTo: returnUrl }
         });
         if (error) throw error;
         toast.success('Check your email to confirm your account');
@@ -61,7 +61,7 @@ export default function AuthPage() {
           setIsLoading(false);
           return;
         }
-        navigate('/');
+        goNext();
       }
     } catch (err: any) {
       toast.error(err.message);
@@ -88,7 +88,7 @@ export default function AuthPage() {
       });
       if (error) throw error;
       toast.success('Password updated');
-      navigate('/');
+      goNext();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -115,7 +115,7 @@ export default function AuthPage() {
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: returnUrl }
     });
     if (error) toast.error(error.message);
   };

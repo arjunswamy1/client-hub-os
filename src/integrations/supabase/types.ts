@@ -2274,6 +2274,7 @@ export type Database = {
           slack_ts: string | null
           status: string
           triggers: Json | null
+          update_mode: string
           updated_at: string
         }
         Insert: {
@@ -2294,6 +2295,7 @@ export type Database = {
           slack_ts?: string | null
           status?: string
           triggers?: Json | null
+          update_mode?: string
           updated_at?: string
         }
         Update: {
@@ -2314,6 +2316,7 @@ export type Database = {
           slack_ts?: string | null
           status?: string
           triggers?: Json | null
+          update_mode?: string
           updated_at?: string
         }
         Relationships: [

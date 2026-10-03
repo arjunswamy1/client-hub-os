@@ -43,6 +43,13 @@
       "when": 1791065563193,
       "tag": "0005_client_call_day_comparison_mode_focus",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791065828227,
+      "tag": "0006_client_daily_updates_update_mode",
+      "breakpoints": true
     }
   ]
 }

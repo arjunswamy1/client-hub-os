@@ -2796,6 +2796,8 @@ export type Database = {
           external_dashboard_url: string | null
           id: string
           logo_url: string | null
+          metrics_reliable_from: string | null
+          metrics_reliable_note: string | null
           name: string
           reporting_timezone: string | null
           revenue_field: string | null
@@ -2819,6 +2821,8 @@ export type Database = {
           external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
+          metrics_reliable_from?: string | null
+          metrics_reliable_note?: string | null
           name: string
           reporting_timezone?: string | null
           revenue_field?: string | null
@@ -2842,6 +2846,8 @@ export type Database = {
           external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
+          metrics_reliable_from?: string | null
+          metrics_reliable_note?: string | null
           name?: string
           reporting_timezone?: string | null
           revenue_field?: string | null

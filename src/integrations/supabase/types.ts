@@ -5266,6 +5266,47 @@ export type Database = {
           },
         ]
       }
+      metric_revision_log: {
+        Row: {
+          calls: number | null
+          client_id: string
+          id: string
+          metric_date: string
+          observed_at: string
+          revenue: number | null
+          source: string
+          spend: number | null
+        }
+        Insert: {
+          calls?: number | null
+          client_id: string
+          id?: string
+          metric_date: string
+          observed_at?: string
+          revenue?: number | null
+          source: string
+          spend?: number | null
+        }
+        Update: {
+          calls?: number | null
+          client_id?: string
+          id?: string
+          metric_date?: string
+          observed_at?: string
+          revenue?: number | null
+          source?: string
+          spend?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metric_revision_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       moja_calls: {
         Row: {
           answered: boolean | null

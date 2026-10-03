@@ -2259,11 +2259,13 @@ export type Database = {
         Row: {
           am_notes: string | null
           client_id: string
+          context_used: Json | null
           created_at: string
           draft_text: string
           edited_by_id: string | null
           final_text: string | null
           for_date: string
+          form: string | null
           id: string
           kind: string
           metrics: Json
@@ -2271,16 +2273,19 @@ export type Database = {
           slack_channel_id: string | null
           slack_ts: string | null
           status: string
+          triggers: Json | null
           updated_at: string
         }
         Insert: {
           am_notes?: string | null
           client_id: string
+          context_used?: Json | null
           created_at?: string
           draft_text: string
           edited_by_id?: string | null
           final_text?: string | null
           for_date: string
+          form?: string | null
           id?: string
           kind?: string
           metrics?: Json
@@ -2288,16 +2293,19 @@ export type Database = {
           slack_channel_id?: string | null
           slack_ts?: string | null
           status?: string
+          triggers?: Json | null
           updated_at?: string
         }
         Update: {
           am_notes?: string | null
           client_id?: string
+          context_used?: Json | null
           created_at?: string
           draft_text?: string
           edited_by_id?: string | null
           final_text?: string | null
           for_date?: string
+          form?: string | null
           id?: string
           kind?: string
           metrics?: Json
@@ -2305,6 +2313,7 @@ export type Database = {
           slack_channel_id?: string | null
           slack_ts?: string | null
           status?: string
+          triggers?: Json | null
           updated_at?: string
         }
         Relationships: [
@@ -7270,6 +7279,57 @@ export type Database = {
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_digest_escalations: {
+        Row: {
+          assignee_id: string | null
+          created_at: string
+          days_late: number
+          digest_date: string
+          escalated_to_id: string | null
+          id: string
+          item_id: string
+          item_kind: string
+          slack_ts: string | null
+        }
+        Insert: {
+          assignee_id?: string | null
+          created_at?: string
+          days_late: number
+          digest_date: string
+          escalated_to_id?: string | null
+          id?: string
+          item_id: string
+          item_kind: string
+          slack_ts?: string | null
+        }
+        Update: {
+          assignee_id?: string | null
+          created_at?: string
+          days_late?: number
+          digest_date?: string
+          escalated_to_id?: string | null
+          id?: string
+          item_id?: string
+          item_kind?: string
+          slack_ts?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_digest_escalations_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_digest_escalations_escalated_to_id_fkey"
+            columns: ["escalated_to_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]

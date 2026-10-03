@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
         .from("cannaball_spend")
         .upsert(finalRows, { onConflict: "client_id,date,platform,campaign_name,creative_name" });
       if (error) throw error;
-      await recordSpendObservations(admin, (finalRows[0] as any).client_id, "cannaball_spend", finalRows.map((r: any) => r.date));
+      await recordSpendObservations(admin, clientId, "cannaball_spend", finalRows.map((r: any) => r.date));
     }
 
     return json({

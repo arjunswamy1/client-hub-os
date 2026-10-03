@@ -13,6 +13,8 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createOpenAI } from 'npm:@ai-sdk/openai';
 import { streamText } from 'npm:ai';
 import { postToSlack } from '../_shared/slack-post.ts';
+import { buildComparisonSet, type ComparisonClient } from '../_shared/metric-comparison-data.ts';
+import { comparisonPromptBlock, headlineDelta, renderFullComparison, type ComparisonSet } from '../_shared/metric-comparisons.ts';
 import {
   collectClientMetrics,
   spendDelivery,
@@ -491,6 +493,15 @@ Deno.serve(async (req) => {
         const lead = leadByClient.get(clientId);
         const channel = channelByClient.get(clientId);
         const metrics = await collectClientMetrics(supabase, clientId, clientName, forDate);
+        // One comparison implementation, shared with the CPM bot.
+        let cmp: ComparisonSet | null = null;
+        let cmpError: string | null = null;
+        try {
+          const { data: row } = await supabase.from('clients')
+            .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from')
+            .eq('id', clientId).single();
+          if (row) cmp = await buildComparisonSet(supabase, row as ComparisonClient, forDate);
+        } catch (e) { cmpError = e instanceof Error ? e.message : String(e); console.error('comparison failed', clientName, cmpError); }
 
         // Never @-mention nobody: an unowned account is reported, not posted.
         const blockers: string[] = [];
@@ -519,13 +530,18 @@ Deno.serve(async (req) => {
           : null;
         let draftText: string;
         if (form === 'prompt') draftText = promptSkeleton(clientName, metrics);
-        else if (form === 'one_line') draftText = oneLine!;
-        else {
+        else if (form === 'one_line') {
+          // At most one delta: same weekday, most material metric.
+          const delta = cmp ? headlineDelta(cmp) : null;
+          draftText = delta ? `${oneLine!} ${delta}` : oneLine!;
+        } else {
           const why = `Why you're reading this: ${evald.triggers.map((t) => t.headline).join(' · ')}.`;
-          const body = await draftWithModel(
-            factSheet(metrics, evald.triggers, context), style as { guidance: string; example_text: string },
-          );
-          draftText = `${why}\n\n${capText(body, Math.max(200, FULL_UPDATE_CHAR_CAP - why.length - 2))}`;
+          const block = cmp ? renderFullComparison(cmp) : '';
+          const sheet = factSheet(metrics, evald.triggers, context)
+            + (cmp ? `\n\n${comparisonPromptBlock(cmp)}\nThe comparison block above is printed above your prose already — do not repeat its numbers; explain them only where the context says why.` : '');
+          const body = await draftWithModel(sheet, style as { guidance: string; example_text: string });
+          const room = Math.max(150, FULL_UPDATE_CHAR_CAP - why.length - (block ? block.length + 2 : 0) - 2);
+          draftText = [why, block, capText(body, room)].filter(Boolean).join('\n\n');
         }
         const amNotes = buildAmNotes(metrics, evald.weekday, evald.triggers);
 
@@ -575,6 +591,7 @@ Deno.serve(async (req) => {
           client: clientName, client_id: clientId, kind,
           channel: channel?.name ?? null, lead: lead?.name ?? null,
           blockers, form, triggers: evald.triggers, one_line: oneLine, draft_text: draftText, am_notes: amNotes,
+          comparisons: cmp, comparison_error: cmpError,
           chars: draftText.length,
           fact_sheet: dryRun && form === 'full' ? factSheet(metrics, evald.triggers, context) : undefined,
           spend_sources: metrics.spend_sources, call_sources: metrics.call_sources, posted,

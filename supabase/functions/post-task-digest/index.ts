@@ -157,11 +157,35 @@ Deno.serve(async (req) => {
 
     // ---------------------------------------------------------------- digest
     if (mode === 'digest') {
-      const { messages, skipped, excluded } = await buildDigests(supabase, et.date, et.weekdayLong);
+      const { messages, escalations, skipped, excluded } = await buildDigests(supabase, et.date, et.weekdayLong);
       const scoped = onlyLane ? messages.filter((m) => m.lane === onlyLane) : messages;
       const posted: PostedRow[] = [];
       for (const msg of scoped) {
         posted.push(await postDigest(supabase, msg, et.date, dryRun, onlyMemberIds));
+      }
+      // One escalation per item, ever. Recorded only after a real post, so a dry
+      // run or a refused post leaves the item eligible next time.
+      const escalationRows: Record<string, unknown>[] = [];
+      for (const esc of onlyLane ? escalations.filter((e) => e.lane === onlyLane) : escalations) {
+        const row: Record<string, unknown> = {
+          channel: `#${esc.channel_name}`, lead: esc.lead.name, items: esc.items.length, posted: false, text: esc.text,
+        };
+        if (!dryRun && (!onlyMemberIds || onlyMemberIds.includes(esc.lead.id))) {
+          const res = await postToSlack({ channel: esc.channel_id, text: esc.text });
+          row.posted = res.ok === true;
+          row.refused = res.refused ? res.reason : null;
+          if (res.ok) {
+            const { error } = await supabase.from('task_digest_escalations').upsert(
+              esc.items.map((i) => ({
+                item_kind: i.kind, item_id: i.id, escalated_to_id: esc.lead.id,
+                days_late: i.late_days ?? 0, digest_date: et.date, slack_ts: res.ts ?? null,
+              })),
+              { onConflict: 'item_kind,item_id', ignoreDuplicates: true },
+            );
+            if (error) row.error = `posted but not recorded: ${error.message}`;
+          }
+        }
+        escalationRows.push(row);
       }
       const grouped: Record<string, PostedRow[]> = {};
       for (const row of posted) (grouped[row.channel] ??= []).push(row);
@@ -174,6 +198,7 @@ Deno.serve(async (req) => {
         messages: posted.length,
         posted_count: posted.filter((p) => p.posted).length,
         by_channel: grouped,
+        escalations: escalationRows,
         skipped_people: skipped,
         excluded_items: excluded.length,
         excluded_detail: dryRun ? excluded : undefined,

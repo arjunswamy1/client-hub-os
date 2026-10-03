@@ -675,7 +675,8 @@ export async function buildDigests(
 
   const escalations: EscalationMessage[] = [];
   for (const [leadId, lanes] of escalationByLead) {
-    const lead = memberById.get(leadId);
+    // An inactive or unknown lead falls back to AJ rather than dropping the escalation.
+    const lead = memberById.get(leadId) ?? memberById.get(FALLBACK_LEAD_ID);
     if (!lead) continue;
     for (const [lane, items] of lanes) {
       const mention = lead.slack_user_id ? `<@${lead.slack_user_id}>` : lead.name;

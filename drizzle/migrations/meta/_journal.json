@@ -22,6 +22,13 @@
       "when": 1791058492494,
       "tag": "0002_daily_update_forms_and_digest_escalations",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791059820165,
+      "tag": "0003_nb_knowledge_search_column",
+      "breakpoints": true
     }
   ]
 }

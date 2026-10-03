@@ -5427,6 +5427,107 @@ export type Database = {
           },
         ]
       }
+      nb_knowledge: {
+        Row: {
+          channel: string | null
+          cleared_at: string | null
+          cleared_for_external_by_id: string | null
+          client_id: string | null
+          confidentiality: string
+          created_at: string
+          detail: string | null
+          evidence: string | null
+          fts_doc: unknown
+          headline: string
+          id: string
+          kind: string
+          numbers: Json | null
+          occurred_at: string | null
+          org_name: string | null
+          source_context_item_id: string | null
+          source_kind: string
+          source_link: string | null
+          source_title: string | null
+          updated_at: string
+          vertical: string | null
+        }
+        Insert: {
+          channel?: string | null
+          cleared_at?: string | null
+          cleared_for_external_by_id?: string | null
+          client_id?: string | null
+          confidentiality?: string
+          created_at?: string
+          detail?: string | null
+          evidence?: string | null
+          fts_doc?: unknown
+          headline: string
+          id?: string
+          kind: string
+          numbers?: Json | null
+          occurred_at?: string | null
+          org_name?: string | null
+          source_context_item_id?: string | null
+          source_kind: string
+          source_link?: string | null
+          source_title?: string | null
+          updated_at?: string
+          vertical?: string | null
+        }
+        Update: {
+          channel?: string | null
+          cleared_at?: string | null
+          cleared_for_external_by_id?: string | null
+          client_id?: string | null
+          confidentiality?: string
+          created_at?: string
+          detail?: string | null
+          evidence?: string | null
+          fts_doc?: unknown
+          headline?: string
+          id?: string
+          kind?: string
+          numbers?: Json | null
+          occurred_at?: string | null
+          org_name?: string | null
+          source_context_item_id?: string | null
+          source_kind?: string
+          source_link?: string | null
+          source_title?: string | null
+          updated_at?: string
+          vertical?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nb_knowledge_cleared_for_external_by_id_fkey"
+            columns: ["cleared_for_external_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nb_knowledge_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nb_knowledge_source_context_item_id_fkey"
+            columns: ["source_context_item_id"]
+            isOneToOne: false
+            referencedRelation: "context_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nb_knowledge_source_context_item_id_fkey"
+            columns: ["source_context_item_id"]
+            isOneToOne: false
+            referencedRelation: "slack_unanswered_client_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           brief_id: string | null

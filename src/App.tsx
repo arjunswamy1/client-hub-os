@@ -17,6 +17,7 @@ import OAuthConsent from "./pages/OAuthConsent";
 import TasksPage from "./pages/TasksPage";
 import TaskReviewPage from "./pages/TaskReviewPage";
 import ImprovementProposalsPage from "./pages/ImprovementProposalsPage";
+import NewBusinessPage from "./pages/NewBusinessPage";
 
 import AgendasPage from "./pages/AgendasPage";
 import CreativePage from "./pages/CreativePage";
@@ -144,6 +145,7 @@ function ProtectedRoutes() {
           {(isAdmin || isAccountManager) && (
             <Route path="/improvements" element={<ImprovementProposalsPage />} />
           )}
+          <Route path="/new-business" element={<NewBusinessPage />} />
 
           <Route path="/agendas" element={<AgendasPage />} />
           <Route path="/creative" element={<CreativePage />} />

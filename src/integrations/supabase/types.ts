@@ -5437,6 +5437,7 @@ export type Database = {
           created_at: string
           detail: string | null
           evidence: string | null
+          fts_doc: unknown
           headline: string
           id: string
           kind: string
@@ -5459,6 +5460,7 @@ export type Database = {
           created_at?: string
           detail?: string | null
           evidence?: string | null
+          fts_doc?: unknown
           headline: string
           id?: string
           kind: string
@@ -5481,6 +5483,7 @@ export type Database = {
           created_at?: string
           detail?: string | null
           evidence?: string | null
+          fts_doc?: unknown
           headline?: string
           id?: string
           kind?: string

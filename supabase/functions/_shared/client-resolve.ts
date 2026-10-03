@@ -21,11 +21,22 @@ export interface ResolvedClientRow {
   spend_source_tables?: string[] | null;
   /** Spend feeds carrying a campaign dimension. Empty = spend cannot be split per campaign. */
   campaign_spend_source_tables?: string[] | null;
-  /** Timezone the platform cuts this account's reporting day on. Null = UTC, as stored. */
+  /** Timezone the platform cuts this account's reporting day on. Null = America/New_York (reporting-day.ts). */
   reporting_timezone?: string | null;
   /** First date revenue capture can be trusted. Null = all history reliable. */
   metrics_reliable_from?: string | null;
+  /** Weekday of the recurring client call, 0 = Sunday. Null = unknown, never guessed. */
+  client_call_day?: number | null;
+  daily_comparison_mode?: string | null;
+  daily_comparison_mode_resolved?: string | null;
+  daily_comparison_mode_reason?: string | null;
+  current_focus?: string | null;
+  current_focus_updated_at?: string | null;
+  current_focus_source?: string | null;
 }
+
+/** Every client column the reporting path reads. One list, so the drafter and the bot load the same row. */
+export const CLIENT_REPORTING_COLUMNS = 'id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from, client_call_day, daily_comparison_mode, daily_comparison_mode_resolved, daily_comparison_mode_reason, current_focus, current_focus_updated_at, current_focus_source';
 
 export interface ClientResolution {
   client: ResolvedClientRow | null;
@@ -38,7 +49,7 @@ export interface ClientResolution {
 export async function loadActiveClients(supabase: any): Promise<ResolvedClientRow[]> {
   const { data } = await supabase
     .from('clients')
-    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from')
+    .select(CLIENT_REPORTING_COLUMNS)
     .eq('status', 'active')
     .order('name');
   return (data || []) as ResolvedClientRow[];

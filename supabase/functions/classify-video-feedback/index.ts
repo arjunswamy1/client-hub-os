@@ -1,6 +1,7 @@
 // Phase 4: Classifies free-form video feedback using Claude into a routing decision.
 // Returns { category, affected_clips[], changes, estimated_cost, summary }.
 // Categories: OVERLAY_EDIT, CAPTION_EDIT, TIMING_EDIT, VO_EDIT, MUSIC_EDIT, VISUAL_EDIT.
+import { forcedToolCall } from "../_shared/lovable-ai.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { logAiUsage } from "../_shared/cost-tracking.ts";
 
@@ -70,8 +71,6 @@ Deno.serve(async (req) => {
       .from("ai_video_projects").select("id, client_id, shot_list, vo_script, music_prompt, phone_overlay, cta_overlay, disclaimer_overlay, end_card_text").eq("id", project_id).single();
     if (pErr || !project) return json({ error: "Project not found" }, 404);
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY missing" }, 500);
 
     const shots = Array.isArray((project as any).shot_list) ? (project as any).shot_list : [];
     const shotSummary = shots.map((s: any) => `Clip ${s.clip_number}: ${s.label || ''} | ${s.duration_seconds}s | speaker=${s.speaker} | "${(s.dialogue || s.vo_segment || '').slice(0, 80)}"`).join("\n");
@@ -104,37 +103,22 @@ REQUIRED key formats for "changes" by category:
 
 Use the classify_feedback tool.`;
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 1500,
-        tools: [TOOL],
-        tool_choice: { type: "tool", name: "classify_feedback" },
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (!res.ok) {
-      const t = await res.text();
-      return json({ error: "Claude failed", detail: t.slice(0, 500) }, 500);
+    const ai = await forcedToolCall({ prompt: prompt, tool: TOOL as any });
+    logAiUsage({
+      client_id: (project as any).client_id ?? null,
+      surface: "classify-video-feedback",
+      model: ai.model,
+      input_tokens: ai.usage.input_tokens,
+      output_tokens: ai.usage.output_tokens,
+      cache_read_tokens: ai.usage.cached_tokens,
+      cache_write_tokens: 0,
+      metadata: { project_id },
+    }).catch((e) => console.error("logAiUsage failed:", e));
+    if (!ai.ok) {
+      console.error("Lovable AI error:", ai.status, ai.error);
+      return json({ error: "AI request failed", detail: ai.error }, ai.status === 402 || ai.status === 403 || ai.status === 429 ? ai.status : 500);
     }
-    const data = await res.json();
-    const toolUse = (data.content || []).find((b: any) => b.type === "tool_use");
-    if (!toolUse) return json({ error: "No tool_use in response" }, 500);
-
-    if (data.usage) {
-      logAiUsage({
-        client_id: (project as any).client_id ?? null,
-        surface: "classify-video-feedback",
-        model: "claude-sonnet-4-5-20250929",
-        input_tokens: data.usage.input_tokens ?? 0,
-        output_tokens: data.usage.output_tokens ?? 0,
-        cache_read_tokens: data.usage.cache_read_input_tokens ?? 0,
-        cache_write_tokens: data.usage.cache_creation_input_tokens ?? 0,
-        metadata: { project_id },
-      }).catch((e) => console.error("logAiUsage failed:", e));
-    }
+    const toolUse = { input: ai.args };
 
     const out = toolUse.input as { category: string; affected_clips: number[]; changes: any; summary: string };
     const estimated_cost = COST_TABLE[out.category] ?? COST_TABLE.UNKNOWN;

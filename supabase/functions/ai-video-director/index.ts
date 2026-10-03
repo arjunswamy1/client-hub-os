@@ -1,6 +1,7 @@
 // AI Video Director — turns a creative brief into a winning ad: shot list with
 // per-shot speaker assignment (in-scene dialogue vs. narrator VO), reusable
 // character profiles, 3 hook variants, and music direction.
+import { forcedToolCall } from "../_shared/lovable-ai.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { logAiUsage } from "../_shared/cost-tracking.ts";
 
@@ -210,47 +211,23 @@ Deno.serve(async (req) => {
     const landingSummary = await fetchLandingPageSummary(project.landing_page_url);
     const userPrompt = buildPrompt(project as Brief, landingSummary);
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY missing" }, 500);
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 6000,
-        tools: [TOOL],
-        tool_choice: { type: "tool", name: "generate_shot_list" },
-        messages: [{ role: "user", content: userPrompt }],
-      }),
-    });
-
-    if (!res.ok) {
-      const t = await res.text();
-      console.error("Claude error:", res.status, t);
-      return json({ error: "AI Director failed", detail: t.slice(0, 500) }, 500);
+    const ai = await forcedToolCall({ prompt: userPrompt, tool: TOOL as any });
+    logAiUsage({
+      client_id: (project as any).client_id ?? null,
+      surface: "ai-video-director",
+      model: ai.model,
+      input_tokens: ai.usage.input_tokens,
+      output_tokens: ai.usage.output_tokens,
+      cache_read_tokens: ai.usage.cached_tokens,
+      cache_write_tokens: 0,
+      metadata: { project_id, framework: (project as any).ad_framework },
+    }).catch((e) => console.error("logAiUsage failed:", e));
+    if (!ai.ok) {
+      console.error("Lovable AI error:", ai.status, ai.error);
+      return json({ error: "AI request failed", detail: ai.error }, ai.status === 402 || ai.status === 403 || ai.status === 429 ? ai.status : 500);
     }
-    const data = await res.json();
-    const toolUse = (data.content || []).find((b: any) => b.type === "tool_use");
-    if (!toolUse) return json({ error: "No tool_use in response" }, 500);
-
-    // Cost tracking — Anthropic Claude usage attributed to the project's client.
-    if (data.usage) {
-      logAiUsage({
-        client_id: (project as any).client_id ?? null,
-        surface: "ai-video-director",
-        model: "claude-sonnet-4-5-20250929",
-        input_tokens: data.usage.input_tokens ?? 0,
-        output_tokens: data.usage.output_tokens ?? 0,
-        cache_read_tokens: data.usage.cache_read_input_tokens ?? 0,
-        cache_write_tokens: data.usage.cache_creation_input_tokens ?? 0,
-        metadata: { project_id, framework: (project as any).ad_framework },
-      }).catch((e) => console.error("logAiUsage failed:", e));
-    }
+    const toolUse = { input: ai.args };
 
     const out = toolUse.input as {
       characters: any[]; hook_variants: any[]; shot_list: any[]; music_prompt: string;

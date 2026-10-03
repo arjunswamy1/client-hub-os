@@ -1,10 +1,13 @@
-// Shared Anthropic Claude client for edge functions
-// - Converts OpenAI-style messages -> Anthropic Messages API
+// Shared chat client for edge functions — runs on Lovable AI (OpenAI Responses via the gateway).
+// - Converts OpenAI-style messages -> Responses input items
 // - Supports tool calling with a built-in `generate_chart` tool that returns
 //   a QuickChart.io PNG URL Claude can reference, and that callers can
 //   surface in their UI (web chat, Slack uploads, etc.)
 
-export const ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
+import { AI_DEFAULT_MODEL, streamResponses } from "./lovable-ai.ts";
+
+/** Kept for existing callers; now the Lovable AI default model. */
+export const ANTHROPIC_DEFAULT_MODEL = AI_DEFAULT_MODEL;
 
 /**
  * Recursively sanitize strings for safe JSON transmission to Anthropic.
@@ -227,143 +230,69 @@ function buildChartUrl(input: {
 }
 
 // ─── Main entry ──────────────────────────────────────────────────────────
+// Runs on Lovable AI (Responses API). Name kept so existing callers are unchanged.
 
 export async function callAnthropic(
   messages: ChatMessage[],
   options: AnthropicCallOptions = {},
 ): Promise<AnthropicResult> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) {
-    return { ok: false, status: 500, content: "", charts: [], error: "ANTHROPIC_API_KEY is not configured" };
-  }
-
   const systemFromMessages = messages
     .filter((m) => m.role === "system")
     .map((m) => m.content)
     .filter((c) => c && c.trim().length > 0)
     .join("\n\n");
+  const instructions = [options.system, systemFromMessages].filter(Boolean).join("\n\n") || undefined;
 
-  const system = [options.system, systemFromMessages].filter(Boolean).join("\n\n") || undefined;
-
-  // Anthropic conversation must start with user; map roles & drop empties.
-  const conversation: any[] = messages
+  const input: any[] = messages
     .filter((m) => m.role === "user" || m.role === "assistant")
     .filter((m) => m.content && m.content.trim().length > 0)
-    .map((m) => ({ role: m.role, content: m.content }));
-
-  while (conversation.length > 0 && conversation[0].role !== "user") {
-    conversation.shift();
-  }
-
-  if (conversation.length === 0) {
+    .map((m) => m.role === "user"
+      ? { role: "user", content: [{ type: "input_text", text: sanitizeString(m.content) }] }
+      : { role: "assistant", content: [{ type: "output_text", text: sanitizeString(m.content) }] });
+  while (input.length > 0 && input[0].role !== "user") input.shift();
+  if (input.length === 0) {
     return { ok: false, status: 400, content: "", charts: [], error: "No user messages provided" };
   }
 
   const charts: GeneratedChart[] = [];
   const totalUsage: TokenUsage = { input_tokens: 0, output_tokens: 0 };
   const maxRounds = options.maxToolRounds ?? 3;
+  const tools = options.enableCharts
+    ? [{ type: "function", name: CHART_TOOL.name, description: CHART_TOOL.description, parameters: CHART_TOOL.input_schema, strict: false }]
+    : undefined;
+  let runId: string | undefined;
 
   for (let round = 0; round < maxRounds; round++) {
-    const body: Record<string, unknown> = {
-      model: options.model || ANTHROPIC_DEFAULT_MODEL,
-      max_tokens: options.max_tokens ?? 2048,
-      messages: conversation,
-    };
-    if (system) body.system = system;
-    if (options.temperature !== undefined) body.temperature = options.temperature;
-    if (options.enableCharts) body.tools = [CHART_TOOL];
+    const r = await streamResponses({ model: options.model, instructions, input, tools, runId });
+    runId = r.runId;
+    totalUsage.input_tokens += r.usage.input_tokens;
+    totalUsage.output_tokens += r.usage.output_tokens;
+    if (r.usage.cached_tokens) totalUsage.cache_read_input_tokens = (totalUsage.cache_read_input_tokens || 0) + r.usage.cached_tokens;
+    if (!r.ok) return { ok: false, status: r.status, content: "", charts, usage: totalUsage, error: r.error };
 
-    let res: Response;
-    try {
-      res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify(sanitizeForJson(body)),
-      });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      console.error("Anthropic fetch exception:", message);
-      return { ok: false, status: 500, content: "", charts, usage: totalUsage, error: message };
+    const calls = r.output.filter((o) => o.type === "function_call");
+    if (calls.length === 0) {
+      if (!r.text.trim()) return { ok: false, status: 502, content: "", charts, usage: totalUsage, error: "AI returned an empty answer" };
+      return { ok: true, status: 200, content: r.text, charts, usage: totalUsage };
     }
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error("Anthropic error:", res.status, errText.slice(0, 500));
-      return { ok: false, status: res.status, content: "", charts, usage: totalUsage, error: errText.slice(0, 500) };
-    }
-
-    const data = await res.json();
-    const blocks: any[] = Array.isArray(data.content) ? data.content : [];
-    const textOut = blocks.filter((b) => b.type === "text").map((b) => b.text).join("");
-    const toolUses = blocks.filter((b) => b.type === "tool_use");
-
-    // Accumulate token usage across rounds
-    if (data.usage) {
-      totalUsage.input_tokens += data.usage.input_tokens || 0;
-      totalUsage.output_tokens += data.usage.output_tokens || 0;
-      if (data.usage.cache_creation_input_tokens) {
-        totalUsage.cache_creation_input_tokens =
-          (totalUsage.cache_creation_input_tokens || 0) + data.usage.cache_creation_input_tokens;
-      }
-      if (data.usage.cache_read_input_tokens) {
-        totalUsage.cache_read_input_tokens =
-          (totalUsage.cache_read_input_tokens || 0) + data.usage.cache_read_input_tokens;
-      }
-    }
-
-    // No tool calls — we're done.
-    if (toolUses.length === 0 || data.stop_reason !== "tool_use") {
-      console.log(`[anthropic] tokens — in: ${totalUsage.input_tokens}, out: ${totalUsage.output_tokens}, rounds: ${round + 1}`);
-      return { ok: true, status: 200, content: textOut, charts, usage: totalUsage };
-    }
-
-    // Echo assistant turn back into the conversation, then add tool_results.
-    conversation.push({ role: "assistant", content: blocks });
-
-    const toolResults: any[] = [];
-    for (const tu of toolUses) {
-      if (tu.name === "generate_chart") {
+    input.push(...r.output); // keep reasoning + function_call items paired with their outputs
+    for (const c of calls) {
+      let out: string;
+      if (c.name === "generate_chart") {
         try {
-          const input = tu.input as {
-            title: string;
-            chart_type: string;
-            labels: string[];
-            datasets: { label: string; data: number[] }[];
-          };
-          const url = buildChartUrl(input);
-          charts.push({ url, title: input.title, chart_type: input.chart_type });
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: tu.id,
-            content: `Chart created. URL: ${url}. The user will see this image rendered inline — refer to it naturally (e.g. "see the chart above").`,
-          });
+          const args = JSON.parse(c.arguments || "{}");
+          const url = buildChartUrl(args);
+          charts.push({ url, title: args.title, chart_type: args.chart_type });
+          out = `Chart created. URL: ${url}. The user will see this image rendered inline — refer to it naturally (e.g. "see the chart above").`;
         } catch (e) {
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: tu.id,
-            content: `Error generating chart: ${e instanceof Error ? e.message : String(e)}`,
-            is_error: true,
-          });
+          out = `Error generating chart: ${e instanceof Error ? e.message : String(e)}`;
         }
-      } else {
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: tu.id,
-          content: `Unknown tool: ${tu.name}`,
-          is_error: true,
-        });
-      }
+      } else out = `Unknown tool: ${c.name}`;
+      input.push({ type: "function_call_output", call_id: c.call_id, output: out });
     }
-
-    conversation.push({ role: "user", content: toolResults });
   }
 
-  // Hit max rounds without final text.
-  console.log(`[anthropic] tokens — in: ${totalUsage.input_tokens}, out: ${totalUsage.output_tokens}, MAX ROUNDS`);
   return {
     ok: true,
     status: 200,

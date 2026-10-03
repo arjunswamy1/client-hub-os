@@ -108,7 +108,7 @@ export async function logAiUsage(input: AiUsageInput): Promise<void> {
 
   if (inputTokens === 0 && outputTokens === 0) return;
 
-  const service = input.model.startsWith("gpt") ? "openai" : "anthropic";
+  const service = input.model.includes("/") ? "lovable_ai" : input.model.startsWith("gpt") ? "openai" : "anthropic";
 
   const cost = await computeCost({
     service,

@@ -59,6 +59,8 @@ export interface Snapshot {
   state: DayState;
   /** Why the state is what it is, in words, for disclosure. */
   stateNote?: string;
+  /** Windows only: how many of the days were available and summed. */
+  coverage?: { days: number; of: number };
   spend: number | null;
   /** null = not captured (unknown), never zero. */
   revenue: number | null;
@@ -110,15 +112,23 @@ export function classifyDay(input: { rowCount: number; spend: number; anyActiveC
   return 'no_delivery';
 }
 
+/** A trailing-7 window is comparable when at least this many of its days are available. */
+export const MIN_WINDOW_DAYS = 5;
+
 /**
- * A 7-day window is only comparable when every day in it was recorded. A window
- * with a missing day would compare a partial total against a full one.
+ * A 7-day window sums ONLY its available days, and is comparable when at least
+ * five of them are available. Coverage is carried so the output can state it.
  */
-export function classifyWindow(days: DayState[]): { state: DayState; note?: string } {
+export function classifyWindow(days: DayState[]): { state: DayState; note?: string; availableDays: number } {
+  const available = days.filter((d) => d === 'available').length;
+  if (available >= MIN_WINDOW_DAYS) return { state: 'available', availableDays: available };
+  if (days.every((d) => d === 'no_delivery')) return { state: 'no_delivery', availableDays: 0 };
   const missing = days.filter((d) => d === 'missing').length;
-  if (missing > 0) return { state: 'missing', note: `only ${days.length - missing} of ${days.length} days recorded` };
-  if (days.every((d) => d === 'no_delivery')) return { state: 'no_delivery' };
-  return { state: 'available' };
+  const dark = days.filter((d) => d === 'no_delivery').length;
+  const parts = [`only ${available} of ${days.length} days had delivery`];
+  if (dark) parts.push(`${dark} dark`);
+  if (missing) parts.push(`${missing} with no data recorded`);
+  return { state: available === 0 && missing === days.length ? 'missing' : 'missing', note: parts.join(', '), availableDays: available };
 }
 
 // ─── derived values ────────────────────────────────────────────────────────
@@ -262,38 +272,39 @@ export function compare(
 export interface Observation { source: string; observed_at: string; spend: number | null; revenue: number | null; calls: number | null }
 
 export const REVISION_TOLERANCE = 0.02;
-export const SETTLE_HOURS = 24;
 
 /**
- * A day is provisional when, for any source, its two most recent observations
- * disagree by more than 2% on any figure, or fewer than 24 hours have passed
- * since the day closed in the account's timezone.
+ * A day is provisional only when, for some spend source the account syncs:
+ *   - its last two observations for the date disagree by more than 2%, or
+ *   - no observation of the date was recorded after the date closed in the
+ *     account's reporting timezone (nothing has looked at the finished day yet).
+ * Otherwise it is settled, and a settled day carries no disclosure at all.
+ * There is no wall-clock rule: a 9am run on a settled day is settled.
+ * `trackedSources` empty = the account's spend feeds are not revision-logged, so
+ * provisionality cannot be judged; `tracked: false` says so instead of guessing.
  */
 export function isProvisional(input: {
-  observations: Observation[]; closedAt: Date; now: Date;
-}): { provisional: boolean; reason: string | null } {
-  const hours = (input.now.getTime() - input.closedAt.getTime()) / 3_600_000;
-  if (hours < SETTLE_HOURS) {
-    return { provisional: true, reason: `closed ${Math.max(0, Math.floor(hours))}h ago — platforms are still settling` };
-  }
-  const bySource = new Map<string, Observation[]>();
-  for (const o of input.observations) {
-    if (!bySource.has(o.source)) bySource.set(o.source, []);
-    bySource.get(o.source)!.push(o);
-  }
-  for (const [source, list] of bySource) {
-    const [a, b] = list.slice().sort((x, y) => y.observed_at.localeCompare(x.observed_at));
-    if (!a || !b) continue;
+  observations: Observation[]; closedAt: Date; trackedSources: string[];
+}): { provisional: boolean; reason: string | null; tracked: boolean } {
+  if (!input.trackedSources.length) return { provisional: false, reason: null, tracked: false };
+  for (const source of input.trackedSources) {
+    const list = input.observations.filter((o) => o.source === source)
+      .sort((x, y) => y.observed_at.localeCompare(x.observed_at));
+    const [a, b] = list;
+    if (!a || new Date(a.observed_at).getTime() <= input.closedAt.getTime()) {
+      return { provisional: true, reason: `no sync has recorded ${source} for this day since it closed`, tracked: true };
+    }
+    if (!b) continue;
     for (const k of ['spend', 'revenue', 'calls'] as const) {
       const x = a[k], y = b[k];
       if (x === null || y === null) continue;
       const base = Math.max(Math.abs(x), Math.abs(y));
       if (base > 0 && Math.abs(x - y) / base > REVISION_TOLERANCE) {
-        return { provisional: true, reason: `${source} ${k} was still being revised between the last two syncs` };
+        return { provisional: true, reason: `${source} ${k} was still being revised between the last two syncs`, tracked: true };
       }
     }
   }
-  return { provisional: false, reason: null };
+  return { provisional: false, reason: null, tracked: true };
 }
 
 // ─── output ────────────────────────────────────────────────────────────────
@@ -305,7 +316,7 @@ export interface ComparisonSet {
   reliableFrom: string | null;
   day: Snapshot;
   comparisons: Comparison[];
-  provisional: { provisional: boolean; reason: string | null };
+  provisional: { provisional: boolean; reason: string | null; tracked?: boolean };
 }
 
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -322,8 +333,14 @@ const prettyShort = (iso: string) => {
 const LINE_PREFIX: Record<CompareLabel, (s: ComparisonSet, c: Comparison) => string> = {
   vs_same_weekday: (_s, c) => `vs last ${weekdayOf(c.baseline.from)}`,
   vs_prior_day: (_s, c) => `vs ${weekdayOf(c.baseline.from)}`,
-  vs_prior_week: () => '7d vs prior 7d',
+  vs_prior_week: (_s, c) => `7d vs prior 7d${coverageWords(c)}`,
 };
+
+function coverageWords(c: Comparison): string {
+  const a = c.current.coverage, b = c.baseline.coverage;
+  if (!a || !b || (a.days === a.of && b.days === b.of)) return '';
+  return a.days === b.days ? ` (${a.days} of ${a.of} days)` : ` (${a.days} and ${b.days} of ${a.of} days)`;
+}
 
 /** Which metrics a comparison line carries — the four that decide, then the rest. */
 const LINE_METRICS: MetricKey[] = ['spend', 'profit', 'calls', 'cost_per_call'];
@@ -373,19 +390,42 @@ export function renderFullComparison(set: ComparisonSet): string {
   return lines.join('\n');
 }
 
+export type DailyMode = 'same_weekday' | 'prior_day';
+const MODE_LABEL: Record<DailyMode, CompareLabel> = { same_weekday: 'vs_same_weekday', prior_day: 'vs_prior_day' };
+
 /**
- * The one delta a one-liner may carry: the same-weekday change on the most
- * material metric. Material = largest absolute percentage among metrics that
- * decide (profit and cost first), and only a real percentage qualifies.
+ * The daily update's comparison block: ONE daily comparison (the account's
+ * resolved mode), plus the trailing-7 rollup only when `weekly` is true — the
+ * client call day. The bot uses renderFullComparison (all three) instead.
  */
-export function headlineDelta(set: ComparisonSet): string | null {
-  const c = set.comparisons.find((x) => x.label === 'vs_same_weekday');
+export function renderDailyComparison(set: ComparisonSet, opts: { mode: DailyMode; weekly: boolean }): string {
+  const lines = [`${set.client} — ${prettyDay(set.forDate)}`, headlineFigures(set)];
+  const daily = set.comparisons.find((x) => x.label === MODE_LABEL[opts.mode]);
+  if (daily) lines.push(renderComparisonLine(set, daily));
+  if (opts.weekly) {
+    const w = set.comparisons.find((x) => x.label === 'vs_prior_week');
+    if (w) lines.push(renderComparisonLine(set, w));
+  }
+  const shown = set.comparisons.filter((c) => c.label === MODE_LABEL[opts.mode] || (opts.weekly && c.label === 'vs_prior_week'));
+  const d = disclosures({ ...set, comparisons: shown });
+  if (d.length) lines.push(`⚠ ${d.join(' ')}`);
+  return lines.join('\n');
+}
+
+/**
+ * The one delta a one-liner may carry: the daily-mode change on the most
+ * material metric. Material = largest absolute percentage, and only a real
+ * percentage qualifies.
+ */
+export function headlineDelta(set: ComparisonSet, mode: DailyMode = 'same_weekday'): string | null {
+  const c = set.comparisons.find((x) => x.label === MODE_LABEL[mode]);
   if (!c || c.unavailable) return null;
   const pcts = c.deltas.filter((d) => d.kind === 'pct' && d.pct !== null);
   if (!pcts.length) return null;
   const best = pcts.sort((a, b) => Math.abs(b.pct!) - Math.abs(a.pct!))[0];
   const label = LABEL[best.metric];
-  return `${label[0].toUpperCase()}${label.slice(1)} ${signed(best.pct! * 100)}% vs last ${weekdayOf(c.baseline.from)}${best.verdict ? ` (${best.verdict})` : ''}.`;
+  const vs = mode === 'same_weekday' ? `vs last ${weekdayOf(c.baseline.from)}` : `vs ${weekdayOf(c.baseline.from)}`;
+  return `${label[0].toUpperCase()}${label.slice(1)} ${signed(best.pct! * 100)}% ${vs}${best.verdict ? ` (${best.verdict})` : ''}.`;
 }
 
 /** A compact block for a model prompt: numbers are final, never recomputed. */

@@ -28,7 +28,7 @@ describe("baseline classification", () => {
   it("$0 with an active campaign row is still available", () => {
     expect(classifyDay({ rowCount: 1, spend: 0, anyActiveCampaign: true })).toBe("available");
   });
-  it("a week with a missing day is not comparable", () => {
+  it("a week with fewer than 5 available days is not comparable", () => {
     expect(classifyWindow(["available", "missing", "available"]).state).toBe("missing");
   });
 });
@@ -87,14 +87,14 @@ describe("weekend boundary", () => {
 describe("provisional D-1", () => {
   const closed = dayClosesAt("2026-10-02", "America/New_York");
   it("the day closes at local midnight", () => expect(closed.toISOString()).toBe("2026-10-03T04:00:00.000Z"));
-  it("under 24h since close is provisional", () => {
-    expect(isProvisional({ observations: [], closedAt: closed, now: new Date("2026-10-03T13:00:00Z") }).provisional).toBe(true);
+  it("no observation of the day since it closed is provisional", () => {
+    expect(isProvisional({ observations: [], closedAt: closed, trackedSources: ["roku_daily_metrics"] }).provisional).toBe(true);
   });
   it("last two observations differing by >2% is provisional; settled otherwise", () => {
-    const later = new Date("2026-10-05T13:00:00Z");
     const o = (t: string, spend: number) => ({ source: "roku_daily_metrics", observed_at: t, spend, revenue: null, calls: null });
-    expect(isProvisional({ observations: [o("2026-10-04T10:00Z", 1000), o("2026-10-05T10:00Z", 1100)], closedAt: closed, now: later }).provisional).toBe(true);
-    expect(isProvisional({ observations: [o("2026-10-04T10:00Z", 1000), o("2026-10-05T10:00Z", 1010)], closedAt: closed, now: later }).provisional).toBe(false);
+    const tr = ["roku_daily_metrics"];
+    expect(isProvisional({ observations: [o("2026-10-04T10:00Z", 1000), o("2026-10-05T10:00Z", 1100)], closedAt: closed, trackedSources: tr }).provisional).toBe(true);
+    expect(isProvisional({ observations: [o("2026-10-04T10:00Z", 1000), o("2026-10-05T10:00Z", 1010)], closedAt: closed, trackedSources: tr }).provisional).toBe(false);
   });
   it("is disclosed once without blocking the comparison", () => {
     const c = compare("vs_same_weekday", snap("2026-10-02"), snap("2026-09-25", { spend: 900 }), PM);

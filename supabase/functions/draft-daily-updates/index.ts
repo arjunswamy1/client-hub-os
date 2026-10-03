@@ -255,6 +255,9 @@ async function draftWithModel(facts: string, style: { guidance: string; example_
     'NEVER WRITE:',
     '- Any name of a system we read data from (CallGrid, Moja, Ringba, RingFuel, Roku reports, etc.).',
     '- Any admission about our own data or tooling. Those go in a separate internal note.',
+    '- "How are these calls converting into sales or buyer revenue?" or any variant of it. It has been asked every day and no longer gets answers.',
+    '- A plan sentence with no decision in it ("we will review…", "we will monitor…"). If nothing needs doing, say so in four words.',
+    '- If a client question is waiting, the update exists to answer it: restate the question in a few words and give the answer from the numbers, or say plainly that the answer is coming and from whom.',
   ].join('\n');
 
   const result = streamText({

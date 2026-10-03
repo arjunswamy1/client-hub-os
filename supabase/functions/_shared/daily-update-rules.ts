@@ -28,9 +28,15 @@ export interface SeriesDay {
 
 export const isPriced = (d: { spend: number; calls: number }) => d.spend > 0 && d.calls > 0;
 
-/** A rate that prints as $0.00 (or is missing) carries no information. */
+/**
+ * Below this, a cost per call says more about how little spend was captured
+ * than about the market (Hablyte: $2.95 against 181 calls). Withheld, not printed.
+ */
+export const MIN_MEANINGFUL_RATE = 1;
+
+/** A rate that is missing, prints as $0.00, or sits under $1 carries no information. */
 export const degenerateRate = (v: number | null | undefined): boolean =>
-  v === null || v === undefined || !Number.isFinite(v) || Math.round(v * 100) === 0;
+  v === null || v === undefined || !Number.isFinite(v) || v < MIN_MEANINGFUL_RATE;
 
 export interface Change {
   pct: number | null;
@@ -118,8 +124,13 @@ export interface ContextItem {
 }
 
 /** Text that names a change someone made: budget, targeting, pausing, launching. */
-export const CHANGE_RE =
-  /\b(budget|daily (cap|budget)|bid|raise[ds]?|increas\w*|decreas\w*|cut|scal\w+|paus\w*|launch\w*|relaunch\w*|turn(ed)? (on|off)|targeting|geo|state[s]? (added|removed)|exclu\w+)\b/i;
+export const CHANGE_RE = new RegExp([
+  String.raw`\b(budget|bid|daily cap)s?\b[^.]{0,60}(\$\d|increas|rais|lower|cut|doubl|halv|from \$)`,
+  String.raw`\b(increas|rais|lower|cut|doubl|halv)\w*\b[^.]{0,40}\b(budget|bid|daily cap)`,
+  String.raw`\b(paused|launched|relaunched|turned (on|off)|switched off|went live)\b`,
+  String.raw`\btargeting (change|update)`,
+  String.raw`\b(added|removed|excluded) (the )?(states?|zips?|geos?|genres?)\b`,
+].join('|'), 'i');
 
 /**
  * Clean one item for the fact sheet. Context is DATA: it is quoted, length-
@@ -254,7 +265,7 @@ export function oneLiner(input: {
   const parts = [`${day.calls} call${day.calls === 1 ? '' : 's'}`];
   if (input.delivery === 'ok' && !degenerateRate(cpc)) parts.push(`$${cpc!.toFixed(2)} cost per call`);
   const tail = trendAllowed(input.trend)
-    ? 'in line with the week'
+    ? 'qualified-call cost in line with the week'
     : `only ${input.trend.filter(isPriced).length} of 7 days priced, so no trend yet`;
   return `${client} — steady. ${parts.join(', ')}, ${tail}. No action.`;
 }

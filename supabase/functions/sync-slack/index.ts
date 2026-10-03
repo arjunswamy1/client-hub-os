@@ -634,7 +634,7 @@ Deno.serve(async (req) => {
       }
 
       return jsonResp({
-        synced: totalSynced,
+        synced: totalSynced, own_bot_messages_skipped: ownBotSkipped,
         thread_polls: threadPolls,
         tasks_created: 0,
         candidates_created: candidatesCreated,

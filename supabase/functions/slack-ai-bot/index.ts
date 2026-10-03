@@ -702,7 +702,11 @@ async function composeAnswer(args: {
     // daily update uses, anchored on the last day of the asked window.
     if (/\b(vs\.?|versus|compar\w*|than|week over week|day over day|last (week|friday|monday|tuesday|wednesday|thursday|saturday|sunday)|prior|previous)\b/i.test(args.question)) {
       try {
-        const set = await buildComparisonSet(supabase, resolution.client, dateRange.to);
+        // Today is never reported on: anchor on the last complete day.
+        const anchor = dateRange.to >= dateRange.userToday
+          ? new Date(new Date(`${dateRange.userToday}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10)
+          : dateRange.to;
+        const set = await buildComparisonSet(supabase, resolution.client, anchor);
         supportingBlock = `${supportingBlock}\n\n${comparisonPromptBlock(set)}`;
       } catch (e) {
         console.warn('comparison unavailable:', e);

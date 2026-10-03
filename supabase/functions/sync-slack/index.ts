@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
+import { ownBotIdentity } from '../_shared/slack-identity.ts';
+import { isOwnBotMessage } from '../_shared/daily-update-rules.ts';
 import { getValidBotToken } from "../_shared/slack-token.ts";
 import { classifyMessage } from "../_shared/slack-message-class.ts";
 import type { MessageClass } from "../_shared/slack-message-class.ts";
@@ -226,6 +228,8 @@ Deno.serve(async (req) => {
         (teamMembers || []).map((tm: any) => (tm.email || '').toLowerCase()).filter(Boolean)
       );
 
+      const ownBot = await ownBotIdentity(slackToken);
+      let ownBotSkipped = 0;
       let totalSynced = 0;
       let candidatesCreated = 0;
 
@@ -250,7 +254,11 @@ Deno.serve(async (req) => {
         const seenTs = new Set<string>();
 
         const addPending = (msg: any, isThreadReply: boolean) => {
-          if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave' || msg.subtype === 'bot_message') return;
+          if (msg.subtype === 'channel_join' || msg.subtype === 'channel_leave') return;
+          // Our own posts (digests, daily drafts, DMs) must never come back in
+          // as context. Bot-token posts carry no 'bot_message' subtype, which is
+          // how 36 drafts got in — so we also match our bot user, bot and app ids.
+          if (isOwnBotMessage(msg, ownBot)) { ownBotSkipped++; return; }
           if (!msg.text || msg.text.trim() === '') return;
           if (seenTs.has(msg.ts)) return;
           seenTs.add(msg.ts);

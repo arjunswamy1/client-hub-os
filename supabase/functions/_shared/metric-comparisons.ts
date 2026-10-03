@@ -128,7 +128,7 @@ export function classifyWindow(days: DayState[]): { state: DayState; note?: stri
   const parts = [`only ${available} of ${days.length} days had delivery`];
   if (dark) parts.push(`${dark} dark`);
   if (missing) parts.push(`${missing} with no data recorded`);
-  return { state: available === 0 && missing === days.length ? 'missing' : 'missing', note: parts.join(', '), availableDays: available };
+  return { state: 'missing', note: parts.join(', '), availableDays: available };
 }
 
 // ─── derived values ────────────────────────────────────────────────────────
@@ -182,7 +182,10 @@ function verdictFor(p: Polarity, change: number): 'better' | 'worse' | null {
 /** Render "was dark" / "no data recorded" — never a number, never a percentage. */
 export function stateWords(s: Snapshot): string {
   if (s.state === 'no_delivery') return 'was dark';
-  if (s.state === 'missing') return s.stateNote ? `no data recorded (${s.stateNote})` : 'no data recorded';
+  if (s.state === 'missing') {
+    if (!s.stateNote) return 'no data recorded';
+    return s.stateNote.startsWith('only ') ? s.stateNote : `no data recorded (${s.stateNote})`;
+  }
   return 'available';
 }
 

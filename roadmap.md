@@ -15,4 +15,4 @@
 - [x] Weekday 8:30am ET schedule ahead of the 9am drafts.
 - [x] Dry run validated against AJ's hand-run; nothing filed.
 
-- [ ] Run brief-notifications retry on the 5 queued designer_assigned DMs once BRIEF_DM_LIVE=true and im:write is granted
+- [x] Brief DM retry run live (Lou delivered; 4 Iwinosa rows were already marked stale by AJ)

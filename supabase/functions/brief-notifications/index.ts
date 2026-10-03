@@ -10,8 +10,8 @@
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { z } from 'npm:zod@3';
-import { admin, deliverForBrief, deliverNotification, liveSendingEnabled, updateDesignerMessage } from '../_shared/brief-notify.ts';
-import { designerAssignedBlocks, designerAssignedText, retryDue } from '../_shared/brief-messages.ts';
+import { admin, sweepSuperseded, deliverForBrief, deliverNotification, liveSendingEnabled, updateDesignerMessage } from '../_shared/brief-notify.ts';
+import { designerAssignedBlocks, designerAssignedText, retryDue, RETRY_STATUSES } from '../_shared/brief-messages.ts';
 import { postDirectMessage } from '../_shared/slack-post.ts';
 
 const json = (body: unknown, status = 200) =>
@@ -76,9 +76,10 @@ Deno.serve(async (req) => {
   // retry
   if (!isAdmin) return json({ error: 'Admins only' }, 403);
   const { data: rows } = await db.from('brief_notifications').select('*')
-    .in('status', ['pending', 'failed']).lt('attempts', 5).order('created_at').limit(100);
+    .in('status', [...RETRY_STATUSES]).lt('attempts', 5).order('created_at').limit(100);
   const due = (rows ?? []).filter((r: any) => retryDue(r.attempts, r.updated_at));
   const results = [];
   for (const r of due) results.push(await deliverNotification(db, r, { dryRun }));
-  return json({ live_sending: live, dry_run: dryRun, eligible: rows?.length ?? 0, due: due.length, results });
+  const superseded = await sweepSuperseded(db, { dryRun });
+  return json({ live_sending: live, dry_run: dryRun, eligible: rows?.length ?? 0, due: due.length, results, superseded });
 });

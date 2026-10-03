@@ -1,2 +1,3 @@
 - Slack DMs go only through `postDirectMessage()` in `_shared/slack-post.ts` (user ids only, internal team members only); channel posts only through `postToSlack()`. Why: DMs cannot enter the channel allowlist without weakening it.
 - Brief acceptance is the single `accept_creative_brief_as` SQL function (tracker calls `accept_creative_brief`); brief notifications are queued by the database before any Slack call and deduped on `dedupe_key`. Why: exactly-once owner/designer notifications across both paths.
+- Brief decline is the single `decline_creative_brief_as` SQL function; it never changes status or assignee, and the creative lead is resolved from `team_members.is_creative_lead`. Why: one atomic authorisation path and no silent orphaning.

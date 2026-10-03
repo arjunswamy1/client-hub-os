@@ -2796,6 +2796,8 @@ export type Database = {
           external_dashboard_url: string | null
           id: string
           logo_url: string | null
+          metrics_reliable_from: string | null
+          metrics_reliable_note: string | null
           name: string
           reporting_timezone: string | null
           revenue_field: string | null
@@ -2819,6 +2821,8 @@ export type Database = {
           external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
+          metrics_reliable_from?: string | null
+          metrics_reliable_note?: string | null
           name: string
           reporting_timezone?: string | null
           revenue_field?: string | null
@@ -2842,6 +2846,8 @@ export type Database = {
           external_dashboard_url?: string | null
           id?: string
           logo_url?: string | null
+          metrics_reliable_from?: string | null
+          metrics_reliable_note?: string | null
           name?: string
           reporting_timezone?: string | null
           revenue_field?: string | null
@@ -5256,6 +5262,47 @@ export type Database = {
             columns: ["trafficking_campaign_id"]
             isOneToOne: false
             referencedRelation: "trafficking_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      metric_revision_log: {
+        Row: {
+          calls: number | null
+          client_id: string
+          id: string
+          metric_date: string
+          observed_at: string
+          revenue: number | null
+          source: string
+          spend: number | null
+        }
+        Insert: {
+          calls?: number | null
+          client_id: string
+          id?: string
+          metric_date: string
+          observed_at?: string
+          revenue?: number | null
+          source: string
+          spend?: number | null
+        }
+        Update: {
+          calls?: number | null
+          client_id?: string
+          id?: string
+          metric_date?: string
+          observed_at?: string
+          revenue?: number | null
+          source?: string
+          spend?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metric_revision_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]

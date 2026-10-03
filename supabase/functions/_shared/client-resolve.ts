@@ -23,6 +23,8 @@ export interface ResolvedClientRow {
   campaign_spend_source_tables?: string[] | null;
   /** Timezone the platform cuts this account's reporting day on. Null = UTC, as stored. */
   reporting_timezone?: string | null;
+  /** First date revenue capture can be trusted. Null = all history reliable. */
+  metrics_reliable_from?: string | null;
 }
 
 export interface ClientResolution {
@@ -36,7 +38,7 @@ export interface ClientResolution {
 export async function loadActiveClients(supabase: any): Promise<ResolvedClientRow[]> {
   const { data } = await supabase
     .from('clients')
-    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone')
+    .select('id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from')
     .eq('status', 'active')
     .order('name');
   return (data || []) as ResolvedClientRow[];

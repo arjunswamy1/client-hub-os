@@ -19,6 +19,8 @@ import { handleKillReaction, captureKillComment, isKillReaction } from "../_shar
 import { handleDigestReaction, captureDigestReply, ackKindForReaction } from "../_shared/task-digest-ack.ts";
 import { resolveClient, loadActiveClients, type ResolvedClientRow } from "../_shared/client-resolve.ts";
 import { computeClientMetrics, buildCaptureSafeSummary, type ClientMetrics } from "../_shared/client-metrics.ts";
+import { buildComparisonSet } from "../_shared/metric-comparison-data.ts";
+import { comparisonPromptBlock } from "../_shared/metric-comparisons.ts";
 import { computeClientBreakdown } from "../_shared/client-breakdown.ts";
 import { runReadOnlySql } from "../_shared/bot-sql.ts";
 import { isDuplicateDelivery, checkThrottle, logQa, resolveTeamMember } from "../_shared/bot-guard.ts";
@@ -696,6 +698,20 @@ async function composeAnswer(args: {
       ? b.promptBlock
       : `--- BREAKDOWN ---\n${b.notes.join(' ')}\n--- END BREAKDOWN ---`;
     supportingBlock = s;
+    // "versus last week / yesterday / last Friday" — the same comparison code the
+    // daily update uses, anchored on the last day of the asked window.
+    if (/\b(vs\.?|versus|compar\w*|than|week over week|day over day|last (week|friday|monday|tuesday|wednesday|thursday|saturday|sunday)|prior|previous)\b/i.test(args.question)) {
+      try {
+        // Today is never reported on: anchor on the last complete day.
+        const anchor = dateRange.to >= dateRange.userToday
+          ? new Date(new Date(`${dateRange.userToday}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10)
+          : dateRange.to;
+        const set = await buildComparisonSet(supabase, resolution.client, anchor);
+        supportingBlock = `${supportingBlock}\n\n${comparisonPromptBlock(set)}`;
+      } catch (e) {
+        console.warn('comparison unavailable:', e);
+      }
+    }
   }
 
   const roster = await loadRoster();

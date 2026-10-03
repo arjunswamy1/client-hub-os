@@ -1,3 +1,4 @@
+import { recordSpendObservations } from "../_shared/metric-revision-log.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { uaFetch, pickNum, pickStr } from "../_shared/universal-ads.ts";
@@ -142,6 +143,7 @@ Deno.serve(async (req) => {
         .from("cannaball_spend")
         .upsert(finalRows, { onConflict: "client_id,date,platform,campaign_name,creative_name" });
       if (error) throw error;
+      await recordSpendObservations(admin, clientId, "cannaball_spend", finalRows.map((r: any) => r.date));
     }
 
     return json({

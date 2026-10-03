@@ -29,6 +29,13 @@
       "when": 1791059820165,
       "tag": "0003_nb_knowledge_search_column",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791063762818,
+      "tag": "0004_metric_revision_log",
+      "breakpoints": true
     }
   ]
 }

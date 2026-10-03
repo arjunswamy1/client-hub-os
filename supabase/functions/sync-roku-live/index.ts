@@ -1,3 +1,4 @@
+import { recordSpendObservations } from "../_shared/metric-revision-log.ts";
 // Near-real-time Roku spend/impressions via the SYNCHRONOUS metrics endpoints:
 //   GET /developer/metrics/fields  -> available field parameters
 //   GET /developer/metrics         -> immediate data (no async report job)
@@ -332,6 +333,9 @@ Deno.serve(async (req) => {
         .from("roku_daily_metrics")
         .upsert(metricRows, { onConflict: "client_id,account_uid,entity,entity_uid,date" });
       if (error) throw error;
+      if (entity === "campaign") {
+        await recordSpendObservations(admin, clientId, "roku_daily_metrics", metricRows.map((r) => r.date));
+      }
     }
 
     // 2) Daily delivery roll-up by station — never clobber client-sheet rows.
@@ -403,6 +407,7 @@ Deno.serve(async (req) => {
           .upsert(spendRows, { onConflict: "client_id,date,platform,campaign_name,creative_name" });
         if (error) throw error;
         cannaballWritten = spendRows.length;
+        await recordSpendObservations(admin, clientId, "cannaball_spend", spendRows.map((r: any) => r.date));
       }
     }
 

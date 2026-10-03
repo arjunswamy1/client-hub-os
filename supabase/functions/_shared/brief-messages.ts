@@ -1,8 +1,19 @@
 // Pure message builders for brief assignment / acceptance DMs. No Deno or
 // network imports so the unit tests can exercise them directly.
 
-export const HUB_URL = 'https://hub.connectpaidmedia.com';
-export const briefUrl = (briefId: string) => `${HUB_URL}/creative?brief=${briefId}`;
+// The public hub origin comes from the HUB_PUBLIC_URL secret; the current domain is the fallback.
+export const DEFAULT_HUB_URL = 'https://hub.connectpaidmedia.com';
+export function hubUrl(): string {
+  let v: string | undefined;
+  try { v = (globalThis as any).Deno?.env?.get('HUB_PUBLIC_URL'); } catch { /* no env access */ }
+  if (!v) v = (globalThis as any).process?.env?.HUB_PUBLIC_URL;
+  const s = (v || '').trim().replace(/\/+$/, '');
+  return /^https:\/\/[^\s/]+/.test(s) ? s : DEFAULT_HUB_URL;
+}
+export const briefUrl = (briefId: string) => `${hubUrl()}/creative?brief=${briefId}`;
+
+/** Statuses the retry path picks up. 'stale' (correctly withheld) and 'sent' are never retried. */
+export const RETRY_STATUSES = ['pending', 'failed'] as const;
 
 export interface BriefForMessage {
   id: string;
@@ -54,6 +65,7 @@ export function designerAssignedBlocks(b: BriefForMessage): unknown[] {
       block_id: `brief_${b.id}`,
       elements: [
         { type: 'button', action_id: 'accept_brief', style: 'primary', value: b.id, text: { type: 'plain_text', text: 'Accept Brief' } },
+        { type: 'button', action_id: 'decline_brief', style: 'danger', value: b.id, text: { type: 'plain_text', text: 'Decline' } },
         viewButton(b.id),
       ],
     },
@@ -75,6 +87,58 @@ export function designerAcceptedBlocks(b: BriefForMessage, acceptedAtIso: string
   ];
 }
 
+/** Replaces a previous designer's DM after reassignment — Accept/Decline removed. */
+export function designerReassignedText(b: BriefForMessage, newAssignee: string | null | undefined): string {
+  const who = clean(newAssignee);
+  return `Creative brief reassigned: ${clean(b.title) ?? 'Untitled brief'}\n` +
+    (who ? `This brief is now assigned to ${who}. No action needed from you.` : 'This brief is no longer assigned to you. No action needed from you.');
+}
+export function designerReassignedBlocks(b: BriefForMessage, newAssignee: string | null | undefined): unknown[] {
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text: designerReassignedText(b, newAssignee) } },
+    { type: 'actions', block_id: `brief_${b.id}`, elements: [viewButton(b.id)] },
+  ];
+}
+
+/** Replaces the designer's DM after they decline — both action buttons removed. */
+export function designerDeclinedBlocks(b: BriefForMessage, declinedAtIso: string): unknown[] {
+  const text = `${designerAssignedText(b)}\n\n:no_entry_sign: You declined this brief at ${formatAcceptedAt(declinedAtIso)}. The owner and creative lead have been asked to reassign it.`;
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    { type: 'actions', block_id: `brief_${b.id}`, elements: [viewButton(b.id)] },
+  ];
+}
+
+export function declinedNotifyText(designer: string | null | undefined, title: string, declinedAtIso: string): string {
+  return `${clean(designer) ?? 'The assigned designer'} declined the brief: ${clean(title) ?? 'Untitled brief'}\n` +
+    `Declined at ${formatAcceptedAt(declinedAtIso)}. It is still assigned to them and still submitted — it needs reassigning.`;
+}
+export function declinedNotifyBlocks(briefId: string, designer: string | null | undefined, title: string, declinedAtIso: string): unknown[] {
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text: declinedNotifyText(designer, title, declinedAtIso) } },
+    { type: 'actions', block_id: `brief_${briefId}`, elements: [viewButton(briefId)] },
+  ];
+}
+
+/**
+ * The reply to the person who clicked. Never gated by BRIEF_DM_LIVE: it answers their own action.
+ * Returns '' only for a live success, where the rewritten DM itself is the confirmation.
+ */
+export function clickReplyText(r: AcceptResult, live: boolean): string {
+  if (r.outcome === 'accepted') {
+    return live ? '' : 'Test mode: your acceptance was recorded in the hub, but Slack notifications are switched off, so this message was not updated and the brief owner has not been messaged yet.';
+  }
+  if (r.outcome === 'declined') {
+    return live ? '' : 'Test mode: your decline was recorded in the hub, but Slack notifications are switched off, so this message was not updated and the owner and creative lead have not been messaged yet.';
+  }
+  return refusalText(r);
+}
+
+/** Options for the click reply. dryRun is always false — this is the regression guard. */
+export function interactionReplyOptions(userId: string, responseUrl: string, text: string) {
+  return { kind: 'interaction_reply' as const, userId, responseUrl, text, dryRun: false };
+}
+
 export function ownerAcceptedText(designer: string, title: string, acceptedAtIso: string): string {
   return `${clean(designer) ?? 'Your designer'} has accepted your brief: ${clean(title) ?? 'Untitled brief'}\nAccepted at ${formatAcceptedAt(acceptedAtIso)}`;
 }
@@ -87,7 +151,7 @@ export function ownerAcceptedBlocks(briefId: string, designer: string, title: st
 }
 
 export type AcceptOutcome =
-  | 'accepted' | 'rejected_not_assignee' | 'rejected_not_submitted'
+  | 'accepted' | 'declined' | 'duplicate_decline' | 'rejected_not_assignee' | 'rejected_not_submitted'
   | 'rejected_already_accepted' | 'rejected_unknown_actor' | 'duplicate_retry' | 'error';
 
 export interface AcceptResult {
@@ -127,6 +191,8 @@ export function refusalText(r: AcceptResult): string {
       return r.status
         ? `This brief is ${STATUS_WORDS[r.status] ?? r.status.replace(/_/g, ' ')}, so it can no longer be accepted.`
         : 'This brief is no longer available to accept.';
+    case 'duplicate_decline':
+      return "You've already declined this brief. The owner and creative lead have been asked to reassign it.";
     case 'duplicate_retry':
       return 'Already handled.';
     case 'error':

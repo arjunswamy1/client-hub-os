@@ -11,7 +11,8 @@ import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { postDirectMessage } from './slack-post.ts';
 import {
   designerAssignedBlocks, designerAssignedText, designerAcceptedBlocks,
-  ownerAcceptedBlocks, ownerAcceptedText,
+  ownerAcceptedBlocks, ownerAcceptedText, designerReassignedBlocks, designerReassignedText,
+  designerDeclinedBlocks, declinedNotifyBlocks, declinedNotifyText, RETRY_STATUSES,
 } from './brief-messages.ts';
 
 export const admin = () =>
@@ -24,7 +25,8 @@ async function loadBrief(db: SupabaseClient, briefId: string) {
     .from('creative_briefs')
     .select(`id, title, due_date, priority, status, assigned_to_id, accepted_at, accepted_by_id, deleted_at,
       owner:team_members!creative_briefs_created_by_id_fkey(name),
-      accepted_by:team_members!creative_briefs_accepted_by_id_fkey(name)`)
+      accepted_by:team_members!creative_briefs_accepted_by_id_fkey(name),
+      assigned:team_members!creative_briefs_assigned_to_id_fkey(name)`)
     .eq('id', briefId)
     .maybeSingle();
   if (error) throw new Error(`brief lookup failed: ${error.message}`);
@@ -42,7 +44,7 @@ export interface DeliveryReport {
 
 export async function deliverNotification(db: SupabaseClient, row: any, opts: { dryRun: boolean }): Promise<DeliveryReport> {
   const base = { notification_id: row.id, kind: row.kind, dedupe_key: row.dedupe_key };
-  if (row.status === 'sent' || row.status === 'skipped_no_slack_mapping') return { ...base, result: 'skipped' };
+  if (row.status === 'sent' || row.status === 'stale' || row.status === 'skipped_no_slack_mapping') return { ...base, result: 'skipped' };
 
   const brief = await loadBrief(db, row.brief_id);
   if (!brief || brief.deleted_at) return markStale(db, row, 'brief deleted');
@@ -56,6 +58,15 @@ export async function deliverNotification(db: SupabaseClient, row: any, opts: { 
     const m = { id: brief.id, title: brief.title, owner_name: brief.owner?.name, due_date: brief.due_date, priority: brief.priority };
     text = designerAssignedText(m);
     blocks = designerAssignedBlocks(m);
+  } else if (row.kind === 'designer_declined') {
+    // dedupe_key = brief:<id>:designer_declined:<assignee_id>[:creative_lead:<id>]
+    const decliner = String(row.dedupe_key).split(':')[3];
+    if (brief.accepted_at || brief.status !== 'submitted' || brief.assigned_to_id !== decliner) {
+      return markStale(db, row, 'stale: brief already reassigned, accepted or moved on');
+    }
+    const { data: d } = await db.from('team_members').select('name').eq('id', decliner).maybeSingle();
+    text = declinedNotifyText(d?.name, brief.title, row.created_at);
+    blocks = declinedNotifyBlocks(brief.id, d?.name, brief.title, row.created_at);
   } else {
     if (!brief.accepted_at) return markStale(db, row, 'stale: brief not accepted');
     text = ownerAcceptedText(brief.accepted_by?.name, brief.title, brief.accepted_at);
@@ -81,10 +92,10 @@ export async function deliverNotification(db: SupabaseClient, row: any, opts: { 
   return { ...base, result: 'failed', error: err };
 }
 
-async function markStale(db: SupabaseClient, row: any, why: string): Promise<DeliveryReport> {
-  // attempts=5 takes it out of the retry set; status stays within the allowed values.
+/** A notification correctly withheld is not a failure: status 'stale', attempts untouched. */
+export async function markStale(db: SupabaseClient, row: any, why: string): Promise<DeliveryReport> {
   await db.from('brief_notifications').update({
-    status: 'failed', attempts: 5, last_error: `not sent — ${why}`, updated_at: new Date().toISOString(),
+    status: 'stale', last_error: `not sent — ${why}`, updated_at: new Date().toISOString(),
   }).eq('id', row.id);
   return { notification_id: row.id, kind: row.kind, dedupe_key: row.dedupe_key, result: 'stale_not_sent', error: why };
 }
@@ -92,8 +103,8 @@ async function markStale(db: SupabaseClient, row: any, why: string): Promise<Del
 /** Deliver every pending/failed row for one brief (called after submit / accept). */
 export async function deliverForBrief(db: SupabaseClient, briefId: string, opts: { dryRun: boolean }) {
   const { data: rows } = await db.from('brief_notifications').select('*')
-    .eq('brief_id', briefId).in('status', ['pending', 'failed']).lt('attempts', 5);
-  const out: DeliveryReport[] = [];
+    .eq('brief_id', briefId).in('status', [...RETRY_STATUSES]).lt('attempts', 5);
+  const out: any[] = await rewriteSupersededDesignerMessages(db, briefId, opts);
   for (const row of rows ?? []) out.push(await deliverNotification(db, row, opts));
   return out;
 }
@@ -109,6 +120,67 @@ export async function updateDesignerMessage(db: SupabaseClient, briefId: string,
   const res = await postDirectMessage({
     kind: 'update', userId: row.recipient_slack_user_id, channel: row.slack_channel_id, ts: row.slack_ts,
     text: `${designerAssignedText(m)}\n\nAccepted.`, blocks: designerAcceptedBlocks(m, brief.accepted_at), dryRun: opts.dryRun,
+  });
+  return { updated: res.ok && !opts.dryRun, ...res };
+}
+
+/**
+ * After a reassignment: any delivered designer_assigned DM whose recipient is no longer the
+ * assignee is rewritten (Accept/Decline removed, "reassigned to X") and marked stale.
+ * Undelivered rows for the old assignee are marked stale by deliverNotification and never sent.
+ */
+export async function rewriteSupersededDesignerMessages(db: SupabaseClient, briefId: string, opts: { dryRun: boolean }) {
+  const brief = await loadBrief(db, briefId);
+  if (!brief) return [];
+  const { data: rows } = await db.from('brief_notifications').select('*')
+    .eq('brief_id', briefId).eq('kind', 'designer_assigned').eq('status', 'sent');
+  const out: any[] = [];
+  for (const row of rows ?? []) {
+    if (row.recipient_team_member_id === brief.assigned_to_id) continue;
+    if (row.recipient_team_member_id === brief.accepted_by_id) continue;
+    const m = { id: brief.id, title: brief.title, owner_name: brief.owner?.name, due_date: brief.due_date, priority: brief.priority };
+    const newName = brief.assigned?.name ?? null;
+    if (!row.slack_channel_id || !row.slack_ts) {
+      await markStale(db, row, 'superseded by reassignment; no delivered message');
+      out.push({ notification_id: row.id, kind: 'reassigned_rewrite', result: 'stale_not_sent' });
+      continue;
+    }
+    const res = await postDirectMessage({
+      kind: 'update', userId: row.recipient_slack_user_id, channel: row.slack_channel_id, ts: row.slack_ts,
+      text: designerReassignedText(m, newName), blocks: designerReassignedBlocks(m, newName), dryRun: opts.dryRun,
+    });
+    if (opts.dryRun) { out.push({ notification_id: row.id, kind: 'reassigned_rewrite', result: 'dry_run', would_call: res.wouldCall }); continue; }
+    if (res.ok) {
+      await markStale(db, row, `reassigned to ${newName ?? 'nobody'}; original DM rewritten`);
+      out.push({ notification_id: row.id, kind: 'reassigned_rewrite', result: 'sent' });
+    } else {
+      // Row stays 'sent' so the next sweep tries the rewrite again.
+      out.push({ notification_id: row.id, kind: 'reassigned_rewrite', result: 'failed', error: res.reason || res.error });
+    }
+  }
+  return out;
+}
+
+/** Sweep every brief with a delivered designer DM that may now be superseded. */
+export async function sweepSuperseded(db: SupabaseClient, opts: { dryRun: boolean }) {
+  const { data } = await db.from('brief_notifications').select('brief_id')
+    .eq('kind', 'designer_assigned').eq('status', 'sent').limit(500);
+  const ids = [...new Set((data ?? []).map((r: any) => r.brief_id))];
+  const out: any[] = [];
+  for (const id of ids) out.push(...await rewriteSupersededDesignerMessages(db, id, opts));
+  return out;
+}
+
+/** After a decline: rewrite the decliner's DM with both buttons removed. */
+export async function markDesignerMessageDeclined(db: SupabaseClient, briefId: string, actorId: string, declinedAtIso: string, opts: { dryRun: boolean }) {
+  const brief = await loadBrief(db, briefId);
+  const { data: row } = await db.from('brief_notifications').select('*')
+    .eq('dedupe_key', `brief:${briefId}:designer_assigned:${actorId}`).maybeSingle();
+  if (!brief || !row?.slack_channel_id || !row?.slack_ts) return { updated: false, reason: 'no delivered designer message to update' };
+  const m = { id: brief.id, title: brief.title, owner_name: brief.owner?.name, due_date: brief.due_date, priority: brief.priority };
+  const res = await postDirectMessage({
+    kind: 'update', userId: row.recipient_slack_user_id, channel: row.slack_channel_id, ts: row.slack_ts,
+    text: `${designerAssignedText(m)}\n\nDeclined.`, blocks: designerDeclinedBlocks(m, declinedAtIso), dryRun: opts.dryRun,
   });
   return { updated: res.ok && !opts.dryRun, ...res };
 }

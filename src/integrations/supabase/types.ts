@@ -7665,6 +7665,7 @@ export type Database = {
           email: string
           id: string
           is_active: boolean
+          is_creative_lead: boolean
           name: string
           role: string
           slack_user_id: string | null
@@ -7678,6 +7679,7 @@ export type Database = {
           email: string
           id?: string
           is_active?: boolean
+          is_creative_lead?: boolean
           name: string
           role: string
           slack_user_id?: string | null
@@ -7691,6 +7693,7 @@ export type Database = {
           email?: string
           id?: string
           is_active?: boolean
+          is_creative_lead?: boolean
           name?: string
           role?: string
           slack_user_id?: string | null
@@ -8442,6 +8445,10 @@ export type Database = {
           p_unit: string
         }
         Returns: number
+      }
+      decline_creative_brief_as: {
+        Args: { p_actor: string; p_brief_id: string }
+        Returns: Json
       }
       delete_email: {
         Args: { message_id: number; queue_name: string }

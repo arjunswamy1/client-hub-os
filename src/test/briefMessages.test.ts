@@ -20,7 +20,7 @@ describe("designer DM", () => {
   it("has Accept (action) and View (url) buttons", () => {
     const actions: any = designerAssignedBlocks(brief)[1];
     expect(actions.elements[0]).toMatchObject({ action_id: "accept_brief", value: brief.id });
-    expect(actions.elements[1]).toMatchObject({ action_id: "view_brief", url: briefUrl(brief.id) });
+    expect(actions.elements[2]).toMatchObject({ action_id: "view_brief", url: briefUrl(brief.id) });
   });
   it("the accepted rewrite removes the Accept button and keeps View", () => {
     const actions: any = designerAcceptedBlocks(brief, "2026-10-02T14:05:00Z")[1];
@@ -52,5 +52,90 @@ describe("retry backoff", () => {
     expect(retryDue(1, "2026-10-02T11:58:00Z", now)).toBe(true);
     expect(retryDue(3, "2026-10-02T11:53:00Z", now)).toBe(false);
     expect(retryDue(5, "2026-01-01T00:00:00Z", now)).toBe(false);
+  });
+});
+
+import { readFileSync } from "node:fs";
+import {
+  clickReplyText, interactionReplyOptions, designerReassignedBlocks, designerReassignedText,
+  designerDeclinedBlocks, declinedNotifyText, RETRY_STATUSES, hubUrl, DEFAULT_HUB_URL,
+} from "../../supabase/functions/_shared/brief-messages";
+
+const src = (p: string) => readFileSync(p, "utf8");
+
+describe("click replies are never gated by BRIEF_DM_LIVE (regression)", () => {
+  it("reply options always have dryRun false", () => {
+    expect(interactionReplyOptions("U1", "https://hooks.slack.com/actions/x", "hi").dryRun).toBe(false);
+  });
+  it("live off: accept and decline still produce a test-mode reply, never empty", () => {
+    expect(clickReplyText({ outcome: "accepted" }, false)).toMatch(/^Test mode:/);
+    expect(clickReplyText({ outcome: "declined" }, false)).toMatch(/^Test mode:/);
+    expect(clickReplyText({ outcome: "rejected_not_assignee", current_assignee: "Lou" }, false)).toMatch(/assigned to Lou/);
+  });
+  it("slack-interactions sends the reply through interactionReplyOptions, not the dryRun flag", () => {
+    const s = src("supabase/functions/slack-interactions/index.ts");
+    expect(s).toMatch(/postDirectMessage\(interactionReplyOptions\(/);
+    expect(s).not.toMatch(/kind:\s*'interaction_reply'[^)]*dryRun/);
+    expect(s).toMatch(/outcome: 'processing'/);
+    expect(s).not.toMatch(/detail: 'processing'/);
+  });
+});
+
+describe("stale is not failure", () => {
+  const s = src("supabase/functions/_shared/brief-notify.ts");
+  it("markStale writes 'stale' and does not touch attempts", () => {
+    const body = s.slice(s.indexOf("export async function markStale"), s.indexOf("/** Deliver every"));
+    expect(body).toMatch(/status: 'stale'/);
+    expect(body).not.toMatch(/attempts/);
+  });
+  it("retry statuses exclude stale and sent", () => {
+    expect([...RETRY_STATUSES]).toEqual(["pending", "failed"]);
+    expect(src("supabase/functions/brief-notifications/index.ts")).toMatch(/in\('status', \[\.\.\.RETRY_STATUSES\]\)/);
+  });
+});
+
+describe("reassignment and decline rewrites leave no live action buttons", () => {
+  it("reassigned message", () => {
+    expect(designerReassignedText(brief, "Malena")).toBe(
+      "Creative brief reassigned: FE CTV refresh\nThis brief is now assigned to Malena. No action needed from you.");
+    const actions: any = designerReassignedBlocks(brief, "Malena")[1];
+    expect(actions.elements.map((e: any) => e.action_id)).toEqual(["view_brief"]);
+  });
+  it("declined message removes Accept and Decline", () => {
+    const actions: any = designerDeclinedBlocks(brief, "2026-10-02T14:05:00Z")[1];
+    expect(actions.elements.map((e: any) => e.action_id)).toEqual(["view_brief"]);
+  });
+  it("designer DM carries Decline beside Accept", () => {
+    const actions: any = designerAssignedBlocks(brief)[1];
+    expect(actions.elements.map((e: any) => e.action_id)).toEqual(["accept_brief", "decline_brief", "view_brief"]);
+    expect(actions.elements[1].value).toBe(brief.id);
+  });
+  it("owner/lead decline notice", () => {
+    expect(declinedNotifyText("Lou", "FE CTV refresh", "2026-10-02T14:05:00Z")).toMatch(/^Lou declined the brief: FE CTV refresh/);
+  });
+});
+
+describe("hub URL from config", () => {
+  it("falls back to the current domain, honours HUB_PUBLIC_URL", () => {
+    delete process.env.HUB_PUBLIC_URL;
+    expect(hubUrl()).toBe(DEFAULT_HUB_URL);
+    process.env.HUB_PUBLIC_URL = "https://hub.example.com/";
+    expect(briefUrl("x")).toBe("https://hub.example.com/creative?brief=x");
+    process.env.HUB_PUBLIC_URL = "not a url";
+    expect(hubUrl()).toBe(DEFAULT_HUB_URL);
+    delete process.env.HUB_PUBLIC_URL;
+  });
+});
+
+describe("postDirectMessage refuses channel-shaped ids", () => {
+  it("checks CHANNEL_SHAPED before anything else and it matches C/G/D ids", () => {
+    const s = src("supabase/functions/_shared/slack-post.ts");
+    const m = s.match(/const CHANNEL_SHAPED\s*=\s*(\/.+\/[a-z]*);/);
+    expect(m).toBeTruthy();
+    const re = eval(m![1]) as RegExp;
+    for (const id of ["C0123456789", "G0123456789", "D0123456789"]) expect(re.test(id)).toBe(true);
+    expect(re.test("U0B226WAD5Z")).toBe(false);
+    const fn = s.slice(s.indexOf("export async function postDirectMessage"));
+    expect(fn.indexOf("CHANNEL_SHAPED.test")).toBeLessThan(fn.indexOf("fetch("));
   });
 });

@@ -8,8 +8,8 @@
 //    refusal, explained to the clicker with an ephemeral reply. Never silent.
 // 5. On accept: rewrite the original DM (Accept button removed), then DM the owner.
 //    An owner DM failure is recorded and retryable; the acceptance stands.
-import { admin, deliverForBrief, liveSendingEnabled, updateDesignerMessage } from '../_shared/brief-notify.ts';
-import { refusalText, type AcceptResult } from '../_shared/brief-messages.ts';
+import { admin, deliverForBrief, liveSendingEnabled, markDesignerMessageDeclined, updateDesignerMessage } from '../_shared/brief-notify.ts';
+import { clickReplyText, interactionReplyOptions, type AcceptResult } from '../_shared/brief-messages.ts';
 import { postDirectMessage } from '../_shared/slack-post.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -33,9 +33,12 @@ async function verifySlack(req: Request, raw: string): Promise<string | null> {
 
 async function handle(payload: any) {
   const db = admin();
-  const dryRun = !liveSendingEnabled();
+  // BRIEF_DM_LIVE gates proactive sends/updates only. The reply to the clicker is never gated.
+  const live = liveSendingEnabled();
+  const dryRun = !live;
   const action = (payload.actions || [])[0] || {};
-  if (action.action_id !== 'accept_brief') return; // View Brief is a URL button
+  if (action.action_id !== 'accept_brief' && action.action_id !== 'decline_brief') return; // View Brief is a URL button
+  const isDecline = action.action_id === 'decline_brief';
   const triggerId: string | null = payload.trigger_id || null;
   const slackUser: string = payload.user?.id || '';
   const briefId: string = String(action.value || '');
@@ -46,7 +49,7 @@ async function handle(payload: any) {
   // The unique index is partial (trigger_id IS NOT NULL), so ON CONFLICT cannot infer it — insert and read 23505.
   const { data: claim, error: claimErr } = await db.from('slack_interaction_log').insert({
     trigger_id: triggerId, action_id: action.action_id, actor_slack_user_id: slackUser,
-    brief_id: validBrief ? briefId : null, outcome: 'error', detail: 'processing', raw_payload: payload,
+    brief_id: validBrief ? briefId : null, outcome: 'processing', detail: null, raw_payload: payload,
   }).select('id').maybeSingle();
   if (claimErr?.code === '23505') {
     await db.from('slack_interaction_log').insert({
@@ -59,8 +62,12 @@ async function handle(payload: any) {
   const finish = (outcome: string, detail: string, actorId?: string | null) =>
     db.from('slack_interaction_log').update({ outcome, detail, actor_team_member_id: actorId ?? null }).eq('id', claim!.id);
 
-  const reply = (r: AcceptResult) =>
-    postDirectMessage({ kind: 'interaction_reply', userId: slackUser, responseUrl, text: refusalText(r), dryRun });
+  const reply = async (r: AcceptResult) => {
+    const text = clickReplyText(r, live);
+    if (!text) return;
+    const res = await postDirectMessage(interactionReplyOptions(slackUser, responseUrl, text));
+    if (!res.ok) console.error('click reply failed:', res.reason || res.error);
+  };
 
   try {
     const { data: actor } = await db.from('team_members').select('id, name').eq('slack_user_id', slackUser).maybeSingle();
@@ -77,6 +84,24 @@ async function handle(payload: any) {
       return;
     }
 
+    if (isDecline) {
+      const { data, error } = await db.rpc('decline_creative_brief_as', { p_brief_id: briefId, p_actor: actor.id });
+      if (error) throw new Error(error.message);
+      const r = data as AcceptResult;
+      if (r.outcome !== 'declined') {
+        await finish(r.outcome === 'duplicate_decline' ? 'declined' : r.outcome, JSON.stringify(r), actor.id);
+        await reply(r);
+        return;
+      }
+      const at = new Date().toISOString();
+      await finish('declined', `declined via slack at ${at}`, actor.id);
+      // Status and assignee are untouched; a human reassigns.
+      await markDesignerMessageDeclined(db, briefId, actor.id, at, { dryRun });
+      await deliverForBrief(db, briefId, { dryRun });
+      await reply(r);
+      return;
+    }
+
     const { data, error } = await db.rpc('accept_creative_brief_as', { p_brief_id: briefId, p_actor: actor.id, p_via: 'slack' });
     if (error) throw new Error(error.message);
     const r = data as AcceptResult;
@@ -89,6 +114,7 @@ async function handle(payload: any) {
     // Acceptance is committed. Slack failures below are recorded, never rolled back.
     await updateDesignerMessage(db, briefId, { dryRun });
     await deliverForBrief(db, briefId, { dryRun });
+    await reply(r);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('slack-interactions error:', msg);

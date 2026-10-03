@@ -2785,9 +2785,18 @@ export type Database = {
           aliases: string[]
           call_source_tables: string[]
           campaign_spend_source_tables: string[]
+          client_call_day: number | null
+          client_call_day_source: string | null
           color: string | null
           communication_channel: string | null
           created_at: string
+          current_focus: string | null
+          current_focus_source: string | null
+          current_focus_updated_at: string | null
+          daily_comparison_mode: string | null
+          daily_comparison_mode_reason: string | null
+          daily_comparison_mode_resolved: string | null
+          daily_comparison_mode_resolved_at: string | null
           daily_update_enabled: boolean
           daily_update_suppressed_reason: string | null
           data_model_note: string | null
@@ -2810,9 +2819,18 @@ export type Database = {
           aliases?: string[]
           call_source_tables?: string[]
           campaign_spend_source_tables?: string[]
+          client_call_day?: number | null
+          client_call_day_source?: string | null
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          current_focus?: string | null
+          current_focus_source?: string | null
+          current_focus_updated_at?: string | null
+          daily_comparison_mode?: string | null
+          daily_comparison_mode_reason?: string | null
+          daily_comparison_mode_resolved?: string | null
+          daily_comparison_mode_resolved_at?: string | null
           daily_update_enabled?: boolean
           daily_update_suppressed_reason?: string | null
           data_model_note?: string | null
@@ -2835,9 +2853,18 @@ export type Database = {
           aliases?: string[]
           call_source_tables?: string[]
           campaign_spend_source_tables?: string[]
+          client_call_day?: number | null
+          client_call_day_source?: string | null
           color?: string | null
           communication_channel?: string | null
           created_at?: string
+          current_focus?: string | null
+          current_focus_source?: string | null
+          current_focus_updated_at?: string | null
+          daily_comparison_mode?: string | null
+          daily_comparison_mode_reason?: string | null
+          daily_comparison_mode_resolved?: string | null
+          daily_comparison_mode_resolved_at?: string | null
           daily_update_enabled?: boolean
           daily_update_suppressed_reason?: string | null
           data_model_note?: string | null

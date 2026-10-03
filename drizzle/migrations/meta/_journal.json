@@ -36,6 +36,13 @@
       "when": 1791063762818,
       "tag": "0004_metric_revision_log",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791065563193,
+      "tag": "0005_client_call_day_comparison_mode_focus",
+      "breakpoints": true
     }
   ]
 }

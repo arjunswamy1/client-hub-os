@@ -1,4 +1,5 @@
 // The QA gate every proposed task must pass before it can become a real task.
+import { resolveMergeRoots } from "./daily-update-rules.ts";
 //
 // Nothing writes to `tasks` directly any more. Extractors write `task_candidates`;
 // this module scores them and promotes only the ones that clear all three gates:
@@ -629,6 +630,21 @@ export async function gateCandidates(
   const aResults = await runGateA(candidates, apiKey);
   const survivors = candidates.filter((c) => aResults.get(c.id)?.is_task !== false);
   const bResults = await runGateB(supabase, survivors, apiKey, aResults);
+  // Iterate merges until stable: a candidate merged into one that was itself
+  // merged points at the cluster's survivor, never at a sibling.
+  const roots = resolveMergeRoots(new Map(
+    [...bResults].map(([id, r]) => [id, r.duplicate ? r.merged_into_candidate_id : null]),
+  ));
+  for (const [id, root] of roots) {
+    const r = bResults.get(id)!;
+    if (!r.duplicate || !root || root === r.merged_into_candidate_id) continue;
+    const rootResult = bResults.get(root);
+    bResults.set(id, {
+      ...r,
+      merged_into_candidate_id: root,
+      duplicate_of_task_id: rootResult?.duplicate_of_task_id ?? r.duplicate_of_task_id,
+    });
+  }
   const cResults = await runGateC(supabase, candidates, apiKey, aResults);
 
   for (const c of candidates) {

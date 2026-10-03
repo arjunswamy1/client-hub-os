@@ -8,10 +8,18 @@
 // Nothing here writes to Slack. The caller posts through `postToSlack()`, the
 // single guarded write path.
 
+import {
+  collapseNearDuplicates, DIGEST_CAP, ESCALATE_AFTER_DAYS, sameList, sortActionable,
+} from './daily-update-rules.ts';
+
 export const HUB_TASKS_URL = 'https://hub.connectpaidmedia.com/tasks';
+const HUB_BRIEF_URL = 'https://hub.connectpaidmedia.com/creative?brief=';
+
+/** AJ is the fallback account lead when an item has no client or no assigned lead. */
+const FALLBACK_LEAD_ID = '1fdd684e-6cb7-447e-b616-7e1b9c598971';
 
 /** Hard cap on listed items; the rest collapse into "+N more". */
-export const MAX_ITEMS = 5;
+export const MAX_ITEMS = DIGEST_CAP;
 
 /**
  * Recency backstop. A daily message says "here is today"; work whose last real
@@ -80,6 +88,21 @@ export interface DigestItem {
   last_activity?: string;
   /** Original title, when the displayed one was rendered from brief fields. */
   raw_title?: string;
+  /** Where the item came from: the Wispr meeting, the Slack message, or the brief. */
+  source_url?: string | null;
+  priority?: string | null;
+  client_id?: string | null;
+  /** Near-duplicate siblings folded into this item. */
+  merged_ids?: string[];
+}
+
+export interface EscalationMessage {
+  lane: Lane;
+  channel_id: string;
+  channel_name: string;
+  lead: MemberRow;
+  text: string;
+  items: (DigestItem & { assignee: string })[];
 }
 
 /**
@@ -226,6 +249,8 @@ export interface DigestMessage {
   items: DigestItem[];
   shown: DigestItem[];
   hidden_count: number;
+  /** True when today's shown list is the same as the last digest's. */
+  unchanged?: boolean;
 }
 
 export function isCreativeLaneMember(member: MemberRow): boolean {
@@ -279,34 +304,61 @@ export function sortItems(items: DigestItem[]): DigestItem[] {
 }
 
 const FOOTER = '✅ aligned   ·   ✏️ editing, see my reply   ·   ❌ not mine';
+const NUMBER_WORD = ['zero', 'one', 'two', 'three'];
+
+function itemLine(item: DigestItem, i: number): string {
+  const prefix = item.client ? `${item.client} — ` : '';
+  const merged = item.merged_ids?.length ? ` (+${item.merged_ids.length} similar merged)` : '';
+  const late = item.late_days && item.late_days > 0 ? ` · late ${item.late_days}d` : '';
+  const src = item.source_url ? ` · <${item.source_url}|source>` : ' · no source recorded';
+  return `  ${i + 1}. ${prefix}${item.title}${merged}${late}${src}`;
+}
 
 export function buildMessageText(opts: {
   mention: string;
   weekday: string;
   lane: Lane;
   items: DigestItem[];
-}): { text: string; shown: DigestItem[]; hidden: number } {
-  const ordered = sortItems(opts.items);
-  const shown = ordered.slice(0, MAX_ITEMS);
+  today: string;
+  /** Item ids shown in this person's previous digest for this lane. */
+  previousIds?: string[] | null;
+}): { text: string; shown: DigestItem[]; hidden: number; unchanged: boolean } {
+  const ordered = sortActionable(opts.items, opts.today);
+  const shown = ordered.slice(0, DIGEST_CAP);
   const hidden = ordered.length - shown.length;
+  const head = `${opts.mention} · ${opts.weekday} · ${opts.lane}`;
 
-  const lines: string[] = [];
-  lines.push(`${opts.mention} · ${opts.weekday} · ${opts.lane}`);
-  lines.push('');
-  lines.push('Today');
-  shown.forEach((item, i) => {
-    const prefix = item.client ? `${item.client} — ` : '';
-    // Due today reads plainly; anything past due says how far, so today's work
-    // and what has slipped are one glance apart.
-    const late = item.late_days && item.late_days > 0 ? ` — late ${item.late_days}d` : '';
-    lines.push(`  ${i + 1}. ${prefix}${item.title}${late}`);
-  });
+  if (opts.previousIds && sameList(shown.map((i) => i.id), opts.previousIds)) {
+    const n = NUMBER_WORD[shown.length] ?? String(shown.length);
+    return {
+      text: `${head} — Same ${n} as yesterday — nothing new. <${HUB_TASKS_URL}|open in the hub>`,
+      shown, hidden, unchanged: true,
+    };
+  }
 
-  if (hidden > 0) lines.push(`  +${hidden} more · <${HUB_TASKS_URL}|open in the hub>`);
+  const lines: string[] = [head, '', 'Today'];
+  shown.forEach((item, i) => lines.push(itemLine(item, i)));
+  lines.push(hidden > 0
+    ? `  +${hidden} more in the hub · <${HUB_TASKS_URL}|open>`
+    : `  <${HUB_TASKS_URL}|open in the hub>`);
   lines.push('');
   lines.push(FOOTER);
+  return { text: lines.join('\n'), shown, hidden, unchanged: false };
+}
 
-  return { text: lines.join('\n'), shown, hidden };
+/** One message to an account lead, once per item: decide it, then it leaves the daily list. */
+export function buildEscalationText(mention: string, items: (DigestItem & { assignee: string })[]): string {
+  const lines = [`${mention} — open over ${ESCALATE_AFTER_DAYS} days late. For each: do it, reassign it, or kill it.`, ''];
+  const shown = items.slice(0, 10);
+  shown.forEach((item, i) => {
+    const prefix = item.client ? `${item.client} — ` : '';
+    const src = item.source_url ? ` · <${item.source_url}|source>` : ' · no source recorded';
+    lines.push(`  ${i + 1}. ${prefix}${item.title} — ${item.assignee}'s, late ${item.late_days}d${src}`);
+  });
+  if (items.length > shown.length) lines.push(`  +${items.length - shown.length} more · <${HUB_TASKS_URL}|open in the hub>`);
+  lines.push('');
+  lines.push('These stop appearing in the daily list after today. They stay in the hub.');
+  return lines.join('\n');
 }
 
 /** Wall-clock day, hour and weekday in US Eastern, daylight saving included. */
@@ -357,6 +409,7 @@ export async function buildDigests(
   weekdayLong: string,
 ): Promise<{
   messages: DigestMessage[];
+  escalations: EscalationMessage[];
   skipped: { member: string; reason: string }[];
   excluded: { member: string; kind: string; title: string; reason: string }[];
 }> {
@@ -380,7 +433,7 @@ export async function buildDigests(
 
   const { data: tasks, error: taskErr } = await supabase
     .from('tasks')
-    .select('id, title, client_id, due_date, created_at, assignee_id, task_type, type_data')
+    .select('id, title, client_id, due_date, created_at, assignee_id, task_type, type_data, priority')
     .eq('status', 'todo')
     .not('assignee_id', 'is', null);
   if (taskErr) throw taskErr;
@@ -491,6 +544,9 @@ export async function buildDigests(
       late_days: t.due_date ? daysLate(String(t.due_date), todayEastern) : 0,
       created_at: String(t.created_at),
       last_activity: last,
+      priority: (t.priority as string | null) ?? null,
+      client_id: (t.client_id as string | null) ?? null,
+      source_url: taskSourceUrl(t.type_data as Record<string, unknown> | null),
     });
 
   }
@@ -531,15 +587,64 @@ export async function buildDigests(
       late_days: due ? daysLate(String(due), todayEastern) : 0,
       created_at: String(b.created_at),
       last_activity: last,
+      client_id: (b.client_id as string | null) ?? null,
+      source_url: `${HUB_BRIEF_URL}${b.id}`,
     });
   }
 
 
+  // --- escalation & previous lists --------------------------------------
+  const { data: escalatedRows } = await supabase
+    .from('task_digest_escalations').select('item_kind, item_id, digest_date');
+  const escalated = new Map<string, string>(
+    (escalatedRows ?? []).map((r: any) => [`${r.item_kind}:${r.item_id}`, String(r.digest_date)]),
+  );
+  const { data: assignments } = await supabase
+    .from('client_assignments').select('client_id, team_member_id, role_on_account');
+  const leadFor = (clientId: string | null | undefined): string => {
+    const rows = (assignments ?? []).filter((a: any) => a.client_id === clientId);
+    const am = rows.find((a: any) => a.role_on_account === 'account_manager');
+    const mb = rows.find((a: any) => a.role_on_account === 'media_buyer');
+    return String((am ?? mb)?.team_member_id ?? FALLBACK_LEAD_ID);
+  };
+  const { data: previousPosts } = await supabase
+    .from('task_digest_posts')
+    .select('team_member_id, lane, digest_date, task_ids, brief_ids')
+    .lt('digest_date', todayEastern)
+    .order('digest_date', { ascending: false })
+    .limit(500);
+  const previousIds = new Map<string, string[]>();
+  for (const p of previousPosts ?? []) {
+    const key = `${p.team_member_id}:${p.lane}`;
+    if (!previousIds.has(key)) previousIds.set(key, [...(p.task_ids ?? []), ...(p.brief_ids ?? [])]);
+  }
+
   const messages: DigestMessage[] = [];
+  const escalationByLead = new Map<string, Map<Lane, (DigestItem & { assignee: string })[]>>();
   for (const [memberId, lanes] of byMember) {
     const member = memberById.get(memberId)!;
     for (const lane of LANES) {
-      const items = lanes.get(lane) ?? [];
+      const raw = lanes.get(lane) ?? [];
+      // Near-duplicates collapse to one survivor, repeated until stable.
+      const { survivors } = collapseNearDuplicates(raw);
+      const items: DigestItem[] = [];
+      for (const item of survivors) {
+        const key = `${item.kind}:${item.id}`;
+        if ((item.late_days ?? 0) > ESCALATE_AFTER_DAYS) {
+          if (escalated.has(key)) {
+            excluded.push({ member: member.name, kind: item.kind, title: item.title, reason: `escalated on ${escalated.get(key)}; stays in the hub` });
+          } else {
+            const lead = leadFor(item.client_id);
+            if (!escalationByLead.has(lead)) escalationByLead.set(lead, new Map());
+            const byLane = escalationByLead.get(lead)!;
+            if (!byLane.has(lane)) byLane.set(lane, []);
+            byLane.get(lane)!.push({ ...item, assignee: member.name });
+            excluded.push({ member: member.name, kind: item.kind, title: item.title, reason: `late ${item.late_days}d — escalated today to the account lead` });
+          }
+          continue;
+        }
+        items.push(item);
+      }
       if (items.length === 0) continue; // silence when someone has nothing
       if (!member.slack_user_id) {
         skipped.push({ member: member.name, reason: 'no Slack user id on their team record' });
@@ -550,6 +655,8 @@ export async function buildDigests(
         weekday: weekdayLong,
         lane,
         items,
+        today: todayEastern,
+        previousIds: previousIds.get(`${member.id}:${lane}`) ?? null,
       });
       messages.push({
         lane,
@@ -558,13 +665,42 @@ export async function buildDigests(
         member,
         mention: `<@${member.slack_user_id}>`,
         text: built.text,
-        items: sortItems(items),
+        items: sortActionable(items, todayEastern),
         shown: built.shown,
         hidden_count: built.hidden,
+        unchanged: built.unchanged,
+      });
+    }
+  }
+
+  const escalations: EscalationMessage[] = [];
+  for (const [leadId, lanes] of escalationByLead) {
+    // An inactive or unknown lead falls back to AJ rather than dropping the escalation.
+    const lead = memberById.get(leadId) ?? memberById.get(FALLBACK_LEAD_ID);
+    if (!lead) continue;
+    for (const [lane, items] of lanes) {
+      const mention = lead.slack_user_id ? `<@${lead.slack_user_id}>` : lead.name;
+      escalations.push({
+        lane,
+        channel_id: LANE_CHANNELS[lane].id,
+        channel_name: lane === 'media' ? 'media-team-tasks' : 'creative-team-tasks',
+        lead,
+        text: buildEscalationText(mention, items),
+        items,
       });
     }
   }
 
   messages.sort((a, b) => a.lane.localeCompare(b.lane) || a.member.name.localeCompare(b.member.name));
-  return { messages, skipped, excluded };
+  return { messages, escalations, skipped, excluded };
+}
+
+/** The meeting or message a task came from. A task you cannot trace is a task you cannot do. */
+export function taskSourceUrl(td: Record<string, unknown> | null): string | null {
+  const t = td ?? {};
+  for (const k of ['share_link', 'permalink', 'slack_permalink', 'source_url', 'meeting_url']) {
+    const v = t[k];
+    if (typeof v === 'string' && /^https?:\/\//.test(v)) return v;
+  }
+  return null;
 }

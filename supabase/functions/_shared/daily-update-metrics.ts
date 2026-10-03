@@ -6,6 +6,7 @@
 //
 // Read-only: this module never writes to a call or ad-sync table.
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { QUALIFIED_BAND, type SeriesDay } from './daily-update-rules.ts';
 
 export const admin = (): SupabaseClient =>
   createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -108,6 +109,8 @@ export interface ClientMetrics {
   trend: DayRow[];
   /** One layer deeper: per-campaign spend and, where joinable, per-campaign calls. */
   campaign_breakdown: { campaign: string; spend: number; calls: number | null }[];
+  /** 28 days, oldest first — for the weekday and baseline tests only. */
+  history: SeriesDay[];
   /** Campaigns that spent on earlier days in the window but nothing on for_date. */
   anomalies: { campaign: string; detail: string }[];
   media_brain: { window_start: string; window_end: string; status: string; breakers: unknown } | null;
@@ -150,6 +153,11 @@ export async function collectClientMetrics(
   const start = new Date(`${forDate}T00:00:00Z`);
   start.setUTCDate(start.getUTCDate() - 6);
   const windowStart = dayKey(start.toISOString());
+  // Four weeks of history for the same-weekday darkness test and the
+  // cost-per-qualified-call baseline. The 7-day trend is cut from it.
+  const histStart = new Date(`${forDate}T00:00:00Z`);
+  histStart.setUTCDate(histStart.getUTCDate() - 27);
+  const historyStart = dayKey(histStart.toISOString());
   const endExclusive = new Date(`${forDate}T00:00:00Z`);
   endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
   const endIso = endExclusive.toISOString();
@@ -180,7 +188,7 @@ export async function collectClientMetrics(
   const { data: roku, error: rokuErr } = await db.from('roku_daily_metrics')
     .select('date, campaign_name, entity_name, spend, impressions')
     .eq('client_id', clientId).eq('entity', 'campaign')
-    .gte('date', windowStart).lte('date', forDate);
+    .gte('date', historyStart).lte('date', forDate);
   if (rokuErr) throw new Error(`roku_daily_metrics: ${rokuErr.message}`);
   if (roku && roku.length) {
     spendSources.push('Roku (roku_daily_metrics)');
@@ -192,7 +200,7 @@ export async function collectClientMetrics(
 
   const { data: adDaily, error: adErr } = await db.from('ad_daily_metrics')
     .select('date, platform, spend, impressions, clicks, conversions')
-    .eq('client_id', clientId).gte('date', windowStart).lte('date', forDate);
+    .eq('client_id', clientId).gte('date', historyStart).lte('date', forDate);
   if (adErr) throw new Error(`ad_daily_metrics: ${adErr.message}`);
   const platformSpend = new Map<string, number>();
   if (adDaily && adDaily.length) {
@@ -229,14 +237,14 @@ export async function collectClientMetrics(
     const columns = `${src.tsColumn}, duration_seconds, campaign_name`;
     let rows: Record<string, unknown>[] = [];
     try {
-      rows = await pagedSelect(db, src.table, columns, clientId, src.tsColumn, `${windowStart}T00:00:00Z`, endIso);
+      rows = await pagedSelect(db, src.table, columns, clientId, src.tsColumn, `${historyStart}T00:00:00Z`, endIso);
     } catch (_e) {
       // A table without campaign_name still gives us volume and duration.
-      rows = await pagedSelect(db, src.table, `${src.tsColumn}, duration_seconds`, clientId, src.tsColumn, `${windowStart}T00:00:00Z`, endIso);
+      rows = await pagedSelect(db, src.table, `${src.tsColumn}, duration_seconds`, clientId, src.tsColumn, `${historyStart}T00:00:00Z`, endIso);
     }
     if (!rows.length) continue;
     callSources.push(`${src.label} (${src.table})`);
-    totalCallsInWindow += rows.length;
+    totalCallsInWindow += rows.filter((r) => dayKey(String(r[src.tsColumn])) >= windowStart).length;
     for (const r of rows) {
       const date = dayKey(String(r[src.tsColumn]));
       callsByDay.set(date, (callsByDay.get(date) ?? 0) + 1);
@@ -274,12 +282,26 @@ export async function collectClientMetrics(
   }
   const yesterday = trend[trend.length - 1] ?? null;
 
+  const history: SeriesDay[] = [];
+  for (let i = 27; i >= 0; i--) {
+    const d = new Date(`${forDate}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - i);
+    const date = dayKey(d.toISOString());
+    history.push({
+      date,
+      spend: round(spendByDay.get(date) ?? 0),
+      calls: callsByDay.get(date) ?? 0,
+      qualified: bandsByDay.get(date)?.[QUALIFIED_BAND] ?? 0,
+      impressions: impressionsAvailable ? impressionsByDay.get(date) ?? 0 : null,
+    });
+  }
+
   // --- one layer deeper, and anomalies ------------------------------------
   const campaignBreakdown: { campaign: string; spend: number; calls: number | null }[] = [];
   const anomalies: { campaign: string; detail: string }[] = [];
   for (const [campaign, byDay] of spendByCampaignDay) {
     const onDay = round(byDay.get(forDate) ?? 0);
-    const earlier = round([...byDay.entries()].filter(([d]) => d !== forDate).reduce((s, [, v]) => s + v, 0));
+    const earlier = round([...byDay.entries()].filter(([d]) => d !== forDate && d >= windowStart).reduce((s, [, v]) => s + v, 0));
     if (onDay > 0) {
       campaignBreakdown.push({ campaign, spend: onDay, calls: callsByCampaign.get(campaign) ?? null });
     } else if (earlier > 0) {
@@ -308,6 +330,7 @@ export async function collectClientMetrics(
     call_sources: callSources,
     yesterday,
     trend,
+    history,
     campaign_breakdown: campaignBreakdown.slice(0, 12),
     anomalies: anomalies.slice(0, 8),
     media_brain: review

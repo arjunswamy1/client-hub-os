@@ -15,6 +15,13 @@
       "when": 1791056885242,
       "tag": "0001_brief_decline",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791058492494,
+      "tag": "0002_daily_update_forms_and_digest_escalations",
+      "breakpoints": true
     }
   ]
 }

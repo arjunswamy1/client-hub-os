@@ -381,14 +381,16 @@ export function collapseNearDuplicates<T extends { id: string; title: string; cl
  */
 export function resolveMergeRoots(targets: Map<string, string | null>): Map<string, string | null> {
   const out = new Map<string, string | null>();
-  for (const [id] of targets) {
-    let cur = targets.get(id) ?? null;
+  for (const [id, first] of targets) {
+    let cur = first ?? null;
     const seen = new Set([id]);
-    while (cur && targets.get(cur) && !seen.has(cur)) {
+    while (cur) {
+      const next = targets.get(cur) ?? null;
+      if (!next || seen.has(next)) break; // end of chain, or a cycle: stop here
       seen.add(cur);
-      cur = targets.get(cur)!;
+      cur = next;
     }
-    out.set(id, cur && seen.has(cur) && cur !== targets.get(id) && cur === id ? null : cur);
+    out.set(id, cur === id ? null : cur);
   }
   return out;
 }

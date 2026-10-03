@@ -19,6 +19,25 @@ export default function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const rawNext = searchParams.get('next');
+  const nextPath = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null;
+  const goNext = () => {
+    if (nextPath) window.location.href = nextPath;
+    else navigate('/');
+  };
+  const returnUrl = nextPath
+    ? `${window.location.origin}/auth?next=${encodeURIComponent(nextPath)}`
+    : window.location.origin;
+
+  useEffect(() => {
+    if (!nextPath) return;
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session && !data.session.user?.user_metadata?.must_change_password) {
+        window.location.href = nextPath;
+      }
+    });
+  }, [nextPath]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

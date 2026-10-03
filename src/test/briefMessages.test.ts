@@ -126,3 +126,16 @@ describe("hub URL from config", () => {
     delete process.env.HUB_PUBLIC_URL;
   });
 });
+
+describe("postDirectMessage refuses channel-shaped ids", () => {
+  it("checks CHANNEL_SHAPED before anything else and it matches C/G/D ids", () => {
+    const s = src("supabase/functions/_shared/slack-post.ts");
+    const m = s.match(/const CHANNEL_SHAPED\s*=\s*(\/.+\/[a-z]*);/);
+    expect(m).toBeTruthy();
+    const re = eval(m![1]) as RegExp;
+    for (const id of ["C0123456789", "G0123456789", "D0123456789"]) expect(re.test(id)).toBe(true);
+    expect(re.test("U0B226WAD5Z")).toBe(false);
+    const fn = s.slice(s.indexOf("export async function postDirectMessage"));
+    expect(fn.indexOf("CHANNEL_SHAPED.test")).toBeLessThan(fn.indexOf("fetch("));
+  });
+});

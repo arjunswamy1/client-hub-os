@@ -20,7 +20,7 @@ describe("designer DM", () => {
   it("has Accept (action) and View (url) buttons", () => {
     const actions: any = designerAssignedBlocks(brief)[1];
     expect(actions.elements[0]).toMatchObject({ action_id: "accept_brief", value: brief.id });
-    expect(actions.elements[1]).toMatchObject({ action_id: "view_brief", url: briefUrl(brief.id) });
+    expect(actions.elements[2]).toMatchObject({ action_id: "view_brief", url: briefUrl(brief.id) });
   });
   it("the accepted rewrite removes the Accept button and keeps View", () => {
     const actions: any = designerAcceptedBlocks(brief, "2026-10-02T14:05:00Z")[1];

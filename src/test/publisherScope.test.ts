@@ -89,7 +89,7 @@ describe("scope events", () => {
     expect(sw.scopeBreak).toBe("accounts added 1 Oct");
     expect(sw.deltas).toEqual([]);
     const pd = set.comparisons.find((x) => x.label === "vs_prior_day")!;
-    expect(pd.scopeBreak).toBe("accounts added 1 Oct");
+    expect(pd.scopeBreak).toBeUndefined(); // Oct 1 vs Oct 2: both sides are after the change
     expect(set.scopeNotes!.length).toBe(1);
     const text = renderDailyComparison(set, { mode: "same_weekday", weekly: false });
     expect(text).toContain("accounts added 1 Oct — not comparable");

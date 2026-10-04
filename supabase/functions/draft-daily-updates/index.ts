@@ -562,6 +562,8 @@ Deno.serve(async (req) => {
             focus: { text: target.current_focus ?? null, updatedAt: target.current_focus_updated_at ?? null },
             now: new Date(),
           });
+          const sc = scopeContextLines(scopeEvents, forDate);
+          if (sc.length) draftText += `\n${sc.join('\n')}`;
         } else {
           // Dry-run only: render the full form for a steady account so the two can be compared.
           if (dryRun && !evald.triggers.length && forceFull.includes(clientName.toLowerCase())) {

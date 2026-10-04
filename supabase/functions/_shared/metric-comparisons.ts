@@ -89,8 +89,30 @@ export interface MetricDelta {
   text: string;
 }
 
+export interface ScopeEvent { effective_date: string; kind: string; description?: string | null }
+
+const SCOPE_WORDS: Record<string, string> = {
+  accounts_added: 'accounts added', accounts_removed: 'accounts removed',
+  publisher_scope_changed: 'publisher scope changed', revenue_field_changed: 'revenue field changed',
+  tracking_changed: 'tracking changed', other: 'scope changed',
+};
+const dayMon = (iso: string) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return `${d.getUTCDate()} ${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })}`;
+};
+/** "accounts added 6 Oct" */
+export const scopeClause = (e: ScopeEvent) => `${SCOPE_WORDS[e.kind] ?? 'scope changed'} ${dayMon(e.effective_date)}`;
+
+/** A comparison straddles an event when its effective date falls after the baseline starts and on/before the current side ends. */
+export function straddlingEvent(base: Snapshot, cur: Snapshot, events: ScopeEvent[]): ScopeEvent | null {
+  return events.filter((e) => e.effective_date > base.from && e.effective_date <= cur.to)
+    .sort((a, b) => b.effective_date.localeCompare(a.effective_date))[0] ?? null;
+}
+
 export interface Comparison {
   label: CompareLabel;
+  /** Set when a scope event sits inside the comparison: never a percentage. */
+  scopeBreak?: string;
   current: Snapshot;
   baseline: Snapshot;
   /** Set when the comparison cannot run at all; deltas are then empty. */
@@ -254,9 +276,15 @@ export function predatesReliability(s: Snapshot, reliableFrom: string | null): b
 
 export function compare(
   label: CompareLabel, cur: Snapshot, base: Snapshot,
-  opts: { engagement: EngagementType; reliableFrom: string | null },
+  opts: { engagement: EngagementType; reliableFrom: string | null; scopeEvents?: ScopeEvent[] },
 ): Comparison {
   const metrics = METRICS_BY_ENGAGEMENT[opts.engagement ?? ''] ?? METRICS_BY_ENGAGEMENT.pay_per_call;
+  // A scope change is not a performance change: across one, nothing is comparable.
+  const ev = straddlingEvent(base, cur, opts.scopeEvents ?? []);
+  if (ev) {
+    const clause = scopeClause(ev);
+    return { label, current: cur, baseline: base, unavailable: `${clause} — not comparable`, scopeBreak: clause, deltas: [] };
+  }
   if (cur.state !== 'available' || base.state !== 'available') {
     const which = cur.state !== 'available'
       ? `reporting day ${stateWords(cur)}`
@@ -320,6 +348,17 @@ export interface ComparisonSet {
   day: Snapshot;
   comparisons: Comparison[];
   provisional: { provisional: boolean; reason: string | null; tracked?: boolean };
+  /** First day of the reported period; equals forDate unless the weekend is rolled up. */
+  periodFrom?: string;
+  /** One line per scope event in the 7 days up to forDate, so the reader knows why numbers moved. */
+  scopeNotes?: string[];
+}
+
+/** The header date: one day, or "Sat 3 – Sun 4 Oct (weekend)". */
+export function periodWords(set: ComparisonSet): string {
+  const from = set.periodFrom ?? set.forDate;
+  if (from === set.forDate) return prettyDay(set.forDate);
+  return `${prettyDay(from).replace(/ [A-Z][a-z]{2}$/, '')} – ${prettyDay(set.forDate)} (weekend)`;
 }
 
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -334,8 +373,8 @@ const prettyShort = (iso: string) => {
 };
 
 const LINE_PREFIX: Record<CompareLabel, (s: ComparisonSet, c: Comparison) => string> = {
-  vs_same_weekday: (_s, c) => `vs last ${weekdayOf(c.baseline.from)}`,
-  vs_prior_day: (_s, c) => `vs ${weekdayOf(c.baseline.from)}`,
+  vs_same_weekday: (_s, c) => c.baseline.from !== c.baseline.to ? 'vs last weekend' : `vs last ${weekdayOf(c.baseline.from)}`,
+  vs_prior_day: (_s, c) => c.baseline.from !== c.baseline.to ? `vs ${weekdayOf(c.baseline.from)}–${weekdayOf(c.baseline.to)}` : `vs ${weekdayOf(c.baseline.from)}`,
   vs_prior_week: (_s, c) => `7d vs prior 7d${coverageWords(c)}`,
 };
 
@@ -350,6 +389,7 @@ const LINE_METRICS: MetricKey[] = ['spend', 'profit', 'calls', 'cost_per_call'];
 
 export function renderComparisonLine(set: ComparisonSet, c: Comparison): string {
   const prefix = LINE_PREFIX[c.label](set, c);
+  if (c.scopeBreak) return `${prefix}: ${c.scopeBreak} — not comparable`;
   if (c.unavailable) return `${prefix}: not comparable — ${c.unavailable}`;
   const parts = c.deltas
     .filter((d) => LINE_METRICS.includes(d.metric) && (d.kind === 'pct' || d.kind === 'absolute' || d.kind === 'points'))
@@ -383,13 +423,14 @@ export function disclosures(set: ComparisonSet): string[] {
 
 /** The block that opens a full update. */
 export function renderFullComparison(set: ComparisonSet): string {
-  const lines = [`${set.client} — ${prettyDay(set.forDate)}`, headlineFigures(set)];
+  const lines = [`${set.client} — ${periodWords(set)}`, headlineFigures(set)];
   for (const label of COMPARE_ORDER) {
     const c = set.comparisons.find((x) => x.label === label);
     if (c) lines.push(renderComparisonLine(set, c));
   }
   const d = disclosures(set);
   if (d.length) lines.push(`⚠ ${d.join(' ')}`);
+  for (const n of set.scopeNotes ?? []) lines.push(n);
   return lines.join('\n');
 }
 
@@ -402,7 +443,7 @@ const MODE_LABEL: Record<DailyMode, CompareLabel> = { same_weekday: 'vs_same_wee
  * client call day. The bot uses renderFullComparison (all three) instead.
  */
 export function renderDailyComparison(set: ComparisonSet, opts: { mode: DailyMode; weekly: boolean }): string {
-  const lines = [`${set.client} — ${prettyDay(set.forDate)}`, headlineFigures(set)];
+  const lines = [`${set.client} — ${periodWords(set)}`, headlineFigures(set)];
   const daily = set.comparisons.find((x) => x.label === MODE_LABEL[opts.mode]);
   if (daily) lines.push(renderComparisonLine(set, daily));
   if (opts.weekly) {
@@ -412,6 +453,7 @@ export function renderDailyComparison(set: ComparisonSet, opts: { mode: DailyMod
   const shown = set.comparisons.filter((c) => c.label === MODE_LABEL[opts.mode] || (opts.weekly && c.label === 'vs_prior_week'));
   const d = disclosures({ ...set, comparisons: shown });
   if (d.length) lines.push(`⚠ ${d.join(' ')}`);
+  for (const n of set.scopeNotes ?? []) lines.push(n);
   return lines.join('\n');
 }
 
@@ -422,12 +464,12 @@ export function renderDailyComparison(set: ComparisonSet, opts: { mode: DailyMod
  */
 export function headlineDelta(set: ComparisonSet, mode: DailyMode = 'same_weekday'): string | null {
   const c = set.comparisons.find((x) => x.label === MODE_LABEL[mode]);
-  if (!c || c.unavailable) return null;
+  if (!c || c.unavailable || c.scopeBreak) return null;
   const pcts = c.deltas.filter((d) => d.kind === 'pct' && d.pct !== null);
   if (!pcts.length) return null;
   const best = pcts.sort((a, b) => Math.abs(b.pct!) - Math.abs(a.pct!))[0];
   const label = LABEL[best.metric];
-  const vs = mode === 'same_weekday' ? `vs last ${weekdayOf(c.baseline.from)}` : `vs ${weekdayOf(c.baseline.from)}`;
+  const vs = LINE_PREFIX[c.label](set, c);
   return `${label[0].toUpperCase()}${label.slice(1)} ${signed(best.pct! * 100)}% ${vs}${best.verdict ? ` (${best.verdict})` : ''}.`;
 }
 

@@ -50,6 +50,13 @@
       "when": 1791065828227,
       "tag": "0006_client_daily_updates_update_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791073656001,
+      "tag": "0007_clients_weekend_rollup",
+      "breakpoints": true
     }
   ]
 }

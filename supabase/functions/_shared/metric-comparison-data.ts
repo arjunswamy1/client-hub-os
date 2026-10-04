@@ -9,7 +9,8 @@ import { addDays, dayEndsAt, reportingTimeZone } from './reporting-day.ts';
 import { LOGGED_SPEND_SOURCES } from './metric-revision-log.ts';
 import {
   classifyDay, classifyWindow, compare, isProvisional,
-  type ComparisonSet, type DayState, type Observation, type Snapshot,
+  scopeClause,
+  type ComparisonSet, type DayState, type Observation, type Snapshot, type ScopeEvent,
 } from './metric-comparisons.ts';
 
 export type ComparisonClient = ResolvedClientRow;
@@ -97,6 +98,54 @@ export async function loadDailySeries(db: any, client: ComparisonClient, forDate
 }
 
 const sum = (xs: (number | null)[]): number | null => (xs.some((x) => x === null) ? null : xs.reduce<number>((a, b) => a + (b as number), 0));
+/** Revenue over days: a day with zero calls has no revenue to miss; a day with calls and unknown revenue makes the total unknown. */
+const sumRevenue = (days: SeriesDay[]): number | null =>
+  sum(days.filter((d) => d.calls !== 0).map((d) => d.revenue));
+
+/**
+ * The combined Saturday + Sunday reporting period. Recorded dark days count as
+ * zero inside it; a day with no data recorded at all makes the period missing,
+ * named, rather than a smaller weekend that reads as a quiet one.
+ */
+export function periodSnapshot(series: SeriesDay[], from: string, to: string): Snapshot {
+  const days = series.filter((d) => d.date >= from && d.date <= to);
+  const base: Snapshot = { from, to, state: 'missing', spend: null, revenue: null, calls: null, connected: null, billable: null, impressions: null };
+  const missing = days.filter((d) => d.state === 'missing');
+  if (!days.length || missing.length) {
+    return { ...base, stateNote: `no data recorded for ${missing.map((d) => d.date).join(', ') || from}` };
+  }
+  if (days.every((d) => d.state === 'no_delivery')) return { ...base, state: 'no_delivery' };
+  const imp = days.filter((d) => d.impressions !== null);
+  return {
+    ...base, state: 'available',
+    spend: sum(days.map((d) => d.spend)),
+    revenue: sumRevenue(days),
+    calls: sum(days.map((d) => d.calls)),
+    connected: sum(days.map((d) => d.connected)),
+    billable: sum(days.map((d) => d.converted)),
+    impressions: imp.length ? imp.reduce((a, d) => a + (d.impressions ?? 0), 0) : null,
+  };
+}
+
+/** True when this reporting day is a Sunday and the account rolls the weekend up into Monday's update. */
+export function isWeekendRollup(client: { weekend_rollup?: boolean | null }, forDate: string): boolean {
+  return client.weekend_rollup !== false && new Date(`${forDate}T12:00:00Z`).getUTCDay() === 0;
+}
+
+/** Scope events for one client, read-only. */
+export async function loadScopeEvents(db: any, clientId: string): Promise<ScopeEvent[]> {
+  const { data, error } = await db.from('client_scope_events').select('effective_date, kind, description').eq('client_id', clientId).limit(200);
+  if (error) throw new Error(`client_scope_events: ${error.message}`);
+  return ((data ?? []) as any[]).map((r) => ({ effective_date: String(r.effective_date).slice(0, 10), kind: String(r.kind), description: r.description ?? null }));
+}
+
+/** One context line per event effective in the 7 days ending on forDate. */
+export function scopeContextLines(events: ScopeEvent[], forDate: string): string[] {
+  const since = addDays(forDate, -6);
+  return events.filter((e) => e.effective_date >= since && e.effective_date <= forDate)
+    .sort((a, b) => a.effective_date.localeCompare(b.effective_date))
+    .map((e) => `Scope change: ${scopeClause(e)} — numbers either side of it measure different things, not a performance change.`);
+}
 
 /** A single day or a window, summed over ITS available days only. */
 export function snapshotFrom(series: SeriesDay[], from: string, to: string): Snapshot {
@@ -115,7 +164,7 @@ export function snapshotFrom(series: SeriesDay[], from: string, to: string): Sna
     ...base,
     coverage: single ? undefined : { days: use.length, of: days.length },
     spend: sum(use.map((d) => d.spend)),
-    revenue: sum(use.map((d) => d.revenue)),
+    revenue: sumRevenue(use),
     calls: sum(use.map((d) => d.calls)),
     connected: sum(use.map((d) => d.connected)),
     billable: sum(use.map((d) => d.converted)),
@@ -131,14 +180,20 @@ export const dayClosesAt = (isoDate: string, timeZone: string): Date => dayEndsA
  * (D-1); today is never passed in. Pass `series` to reuse an already-loaded read.
  */
 export async function buildComparisonSet(
-  db: any, client: ComparisonClient, forDate: string, series?: DailySeries,
+  db: any, client: ComparisonClient, forDate: string, series?: DailySeries, scopeEvents?: ScopeEvent[],
 ): Promise<ComparisonSet> {
   const s = series ?? await loadDailySeries(db, client, forDate);
+  const events = scopeEvents ?? await loadScopeEvents(db, client.id);
   const D = (n: number) => addDays(forDate, -(n - 1)); // D(1) = forDate
   const snap = (a: string, b: string) => snapshotFrom(s.days, a, b);
-  const d1 = snap(D(1), D(1)), d2 = snap(D(2), D(2)), d8 = snap(D(8), D(8));
+  const weekend = isWeekendRollup(client, forDate);
+  // Monday's update reports Sat + Sun as ONE period; every figure, and both
+  // daily comparisons, use that same period (vs last weekend, vs Thu–Fri).
+  const d1 = weekend ? periodSnapshot(s.days, D(2), D(1)) : snap(D(1), D(1));
+  const d2 = weekend ? periodSnapshot(s.days, D(4), D(3)) : snap(D(2), D(2));
+  const d8 = weekend ? periodSnapshot(s.days, D(9), D(8)) : snap(D(8), D(8));
   const w1 = snap(D(7), D(1)), w2 = snap(D(14), D(8));
-  const opts = { engagement: client.engagement_type, reliableFrom: client.metrics_reliable_from ?? null };
+  const opts = { engagement: client.engagement_type, reliableFrom: client.metrics_reliable_from ?? null, scopeEvents: events };
 
   const tracked = (client.spend_source_tables ?? []).filter((t) => (LOGGED_SPEND_SOURCES as readonly string[]).includes(t));
   let observations: Observation[] = [];
@@ -155,6 +210,8 @@ export async function buildComparisonSet(
     client: client.name,
     engagement: client.engagement_type,
     forDate,
+    periodFrom: weekend ? D(2) : forDate,
+    scopeNotes: scopeContextLines(events, forDate),
     reliableFrom: opts.reliableFrom,
     day: d1,
     comparisons: [

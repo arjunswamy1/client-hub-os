@@ -33,10 +33,14 @@ export interface ResolvedClientRow {
   current_focus?: string | null;
   current_focus_updated_at?: string | null;
   current_focus_source?: string | null;
+  /** Confirmed publisher name(s) whose calls are CPM's. Null = unconfirmed. */
+  publisher_scope?: string[] | null;
+  /** Monday reports Saturday + Sunday combined. */
+  weekend_rollup?: boolean | null;
 }
 
 /** Every client column the reporting path reads. One list, so the drafter and the bot load the same row. */
-export const CLIENT_REPORTING_COLUMNS = 'id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from, client_call_day, daily_comparison_mode, daily_comparison_mode_resolved, daily_comparison_mode_reason, current_focus, current_focus_updated_at, current_focus_source';
+export const CLIENT_REPORTING_COLUMNS = 'id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from, client_call_day, daily_comparison_mode, daily_comparison_mode_resolved, daily_comparison_mode_reason, current_focus, current_focus_updated_at, current_focus_source, publisher_scope, weekend_rollup';
 
 export interface ClientResolution {
   client: ResolvedClientRow | null;

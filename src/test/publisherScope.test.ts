@@ -34,15 +34,12 @@ function fixture(over: Partial<typeof client> = {}, extra: Record<string, any[]>
   // Another client's calls in the same table — must never be counted.
   calls.push({ client_id: "other", call_date: `${DAYS[13]}T15:00:00Z`, connected: true, duration_seconds: 99, payout: 0, revenue: 500, metadata: { publisher: "Connect Paid Media" } });
   const ads = DAYS.map((d, i) => ({ client_id: BIQ, date: d, spend: i === 13 ? 2295.99 - 13 * 164 : 164, impressions: 10000, conversions: 50 }));
-  return fakeDb({
+  const { db } = fakeDb({
     ringba_calls: calls, ad_daily_metrics: ads, ad_campaigns: [],
     media_brain_economics: [{ client_id: BIQ, vertical_id: null, publisher_scoping: "unknown" }],
     metric_revision_log: [], client_scope_events: [], ...extra,
-  }) && { db: fakeDb({
-    ringba_calls: calls, ad_daily_metrics: ads, ad_campaigns: [],
-    media_brain_economics: [{ client_id: BIQ, vertical_id: null, publisher_scoping: "unknown" }],
-    metric_revision_log: [], client_scope_events: [], ...extra,
-  }).db, c: { ...client, ...over } };
+  });
+  return { db, c: { ...client, ...over } };
 }
 const val = (m: any, k: string) => m.metrics.find((x: any) => x.key === k)?.value ?? null;
 const win = { from: DAYS[0], to: DAYS[13] };
@@ -97,8 +94,8 @@ describe("scope events", () => {
     const text = renderDailyComparison(set, { mode: "same_weekday", weekly: false });
     expect(text).toContain("accounts added 1 Oct — not comparable");
     expect(text).not.toMatch(/%/);
-    const later = await buildComparisonSet(db, c as any, "2026-10-08".slice(0, 10) as string).catch(() => null);
-    if (later) expect(later.scopeNotes).toEqual([]);
+    const later = await buildComparisonSet(db, c as any, "2026-10-08");
+    expect(later.scopeNotes).toEqual([]);
   });
 });
 

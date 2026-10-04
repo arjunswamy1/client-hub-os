@@ -437,7 +437,7 @@ export async function computeClientMetrics(
     ? `Spend covers ${spendDays.size} day(s) but calls arrived on ${callDays.size}. ${daysWithCallsNoSpend.length} day(s) have calls and no spend row (${daysWithCallsNoSpend.slice(0, 6).join(', ')}${daysWithCallsNoSpend.length > 6 ? '…' : ''}) — that is missing spend data, not free traffic.`
     : '';
 
-  const callLabel = client.slug === 'jacuzzi' ? 'Leads (calls + QR scans, never split)' : 'Calls';
+  const callLabel = client.slug === 'jacuzzi' ? 'Leads (calls + QR scans, never split)' : 'Validated calls (call-tracking records)';
   const callValue = client.slug === 'jacuzzi' ? (jacuzziLeads ?? totalCalls) : totalCalls;
 
   metrics.push({
@@ -619,6 +619,21 @@ export async function computeClientMetrics(
     });
   }
 
+  // ── platform events — reported, labelled, never summed with validated calls ─
+  if (spendTables.includes('ad_daily_metrics')) {
+    const evRows = await fetchAll((f, t) => supabase.from('ad_daily_metrics').select('date, conversions')
+      .eq('client_id', client.id).gte('date', window.from).lte('date', window.to).range(f, t));
+    const withValue = (evRows as any[]).filter((r) => r.conversions !== null && r.conversions !== undefined);
+    metrics.push({
+      key: 'platform_events',
+      label: 'Platform-reported conversion events (e.g. Meta "Call Placed") — NOT validated calls',
+      value: withValue.length ? withValue.reduce((a, r) => a + num(r.conversions), 0) : null,
+      display: withValue.length ? String(withValue.reduce((a, r) => a + num(r.conversions), 0)) : 'not reported',
+      note: 'An ad platform\'s own event count. It is never added to, compared with, or used as a denominator in place of validated calls from the call-tracking feed.',
+      sources: ['ad_daily_metrics'],
+    });
+  }
+
   // ── economics record ─────────────────────────────────────────────────────
   const { data: econ } = await supabase
     .from('media_brain_economics')
@@ -630,7 +645,10 @@ export async function computeClientMetrics(
 
   if (client.data_model_note) caveats.push(client.data_model_note);
   // Whose traffic this is comes first: it decides what every money figure means.
-  if (callTables.length) for (const n of pub.notes) caveats.push(n);
+  if (scopeReason) caveats.push(scopeReason.charAt(0).toUpperCase() + scopeReason.slice(1));
+  if (clientScope.length && callTables.length) {
+    caveats.push(`Calls counted only from the confirmed publisher scope (${(client.publisher_scope ?? []).join(', ')}); ${outOfScope} call(s) from other publishers on this feed were excluded from every figure.`);
+  } else if (callTables.length) for (const n of pub.notes) caveats.push(n);
   if (spendCoverageIncomplete) caveats.push(coverageNote + ' Cost per call is therefore a floor, and profit and margin are withheld.');
   if (hadUncapturedData) {
     caveats.push(`Revenue is unknown for ${uncaptured} of ${totalCalls} calls in this window. Do not state a revenue, profit or margin figure for it.`);

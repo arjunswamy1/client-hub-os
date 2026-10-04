@@ -2617,6 +2617,47 @@ export type Database = {
           },
         ]
       }
+      client_scope_events: {
+        Row: {
+          client_id: string
+          created_at: string
+          description: string
+          detail: Json | null
+          effective_date: string
+          id: string
+          kind: string
+          recorded_by: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          description: string
+          detail?: Json | null
+          effective_date: string
+          id?: string
+          kind: string
+          recorded_by?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          description?: string
+          detail?: Json | null
+          effective_date?: string
+          id?: string
+          kind?: string
+          recorded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_scope_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_slack_reports: {
         Row: {
           client_id: string
@@ -2811,6 +2852,9 @@ export type Database = {
           metrics_reliable_from: string | null
           metrics_reliable_note: string | null
           name: string
+          publisher_scope: string[] | null
+          publisher_scope_confirmed_at: string | null
+          publisher_scope_note: string | null
           reporting_timezone: string | null
           revenue_field: string | null
           slug: string
@@ -2845,6 +2889,9 @@ export type Database = {
           metrics_reliable_from?: string | null
           metrics_reliable_note?: string | null
           name: string
+          publisher_scope?: string[] | null
+          publisher_scope_confirmed_at?: string | null
+          publisher_scope_note?: string | null
           reporting_timezone?: string | null
           revenue_field?: string | null
           slug: string
@@ -2879,6 +2926,9 @@ export type Database = {
           metrics_reliable_from?: string | null
           metrics_reliable_note?: string | null
           name?: string
+          publisher_scope?: string[] | null
+          publisher_scope_confirmed_at?: string | null
+          publisher_scope_note?: string | null
           reporting_timezone?: string | null
           revenue_field?: string | null
           slug?: string

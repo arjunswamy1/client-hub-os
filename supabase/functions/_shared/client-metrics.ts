@@ -332,6 +332,14 @@ export async function computeClientMetrics(
   // calls from other publishers never reach the figures below.
   const { account: pubScope } = await loadPublisherScopes(supabase, client.id, client.name);
   const pubFilter = createPublisherFilter(pubScope, client.name);
+  // THE ACCOUNT'S CONFIRMED PUBLISHER SCOPE (clients.publisher_scope) governs
+  // when set: only those publishers' calls are counted, whatever the economics
+  // record says. When it is not set and the feed carries more than one named
+  // publisher, every call-derived figure is withheld below — never estimated,
+  // never "all publishers".
+  const clientScope = (client.publisher_scope ?? []).map((p) => p.trim().toLowerCase()).filter(Boolean);
+  const seenPublishers = new Map<string, number>();
+  let outOfScope = 0;
 
   for (const tableKey of callTables) {
     const spec = CALL_SOURCES[tableKey];
@@ -356,17 +364,25 @@ export async function computeClientMetrics(
     for (const r of rows as any[]) {
       if (spec.testFlagCol && r[spec.testFlagCol] === true) { testRowsExcluded++; continue; }
       const publisher = readPublisher(tableKey, r);
-      if (!pubFilter.keep(publisher)) continue;
+      if (publisher) seenPublishers.set(publisher, (seenPublishers.get(publisher) ?? 0) + 1);
+      if (clientScope.length) {
+        if (!publisher || !clientScope.includes(publisher.toLowerCase())) { outOfScope++; continue; }
+      } else if (!pubFilter.keep(publisher)) continue;
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
+      // CONVERTED comes ONLY from the account's configured money field: a call is
+      // converted when that field carries a captured amount above zero. The
+      // platform's own `converted` flag is not read — a status we cannot tie to
+      // revenue is not a conversion. A thin webhook's stored zero is UNKNOWN.
+      const money = revenueField === null ? null : resolveClientRevenue(
+        { engagement_type: client.engagement_type, revenue_field: client.revenue_field },
+        { payout: r.payout, revenue: spec.hasRevenue ? r.revenue : null, revenue_captured: spec.hasCaptureFlags ? (r.revenue_captured ?? null) : null },
+      );
+      const moneyKnown = !!money && money.captured && money.amount !== null &&
+        !(revenueField === 'revenue' && thin && r.revenue_captured !== true);
       calls.push({
         connected: r.connected ?? null,
-        converted: spec.hasConverted ? (r.converted ?? null) : null,
-        // A thin delivery carries no conversion and no connection field. The
-        // stored false is the column default, not a reported outcome, so it is
-        // UNKNOWN. Only an explicit conversion_captured = true makes it known.
-        conversionKnown: spec.hasCaptureFlags
-          ? r.conversion_captured === true
-          : spec.hasConverted && r.converted !== null,
+        converted: moneyKnown ? (money!.amount as number) > 0 : null,
+        conversionKnown: moneyKnown,
         connectionKnown: !thin,
         duration: num(r[spec.durationCol]),
         payout: r.payout,
@@ -395,6 +411,14 @@ export async function computeClientMetrics(
   }
 
   const pub: PublisherFilterSummary = pubFilter.summary();
+  const scopeUnconfirmed = clientScope.length === 0 && seenPublishers.size > 1;
+  /** Calls that came from the call feed are withheld (Jacuzzi's lead sheet is not a call feed). */
+  const callFiguresWithheld = scopeUnconfirmed;
+  const moneyBlocked = clientScope.length ? false : (pub.moneyBlocked || scopeUnconfirmed);
+  const scopeReason = scopeUnconfirmed
+    ? `publisher scoping is unconfirmed for ${client.name}: its call feed carries ${seenPublishers.size} publishers (${[...seenPublishers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([p, n]) => `${p} ${n}`).join(', ')}) and clients.publisher_scope is not set, so no call-derived figure is published.`
+    : null;
+  const moneyBlockReason = scopeReason ?? pub.blockReason;
 
   const totalCalls = calls.length;
   const connectionKnownCalls = calls.filter((c) => c.connectionKnown);
@@ -419,8 +443,10 @@ export async function computeClientMetrics(
   metrics.push({
     key: 'calls',
     label: callLabel,
-    value: callTables.length === 0 && jacuzziLeads === null ? null : callValue,
-    display: callTables.length === 0 && jacuzziLeads === null ? 'not available — no call feed recorded for this account' : String(callValue),
+    value: (callTables.length === 0 && jacuzziLeads === null) || (callFiguresWithheld && client.slug !== 'jacuzzi') ? null : callValue,
+    display: callTables.length === 0 && jacuzziLeads === null
+      ? 'not available — no call feed recorded for this account'
+      : callFiguresWithheld && client.slug !== 'jacuzzi' ? 'WITHHELD — publisher scoping unconfirmed' : String(callValue),
     note: client.slug === 'jacuzzi'
       ? `Paid per lead: ${jacuzziLeads ?? 0} leads from jacuzzi_leads (calls and QR scans counted identically, never split). ${totalCalls} of them appear as tracked calls in ringfuel_calls.`
       : callTables.length
@@ -438,7 +464,7 @@ export async function computeClientMetrics(
     metrics.push({
       key: 'connected_calls',
       label: 'Connected calls',
-      value: connKnown > 0 ? connectedCalls : null,
+      value: connKnown > 0 && !callFiguresWithheld ? connectedCalls : null,
       display: connKnown > 0 ? String(connectedCalls) : 'unknown — connection is not reported on this feed',
       note: totalCalls === 0
         ? 'No calls in the window.'
@@ -454,7 +480,7 @@ export async function computeClientMetrics(
     metrics.push({
       key: 'converted_calls',
       label: 'Converted (billable) calls',
-      value: convertedKnown.length > 0 ? convertedCalls : null,
+      value: convertedKnown.length > 0 && !callFiguresWithheld ? convertedCalls : null,
       display: convertedKnown.length > 0 ? String(convertedCalls) : 'unknown — conversion is not reported on this feed',
       note: convertedKnown.length === 0
         ? `No call in this window carries a conversion value, so conversions are UNKNOWN, not zero. Conversion is a buyer-side decision and is never inferred from call length.`
@@ -466,7 +492,7 @@ export async function computeClientMetrics(
   }
 
   // ── cost per call / per converted call ───────────────────────────────────
-  if (spendRows > 0 && callValue > 0) {
+  if (spendRows > 0 && callValue > 0 && !(callFiguresWithheld && client.slug !== 'jacuzzi')) {
     metrics.push({
       key: 'cost_per_call',
       label: client.slug === 'jacuzzi' ? 'Cost per lead' : 'Cost per call',
@@ -480,7 +506,7 @@ export async function computeClientMetrics(
       sources: [...spendTables, ...callTables],
     });
   }
-  if (spendRows > 0 && convertedKnown.length > 0 && convertedCalls > 0) {
+  if (spendRows > 0 && convertedKnown.length > 0 && convertedCalls > 0 && !callFiguresWithheld) {
     metrics.push({
       key: 'cost_per_converted_call',
       label: 'Cost per converted call',
@@ -524,11 +550,11 @@ export async function computeClientMetrics(
   } else if (callTables.length === 0) {
     revenueNote = 'No call source is mapped to this account, so revenue cannot be computed.';
     revenueDisplay = 'unknown — no call source';
-  } else if (pub.moneyBlocked) {
+  } else if (moneyBlocked) {
     // THE PUBLISHER GATE. The payout column on this feed pays several
     // publishers. Until we know which calls are ours, none of that money is.
     revenueDisplay = 'UNKNOWN — cannot be separated from other publishers';
-    revenueNote = `Revenue CANNOT be stated for ${client.name}: ${pub.blockReason} ${pub.notes.join(' ')}`;
+    revenueNote = `Revenue CANNOT be stated for ${client.name}: ${moneyBlockReason} ${pub.notes.join(' ')}`;
   } else if (hadUncapturedData) {
     // THE GATE. No total is produced while any row is uncaptured.
     revenueDisplay = 'UNKNOWN — cannot be totalled';
@@ -548,9 +574,9 @@ export async function computeClientMetrics(
   });
 
   // ── profit and margin, gated on revenue AND on spend coverage ────────────
-  const canDoProfit = revenueValue !== null && !pub.moneyBlocked && spendRows > 0 && !spendCoverageIncomplete;
-  const withheldBecause = pub.moneyBlocked
-    ? `${pub.blockReason} Our media spend is ours; the payouts on this feed are not all ours, so a margin built from the pair would credit CPM for other publishers' calls.`
+  const canDoProfit = revenueValue !== null && !moneyBlocked && spendRows > 0 && !spendCoverageIncomplete;
+  const withheldBecause = moneyBlocked
+    ? `${moneyBlockReason} Our media spend is ours; the payouts on this feed are not all ours, so a margin built from the pair would credit CPM for other publishers' calls.`
     : revenueValue === null
     ? 'revenue is unknown for at least one call in the window. Stating it would mean treating unreported calls as having earned nothing.'
     : spendRows === 0
@@ -640,16 +666,17 @@ export async function computeClientMetrics(
     // The money gate as it would read for this day alone: the scope's own block,
     // or a "dedicated" feed that shows more than one named publisher that day.
     const namedThatDay = new Set(dayCalls.map((c) => c.publisher).filter((p): p is string => !!p));
-    const dayBlocked = pubScope.moneyBlocked || (pubScope.scoping === 'not_required_dedicated_campaigns' && namedThatDay.size > 1);
+    const dayBlocked = clientScope.length ? false
+      : pubScope.moneyBlocked || scopeUnconfirmed || (pubScope.scoping === 'not_required_dedicated_campaigns' && namedThatDay.size > 1);
     const revenueOk = revenueField !== null && callTables.length > 0 && !dayBlocked && dr.uncaptured === 0 && dayCalls.length > 0;
     days.push({
       date: d,
       spendRows: sd?.rows ?? 0,
       spend: sd && sd.rows > 0 ? sd.spend : null,
-      calls: noCallMetric ? null : client.slug === 'jacuzzi' ? (leadsByDay.get(d) ?? 0) : dayCalls.length,
+      calls: noCallMetric ? null : client.slug === 'jacuzzi' ? (leadsByDay.get(d) ?? 0) : callFiguresWithheld ? null : dayCalls.length,
       trackedCalls: dayCalls.length,
-      connected: callTables.length && connKnownDay.length ? connKnownDay.filter((c) => c.connected === true).length : null,
-      converted: callTables.length && convKnownDay.length ? convKnownDay.filter((c) => c.converted === true).length : null,
+ connected: !callFiguresWithheld && callTables.length && connKnownDay.length ? connKnownDay.filter((c) => c.connected === true).length : null,
+      converted: !callFiguresWithheld && callTables.length && convKnownDay.length ? convKnownDay.filter((c) => c.converted === true).length : null,
       revenue: revenueOk ? dr.captured : null,
       bands: Object.fromEntries(DURATION_BANDS.map(([k, floor]) => [k, dayCalls.filter((c) => c.duration >= floor).length])) as Record<BandKey, number>,
     });

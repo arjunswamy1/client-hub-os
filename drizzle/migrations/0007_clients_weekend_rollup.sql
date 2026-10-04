@@ -1,0 +1,2 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS weekend_rollup boolean NOT NULL DEFAULT true;
+COMMENT ON COLUMN public.clients.weekend_rollup IS 'When true, the Monday daily update reports Saturday + Sunday combined as the weekend instead of Sunday alone.';

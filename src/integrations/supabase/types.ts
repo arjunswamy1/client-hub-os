@@ -2861,6 +2861,7 @@ export type Database = {
           spend_source_tables: string[]
           status: string
           updated_at: string
+          weekend_rollup: boolean
         }
         Insert: {
           aliases?: string[]
@@ -2898,6 +2899,7 @@ export type Database = {
           spend_source_tables?: string[]
           status?: string
           updated_at?: string
+          weekend_rollup?: boolean
         }
         Update: {
           aliases?: string[]
@@ -2935,6 +2937,7 @@ export type Database = {
           spend_source_tables?: string[]
           status?: string
           updated_at?: string
+          weekend_rollup?: boolean
         }
         Relationships: []
       }

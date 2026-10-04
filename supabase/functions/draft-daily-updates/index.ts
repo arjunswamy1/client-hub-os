@@ -13,7 +13,7 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createOpenAI } from 'npm:@ai-sdk/openai';
 import { streamText } from 'npm:ai';
 import { postToSlack } from '../_shared/slack-post.ts';
-import { buildComparisonSet, loadDailySeries, snapshotFrom, type ComparisonClient, type DailySeries } from '../_shared/metric-comparison-data.ts';
+import { buildComparisonSet, isWeekendRollup, loadDailySeries, loadScopeEvents, periodSnapshot, scopeContextLines, snapshotFrom, type ComparisonClient, type DailySeries } from '../_shared/metric-comparison-data.ts';
 import { comparisonPromptBlock, headlineDelta, renderDailyComparison, type ComparisonSet } from '../_shared/metric-comparisons.ts';
 import { collectClientMetrics, type ClientMetrics, type DayRow } from '../_shared/daily-update-metrics.ts';
 import { effectiveMode, isClientCallDay, renderHolding } from '../_shared/client-cadence.ts';
@@ -486,10 +486,14 @@ Deno.serve(async (req) => {
         const tz = reportingTimeZone(target);
         // ONE canonical read: the same engine and day cuts the CPM bot uses.
         const series = await loadDailySeries(supabase, target, forDate);
-        const metrics = await collectClientMetrics(supabase, series);
+        // Monday: Saturday + Sunday are ONE reporting period for every figure below.
+        const weekend = isWeekendRollup(target, forDate);
+        const periodFrom = weekend ? addDays(forDate, -1) : forDate;
+        const metrics = await collectClientMetrics(supabase, series, periodFrom);
+        const scopeEvents = await loadScopeEvents(supabase, clientId);
         let cmp: ComparisonSet | null = null;
         let cmpError: string | null = null;
-        try { cmp = await buildComparisonSet(supabase, target, forDate, series); }
+        try { cmp = await buildComparisonSet(supabase, target, forDate, series, scopeEvents); }
         catch (e) { cmpError = e instanceof Error ? e.message : String(e); console.error('comparison failed', clientName, cmpError); }
 
         // Never @-mention nobody: an unowned account is reported, not posted.
@@ -497,7 +501,9 @@ Deno.serve(async (req) => {
         if (!lead?.slack && !lead?.name) blockers.push('no media_buyer assigned — account needs an owner');
         if (!channel) blockers.push('no internal Slack channel registered for this client');
 
-        const day = series.days[series.days.length - 1];
+        const lastDay = series.days[series.days.length - 1];
+        const day = weekend && lastDay ? { ...lastDay, state: periodSnapshot(series.days, periodFrom, forDate).state } : lastDay;
+        const callsWithheld = series.engine.callSources.length > 0 && series.days.every((d) => d.calls === null);
         const context = await collectContext(supabase, clientId, forDate, tz, ownBot);
         const questions = await unansweredQuestions(supabase, clientId);
         // The three-state classification is the only delivery test. Performance
@@ -513,6 +519,8 @@ Deno.serve(async (req) => {
         const extraNotes: string[] = [`Daily comparison: ${mode.mode === 'same_weekday' ? 'same weekday last week' : 'prior day'} (${mode.source}: ${mode.reason})`];
         if (target.client_call_day === null || target.client_call_day === undefined) extraNotes.push('No client call day recorded — weekly rollup is never shown until one is set');
         else if (callDay) extraNotes.push('Client call day — weekly rollup included');
+        if (weekend) extraNotes.push('Monday update: Saturday and Sunday reported as one weekend period');
+        if (callsWithheld) extraNotes.push('Call figures withheld: this feed carries several publishers and no publisher scope is confirmed for the account');
         if (cmp && cmp.provisional.tracked === false) extraNotes.push("This account's spend feed is not revision-logged, so whether the day has settled cannot be judged");
 
         let kind: 'draft' | 'prompt' = metrics.has_data || !performance ? 'draft' : 'prompt';
@@ -565,7 +573,13 @@ Deno.serve(async (req) => {
           kind = 'draft';
           form = evald.triggers.length ? 'full' : 'one_line';
           const yDay = metrics.history.find((d) => d.date === forDate) ?? null;
-          oneLine = oneLiner({ client: clientName, forDate, day: yDay, trend: metrics.history.slice(-7), delivery: 'ok', weekdayQuiet: false });
+          oneLine = callsWithheld
+            ? `${clientName} — ${weekend ? `weekend ${periodFrom}–${forDate}` : forDate}: $${Math.round(metrics.yesterday?.spend ?? 0).toLocaleString()} spend; calls withheld until the publisher scope is confirmed.`
+            : weekend
+              ? oneLiner({ client: clientName, forDate: `weekend ${periodFrom}–${forDate}`, day: metrics.yesterday ? { ...(yDay ?? {} as any), date: forDate, spend: metrics.yesterday.spend, calls: metrics.yesterday.calls, impressions: metrics.yesterday.impressions, qualified: metrics.yesterday.bands['d90'] ?? 0 } : null, trend: metrics.history.slice(-7), delivery: 'ok', weekdayQuiet: false })
+              : oneLiner({ client: clientName, forDate, day: yDay, trend: metrics.history.slice(-7), delivery: 'ok', weekdayQuiet: false });
+          for (const n of cmp ? [] : scopeContextLines(scopeEvents, forDate)) oneLine += `\n${n}`;
+          if (cmp?.scopeNotes?.length) oneLine += `\n${cmp.scopeNotes.join('\n')}`;
           if (form === 'one_line') {
             const delta = cmp ? headlineDelta(cmp, mode.mode) : null;
             draftText = delta ? `${oneLine} ${delta}` : oneLine;

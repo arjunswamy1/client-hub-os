@@ -46,9 +46,25 @@ export interface ClientMetrics {
 const BAND_KEYS = ['d10', 'd25', 'd90', 'd600', 'd1200'] as const;
 const round = (n: number, p = 2) => Math.round(n * 10 ** p) / 10 ** p;
 
+function combineRows(rows: DayRow[]): DayRow | null {
+  if (!rows.length) return null;
+  const spend = round(rows.reduce((a, r) => a + r.spend, 0));
+  const calls = rows.reduce((a, r) => a + r.calls, 0);
+  const bands = Object.fromEntries(BAND_KEYS.map((k) => [k, rows.reduce((a, r) => a + (r.bands[k] ?? 0), 0)]));
+  const imp = rows.filter((r) => r.impressions !== null);
+  return {
+    date: `${rows[0].date}..${rows[rows.length - 1].date}`, spend, calls,
+    cost_per_call: calls > 0 && spend > 0 ? round(spend / calls) : null,
+    impressions: imp.length ? imp.reduce((a, r) => a + (r.impressions ?? 0), 0) : null,
+    bands,
+    band_pct: Object.fromEntries(BAND_KEYS.map((k) => [k, calls > 0 ? round((bands[k] / calls) * 100, 1) : 0])),
+  };
+}
+
 /** The draft's view of the canonical series. Pure apart from the two descriptive reads. */
-export async function collectClientMetrics(db: SupabaseClient, series: DailySeries): Promise<ClientMetrics> {
+export async function collectClientMetrics(db: SupabaseClient, series: DailySeries, periodFrom?: string): Promise<ClientMetrics> {
   const { client, forDate, engine } = series;
+  const pFrom = periodFrom ?? forDate;
   const windowStart = addDays(forDate, -6);
   const gaps: string[] = [];
   if (!engine.spendSources.length) gaps.push('no spend feed is recorded for this account');
@@ -95,8 +111,8 @@ export async function collectClientMetrics(db: SupabaseClient, series: DailySeri
   const campaignBreakdown: ClientMetrics['campaign_breakdown'] = [];
   const anomalies: ClientMetrics['anomalies'] = [];
   for (const [campaign, byDay] of byCampaign) {
-    const onDay = round(byDay.get(forDate) ?? 0);
-    const earlier = round([...byDay.entries()].filter(([d]) => d !== forDate).reduce((s, [, v]) => s + v, 0));
+    const onDay = round([...byDay.entries()].filter(([d]) => d >= pFrom).reduce((s, [, v]) => s + v, 0));
+    const earlier = round([...byDay.entries()].filter(([d]) => d < pFrom).reduce((s, [, v]) => s + v, 0));
     if (onDay > 0) campaignBreakdown.push({ campaign, spend: onDay, calls: null });
     else if (earlier > 0) anomalies.push({ campaign, detail: `spent $${earlier.toLocaleString()} earlier in the window but $0 on ${forDate}` });
   }
@@ -113,7 +129,9 @@ export async function collectClientMetrics(db: SupabaseClient, series: DailySeri
     window_start: windowStart,
     spend_sources: engine.spendSources,
     call_sources: engine.callSources,
-    yesterday: trend[trend.length - 1] ?? null,
+    // The reported period: one day, or Sat + Sun combined on a Monday — every
+    // headline figure in the update is this same period.
+    yesterday: pFrom === forDate ? (trend[trend.length - 1] ?? null) : combineRows(trend.filter((r) => r.date >= pFrom)),
     trend,
     history,
     campaign_breakdown: campaignBreakdown.slice(0, 12),

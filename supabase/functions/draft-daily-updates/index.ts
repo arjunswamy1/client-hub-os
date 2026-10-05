@@ -495,7 +495,7 @@ Deno.serve(async (req) => {
       // (Spektrafin reads ~25k calls) can never starve the others of run time.
       const selfUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/draft-daily-updates`;
       const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const settled = await Promise.allSettled(targets.map(async (t) => {
+      const invoke = async (t: { id: string }) => {
         const res = await fetch(selfUrl, {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -505,7 +505,13 @@ Deno.serve(async (req) => {
         const out = await res.json().catch(() => ({ error: `HTTP ${res.status}, unreadable body` }));
         if (!res.ok) throw new Error(out?.error ?? `HTTP ${res.status}`);
         return out;
-      }));
+      };
+      const settled: PromiseSettledResult<unknown>[] = await Promise.allSettled(targets.map(invoke));
+      // A heavy account can hit the worker's resource limit while the others run
+      // alongside it: retry each failure ONCE, alone, before recording it failed.
+      for (let i = 0; i < targets.length; i++) {
+        if (settled[i].status === 'rejected') settled[i] = (await Promise.allSettled([invoke(targets[i])]))[0];
+      }
       const results: Record<string, unknown>[] = [];
       for (let i = 0; i < targets.length; i++) {
         const r = settled[i];

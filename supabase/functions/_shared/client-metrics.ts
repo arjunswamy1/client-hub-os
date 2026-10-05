@@ -75,6 +75,12 @@ export interface DayFigures {
   calls: number | null;
   /** Tracked calls after publisher scoping (equals calls except on Jacuzzi). */
   trackedCalls: number;
+  /** Why `calls` is null for this day, or null when it is known. */
+  callsMissingReason?: string | null;
+  /** Rows with no publisher recorded, excluded under a confirmed scope. */
+  unrecordedExcluded?: number;
+  /** Every in-scope call that day lacks campaign, buyer and tracking number (feed narrowed). */
+  attributionMissing?: boolean;
   connected: number | null;
   converted: number | null;
   /** null unless every call that day carries captured revenue and the money is CPM's. */
@@ -189,21 +195,39 @@ function callSourcesFor(client: ResolvedClientRow): SourceResolution {
 // ─── Fetch helpers ──────────────────────────────────────────────────────────
 
 const PAGE = 1000;
-const MAX_ROWS = 20000;
+/** Hard ceiling. Reaching it THROWS — a silently truncated read is a false total. */
+export const MAX_ROWS = 200_000;
 
-async function fetchAll(makeQuery: (from: number, to: number) => any): Promise<any[]> {
+/**
+ * Paged read. A failed page or a read that hits the ceiling throws: either one
+ * would otherwise hand back a partial set that every caller reads as complete
+ * (Spektrafin's 28-day window is ~25k calls and used to stop at 20k).
+ */
+async function fetchAll(makeQuery: (from: number, to: number) => any, what = 'rows'): Promise<any[]> {
   const rows: any[] = [];
-  for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+  for (let offset = 0; ; offset += PAGE) {
+    if (offset >= MAX_ROWS) throw new Error(`[client-metrics] ${what}: more than ${MAX_ROWS} rows — refusing to return a truncated set`);
     const { data, error } = await makeQuery(offset, offset + PAGE - 1);
-    if (error) {
-      console.error('[client-metrics] fetch error:', error.message);
-      break;
-    }
+    if (error) throw new Error(`[client-metrics] ${what}: ${error.message}`);
     const batch = data || [];
     rows.push(...batch);
     if (batch.length < PAGE) break;
   }
   return rows;
+}
+
+/**
+ * The last reporting day a feed has recorded anything for this client, or null
+ * if it never has. A day AFTER this is not "zero calls" — the feed has not
+ * reported it yet, so it is missing.
+ */
+async function feedThrough(supabase: any, table: string, col: string, clientId: string, isTimestamp: boolean, tz: string): Promise<string | null> {
+  const { data, error } = await supabase.from(table).select(col).eq('client_id', clientId)
+    .order(col, { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(`[client-metrics] ${table} coverage: ${error.message}`);
+  const v = data?.[col];
+  if (!v) return null;
+  return isTimestamp ? reportingDay(String(v), tz) : String(v).slice(0, 10);
 }
 
 function money(v: number): string {
@@ -338,12 +362,21 @@ export async function computeClientMetrics(
   // publisher, every call-derived figure is withheld below — never estimated,
   // never "all publishers".
   const clientScope = (client.publisher_scope ?? []).map((p) => p.trim().toLowerCase()).filter(Boolean);
+  // NAMED publishers only. A row with no publisher recorded is a coverage gap,
+  // never a second publisher: unrecorded rows alone never trigger withholding.
   const seenPublishers = new Map<string, number>();
   let outOfScope = 0;
+  /** Unrecorded-publisher rows dropped under a confirmed scope, per reporting day. */
+  const unrecordedByDay = new Map<string, number>();
+  /** Per day: in-scope calls, and how many of them carry no campaign/buyer/number. */
+  const attributionByDay = new Map<string, { calls: number; bare: number }>();
+  /** Last day each call feed has recorded anything for this client (unscoped). */
+  const throughDays: (string | null)[] = [];
 
   for (const tableKey of callTables) {
     const spec = CALL_SOURCES[tableKey];
     if (!spec) continue;
+    throughDays.push(await feedThrough(supabase, spec.table, spec.dateCol, client.id, spec.isTimestamp, tz));
     const cols = [
       spec.dateCol, 'connected', spec.durationCol, 'payout',
       ...publisherColumns(tableKey),
@@ -352,6 +385,7 @@ export async function computeClientMetrics(
       spec.hasCaptureFlags ? 'revenue_captured' : null,
       spec.hasCaptureFlags ? 'conversion_captured' : null,
       spec.hasCaptureFlags ? 'payload_shape' : null,
+      tableKey === 'ringfuel_calls' ? 'campaign_name, buyer_name, target_name' : null,
       spec.testFlagCol || null,
     ].filter(Boolean).join(', ');
 
@@ -359,15 +393,23 @@ export async function computeClientMetrics(
       supabase.from(spec.table).select(cols).eq('client_id', client.id)
         .gte(spec.dateCol, spec.isTimestamp ? startTs : window.from)
         .lte(spec.dateCol, spec.isTimestamp ? endTs : window.to)
-        .range(f, t));
+        .range(f, t), `${spec.table} calls`);
 
     for (const r of rows as any[]) {
       if (spec.testFlagCol && r[spec.testFlagCol] === true) { testRowsExcluded++; continue; }
       const publisher = readPublisher(tableKey, r);
+      const rowDay = spec.isTimestamp ? reportingDay(r[spec.dateCol], tz) : String(r[spec.dateCol] ?? '').slice(0, 10);
       if (publisher) seenPublishers.set(publisher, (seenPublishers.get(publisher) ?? 0) + 1);
       if (clientScope.length) {
-        if (!publisher || !clientScope.includes(publisher.toLowerCase())) { outOfScope++; continue; }
+        if (!publisher) { outOfScope++; unrecordedByDay.set(rowDay, (unrecordedByDay.get(rowDay) ?? 0) + 1); continue; }
+        if (!clientScope.includes(publisher.toLowerCase())) { outOfScope++; continue; }
       } else if (!pubFilter.keep(publisher)) continue;
+      if (tableKey === 'ringfuel_calls') {
+        const a = attributionByDay.get(rowDay) ?? { calls: 0, bare: 0 };
+        a.calls++;
+        if (!r.campaign_name && !r.buyer_name && !r.target_name) a.bare++;
+        attributionByDay.set(rowDay, a);
+      }
       const thin = spec.hasCaptureFlags && r.payload_shape === 'webhook_minimal';
       // CONVERTED comes ONLY from the account's configured money field: a call is
       // converted when that field carries a captured amount above zero. The
@@ -389,26 +431,49 @@ export async function computeClientMetrics(
         revenue: spec.hasRevenue ? r.revenue : null,
         revenue_captured: spec.hasCaptureFlags ? (r.revenue_captured ?? null) : null,
         payload_shape: spec.hasCaptureFlags ? (r.payload_shape ?? null) : null,
-        day: spec.isTimestamp ? reportingDay(r[spec.dateCol], tz) : String(r[spec.dateCol] ?? '').slice(0, 10),
+        day: rowDay,
         publisher,
       });
     }
   }
+  /** Calls are known through this day; later days are MISSING, never zero. Null = feed never reported. */
+  const callsThrough: string | null = throughDays.length
+    ? (throughDays.some((d) => d === null) ? null : (throughDays as string[]).sort()[0])
+    : null;
 
   // Jacuzzi is paid per LEAD: calls and QR scans count identically and are
   // never separated. The lead sheet is the count; calls are only a subset of it.
+  // The sheet is uploaded by hand and lags: a day after its last row is NOT a
+  // day with zero leads — it is a day whose leads have not been uploaded yet.
   let jacuzziLeads: number | null = null;
+  let leadsThrough: string | null = null;
   const leadsByDay = new Map<string, number>();
+  /** Revenue per day from the lead sheet: Jacuzzi's count and money share ONE source, never mixed with RingFuel. */
+  const leadRevenueByDay = new Map<string, number | null>();
   if (client.slug === 'jacuzzi') {
+    leadsThrough = await feedThrough(supabase, 'jacuzzi_leads', 'transaction_date', client.id, false, tz);
     const leadRows = await fetchAll((f, t) =>
-      supabase.from('jacuzzi_leads').select('transaction_date, lead_type').eq('client_id', client.id)
-        .gte('transaction_date', window.from).lte('transaction_date', window.to).range(f, t));
+      supabase.from('jacuzzi_leads').select('transaction_date, lead_type, payout_rate').eq('client_id', client.id)
+        .gte('transaction_date', window.from).lte('transaction_date', window.to).range(f, t), 'jacuzzi_leads');
     jacuzziLeads = leadRows.length;
     for (const l of leadRows as any[]) {
       const d = String(l.transaction_date ?? '').slice(0, 10);
       leadsByDay.set(d, (leadsByDay.get(d) ?? 0) + 1);
+      const prev = leadRevenueByDay.has(d) ? leadRevenueByDay.get(d)! : 0;
+      const rate = l.payout_rate === null || l.payout_rate === undefined ? null : Number(l.payout_rate);
+      leadRevenueByDay.set(d, prev === null || rate === null ? null : prev + rate);
     }
   }
+  /** The day through which the account's CALL METRIC is known. */
+  const metricThrough = client.slug === 'jacuzzi' ? leadsThrough : callsThrough;
+  const metricCovers = (d: string) => metricThrough !== null && d <= metricThrough;
+  const callsCover = (d: string) => callsThrough !== null && d <= callsThrough;
+  const windowCovered = metricCovers(window.to);
+  const coverageGap = (callTables.length || client.slug === 'jacuzzi') && !windowCovered
+    ? (client.slug === 'jacuzzi'
+      ? `The lead sheet has ${leadsThrough ? `rows only through ${leadsThrough}` : 'no rows at all'}, so leads for ${leadsThrough ? `${nextDay(leadsThrough)} onward` : 'this window'} are NOT YET RECORDED — missing, not zero.`
+      : `The call feed has ${callsThrough ? `recorded nothing after ${callsThrough}` : 'never recorded a call for this account'}, so calls for ${callsThrough ? `${nextDay(callsThrough)} onward` : 'this window'} are NOT YET RECORDED — missing, not zero.`)
+    : null;
 
   const pub: PublisherFilterSummary = pubFilter.summary();
   const scopeUnconfirmed = clientScope.length === 0 && seenPublishers.size > 1;
@@ -439,14 +504,20 @@ export async function computeClientMetrics(
 
   const callLabel = client.slug === 'jacuzzi' ? 'Leads (calls + QR scans, never split)' : 'Validated calls (call-tracking records)';
   const callValue = client.slug === 'jacuzzi' ? (jacuzziLeads ?? totalCalls) : totalCalls;
+  /** The window runs past what the call metric's feed has recorded: the count is MISSING. */
+  const callMetricMissing = coverageGap !== null;
+  /** Revenue's own feed (the call feed) runs short of the window. */
+  const revenueFeedMissing = callTables.length > 0 && !callsCover(window.to);
+  if (coverageGap) caveats.push(coverageGap);
 
   metrics.push({
     key: 'calls',
     label: callLabel,
-    value: (callTables.length === 0 && jacuzziLeads === null) || (callFiguresWithheld && client.slug !== 'jacuzzi') ? null : callValue,
+    value: (callTables.length === 0 && jacuzziLeads === null) || (callFiguresWithheld && client.slug !== 'jacuzzi') || callMetricMissing ? null : callValue,
     display: callTables.length === 0 && jacuzziLeads === null
       ? 'not available — no call feed recorded for this account'
-      : callFiguresWithheld && client.slug !== 'jacuzzi' ? 'WITHHELD — publisher scoping unconfirmed' : String(callValue),
+      : callFiguresWithheld && client.slug !== 'jacuzzi' ? 'WITHHELD — publisher scoping unconfirmed'
+      : callMetricMissing ? 'NOT YET RECORDED — the feed has not reported this window' : String(callValue),
     note: client.slug === 'jacuzzi'
       ? `Paid per lead: ${jacuzziLeads ?? 0} leads from jacuzzi_leads (calls and QR scans counted identically, never split). ${totalCalls} of them appear as tracked calls in ringfuel_calls.`
       : callTables.length
@@ -492,7 +563,7 @@ export async function computeClientMetrics(
   }
 
   // ── cost per call / per converted call ───────────────────────────────────
-  if (spendRows > 0 && callValue > 0 && !(callFiguresWithheld && client.slug !== 'jacuzzi')) {
+  if (spendRows > 0 && callValue > 0 && !callMetricMissing && !(callFiguresWithheld && client.slug !== 'jacuzzi')) {
     metrics.push({
       key: 'cost_per_call',
       label: client.slug === 'jacuzzi' ? 'Cost per lead' : 'Cost per call',
@@ -555,6 +626,9 @@ export async function computeClientMetrics(
     // publishers. Until we know which calls are ours, none of that money is.
     revenueDisplay = 'UNKNOWN — cannot be separated from other publishers';
     revenueNote = `Revenue CANNOT be stated for ${client.name}: ${moneyBlockReason} ${pub.notes.join(' ')}`;
+  } else if (revenueFeedMissing) {
+    revenueDisplay = 'NOT YET RECORDED — the call feed has not reported the whole window';
+    revenueNote = `The call feed has ${callsThrough ? `recorded nothing after ${callsThrough}` : 'never recorded a call'}, so revenue for the rest of the window is missing, not $0.`;
   } else if (hadUncapturedData) {
     // THE GATE. No total is produced while any row is uncaptured.
     revenueDisplay = 'UNKNOWN — cannot be totalled';
@@ -686,16 +760,29 @@ export async function computeClientMetrics(
     const namedThatDay = new Set(dayCalls.map((c) => c.publisher).filter((p): p is string => !!p));
     const dayBlocked = clientScope.length ? false
       : pubScope.moneyBlocked || scopeUnconfirmed || (pubScope.scoping === 'not_required_dedicated_campaigns' && namedThatDay.size > 1);
-    const revenueOk = revenueField !== null && callTables.length > 0 && !dayBlocked && dr.uncaptured === 0 && dayCalls.length > 0;
+    // A day the feed has not reported is MISSING: no count, no revenue, never 0.
+    const feedCovers = callsCover(d);
+    const metricCoversDay = metricCovers(d);
+    // A covered day with no in-scope calls genuinely earned $0; an uncovered one is unknown.
+    const revenueOk = revenueField !== null && callTables.length > 0 && !dayBlocked && dr.uncaptured === 0 && feedCovers;
+    const attr = attributionByDay.get(d);
     days.push({
       date: d,
       spendRows: sd?.rows ?? 0,
       spend: sd && sd.rows > 0 ? sd.spend : null,
-      calls: noCallMetric ? null : client.slug === 'jacuzzi' ? (leadsByDay.get(d) ?? 0) : callFiguresWithheld ? null : dayCalls.length,
+      calls: noCallMetric || !metricCoversDay ? null
+        : client.slug === 'jacuzzi' ? (leadsByDay.get(d) ?? 0) : callFiguresWithheld ? null : dayCalls.length,
       trackedCalls: dayCalls.length,
- connected: !callFiguresWithheld && callTables.length && connKnownDay.length ? connKnownDay.filter((c) => c.connected === true).length : null,
-      converted: !callFiguresWithheld && callTables.length && convKnownDay.length ? convKnownDay.filter((c) => c.converted === true).length : null,
-      revenue: revenueOk ? dr.captured : null,
+      callsMissingReason: noCallMetric ? 'no call feed is recorded for this account'
+        : !metricCoversDay ? (client.slug === 'jacuzzi' ? 'the lead sheet has not been uploaded for this day yet' : 'the call feed has not reported this day yet')
+        : callFiguresWithheld && client.slug !== 'jacuzzi' ? 'publisher scope unconfirmed' : null,
+      unrecordedExcluded: unrecordedByDay.get(d) ?? 0,
+      attributionMissing: attr ? attr.calls > 0 && attr.bare === attr.calls : false,
+      connected: !callFiguresWithheld && feedCovers && callTables.length && connKnownDay.length ? connKnownDay.filter((c) => c.connected === true).length : null,
+      converted: !callFiguresWithheld && feedCovers && callTables.length && convKnownDay.length ? convKnownDay.filter((c) => c.converted === true).length : null,
+      revenue: client.slug === 'jacuzzi'
+        ? (metricCoversDay ? (leadRevenueByDay.has(d) ? leadRevenueByDay.get(d)! : 0) : null)
+        : revenueOk ? dr.captured : null,
       bands: Object.fromEntries(DURATION_BANDS.map(([k, floor]) => [k, dayCalls.filter((c) => c.duration >= floor).length])) as Record<BandKey, number>,
     });
   }

@@ -23,6 +23,8 @@ export interface DayRow {
   impressions: number | null;
   bands: Record<string, number>;
   band_pct: Record<string, number>;
+  /** False = the call figure is MISSING; `calls` is a placeholder and must never be printed. */
+  callsKnown: boolean;
 }
 
 export interface ClientMetrics {
@@ -54,7 +56,8 @@ function combineRows(rows: DayRow[]): DayRow | null {
   const imp = rows.filter((r) => r.impressions !== null);
   return {
     date: `${rows[0].date}..${rows[rows.length - 1].date}`, spend, calls,
-    cost_per_call: calls > 0 && spend > 0 ? round(spend / calls) : null,
+    callsKnown: rows.every((r) => r.callsKnown),
+    cost_per_call: rows.every((r) => r.callsKnown) && calls > 0 && spend > 0 ? round(spend / calls) : null,
     impressions: imp.length ? imp.reduce((a, r) => a + (r.impressions ?? 0), 0) : null,
     bands,
     band_pct: Object.fromEntries(BAND_KEYS.map((k) => [k, calls > 0 ? round((bands[k] / calls) * 100, 1) : 0])),
@@ -75,9 +78,10 @@ export async function collectClientMetrics(db: SupabaseClient, series: DailySeri
     const calls = d.calls ?? 0;
     const bands = Object.fromEntries(BAND_KEYS.map((k) => [k, d.bands[k] ?? 0]));
     const tracked = d.trackedCalls;
+    const callsKnown = d.calls !== null;
     return {
-      date: d.date, spend, calls,
-      cost_per_call: calls > 0 && spend > 0 ? round(spend / calls) : null,
+      date: d.date, spend, calls, callsKnown,
+      cost_per_call: callsKnown && calls > 0 && spend > 0 ? round(spend / calls) : null,
       impressions: d.impressions,
       bands,
       band_pct: Object.fromEntries(BAND_KEYS.map((k) => [k, tracked > 0 ? round((bands[k] / tracked) * 100, 1) : 0])),
@@ -87,6 +91,7 @@ export async function collectClientMetrics(db: SupabaseClient, series: DailySeri
   const history: RuleDay[] = series.days.map((d) => ({
     date: d.date, spend: round(d.spend ?? 0), calls: d.calls ?? 0,
     qualified: d.bands[QUALIFIED_BAND] ?? 0, impressions: d.impressions,
+    callsKnown: d.calls !== null,
   }));
 
   // Descriptive campaign detail — spend only. Per-campaign call counts were the

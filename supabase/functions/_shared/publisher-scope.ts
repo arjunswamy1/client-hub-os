@@ -42,10 +42,18 @@ const PUBLISHER_READ: Record<string, { column?: string; json?: string; keys: str
 
 export const PUBLISHER_NOT_RECORDED = '(publisher not recorded on the call)';
 
+/**
+ * Feeds whose raw payload is large: read only the publisher keys out of it
+ * (aliased `pub_<i>`), never the whole blob — Spektrafin's 28-day window is
+ * ~25k rows and pulling every raw_payload made the run too slow to finish.
+ */
+const ALIASED_JSON = new Set(['ringfuel_calls', 'cannaball_calls']);
+
 /** Extra columns a call query must select to read the publisher on this feed. */
 export function publisherColumns(table: string): string[] {
   const spec = PUBLISHER_READ[table];
   if (!spec) return [];
+  if (spec.json && ALIASED_JSON.has(table)) return spec.keys.map((k, i) => `pub_${i}:${spec.json}->>${k}`);
   return [spec.column || spec.json!].filter(Boolean) as string[];
 }
 
@@ -56,6 +64,10 @@ export function readPublisher(table: string, row: Record<string, unknown>): stri
   if (spec.column) {
     const v = row[spec.column];
     return typeof v === 'string' && v.trim() ? v.trim() : null;
+  }
+  for (let i = 0; i < spec.keys.length; i++) {
+    const v = row[`pub_${i}`];
+    if (typeof v === 'string' && v.trim()) return v.trim();
   }
   const blob = row[spec.json!];
   if (!blob || typeof blob !== 'object') return null;

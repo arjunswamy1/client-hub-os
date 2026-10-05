@@ -68,6 +68,8 @@ export interface Snapshot {
   connected: number | null;
   billable: number | null;
   impressions: number | null;
+  /** Why calls are null on an otherwise available period (feed not reported, scope unconfirmed). */
+  callsMissing?: string | null;
 }
 
 export type CompareLabel = 'vs_same_weekday' | 'vs_prior_day' | 'vs_prior_week';
@@ -407,6 +409,9 @@ function headlineFigures(set: ComparisonSet): string {
   const p = metricValue(s, 'profit');
   if (p !== null) bits.push(`${signedMoney(p)} profit`);
   if (s.calls !== null) bits.push(`${s.calls.toLocaleString('en-US')} calls`);
+  // Absent is said in words, never dropped and never printed as 0.
+  if (s.calls === null) bits.push(`calls not recorded yet (${s.callsMissing ?? 'no call figure'})`);
+  if (s.revenue === null && s.calls === null) bits.push('revenue and profit withheld until calls land');
   const cpc = metricValue(s, 'cost_per_call');
   if (cpc !== null && cpc >= 1) bits.push(`${fmtMoney(cpc, { cents: true })} per call`);
   return bits.join(' · ');

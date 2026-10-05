@@ -52,7 +52,7 @@ export function screenSql(sqlRaw: string): { ok: true; sql: string } | { ok: fal
 
 export async function runReadOnlySql(supabase: any, sqlRaw: string, rowLimit = 200): Promise<SqlResult> {
   const screened = screenSql(sqlRaw);
-  if (!screened.ok) return { ok: false, sql: sqlRaw, rows: [], error: screened.error };
+  if (!screened.ok) return { ok: false, sql: sqlRaw, rows: [], error: (screened as { ok: false; error: string }).error };
   const { data, error } = await supabase.rpc('bot_readonly_select', {
     p_sql: screened.sql,
     p_row_limit: rowLimit,

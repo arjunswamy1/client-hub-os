@@ -277,6 +277,8 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
           return {
             client_id: clientId,
             platform: "meta",
+            // Identity is the campaign ID; the name is just its latest label.
+            platform_campaign_id: c.campaign_id ? String(c.campaign_id) : null,
             campaign_name: c.campaign_name,
             status: campaignStatusMap.get(c.campaign_id) || "unknown",
             date: c.date_start,
@@ -292,7 +294,19 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
             lifetime_budget: minorToMajor(cfg.lifetime_budget),
           };
         });
-        await batchUpsert(supabase, "ad_campaigns", batch, "client_id,platform,campaign_name,date");
+        const withId = batch.filter((r: any) => r.platform_campaign_id);
+        const noId = batch.filter((r: any) => !r.platform_campaign_id);
+        if (withId.length) {
+          // Rows saved before IDs were stored are keyed by name, so a rename made
+          // a second row. This pull re-supplies every day in the window keyed by
+          // ID, so those legacy rows are replaced, never kept alongside.
+          const dates = [...new Set(withId.map((r: any) => r.date))];
+          const { error: delErr } = await supabase.from("ad_campaigns").delete()
+            .eq("client_id", clientId).eq("platform", "meta").is("platform_campaign_id", null).in("date", dates);
+          if (delErr) throw new Error(`ad_campaigns legacy cleanup: ${delErr.message}`);
+          await batchUpsert(supabase, "ad_campaigns", withId, "client_id,platform,platform_campaign_id,date");
+        }
+        if (noId.length) await batchUpsert(supabase, "ad_campaigns", noId, "client_id,platform,campaign_name,date");
         totalRecords += batch.length;
       }
 

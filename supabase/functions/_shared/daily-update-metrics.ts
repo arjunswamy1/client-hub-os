@@ -10,7 +10,8 @@
 // detail, and the latest Media Brain review. Neither feeds a headline number.
 //
 // Read-only: this module never writes to a call or ad-sync table.
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+// deno-lint-ignore no-explicit-any
+type SupabaseClient = any;
 import { QUALIFIED_BAND, type SeriesDay as RuleDay } from './daily-update-rules.ts';
 import type { DailySeries } from './metric-comparison-data.ts';
 import { addDays } from './reporting-day.ts';

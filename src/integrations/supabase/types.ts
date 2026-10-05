@@ -2860,6 +2860,7 @@ export type Database = {
           slug: string
           spend_source_tables: string[]
           status: string
+          update_context_note: string | null
           updated_at: string
           weekend_rollup: boolean
         }
@@ -2898,6 +2899,7 @@ export type Database = {
           slug: string
           spend_source_tables?: string[]
           status?: string
+          update_context_note?: string | null
           updated_at?: string
           weekend_rollup?: boolean
         }
@@ -2936,6 +2938,7 @@ export type Database = {
           slug?: string
           spend_source_tables?: string[]
           status?: string
+          update_context_note?: string | null
           updated_at?: string
           weekend_rollup?: boolean
         }
@@ -3634,6 +3637,59 @@ export type Database = {
           token?: string
         }
         Relationships: []
+      }
+      daily_update_run_log: {
+        Row: {
+          calls: number | null
+          client_id: string
+          created_at: string
+          dry_run: boolean
+          for_date: string | null
+          id: string
+          missing_figures: string[]
+          reason: string | null
+          revenue: number | null
+          run_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          calls?: number | null
+          client_id: string
+          created_at?: string
+          dry_run?: boolean
+          for_date?: string | null
+          id?: string
+          missing_figures?: string[]
+          reason?: string | null
+          revenue?: number | null
+          run_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          calls?: number | null
+          client_id?: string
+          created_at?: string
+          dry_run?: boolean
+          for_date?: string | null
+          id?: string
+          missing_figures?: string[]
+          reason?: string | null
+          revenue?: number | null
+          run_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_update_run_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       daily_update_style: {
         Row: {

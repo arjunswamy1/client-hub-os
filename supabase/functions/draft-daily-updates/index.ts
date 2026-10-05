@@ -20,9 +20,11 @@ import { effectiveMode, isClientCallDay, renderHolding } from '../_shared/client
 import { CLIENT_REPORTING_COLUMNS } from '../_shared/client-resolve.ts';
 import { addDays, dayEndsAt, reportingTimeZone, reportingWindowBounds, reportingYesterday } from '../_shared/reporting-day.ts';
 import {
-  capText, contextBlock, degenerateRate, evaluateTriggers, FULL_UPDATE_CHAR_CAP, isPriced, MIN_TREND_DAYS,
+  capText, collapseTrigger, contextBlock, degenerateRate, evaluateTriggers, falseZeroProblems, FULL_UPDATE_CHAR_CAP, isPriced, MIN_TREND_DAYS,
   oneLiner, pctChange, weekdayName, weekdayQuiet, type ContextItem, type Trigger,
 } from '../_shared/daily-update-rules.ts';
+import { MIN_BASE_CALLS } from '../_shared/metric-comparisons.ts';
+import { detectAccountsAdded } from '../_shared/scope-detect.ts';
 import { ownBotIdentity, type OwnBotIdentity } from '../_shared/slack-identity.ts';
 import { getValidBotToken } from '../_shared/slack-token.ts';
 
@@ -107,9 +109,11 @@ function factSheet(m: ClientMetrics, triggers: Trigger[], context: ContextItem[]
       const cpc = degenerateRate(y.cost_per_call)
         ? 'WITHHELD — the inputs are too small to compute a rate; do not mention cost per call'
         : money(y.cost_per_call!);
-      lines.push(`Yesterday: spend ${money(y.spend)}, ${y.calls} inbound calls, cost per call ${cpc}`);
+      lines.push(y.callsKnown
+        ? `Yesterday: spend ${money(y.spend)}, ${y.calls} inbound calls, cost per call ${cpc}`
+        : `Yesterday: spend ${money(y.spend)}. Calls, revenue, profit and cost per call are NOT RECORDED YET — never mention them, never write 0, and recommend nothing on the strength of them.`);
     }
-    if (y.calls > 0) {
+    if (y.callsKnown && y.calls > 0) {
       lines.push(`Yesterday duration mix: ${y.band_pct.d10}% past 10 seconds, ${y.band_pct.d25}% past 25 seconds, ${y.band_pct.d90}% past 90 seconds, ${y.band_pct.d600}% past 10 minutes, ${y.band_pct.d1200}% past 20 minutes`);
     }
     if (y.calls > 0 && y.calls < 10) {
@@ -121,7 +125,7 @@ function factSheet(m: ClientMetrics, triggers: Trigger[], context: ContextItem[]
     lines.push(`Cost per call by day: ${dir.series}`);
     lines.push(`WEEKLY DIRECTION (lead with this, not with yesterday vs the day before): ${dir.direction}`);
   } else {
-    const callSeries = m.trend.map((d) => `${d.date} ${d.calls} calls`).join(' → ');
+    const callSeries = m.trend.map((d) => `${d.date} ${d.callsKnown ? `${d.calls} calls` : 'calls not recorded yet'}`).join(' → ');
     const priced = m.trend.filter(isPriced).length;
     lines.push(priced < MIN_TREND_DAYS
       ? `Only ${priced} of 7 days have both spend and calls — there is NO cost trend. State the level only; never a direction.`
@@ -132,7 +136,7 @@ function factSheet(m: ClientMetrics, triggers: Trigger[], context: ContextItem[]
   for (const d of m.trend) {
     const spendCell = noSpend ? 'spend not available' : money(d.spend);
     const cpcCell = noSpend || degenerateRate(d.cost_per_call) ? 'not available' : money(d.cost_per_call!);
-    lines.push(`  ${d.date} | ${spendCell} | ${d.calls} | ${cpcCell} | ${d.calls > 0 ? `${d.band_pct.d90}%` : 'not available'}`);
+    lines.push(`  ${d.date} | ${spendCell} | ${d.callsKnown ? d.calls : 'not recorded yet'} | ${cpcCell} | ${d.callsKnown && d.calls > 0 ? `${d.band_pct.d90}%` : 'not available'}`);
   }
   if (m.campaign_breakdown.length && !noSpend) {
     lines.push('Campaign spend yesterday:');
@@ -383,6 +387,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     const dryRun = body.dry_run === true;
+    const isChild = body.child === true && typeof body.run_id === 'string';
+    const runId: string = isChild ? String(body.run_id) : crypto.randomUUID();
     const force = body.force === true;
     // Each account's reporting day is D-1 in its own reporting timezone.
     const explicitDate = typeof body.for_date === 'string' ? body.for_date : null;
@@ -470,6 +476,61 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── THE RUN LEDGER ─────────────────────────────────────────────────────
+    // Every enabled client gets a row BEFORE any drafting starts. A client that
+    // never finishes stays 'attempted' — a silent skip is impossible to miss.
+    const ledger = async (clientId: string, patch: Record<string, unknown>) => {
+      const { error } = await supabase.from('daily_update_run_log')
+        .upsert({ run_id: runId, client_id: clientId, dry_run: dryRun, updated_at: new Date().toISOString(), ...patch }, { onConflict: 'run_id,client_id' });
+      if (error) console.error('run ledger write failed', clientId, error.message);
+    };
+    if (!isChild) {
+      for (const c of candidates) {
+        const t = targets.find((x) => x.id === c.id);
+        await ledger(c.id, t
+          ? { status: 'attempted', for_date: forDateOf(c), reason: null }
+          : { status: 'skipped', for_date: forDateOf(c), reason: 'no internal Slack channel registered and no spend or call data in the 7-day window' });
+      }
+      // FAN OUT: one invocation per client, in parallel, so one slow account
+      // (Spektrafin reads ~25k calls) can never starve the others of run time.
+      const selfUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/draft-daily-updates`;
+      const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const settled = await Promise.allSettled(targets.map(async (t) => {
+        const res = await fetch(selfUrl, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...body, child: true, run_id: runId, client_ids: [t.id], client_names: undefined, force: true }),
+          signal: AbortSignal.timeout(140_000),
+        });
+        const out = await res.json().catch(() => ({ error: `HTTP ${res.status}, unreadable body` }));
+        if (!res.ok) throw new Error(out?.error ?? `HTTP ${res.status}`);
+        return out;
+      }));
+      const results: Record<string, unknown>[] = [];
+      for (let i = 0; i < targets.length; i++) {
+        const r = settled[i];
+        if (r.status === 'fulfilled') results.push(...(((r.value as any).results ?? []) as Record<string, unknown>[]));
+        else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          await ledger(targets[i].id, { status: 'failed', reason: `invocation failed: ${reason}` });
+          results.push({ client: targets[i].name, client_id: targets[i].id, error: reason });
+        }
+      }
+      const { data: rows } = await supabase.from('daily_update_run_log').select('client_id, status, reason').eq('run_id', runId);
+      const byStatus = (st: string) => (rows ?? []).filter((r: any) => r.status === st);
+      const nameOf = (id: string) => candidates.find((c) => c.id === id)?.name ?? id;
+      return json({
+        success: true, run_id: runId, dry_run: dryRun,
+        for_date: explicitDate ?? "D-1 in each account's reporting timezone",
+        enabled: candidates.length, attempted: targets.length,
+        produced: byStatus('produced').length,
+        not_produced: [...byStatus('failed'), ...byStatus('skipped'), ...byStatus('attempted')]
+          .map((r: any) => ({ client: nameOf(r.client_id), status: r.status, reason: r.reason ?? 'run ended before this client finished' })),
+        suppressed: suppressed.map((c) => ({ client: c.name, reason: c.daily_update_suppressed_reason ?? 'daily updates turned off, no reason recorded' })),
+        results,
+      });
+    }
+
     // Who we are in Slack, so our own posts never read back as context.
     let ownBot: OwnBotIdentity = { userIds: new Set(), botIds: new Set(), appIds: new Set() };
     try { ownBot = await ownBotIdentity(await getValidBotToken()); } catch (e) { console.error('own bot identity unavailable', e); }
@@ -490,6 +551,15 @@ Deno.serve(async (req) => {
         const weekend = isWeekendRollup(target, forDate);
         const periodFrom = weekend ? addDays(forDate, -1) : forDate;
         const metrics = await collectClientMetrics(supabase, series, periodFrom);
+        // New ad accounts in the spend data log their own scope event.
+        let detectNotes: string[] = [];
+        try {
+          const det = await detectAccountsAdded(supabase, target, forDate);
+          detectNotes = [
+            ...det.inserted.map((a) => `Scope event recorded automatically: ad account ${a.account} first spent ${a.firstDate}`),
+            ...det.uncovered,
+          ];
+        } catch (e) { detectNotes = [`New-account detection failed: ${e instanceof Error ? e.message : String(e)}`]; }
         const scopeEvents = await loadScopeEvents(supabase, clientId);
         let cmp: ComparisonSet | null = null;
         let cmpError: string | null = null;
@@ -514,6 +584,17 @@ Deno.serve(async (req) => {
           forDate, history: metrics.history, delivery: performance ? 'ok' : 'dark', gaps: metrics.gaps,
           hasData: metrics.has_data, context, unansweredQuestions: questions,
         });
+        // ONE set of resolved figures: the headline is held to the same rules as
+        // the body. A cost-per-call headline needs a known, non-degenerate call base.
+        const resolvedCalls = cmp?.day.calls ?? null;
+        const periodCallsMissing = cmp ? cmp.day.state === 'available' && cmp.day.calls === null : metrics.yesterday?.callsKnown === false;
+        if (resolvedCalls === null || resolvedCalls < MIN_BASE_CALLS) {
+          evald.triggers = evald.triggers.filter((t) => t.code !== 'cost_move');
+        }
+        // A collapse against the same weekday forces the full form, provisional or not.
+        const sameWd = cmp?.comparisons.find((c) => c.label === 'vs_same_weekday');
+        const collapse = sameWd ? collapseTrigger(sameWd.current, sameWd.baseline, weekend ? 'vs last weekend' : `vs last ${weekdayName(forDate)}`) : null;
+        if (collapse && !sameWd?.scopeBreak) evald.triggers.unshift(collapse);
         const callDay = isClientCallDay(target, addDays(forDate, 1));
         const mode = effectiveMode(target, series.days);
         const extraNotes: string[] = [`Daily comparison: ${mode.mode === 'same_weekday' ? 'same weekday last week' : 'prior day'} (${mode.source}: ${mode.reason})`];
@@ -522,6 +603,19 @@ Deno.serve(async (req) => {
         if (weekend) extraNotes.push('Monday update: Saturday and Sunday reported as one weekend period');
         if (callsWithheld) extraNotes.push('Call figures withheld: this feed carries several publishers and no publisher scope is confirmed for the account');
         if (cmp && cmp.provisional.tracked === false) extraNotes.push("This account's spend feed is not revision-logged, so whether the day has settled cannot be judged");
+        extraNotes.push(...detectNotes);
+        if (periodCallsMissing) extraNotes.push(`Calls and revenue withheld: ${cmp?.day.callsMissing ?? 'not recorded yet'}`);
+        const periodDays = series.days.filter((d) => d.date >= periodFrom && d.date <= forDate);
+        const unrec = periodDays.reduce((a, d) => a + (d.unrecordedExcluded ?? 0), 0);
+        const tracked = periodDays.reduce((a, d) => a + d.trackedCalls, 0);
+        const unrecLine = unrec > 0 && unrec / (unrec + tracked) > 0.05
+          ? `${unrec} of ${unrec + tracked} calls in this period had no publisher recorded and were excluded from these figures.`
+          : null;
+        const attrLine = periodDays.some((d) => d.attributionMissing)
+          ? 'Per-campaign and per-number call breakdowns aren\'t available for this period: the call feed stopped sending campaign, buyer and tracking number.'
+          : null;
+        if (attrLine) extraNotes.push(attrLine);
+        const standing = (target as { update_context_note?: string | null }).update_context_note ?? null;
 
         let kind: 'draft' | 'prompt' = metrics.has_data || !performance ? 'draft' : 'prompt';
         let form: 'one_line' | 'full' | 'prompt';
@@ -578,7 +672,7 @@ Deno.serve(async (req) => {
           oneLine = callsWithheld
             ? `${clientName} — ${weekend ? `weekend ${periodFrom}–${forDate}` : forDate}: $${Math.round(metrics.yesterday?.spend ?? 0).toLocaleString()} spend; calls withheld until the publisher scope is confirmed.`
             : weekend
-              ? oneLiner({ client: clientName, forDate: `weekend ${periodFrom}–${forDate}`, day: metrics.yesterday ? { ...(yDay ?? {} as any), date: forDate, spend: metrics.yesterday.spend, calls: metrics.yesterday.calls, impressions: metrics.yesterday.impressions, qualified: metrics.yesterday.bands['d90'] ?? 0 } : null, trend: metrics.history.slice(-7), delivery: 'ok', weekdayQuiet: false })
+              ? oneLiner({ client: clientName, forDate: `weekend ${periodFrom}–${forDate}`, day: metrics.yesterday ? { ...(yDay ?? {} as any), date: forDate, spend: metrics.yesterday.spend, calls: metrics.yesterday.calls, callsKnown: metrics.yesterday.callsKnown, impressions: metrics.yesterday.impressions, qualified: metrics.yesterday.bands['d90'] ?? 0 } : null, trend: metrics.history.slice(-7), delivery: 'ok', weekdayQuiet: false })
               : oneLiner({ client: clientName, forDate, day: yDay, trend: metrics.history.slice(-7), delivery: 'ok', weekdayQuiet: false });
           for (const n of cmp ? [] : scopeContextLines(scopeEvents, forDate)) oneLine += `\n${n}`;
           if (cmp?.scopeNotes?.length) oneLine += `\n${cmp.scopeNotes.join('\n')}`;
@@ -590,14 +684,28 @@ Deno.serve(async (req) => {
             const block = cmp ? renderDailyComparison(cmp, { mode: mode.mode, weekly: callDay }) : '';
             const sheet = factSheet(metrics, evald.triggers, context)
               + (cmp ? `\n\n${comparisonPromptBlock(cmp)}\nThe comparison block above is printed above your prose already — do not repeat its numbers; explain them only where the context says why.${callDay ? '' : ' Do not mention the 7-day comparison: it is for the client call.'}` : '');
-            const body = await draftWithModel(sheet, style as { guidance: string; example_text: string });
+            // Missing calls: no model prose, no recommendation — the figures that would ground one do not exist.
+            const body = periodCallsMissing
+              ? `Call and revenue figures for this period haven't landed yet (${cmp?.day.callsMissing ?? 'not recorded'}), so there is no performance read or recommendation until they do.`
+              : await draftWithModel(sheet, style as { guidance: string; example_text: string });
             const room = Math.max(120, FULL_UPDATE_CHAR_CAP - why.length - (block ? block.length + 2 : 0) - 2);
             draftText = [why, block, capText(body, room)].filter(Boolean).join('\n\n');
           }
         }
+        // Standing and coverage lines belong to the client copy.
+        for (const line of [unrecLine, standing].filter(Boolean) as string[]) draftText += `\n${line}`;
+        if (attrLine && updateMode === 'performance' && form === 'full') draftText += `\n${attrLine}`;
+        // Last line of defence: a missing figure must never reach the text as 0 or a %.
+        const problems = falseZeroProblems(draftText, periodCallsMissing);
+        if (problems.length) {
+          extraNotes.push(`Draft replaced by the false-zero guard (${problems.join('; ')})`);
+          draftText = `${clientName} — ${weekend ? `weekend ${periodFrom}–${forDate}` : forDate}: call and revenue figures are not recorded yet (${cmp?.day.callsMissing ?? 'not recorded'}). Spend ${metrics.yesterday ? money(metrics.yesterday.spend) : 'unknown'}. No comparison or recommendation until they land.`;
+        }
         const amNotes = buildAmNotes(metrics, series, evald.triggers, extraNotes);
 
-        const { data: saved, error: saveErr } = await supabase.from('client_daily_updates')
+        // no_save: verification runs must never overwrite a saved (possibly hand-edited) draft.
+        const noSave = body.no_save === true;
+        const { data: saved, error: saveErr } = noSave ? { data: { id: null } as any, error: null } : await supabase.from('client_daily_updates')
           .upsert({
             client_id: clientId, for_date: forDate, kind, draft_text: draftText,
             form, update_mode: updateMode, triggers: evald.triggers as unknown as Record<string, unknown>[],
@@ -612,7 +720,7 @@ Deno.serve(async (req) => {
         let posted: unknown;
         if (blockers.length) {
           posted = { skipped: blockers.join('; ') };
-        } else if (dryRun) {
+        } else if (dryRun || noSave) {
           posted = { skipped: 'dry_run' };
         } else {
           const mention = lead!.slack ? `<@${lead!.slack}>` : `@${lead!.name}`;
@@ -649,8 +757,19 @@ Deno.serve(async (req) => {
           spend_sources: metrics.spend_sources, call_sources: metrics.call_sources, posted,
         });
         if (blockers.length) skipped.push({ client: clientName, blockers });
+        const missingFigures = [
+          ...(cmp?.day.calls === null || cmp?.day.calls === undefined ? ['calls'] : []),
+          ...(cmp?.day.revenue === null || cmp?.day.revenue === undefined ? ['revenue'] : []),
+          ...(cmp?.day.spend === null || cmp?.day.spend === undefined ? ['spend'] : []),
+        ];
+        await ledger(clientId, {
+          status: 'produced', for_date: forDate, calls: cmp?.day.calls ?? null, revenue: cmp?.day.revenue ?? null,
+          missing_figures: missingFigures, reason: missingFigures.length ? `missing: ${missingFigures.join(', ')}${cmp?.day.callsMissing ? ` (${cmp.day.callsMissing})` : ''}` : null,
+        });
+        results[results.length - 1].resolved = { calls: cmp?.day.calls ?? null, revenue: cmp?.day.revenue ?? null, spend: cmp?.day.spend ?? null, missing: missingFigures, calls_missing_reason: cmp?.day.callsMissing ?? null };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
+        await ledger(clientId, { status: 'failed', reason: message });
         console.error(`draft-daily-updates FAILED for ${clientName}:`, message);
         results.push({ client: clientName, client_id: clientId, error: message });
       }

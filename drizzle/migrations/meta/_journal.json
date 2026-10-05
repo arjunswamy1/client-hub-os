@@ -57,6 +57,13 @@
       "when": 1791073656001,
       "tag": "0007_clients_weekend_rollup",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791212599994,
+      "tag": "0008_daily_update_run_log",
+      "breakpoints": true
     }
   ]
 }

@@ -24,7 +24,15 @@ export interface SeriesDay {
   calls: number;
   qualified: number;
   impressions: number | null;
+  /**
+   * False when the day's call figure is MISSING (feed not reported, lead sheet
+   * not uploaded, scope unconfirmed). `calls`/`qualified` are then placeholders
+   * and no rule may read them — a missing day is never a zero day.
+   */
+  callsKnown?: boolean;
 }
+
+const known = (d: SeriesDay) => d.callsKnown !== false;
 
 export const isPriced = (d: { spend: number; calls: number }) => d.spend > 0 && d.calls > 0;
 
@@ -103,11 +111,13 @@ export function costPerQualified(trendOrHistory: SeriesDay[], forDate: string): 
   const day = trendOrHistory.find((d) => d.date === forDate);
   const cpq = (d: SeriesDay) => (d.spend > 0 && d.qualified > 0 ? d.spend / d.qualified : null);
   const prior = trendOrHistory
-    .filter((d) => d.date < forDate && d.spend > 0 && d.qualified > 0)
+    .filter((d) => d.date < forDate && known(d) && d.spend > 0 && d.qualified > 0)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, BASELINE_DAYS);
   const baseline = median(prior.map((d) => cpq(d)!));
-  const dayValue = day && day.qualified >= MIN_QUALIFIED_FOR_MOVE ? cpq(day) : null;
+  // Same degenerate-base rule as the body: a missing day, or one under the
+  // minimum qualified count, never yields a headline rate.
+  const dayValue = day && known(day) && day.qualified >= MIN_QUALIFIED_FOR_MOVE ? cpq(day) : null;
   return { day: dayValue, baseline, baseline_days: prior.length, change: pctChange(baseline, dayValue) };
 }
 
@@ -181,7 +191,7 @@ export function isOwnBotMessage(
 
 // ───────────────────────────── triggers ─────────────────────────────
 
-export type TriggerCode = 'cost_move' | 'weekday_dark' | 'feed_gap' | 'client_change' | 'client_question';
+export type TriggerCode = 'cost_move' | 'weekday_dark' | 'feed_gap' | 'client_change' | 'client_question' | 'volume_collapse';
 
 export interface Trigger {
   code: TriggerCode;
@@ -195,7 +205,52 @@ export const TRIGGER_LABEL: Record<TriggerCode, string> = {
   feed_gap: 'Data gap',
   client_change: 'Change in the channel',
   client_question: 'Client question waiting',
+  volume_collapse: 'Calls or revenue collapsed',
 };
+
+// ───────────────────────────── collapse ─────────────────────────────
+
+/** A fall this large in calls or revenue vs the same weekday last week forces a full update. */
+export const COLLAPSE_FALL = 0.7;
+/** Only on an account spending at least this much in the baseline period. */
+export const COLLAPSE_SPEND_FLOOR = 500;
+
+/**
+ * Calls or revenue down more than 70% against the same weekday (or last
+ * weekend) on a material account. Fires even when the current figures are
+ * provisional — a collapse on a partial day is exactly what must be seen early.
+ * A missing side never fires: unknown is not a fall.
+ */
+export function collapseTrigger(cur: { calls: number | null; revenue: number | null; spend: number | null },
+  base: { calls: number | null; revenue: number | null; spend: number | null }, vs: string): Trigger | null {
+  const floor = Math.max(base.spend ?? 0, cur.spend ?? 0);
+  if (floor < COLLAPSE_SPEND_FLOOR) return null;
+  const fall = (c: number | null, b: number | null) => (c === null || b === null || b <= 0 ? null : (b - c) / b);
+  const callFall = fall(cur.calls, base.calls), revFall = fall(cur.revenue, base.revenue);
+  const hit = [callFall !== null && callFall > COLLAPSE_FALL ? `calls ${base.calls} → ${cur.calls} (−${Math.round(callFall * 100)}%)` : null,
+    revFall !== null && revFall > COLLAPSE_FALL ? `revenue $${Math.round(base.revenue!).toLocaleString('en-US')} → $${Math.round(cur.revenue!).toLocaleString('en-US')} (−${Math.round(revFall * 100)}%)` : null]
+    .filter(Boolean) as string[];
+  if (!hit.length) return null;
+  return { code: 'volume_collapse', headline: `${hit[0].startsWith('calls') ? 'Calls' : 'Revenue'} down more than 70% ${vs}`, detail: hit.join('; ') };
+}
+
+// ───────────────────────────── false-zero guard ─────────────────────────────
+
+/** Patterns that print a missing figure as a number. */
+const FALSE_ZERO_RE = /(^|[^\d.,$])0 (calls|leads)\b|\$0(\.00)? revenue|calls 0 → 0|revenue \$0(\.00)?\b/i;
+
+/**
+ * Last line of defence. When the period's calls are missing, no update text may
+ * carry a zero call count, a $0 revenue, or any percentage. Returns the problems
+ * found; an empty list means the text is safe to save.
+ */
+export function falseZeroProblems(text: string, callsMissing: boolean): string[] {
+  if (!callsMissing) return [];
+  const out: string[] = [];
+  if (FALSE_ZERO_RE.test(text)) out.push('prints a zero for a figure that is missing');
+  if (/[+−-]?\d+(\.\d+)?%/.test(text)) out.push('prints a percentage computed against a missing figure');
+  return out;
+}
 
 export function evaluateTriggers(input: {
   forDate: string;
@@ -260,6 +315,7 @@ export function oneLiner(input: {
   if (input.delivery === 'dark' && input.weekdayQuiet) {
     return `${client} — quiet ${weekdayName(input.forDate)}, as usual. No action.`;
   }
+  if (day && !known(day)) return `${client} — ${input.forDate}: calls not recorded yet, so no call or revenue figure is reported.`;
   if (!day || day.calls === 0) return `${client} — no calls on ${input.forDate}. No action.`;
   const cpc = day.spend > 0 ? day.spend / day.calls : null;
   const parts = [`${day.calls} call${day.calls === 1 ? '' : 's'}`];

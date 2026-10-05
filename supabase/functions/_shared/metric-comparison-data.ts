@@ -97,10 +97,18 @@ export async function loadDailySeries(db: any, client: ComparisonClient, forDate
   return { client, forDate, timeZone: reportingTimeZone(client), engine, days };
 }
 
-const sum = (xs: (number | null)[]): number | null => (xs.some((x) => x === null) ? null : xs.reduce<number>((a, b) => a + (b as number), 0));
-/** Revenue over days: a day with zero calls has no revenue to miss; a day with calls and unknown revenue makes the total unknown. */
-const sumRevenue = (days: SeriesDay[]): number | null =>
-  sum(days.filter((d) => d.calls !== 0).map((d) => d.revenue));
+const sum = (xs: (number | null)[]): number | null => (!xs.length || xs.some((x) => x === null) ? null : xs.reduce<number>((a, b) => a + (b as number), 0));
+/**
+ * Revenue over days. The engine already returns $0 for a day the feed covered
+ * with no in-scope calls and null for a day it has not reported, so any null
+ * day makes the total unknown. An empty set is null — never $0.
+ */
+const sumRevenue = (days: SeriesDay[]): number | null => sum(days.map((d) => d.revenue));
+/** The first reason any day's calls are null, for the period's disclosure. */
+const callsMissingOf = (days: SeriesDay[]): string | null => {
+  const d = days.find((x) => x.calls === null);
+  return d ? (d.callsMissingReason ?? 'calls not recorded') : null;
+};
 
 /**
  * The combined Saturday + Sunday reporting period. Recorded dark days count as
@@ -124,6 +132,7 @@ export function periodSnapshot(series: SeriesDay[], from: string, to: string): S
     connected: sum(days.map((d) => d.connected)),
     billable: sum(days.map((d) => d.converted)),
     impressions: imp.length ? imp.reduce((a, d) => a + (d.impressions ?? 0), 0) : null,
+    callsMissing: callsMissingOf(days),
   };
 }
 
@@ -169,6 +178,7 @@ export function snapshotFrom(series: SeriesDay[], from: string, to: string): Sna
     connected: sum(use.map((d) => d.connected)),
     billable: sum(use.map((d) => d.converted)),
     impressions: impressionDays.length ? impressionDays.reduce((a, d) => a + (d.impressions ?? 0), 0) : null,
+    callsMissing: callsMissingOf(use),
   };
 }
 

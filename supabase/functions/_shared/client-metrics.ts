@@ -448,15 +448,20 @@ export async function computeClientMetrics(
   let jacuzziLeads: number | null = null;
   let leadsThrough: string | null = null;
   const leadsByDay = new Map<string, number>();
+  /** Revenue per day from the lead sheet: Jacuzzi's count and money share ONE source, never mixed with RingFuel. */
+  const leadRevenueByDay = new Map<string, number | null>();
   if (client.slug === 'jacuzzi') {
     leadsThrough = await feedThrough(supabase, 'jacuzzi_leads', 'transaction_date', client.id, false, tz);
     const leadRows = await fetchAll((f, t) =>
-      supabase.from('jacuzzi_leads').select('transaction_date, lead_type').eq('client_id', client.id)
+      supabase.from('jacuzzi_leads').select('transaction_date, lead_type, payout_rate').eq('client_id', client.id)
         .gte('transaction_date', window.from).lte('transaction_date', window.to).range(f, t), 'jacuzzi_leads');
     jacuzziLeads = leadRows.length;
     for (const l of leadRows as any[]) {
       const d = String(l.transaction_date ?? '').slice(0, 10);
       leadsByDay.set(d, (leadsByDay.get(d) ?? 0) + 1);
+      const prev = leadRevenueByDay.has(d) ? leadRevenueByDay.get(d)! : 0;
+      const rate = l.payout_rate === null || l.payout_rate === undefined ? null : Number(l.payout_rate);
+      leadRevenueByDay.set(d, prev === null || rate === null ? null : prev + rate);
     }
   }
   /** The day through which the account's CALL METRIC is known. */
@@ -775,7 +780,9 @@ export async function computeClientMetrics(
       attributionMissing: attr ? attr.calls > 0 && attr.bare === attr.calls : false,
       connected: !callFiguresWithheld && feedCovers && callTables.length && connKnownDay.length ? connKnownDay.filter((c) => c.connected === true).length : null,
       converted: !callFiguresWithheld && feedCovers && callTables.length && convKnownDay.length ? convKnownDay.filter((c) => c.converted === true).length : null,
-      revenue: revenueOk ? dr.captured : null,
+      revenue: client.slug === 'jacuzzi'
+        ? (metricCoversDay ? (leadRevenueByDay.has(d) ? leadRevenueByDay.get(d)! : 0) : null)
+        : revenueOk ? dr.captured : null,
       bands: Object.fromEntries(DURATION_BANDS.map(([k, floor]) => [k, dayCalls.filter((c) => c.duration >= floor).length])) as Record<BandKey, number>,
     });
   }

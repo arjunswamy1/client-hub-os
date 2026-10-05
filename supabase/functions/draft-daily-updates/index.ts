@@ -588,7 +588,8 @@ Deno.serve(async (req) => {
         // the body. A cost-per-call headline needs a known, non-degenerate call base.
         const resolvedCalls = cmp?.day.calls ?? null;
         const periodCallsMissing = cmp ? cmp.day.state === 'available' && cmp.day.calls === null : metrics.yesterday?.callsKnown === false;
-        if (resolvedCalls === null || resolvedCalls < MIN_BASE_CALLS) {
+        // A weekend block is a two-day period; the single-day cost headline would describe a different period than the body.
+        if (resolvedCalls === null || resolvedCalls < MIN_BASE_CALLS || weekend) {
           evald.triggers = evald.triggers.filter((t) => t.code !== 'cost_move');
         }
         // A collapse against the same weekday forces the full form, provisional or not.

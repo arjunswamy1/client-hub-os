@@ -304,7 +304,12 @@ async function syncMetaForUser(supabase: any, userId: string, accessToken: strin
           const { error: delErr } = await supabase.from("ad_campaigns").delete()
             .eq("client_id", clientId).eq("platform", "meta").is("platform_campaign_id", null).in("date", dates);
           if (delErr) throw new Error(`ad_campaigns legacy cleanup: ${delErr.message}`);
-          await batchUpsert(supabase, "ad_campaigns", withId, "client_id,platform,platform_campaign_id,date");
+          for (let i = 0; i < withId.length; i += 200) {
+            const { error: upErr } = await supabase.from("ad_campaigns")
+              .upsert(withId.slice(i, i + 200), { onConflict: "client_id,platform,platform_campaign_id,date" });
+            // Loud: the legacy rows for these days were just removed.
+            if (upErr) throw new Error(`ad_campaigns upsert by campaign ID: ${upErr.message}`);
+          }
         }
         if (noId.length) await batchUpsert(supabase, "ad_campaigns", noId, "client_id,platform,campaign_name,date");
         totalRecords += batch.length;

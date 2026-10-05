@@ -64,6 +64,13 @@
       "when": 1791212599994,
       "tag": "0008_daily_update_run_log",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791214113453,
+      "tag": "0009_ad_campaigns_platform_campaign_id",
+      "breakpoints": true
     }
   ]
 }

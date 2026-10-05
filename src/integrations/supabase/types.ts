@@ -35,6 +35,7 @@ export type Database = {
           lifetime_budget: number | null
           objective: string | null
           platform: string
+          platform_campaign_id: string | null
           revenue: number
           roas: number | null
           spend: number
@@ -60,6 +61,7 @@ export type Database = {
           lifetime_budget?: number | null
           objective?: string | null
           platform: string
+          platform_campaign_id?: string | null
           revenue?: number
           roas?: number | null
           spend?: number
@@ -85,6 +87,7 @@ export type Database = {
           lifetime_budget?: number | null
           objective?: string | null
           platform?: string
+          platform_campaign_id?: string | null
           revenue?: number
           roas?: number | null
           spend?: number

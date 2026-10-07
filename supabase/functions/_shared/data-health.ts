@@ -161,7 +161,8 @@ export async function clientHealth(db: any, client: ResolvedClientRow, now: Date
     read.add(table);
     // ── freshness ──
     const cols = [spec.dateCol, 'created_at', ...(spec.hasUpdatedAt ? ['updated_at'] : [])].join(', ');
-    let lq = db.from(table).select(cols).eq('client_id', client.id);
+    // gte drops NULL dates, which sort first in a descending read.
+    let lq = db.from(table).select(cols).eq('client_id', client.id).gte(spec.dateCol, spec.isTimestamp ? '2000-01-01T00:00:00Z' : '2000-01-01');
     if (spec.entityCampaign) lq = lq.eq('entity', 'campaign');
     const { data: last, error: lErr } = await lq.order(spec.dateCol, { ascending: false }).limit(1).maybeSingle();
     if (lErr) throw new Error(`${table}: ${lErr.message}`);

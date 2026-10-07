@@ -43,6 +43,8 @@ import ProductionPage from "./pages/ProductionPage";
 import TalentApplyPage from "./pages/TalentApplyPage";
 import AIVideoStudioPage from "./pages/AIVideoStudioPage";
 import IntegrationHealthPage from "./pages/IntegrationHealthPage";
+import DataHealthPage from "./pages/DataHealthPage";
+import AgentTokensPage from "./pages/AgentTokensPage";
 import ClientDIDsPage from "./pages/ClientDIDsPage";
 import SpendUploadPage from "./pages/SpendUploadPage";
 import RingFuelNumbersPage from "./pages/RingFuelNumbersPage";
@@ -178,6 +180,8 @@ function ProtectedRoutes() {
           )}
 
           <Route path="/settings" element={<SettingsPage />} />
+          {isAdmin && <Route path="/settings/agent-tokens" element={<AgentTokensPage />} />}
+          <Route path="/data-health" element={<DataHealthPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}
           {isAdmin && <Route path="/admin/costs/:clientId" element={<AdminClientCostsPage />} />}

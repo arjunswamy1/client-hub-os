@@ -174,11 +174,14 @@ export async function clientHealth(db: any, client: ResolvedClientRow, now: Date
       const latestRowDate = spec.isTimestamp ? reportingDay(String(last[spec.dateCol]), tz) : String(last[spec.dateCol]).slice(0, 10);
       const loaded = [last.updated_at, last.created_at, sync].filter(Boolean).map((v: string) => new Date(v).toISOString()).sort().pop()!;
       const hours = Math.round(((now.getTime() - new Date(loaded).getTime()) / 3600000) * 10) / 10;
-      const status: HealthStatus = hours > spec.cadenceHours * 3 ? 'fail' : hours > spec.cadenceHours ? 'warn' : 'ok';
+      const lagDays = Math.round((Date.parse(`${latest}T00:00:00Z`) - Date.parse(`${latestRowDate}T00:00:00Z`)) / 86400000);
+      const rowLagLimit = Math.ceil(spec.cadenceHours / 24);
+      let status: HealthStatus = hours > spec.cadenceHours * 3 ? 'fail' : hours > spec.cadenceHours ? 'warn' : 'ok';
+      if (lagDays > rowLagLimit && status === 'ok') status = 'warn';
       checks.push({
         check: 'freshness', source: table, status,
-        explanation: `Latest row is for ${latestRowDate}; last loaded ${hours}h ago (expected at least every ${spec.cadenceHours}h)${status === 'ok' ? '.' : ' — stale.'}`,
-        detail: { last_sync_at: sync, latest_row_date: latestRowDate, last_loaded_at: loaded, hours_stale: hours, cadence_hours: spec.cadenceHours },
+        explanation: `Latest row is for ${latestRowDate}; last loaded ${hours}h ago (expected at least every ${spec.cadenceHours}h)${lagDays > rowLagLimit ? ` — but the newest row is ${lagDays} days behind the latest reporting day (${latest}); the sync is running without bringing new days` : ''}${status === 'ok' ? '.' : ' — stale.'}`,
+        detail: { last_sync_at: sync, latest_row_date: latestRowDate, last_loaded_at: loaded, hours_stale: hours, row_lag_days: lagDays, cadence_hours: spec.cadenceHours },
       });
     }
 

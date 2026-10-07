@@ -199,6 +199,18 @@ export default function SettingsPage() {
 
       <ChangePasswordCard />
 
+      {isAdmin && (
+        <Card>
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm font-medium">Agent tokens</p>
+              <p className="text-xs text-muted-foreground">Keys that let Claude agents read the hub and write drafts.</p>
+            </div>
+            <Button variant="outline" size="sm" asChild><a href="/settings/agent-tokens">Manage</a></Button>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">

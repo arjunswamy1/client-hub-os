@@ -1,0 +1,190 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join, normalize } from "node:path";
+import { fakeDb } from "./fixtures/fakeDb";
+import { handleRpc, sha256Hex, TOOLS, CONTEXT_HEADER } from "../../supabase/functions/mcp-hub/hub";
+import { clientHealth, findDuplicateCampaignRows, lateLoads } from "../../supabase/functions/_shared/data-health";
+import { loadDayStates } from "../../supabase/functions/_shared/metric-comparison-data";
+
+const NOW = new Date("2026-10-06T15:00:00Z");
+const A = "aaaaaaaa-0000-0000-0000-000000000001";
+const B = "bbbbbbbb-0000-0000-0000-000000000002";
+const client = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+  id, name, slug: name.toLowerCase(), status: "active", daily_update_enabled: true, engagement_type: "pay_per_call",
+  spend_source_tables: ["roku_daily_metrics"], call_source_tables: ["ringfuel_calls"], reporting_timezone: "America/Puerto_Rico",
+  publisher_scope: null, aliases: [], ...extra,
+});
+
+async function world(opts: { revoked?: boolean; expired?: boolean; scopes?: string[]; admin?: boolean } = {}) {
+  const token = "cpm_test_token_123";
+  const tables: Record<string, any[]> = {
+    agent_tokens: [{ id: "t1", team_member_id: "m1", token_hash: await sha256Hex(token), label: "test", scopes: opts.scopes ?? ["read", "draft"],
+      revoked_at: opts.revoked ? "2026-10-01T00:00:00Z" : null, expires_at: opts.expired ? "2026-10-05T00:00:00Z" : null }],
+    team_members: [{ id: "m1", name: "Tester", role: opts.admin ? "admin" : "account_manager", is_active: true }],
+    client_assignments: [{ team_member_id: "m1", client_id: A }],
+    clients: [client(A, "Alpha"), client(B, "Beta")],
+    client_daily_updates: [{ id: "u1", client_id: A, for_date: "2026-10-04", status: "sent", draft_text: "sent text", created_at: "2026-10-05T13:00:00Z" }],
+    tasks: [{ id: "k1", client_id: A, title: "Fix tracking", status: "todo", assignee_id: "m1", due_date: "2026-10-07" }],
+    agent_query_log: [],
+  };
+  const { db } = fakeDb(tables);
+  let n = 0;
+  const call = (name: string, args: Record<string, unknown> = {}, auth = `Bearer ${token}`) =>
+    handleRpc({ db, now: () => NOW }, auth, { jsonrpc: "2.0", id: ++n, method: "tools/call", params: { name, arguments: args } });
+  return { tables, db, call, token };
+}
+const sc = (r: any) => r.body.result?.structuredContent;
+
+describe("mcp-hub auth and isolation", () => {
+  it("a token scoped to one client gets 'not authorised' — never an empty result — for another", async () => {
+    const w = await world();
+    const ok = await w.call("get_tasks", { client: "alpha" });
+    expect(sc(ok).open_tasks).toHaveLength(1);
+    const no = await w.call("get_tasks", { client: "beta" });
+    expect(no.body.result.isError).toBe(true);
+    expect(sc(no).error).toMatch(/not authorised for this client/);
+    expect(sc(no).outcome).toBe("not_authorised_client");
+    const list = await w.call("list_clients");
+    expect(sc(list).clients.map((c: any) => c.name)).toEqual(["Alpha"]);
+  });
+
+  it("refuses revoked and expired tokens, and logs the refusal", async () => {
+    for (const o of [{ revoked: true }, { expired: true }]) {
+      const w = await world(o);
+      const r = await w.call("list_clients");
+      expect(r.status).toBe(401);
+      expect(r.body.error.message).toMatch(o.revoked ? /revoked/ : /expired/);
+      expect(w.tables.agent_query_log.at(-1).outcome).toBe("refused_auth");
+    }
+    const w = await world();
+    expect((await w.call("list_clients", {}, "Bearer wrong")).status).toBe(401);
+  });
+
+  it("draft_update refuses a sent row, and draft tools need the draft scope", async () => {
+    const w = await world();
+    const r = await w.call("draft_update", { client: "alpha", for_date: "2026-10-04", text: "new" });
+    expect(sc(r).outcome).toBe("refused_protected_row");
+    const ro = await world({ scopes: ["read"] });
+    const r2 = await ro.call("draft_update", { client: "alpha", for_date: "2026-10-05", text: "new" });
+    expect(sc(r2).outcome).toBe("refused_scope");
+    const r3 = await ro.call("set_current_focus", { client: "alpha", text: "x" });
+    expect(sc(r3).outcome).toBe("refused_scope");
+  });
+
+  it("every read tool returns provenance with a withheld array, and every call is logged", async () => {
+    const w = await world();
+    const reads = TOOLS.filter((t) => t.scope === "read");
+    const argsFor: Record<string, Record<string, unknown>> = {
+      list_clients: {}, get_client_profile: { client: "alpha" }, get_performance: { client: "alpha", date_from: "2026-09-28", date_to: "2026-10-04" },
+      compare_periods: { client: "alpha", basis: "same_weekday", for_date: "2026-10-04" }, get_data_health: { client: "alpha" },
+      get_context: { client: "alpha", days: 2 }, get_tasks: { client: "alpha" }, get_scope_events: { client: "alpha" },
+    };
+    for (const t of reads) {
+      const r = await w.call(t.name, argsFor[t.name]);
+      expect(r.body.result.isError, `${t.name}: ${JSON.stringify(sc(r))}`).toBeFalsy();
+      expect(sc(r).provenance, t.name).toBeDefined();
+      expect(Array.isArray(sc(r).provenance.withheld), t.name).toBe(true);
+      expect(Array.isArray(sc(r).provenance.tables_read), t.name).toBe(true);
+    }
+    const ctx = await w.call("get_context", { client: "alpha" });
+    expect(sc(ctx).header).toBe(CONTEXT_HEADER);
+    await w.call("get_tasks", { client: "beta" }); // a refusal
+    expect(w.tables.agent_query_log).toHaveLength(reads.length + 2);
+    expect(w.tables.agent_query_log.at(-1).outcome).toBe("not_authorised_client");
+  });
+
+  it("missing figures are withheld by name, never returned as zero", async () => {
+    const w = await world();
+    const r = await w.call("get_performance", { client: "alpha", date_from: "2026-10-01", date_to: "2026-10-04" });
+    const p = sc(r);
+    for (const m of p.metrics.filter((x: any) => x.value === null && x.key !== "duration_bands")) {
+      expect(p.provenance.withheld.map((x: any) => x.metric)).toContain(m.key);
+    }
+  });
+});
+
+// ─── structural guards ───────────────────────────────────────────────────
+
+function reachable(entry: string): string[] {
+  const seen = new Set<string>(); const stack = [entry];
+  while (stack.length) {
+    const f = stack.pop()!;
+    if (seen.has(f) || !existsSync(f)) continue;
+    seen.add(f);
+    for (const m of readFileSync(f, "utf8").matchAll(/from\s+["'](\.[^"']+)["']/g)) stack.push(normalize(join(dirname(f), m[1])));
+  }
+  return [...seen];
+}
+
+describe("mcp-hub structural guards", () => {
+  const files = reachable("supabase/functions/mcp-hub/index.ts");
+  it("cannot reach slack-post.ts, directly or transitively", () => {
+    expect(files.length).toBeGreaterThan(3);
+    expect(files.map((f) => f.replace(/\\/g, "/")).filter((f) => f.endsWith("slack-post.ts"))).toEqual([]);
+    for (const f of files) expect(readFileSync(f, "utf8"), f).not.toMatch(/chat\.postMessage|hooks\.slack\.com/);
+  });
+
+  it("issues no delete or upsert, and updates only tokens, focus and draft-status updates", () => {
+    const allowed = new Set(["agent_tokens", "clients", "client_daily_updates"]);
+    for (const f of files) {
+      const body = readFileSync(f, "utf8");
+      expect(body, f).not.toMatch(/\.delete\(/);
+      expect(body, f).not.toMatch(/\.upsert\(/);
+      for (const m of body.matchAll(/\.from\(\s*['"`](\w+)['"`]\s*\)\s*\.update\(([^;]*);/g)) {
+        expect(allowed.has(m[1]), `${f}: update on ${m[1]}`).toBe(true);
+        if (m[1] === "client_daily_updates") expect(m[2]).toMatch(/\.eq\('status', 'draft'\)/);
+      }
+    }
+  });
+});
+
+// ─── data-health live fixtures ───────────────────────────────────────────
+
+describe("get_data_health fixtures", () => {
+  it("PPC Media: the same spend stored under several campaign names", () => {
+    const name = "Home Insurance -English - Click to Call - CBO";
+    const d = findDuplicateCampaignRows([
+      { date: "2026-09-25", campaign_name: name, spend: 133.71 },
+      { date: "2026-09-25", campaign_name: `N/A ${name}`, spend: 133.71 },
+      { date: "2026-09-25", campaign_name: `${name} (Previous)`, spend: 133.71 },
+      { date: "2026-09-25", campaign_name: "Auto", spend: 50 },
+    ]);
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ date: "2026-09-25", spend: 133.71 });
+    expect(d[0].names).toHaveLength(3);
+  });
+
+  it("Jacuzzi: weekend leads loaded at 09:30 ET after the 09:00 draft, and its config mismatch", async () => {
+    const J = "dc25f274-20f4-4650-b0cc-654073b925f4";
+    const lead = (i: number, date: string) => ({ id: `l${i}`, client_id: J, transaction_date: date, created_at: "2026-10-05T13:30:01Z", lead_type: "call", payout_rate: 330 });
+    const late = lateLoads([lead(1, "2026-10-04"), lead(2, "2026-10-04")].map((l) => ({ day: l.transaction_date, created_at: l.created_at })),
+      new Map([["2026-10-04", "2026-10-05T13:00:00.000Z"]]));
+    expect(late[0]).toMatchObject({ day: "2026-10-04", late: 2, total: 2 });
+
+    const { db } = fakeDb({
+      jacuzzi_leads: [lead(1, "2026-10-03"), lead(2, "2026-10-04"), lead(3, "2026-10-04")],
+      client_daily_updates: [{ client_id: J, for_date: "2026-10-04", created_at: "2026-10-05T13:00:00Z" }],
+      roku_daily_metrics: [{ client_id: J, date: "2026-10-04", entity: "campaign", spend: 300, impressions: 1000, created_at: "2026-10-05T12:00:00Z" }],
+    });
+    const h = await clientHealth(db, client(J, "Jacuzzi", { slug: "jacuzzi" }) as any, NOW);
+    const after = h.checks.find((c) => c.check === "loaded_after_run" && c.source === "jacuzzi_leads")!;
+    expect(after.status).toBe("warn");
+    expect(after.explanation).toMatch(/2026-10-04/);
+    const cfg = h.checks.find((c) => c.check === "config_mismatch")!;
+    expect(cfg.status).toBe("warn");
+    expect(cfg.explanation).toMatch(/jacuzzi_leads/);
+  });
+
+  it("Spektrafin: structurally dark Sundays are no_delivery, not missing", async () => {
+    const S = "6386d309-519a-415d-9480-70c9c6d64436";
+    const rows = [];
+    for (let d = new Date("2026-09-20T12:00:00Z"); d <= new Date("2026-10-04T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10);
+      rows.push({ client_id: S, date: iso, entity: "campaign", spend: d.getUTCDay() === 0 ? 0 : 900, impressions: d.getUTCDay() === 0 ? 0 : 50000 });
+    }
+    const { db } = fakeDb({ roku_daily_metrics: rows });
+    const days = await loadDayStates(db, client(S, "Spektrafin") as any, "2026-09-20", "2026-10-04");
+    for (const sun of ["2026-09-20", "2026-09-27", "2026-10-04"]) expect(days.find((x) => x.date === sun)!.state).toBe("no_delivery");
+    expect(days.filter((x) => x.state === "missing")).toEqual([]);
+  });
+});

@@ -71,6 +71,13 @@
       "when": 1791214113453,
       "tag": "0009_ad_campaigns_platform_campaign_id",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791383236808,
+      "tag": "0010_migration",
+      "breakpoints": true
     }
   ]
 }

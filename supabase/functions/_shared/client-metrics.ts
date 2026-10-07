@@ -642,6 +642,25 @@ export async function computeClientMetrics(
     revenueNote = `All ${totalCalls} calls reported a ${revenueField} figure, read from the ${revenueField} column — the money column recorded for this account. ${client.engagement_type === 'performance_media' && revenueField === 'revenue' ? 'Performance media: revenue is CPM\'s income and payout is ignored on this account.' : revenueField === 'payout' ? 'The payout column is what CPM is paid here.' : ''}`;
   }
 
+  // Jacuzzi is paid per LEAD: the window's money comes from the lead sheet, the
+  // same source as its count and its per-day revenue — never the RingFuel column.
+  if (client.slug === 'jacuzzi' && !moneyBlocked) {
+    const rates = [...leadRevenueByDay.values()];
+    if (!metricCovers(window.to)) {
+      revenueValue = null;
+      revenueDisplay = 'NOT YET RECORDED — the lead sheet has not been uploaded for the whole window';
+      revenueNote = `Lead sheet rows run ${leadsThrough ? `through ${leadsThrough}` : 'nowhere yet'}; revenue after that is missing, not $0.`;
+    } else if (rates.some((r) => r === null)) {
+      revenueValue = null;
+      revenueDisplay = 'UNKNOWN — a lead has no payout rate';
+      revenueNote = 'At least one lead in the window carries no payout rate, so revenue cannot be totalled.';
+    } else {
+      revenueValue = rates.reduce<number>((a, r) => a + (r as number), 0);
+      revenueDisplay = money(revenueValue);
+      revenueNote = `${jacuzziLeads} leads from jacuzzi_leads at the payout rate in effect on each lead's date — the same source as the lead count.`;
+    }
+  }
+
   metrics.push({
     key: 'revenue', label: 'Revenue', value: revenueValue, display: revenueDisplay,
     note: revenueNote, sources: callTables,

@@ -454,6 +454,100 @@ export type Database = {
           },
         ]
       }
+      agent_query_log: {
+        Row: {
+          arguments: Json | null
+          client_id: string | null
+          created_at: string
+          duration_ms: number | null
+          id: string
+          outcome: string
+          team_member_id: string | null
+          token_id: string | null
+          tool_name: string
+          withheld: Json | null
+        }
+        Insert: {
+          arguments?: Json | null
+          client_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          outcome: string
+          team_member_id?: string | null
+          token_id?: string | null
+          tool_name: string
+          withheld?: Json | null
+        }
+        Update: {
+          arguments?: Json | null
+          client_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          outcome?: string
+          team_member_id?: string | null
+          token_id?: string | null
+          tool_name?: string
+          withheld?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_query_log_token_id_fkey"
+            columns: ["token_id"]
+            isOneToOne: false
+            referencedRelation: "agent_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_tokens: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          id: string
+          label: string
+          last_used_at: string | null
+          revoked_at: string | null
+          scopes: string[]
+          team_member_id: string
+          token_hash: string
+          token_prefix: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          label: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          team_member_id: string
+          token_hash: string
+          token_prefix: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          team_member_id?: string
+          token_hash?: string
+          token_prefix?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_tokens_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_copy_generations: {
         Row: {
           ads_analyzed: number | null

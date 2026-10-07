@@ -34,6 +34,7 @@ const clientNavItems = [
   { title: 'RingFuel Numbers', url: '/ringfuel-numbers', icon: PhoneCall },
   { title: 'Spend Upload', url: '/spend-upload', icon: Upload },
   { title: 'Roku Connections', url: '/roku-connections', icon: Tv },
+  { title: 'Data Health', url: '/data-health', icon: Database },
 ];
 
 const bottomItems = [

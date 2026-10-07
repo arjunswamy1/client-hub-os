@@ -70,6 +70,22 @@ async function dayEvidence(db: any, client: ComparisonClient, from: string, to: 
   return { bySourceDay, impressions, active, sources };
 }
 
+/**
+ * Day states only — the same classifyDay rule loadDailySeries applies, from spend
+ * rows alone (no call read). Used where the state is needed but the money is not
+ * (data health), so a 14-day dark/missing read stays cheap on large call feeds.
+ */
+export async function loadDayStates(db: any, client: ComparisonClient, from: string, to: string): Promise<{ date: string; state: DayState; spend: number; rows: number }[]> {
+  const ev = await dayEvidence(db, client, from, to);
+  const out: { date: string; state: DayState; spend: number; rows: number }[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    let rows = 0, spend = 0;
+    for (const m of ev.bySourceDay.values()) { const e = m.get(d); if (e) { rows += e.rows; spend += e.spend; } }
+    out.push({ date: d, rows, spend, state: classifyDay({ rowCount: rows, spend, anyActiveCampaign: rows > 0 && ev.active.has(d) }) });
+  }
+  return out;
+}
+
 /** One canonical engine call, 28 days ending on forDate, classified day by day. */
 export async function loadDailySeries(db: any, client: ComparisonClient, forDate: string): Promise<DailySeries> {
   const from = addDays(forDate, -(SERIES_DAYS - 1));

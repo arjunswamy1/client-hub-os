@@ -81,7 +81,7 @@ describe("mcp-hub auth and isolation", () => {
     };
     for (const t of reads) {
       const r = await w.call(t.name, argsFor[t.name]);
-      expect(r.body.result.isError, `${t.name}: ${JSON.stringify(sc(r))}`).toBeFalsy();
+      expect((r.body as any).result.isError, `${t.name}: ${JSON.stringify(sc(r))}`).toBeFalsy();
       expect(sc(r).provenance, t.name).toBeDefined();
       expect(Array.isArray(sc(r).provenance.withheld), t.name).toBe(true);
       expect(Array.isArray(sc(r).provenance.tables_read), t.name).toBe(true);
@@ -204,13 +204,13 @@ describe("get_schema", () => {
     const one = sc(await w.call("get_schema", { table: "ringba_calls" }));
     expect(one.columns.map((c: any) => c.name)).toContain("call_date");
     const pc = await w.call("get_schema", { table: "platform_connections" });
-    expect(pc.body.result.isError).toBe(true);
+    expect((pc.body as any).result.isError).toBe(true);
     expect(w.tables.agent_query_log.some((l: any) => l.tool_name === "get_schema")).toBe(true);
   });
   it("refuses a revoked token", async () => {
     const w = await world({ revoked: true });
     const r = await w.call("get_schema");
-    expect(r.body.error.message).toMatch(/revoked/);
+    expect((r.body as any).error.message).toMatch(/revoked/);
   });
 });
 

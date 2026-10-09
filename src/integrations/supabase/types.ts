@@ -1527,6 +1527,51 @@ export type Database = {
           },
         ]
       }
+      build_log: {
+        Row: {
+          commit_sha: string | null
+          contradictions: string[] | null
+          created_at: string
+          credits: number | null
+          files_changed: string[] | null
+          id: string
+          open_questions: string[] | null
+          status: string
+          summary: string
+          tests_added: number | null
+          tests_passing: number | null
+          title: string
+        }
+        Insert: {
+          commit_sha?: string | null
+          contradictions?: string[] | null
+          created_at?: string
+          credits?: number | null
+          files_changed?: string[] | null
+          id?: string
+          open_questions?: string[] | null
+          status?: string
+          summary: string
+          tests_added?: number | null
+          tests_passing?: number | null
+          title: string
+        }
+        Update: {
+          commit_sha?: string | null
+          contradictions?: string[] | null
+          created_at?: string
+          credits?: number | null
+          files_changed?: string[] | null
+          id?: string
+          open_questions?: string[] | null
+          status?: string
+          summary?: string
+          tests_added?: number | null
+          tests_passing?: number | null
+          title?: string
+        }
+        Relationships: []
+      }
       call_action_items: {
         Row: {
           assignee_id: string | null
@@ -4182,6 +4227,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      jacuzzi_lead_email_log: {
+        Row: {
+          attachment_name: string | null
+          created_at: string
+          error: string | null
+          gmail_message_id: string
+          id: string
+          lead_dates: string[] | null
+          leads_added: number | null
+          received_at: string | null
+          sheet_rows: number | null
+          sheet_updates: Json | null
+          status: string
+          subject: string | null
+        }
+        Insert: {
+          attachment_name?: string | null
+          created_at?: string
+          error?: string | null
+          gmail_message_id: string
+          id?: string
+          lead_dates?: string[] | null
+          leads_added?: number | null
+          received_at?: string | null
+          sheet_rows?: number | null
+          sheet_updates?: Json | null
+          status?: string
+          subject?: string | null
+        }
+        Update: {
+          attachment_name?: string | null
+          created_at?: string
+          error?: string | null
+          gmail_message_id?: string
+          id?: string
+          lead_dates?: string[] | null
+          leads_added?: number | null
+          received_at?: string | null
+          sheet_rows?: number | null
+          sheet_updates?: Json | null
+          status?: string
+          subject?: string | null
+        }
+        Relationships: []
       }
       jacuzzi_leads: {
         Row: {

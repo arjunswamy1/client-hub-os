@@ -33,7 +33,7 @@ async function world(opts: { revoked?: boolean; expired?: boolean; scopes?: stri
     handleRpc({ db, now: () => NOW }, auth, { jsonrpc: "2.0", id: ++n, method: "tools/call", params: { name, arguments: args } });
   return { tables, db, call, token };
 }
-const sc = (r: any) => r.body.result?.structuredContent;
+const sc = (r: any) => (r.body as any).result?.structuredContent;
 
 describe("mcp-hub auth and isolation", () => {
   it("a token scoped to one client gets 'not authorised' — never an empty result — for another", async () => {
@@ -41,7 +41,7 @@ describe("mcp-hub auth and isolation", () => {
     const ok = await w.call("get_tasks", { client: "alpha" });
     expect(sc(ok).open_tasks).toHaveLength(1);
     const no = await w.call("get_tasks", { client: "beta" });
-    expect(no.body.result.isError).toBe(true);
+    expect((no.body as any).result.isError).toBe(true);
     expect(sc(no).error).toMatch(/not authorised for this client/);
     expect(sc(no).outcome).toBe("not_authorised_client");
     const list = await w.call("list_clients");
@@ -53,7 +53,7 @@ describe("mcp-hub auth and isolation", () => {
       const w = await world(o);
       const r = await w.call("list_clients");
       expect(r.status).toBe(401);
-      expect(r.body.error.message).toMatch(o.revoked ? /revoked/ : /expired/);
+      expect((r.body as any).error.message).toMatch(o.revoked ? /revoked/ : /expired/);
       expect(w.tables.agent_query_log.at(-1).outcome).toBe("refused_auth");
     }
     const w = await world();

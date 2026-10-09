@@ -12,7 +12,7 @@
 //    Spend and impressions are only ever the real Roku figures.
 // 4. DMs AJ a summary through postDirectMessage().
 //
-// Auth: cron nonce (cron_invocation_tokens) or the service-role bearer.
+// Auth: cron nonce (cron_invocation_tokens), the service-role bearer, or a signed-in admin.
 // Body: { dry_run?: boolean, message_id?: string } — dry_run reads and reports only.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as XLSX from 'npm:xlsx@0.18.5';
@@ -67,6 +67,10 @@ Deno.serve(async (req) => {
     const { data } = await db.from('cron_invocation_tokens').delete().eq('token', nonce)
       .gt('created_at', new Date(Date.now() - 5 * 60000).toISOString()).select('token').maybeSingle();
     ok = !!data;
+  }
+  if (!ok && bearer) {
+    const { data: auth } = await db.auth.getUser(bearer);
+    if (auth?.user) { const { data: isAdmin } = await db.rpc('is_admin', { check_user_id: auth.user.id }); ok = !!isAdmin; }
   }
   if (!ok) return json({ error: 'Unauthorized' }, 401);
 

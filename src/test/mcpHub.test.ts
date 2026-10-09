@@ -205,7 +205,7 @@ describe("get_schema", () => {
     expect(one.columns.map((c: any) => c.name)).toContain("call_date");
     const pc = await w.call("get_schema", { table: "platform_connections" });
     expect(pc.body.result.isError).toBe(true);
-    expect(w.tables.agent_query_log.some((l: any) => l.tool === "get_schema")).toBe(true);
+    expect(w.tables.agent_query_log.some((l: any) => l.tool_name === "get_schema")).toBe(true);
   });
   it("refuses a revoked token", async () => {
     const w = await world({ revoked: true });

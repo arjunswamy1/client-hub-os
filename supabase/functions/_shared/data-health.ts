@@ -147,9 +147,9 @@ export async function clientHealth(db: any, client: ResolvedClientRow, now: Date
   const [{ data: drafts }, { data: runs }, { data: conns }] = await Promise.all([
     db.from('client_daily_updates').select('for_date, created_at').eq('client_id', client.id).gte('for_date', from).lte('for_date', latest),
     db.from('daily_update_run_log').select('for_date, created_at, dry_run').eq('client_id', client.id).eq('dry_run', false).gte('for_date', from).lte('for_date', latest),
-    db.from('platform_connections').select('platform, last_synced_at, sync_error, status').eq('client_id', client.id),
+    db.from('platform_connections_safe').select('platform, last_synced_at, sync_error, status').eq('client_id', client.id),
   ]);
-  read.add('client_daily_updates'); read.add('daily_update_run_log'); read.add('platform_connections');
+  read.add('client_daily_updates'); read.add('daily_update_run_log'); read.add('platform_connections_safe');
   for (const r of [...(drafts ?? []), ...(runs ?? [])]) {
     const d = String(r.for_date).slice(0, 10);
     const t = new Date(r.created_at).toISOString();

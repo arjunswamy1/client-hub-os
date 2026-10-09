@@ -33,7 +33,7 @@ async function world(opts: { revoked?: boolean; expired?: boolean; scopes?: stri
     handleRpc({ db, now: () => NOW }, auth, { jsonrpc: "2.0", id: ++n, method: "tools/call", params: { name, arguments: args } });
   return { tables, db, call, token };
 }
-const sc = (r: any) => r.body.result?.structuredContent;
+const sc = (r: any) => (r.body as any).result?.structuredContent;
 
 describe("mcp-hub auth and isolation", () => {
   it("a token scoped to one client gets 'not authorised' — never an empty result — for another", async () => {
@@ -41,7 +41,7 @@ describe("mcp-hub auth and isolation", () => {
     const ok = await w.call("get_tasks", { client: "alpha" });
     expect(sc(ok).open_tasks).toHaveLength(1);
     const no = await w.call("get_tasks", { client: "beta" });
-    expect(no.body.result.isError).toBe(true);
+    expect((no.body as any).result.isError).toBe(true);
     expect(sc(no).error).toMatch(/not authorised for this client/);
     expect(sc(no).outcome).toBe("not_authorised_client");
     const list = await w.call("list_clients");
@@ -53,7 +53,7 @@ describe("mcp-hub auth and isolation", () => {
       const w = await world(o);
       const r = await w.call("list_clients");
       expect(r.status).toBe(401);
-      expect(r.body.error.message).toMatch(o.revoked ? /revoked/ : /expired/);
+      expect((r.body as any).error.message).toMatch(o.revoked ? /revoked/ : /expired/);
       expect(w.tables.agent_query_log.at(-1).outcome).toBe("refused_auth");
     }
     const w = await world();
@@ -81,7 +81,7 @@ describe("mcp-hub auth and isolation", () => {
     };
     for (const t of reads) {
       const r = await w.call(t.name, argsFor[t.name]);
-      expect(r.body.result.isError, `${t.name}: ${JSON.stringify(sc(r))}`).toBeFalsy();
+      expect((r.body as any).result.isError, `${t.name}: ${JSON.stringify(sc(r))}`).toBeFalsy();
       expect(sc(r).provenance, t.name).toBeDefined();
       expect(Array.isArray(sc(r).provenance.withheld), t.name).toBe(true);
       expect(Array.isArray(sc(r).provenance.tables_read), t.name).toBe(true);
@@ -186,5 +186,44 @@ describe("get_data_health fixtures", () => {
     const days = await loadDayStates(db, client(S, "Spektrafin") as any, "2026-09-20", "2026-10-04");
     for (const sun of ["2026-09-20", "2026-09-27", "2026-10-04"]) expect(days.find((x) => x.date === sun)!.state).toBe("no_delivery");
     expect(days.filter((x) => x.state === "missing")).toEqual([]);
+  });
+});
+
+describe("get_schema", () => {
+  it("lists tables without platform_connections or any token, carries gotchas, and is audited", async () => {
+    const w = await world();
+    const r = await w.call("get_schema");
+    const out = sc(r);
+    expect(Object.keys(out.tables)).not.toContain("platform_connections");
+    expect(Object.keys(out.tables)).toContain("platform_connections_safe");
+    const text = JSON.stringify(r.body);
+    expect(text).not.toContain(w.token);
+    expect(text).not.toMatch(/"(access_token|refresh_token|token_hash)"/);
+    expect(out.gotchas.some((g: any) => g.wrong === "update_date" && g.right === "for_date")).toBe(true);
+    expect(out.shared_table_warnings.map((x: any) => x.table)).toEqual(["ringfuel_calls", "cannaball_calls"]);
+    const one = sc(await w.call("get_schema", { table: "ringba_calls" }));
+    expect(one.columns.map((c: any) => c.name)).toContain("call_date");
+    const pc = await w.call("get_schema", { table: "platform_connections" });
+    expect((pc.body as any).result.isError).toBe(true);
+    expect(w.tables.agent_query_log.some((l: any) => l.tool_name === "get_schema")).toBe(true);
+  });
+  it("refuses a revoked token", async () => {
+    const w = await world({ revoked: true });
+    const r = await w.call("get_schema");
+    expect((r.body as any).error.message).toMatch(/revoked/);
+  });
+});
+
+describe("platform_connections select-star guard", () => {
+  it("no edge function selects * from platform_connections", async () => {
+    const { readdirSync, statSync } = await import("node:fs");
+    const walk = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : []; });
+    const bad: string[] = [];
+    for (const f of walk("supabase/functions")) {
+      const s = readFileSync(f, "utf8");
+      const re = /from\(\s*["'`]platform_connections["'`]\s*\)\s*\.select\(\s*(["'`])\s*\*\s*\1/g;
+      if (re.test(s) || /select\s+\*\s+from\s+(public\.)?platform_connections\b(?!_safe)/i.test(s)) bad.push(f);
+    }
+    expect(bad).toEqual([]);
   });
 });

@@ -42,7 +42,7 @@ export default function MetaConnectionCard({ clientId, clientLabel, blurb }: Pro
     queryFn: async () => {
       const { data, error } = await supabase
         .from("platform_connections")
-        .select("*")
+        .select("id, status, account_id, account_name, metadata, selected_ad_account, last_synced_at, last_sync_records, sync_error")
         .eq("client_id", clientId)
         .eq("platform", "meta")
         .maybeSingle();

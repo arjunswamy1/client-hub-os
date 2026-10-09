@@ -132,7 +132,7 @@ export default function SettingsPage() {
         return;
       }
       const { data } = await supabase
-        .from('platform_connections')
+        .from('platform_connections_safe')
         .select('platform, status')
         .eq('client_id', activeClient.id)
         .eq('status', 'active');

@@ -203,7 +203,7 @@ export function useSpektrafinRokuFreshness() {
     refetchInterval: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("platform_connections")
+        .from("platform_connections_safe")
         .select("last_synced_at, status, sync_error")
         .eq("platform", "roku")
         .eq("client_id", SPEKTRAFIN_CLIENT_ID)

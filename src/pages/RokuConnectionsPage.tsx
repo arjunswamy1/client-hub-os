@@ -69,7 +69,7 @@ export default function RokuConnectionsPage() {
     const [{ data: clientRows }, { data: connRows, error: connErr }] = await Promise.all([
       supabase.from('clients').select('id, name').order('name'),
       supabase
-        .from('platform_connections')
+        .from('platform_connections_safe')
         .select('id, client_id, status, account_id, account_name, token_expires_at, last_synced_at, sync_error, updated_at')
         .eq('platform', 'roku')
         .order('updated_at', { ascending: false }),

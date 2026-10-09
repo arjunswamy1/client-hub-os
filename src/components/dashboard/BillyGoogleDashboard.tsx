@@ -21,7 +21,7 @@ export default function BillyGoogleDashboard() {
     enabled: !!activeClient?.id,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("platform_connections")
+        .from("platform_connections_safe")
         .select("last_synced_at, last_sync_records, sync_error, token_expires_at")
         .eq("client_id", activeClient!.id)
         .eq("platform", "google")

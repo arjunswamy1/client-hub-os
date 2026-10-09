@@ -188,3 +188,42 @@ describe("get_data_health fixtures", () => {
     expect(days.filter((x) => x.state === "missing")).toEqual([]);
   });
 });
+
+describe("get_schema", () => {
+  it("lists tables without platform_connections or any token, carries gotchas, and is audited", async () => {
+    const w = await world();
+    const r = await w.call("get_schema");
+    const out = sc(r);
+    expect(Object.keys(out.tables)).not.toContain("platform_connections");
+    expect(Object.keys(out.tables)).toContain("platform_connections_safe");
+    const text = JSON.stringify(r.body);
+    expect(text).not.toContain(w.token);
+    expect(text).not.toMatch(/"(access_token|refresh_token|token_hash)"/);
+    expect(out.gotchas.some((g: any) => g.wrong === "update_date" && g.right === "for_date")).toBe(true);
+    expect(out.shared_table_warnings.map((x: any) => x.table)).toEqual(["ringfuel_calls", "cannaball_calls"]);
+    const one = sc(await w.call("get_schema", { table: "ringba_calls" }));
+    expect(one.columns.map((c: any) => c.name)).toContain("call_date");
+    const pc = await w.call("get_schema", { table: "platform_connections" });
+    expect(pc.body.result.isError).toBe(true);
+    expect(w.tables.agent_query_log.some((l: any) => l.tool === "get_schema")).toBe(true);
+  });
+  it("refuses a revoked token", async () => {
+    const w = await world({ revoked: true });
+    const r = await w.call("get_schema");
+    expect(r.body.error.message).toMatch(/revoked/);
+  });
+});
+
+describe("platform_connections select-star guard", () => {
+  it("no edge function selects * from platform_connections", async () => {
+    const { readdirSync, statSync } = await import("node:fs");
+    const walk = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : []; });
+    const bad: string[] = [];
+    for (const f of walk("supabase/functions")) {
+      const s = readFileSync(f, "utf8");
+      const re = /from\(\s*["'`]platform_connections["'`]\s*\)\s*\.select\(\s*(["'`])\s*\*\s*\1/g;
+      if (re.test(s) || /select\s+\*\s+from\s+(public\.)?platform_connections\b(?!_safe)/i.test(s)) bad.push(f);
+    }
+    expect(bad).toEqual([]);
+  });
+});

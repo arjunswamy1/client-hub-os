@@ -122,7 +122,9 @@ Deno.serve(async (req) => {
         const { error } = await db.from('jacuzzi_leads').insert(rows);
         if (error) throw new Error(`jacuzzi_leads insert: ${error.message}`);
       }
-      const dates = [...new Set(fresh.map((l) => l.transaction_date))].sort();
+      // Fresh lead dates plus the file's latest date, so a retry after a sheet failure still writes it.
+      const latestInFile = leads.map((l) => l.transaction_date).sort().pop()!;
+      const dates = [...new Set([...fresh.map((l) => l.transaction_date), latestInFile])].sort();
 
       // ── 3. sheet ──
       const sheetNotes: string[] = [];

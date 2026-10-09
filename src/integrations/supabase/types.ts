@@ -8933,6 +8933,40 @@ export type Database = {
       }
     }
     Views: {
+      platform_connections_safe: {
+        Row: {
+          account_id: string | null
+          account_name: string | null
+          client_id: string | null
+          client_name: string | null
+          created_at: string | null
+          customer_id: string | null
+          has_access_token: boolean | null
+          has_refresh_token: boolean | null
+          id: string | null
+          last_sync_records: number | null
+          last_synced_at: string | null
+          platform: string | null
+          selected_ad_account_id: string | null
+          selected_ad_account_name: string | null
+          status: string | null
+          sync_error: string | null
+          synced_ad_accounts: number | null
+          token_expired: boolean | null
+          token_expires_at: string | null
+          updated_at: string | null
+          visible_ad_accounts: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_connections_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       slack_unanswered_client_questions: {
         Row: {
           age_working_hours: number | null

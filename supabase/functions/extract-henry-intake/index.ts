@@ -184,6 +184,8 @@ Deno.serve(async (req) => {
     authorized = !!tokenRow;
   }
   if (!authorized) return json({ error: 'Unauthorized' }, 401);
+  // Retired: intake messages no longer become tasks; only explicit @CPM Bot or spoken requests do.
+  return json({ retired: true, reason: 'tasks now come only from explicit @CPM Bot or spoken task-tracker requests' }, 200);
 
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));

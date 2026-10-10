@@ -69,11 +69,16 @@ describe("sync-slack task write guard", () => {
     const sample = `await supabase.from('tasks').insert({ title: 'x' });`;
     expect(TASK_WRITE.some((p) => p.test(sample))).toBe(true);
   });
+
+  it("candidate promotion is switched off", () => {
+    expect(readFileSync("supabase/functions/_shared/task-gate.ts", "utf8")).toMatch(/export const TASKS_FROM_REQUESTS_ONLY = true;/);
+  });
 });
 
 describe("single task creation writer", () => {
-  it("only the shared task gate inserts or upserts tasks", () => {
-    const allowed = normalize("supabase/functions/_shared/task-gate.ts");
+  it("only the explicit-request writer inserts or upserts tasks", () => {
+    // task-gate.ts keeps its (switched-off) promotion insert; TASKS_FROM_REQUESTS_ONLY guards it.
+    const allowedFiles = new Set([normalize("supabase/functions/_shared/task-request.ts"), normalize("supabase/functions/_shared/task-gate.ts")]);
     const root = "supabase/functions";
     const stack = [root];
     const files: string[] = [];
@@ -87,10 +92,14 @@ describe("single task creation writer", () => {
       }
     }
     const offenders = files.filter((file) => {
-      if (normalize(file) === allowed) return false;
+      if (allowedFiles.has(normalize(file))) return false;
       const body = readFileSync(file, "utf8");
       return TASK_WRITE.some((pattern) => pattern.test(body));
     });
     expect(offenders).toEqual([]);
+  });
+
+  it("candidate promotion is switched off", () => {
+    expect(readFileSync("supabase/functions/_shared/task-gate.ts", "utf8")).toMatch(/export const TASKS_FROM_REQUESTS_ONLY = true;/);
   });
 });

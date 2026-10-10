@@ -841,6 +841,34 @@ async function processSlackMessage(event: any) {
       return;
     }
 
+    // Task requests: the only Slack path into the task tracker. Tagging the bot
+    // and asking for a task creates it straight away; the reply links to it.
+    if (isSlackTaskRequest(cleanText)) {
+      if (!member) {
+        await postSlackMessage(token, event.channel, "I can only add tasks for CPM team members — I couldn't match your Slack account to one.", replyThreadTs);
+        return;
+      }
+      const userCtx = await resolveUserContext(token, event.user);
+      const resolved = await resolveClient(supabase, { channelId: event.channel, text: cleanText });
+      const permalink = await fetch(`https://slack.com/api/chat.getPermalink?channel=${event.channel}&message_ts=${event.ts}`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.json()).then((d) => d.permalink ?? null).catch(() => null);
+      const r = await createRequestedTask(supabase, {
+        origin: 'slack', sourceRef: `slack:${event.channel}:${event.ts}`, text: `${userCtx.name} wrote: ${cleanText}`, quote: cleanText,
+        requestedByMemberId: member.id, clientId: resolved.client?.id ?? null, link: permalink,
+        today: formatDateInTimeZone(new Date(), userCtx.timeZone || 'America/Chicago'),
+      });
+      const reply = r.ok
+        ? `${r.duplicate ? 'Already in the tracker' : 'Added to the task tracker'}: *${r.title}*` +
+          `\n${[r.client ? `Client: ${r.client}` : 'No client', r.assignee ? `Owner: ${r.assignee}` : 'No owner yet', r.due ? `Due: ${r.due}` : 'No due date'].join(' · ')}` +
+          `\n<${r.url}|Open in the hub> to edit or remove it.`
+        : r.error === 'not_a_task'
+          ? "That didn't read as a task to me, so I didn't add anything. Try \"@CPM Bot add a task for Lou: …\"."
+          : `I couldn't add that task (${r.error}). Nothing was saved.`;
+      await postSlackMessage(token, event.channel, reply, replyThreadTs);
+      await logQa(supabase, { asked_by_slack_id: event.user, team_member_id: teamMemberId, channel_id: event.channel, thread_ts: replyThreadTs, question: cleanText, answer: reply, error: r.ok ? undefined : `task_request: ${r.error}`, latency_ms: Date.now() - startedAt });
+      return;
+    }
+
     addReaction(token, event.channel, event.ts, 'brain');
     await postSlackMessage(token, event.channel, PENDING_REPLY_TEXT, replyThreadTs);
 

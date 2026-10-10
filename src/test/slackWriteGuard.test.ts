@@ -80,8 +80,8 @@ describe("Slack write guard", () => {
   it("slack-post.ts exports exactly two writers: postToSlack and postDirectMessage", () => {
     const body = readFileSync("supabase/functions/_shared/slack-post.ts", "utf8");
     const exported = [...body.matchAll(/export\s+async\s+function\s+(\w+)/g)].map((m) => m[1]).sort();
-    // canPostToChannel is a read-only guard check, not a writer.
-    expect(exported).toEqual(["canPostToChannel", "postDirectMessage", "postToSlack"]);
+    // canPostToChannel and botSettings are read-only, not writers.
+    expect(exported).toEqual(["botSettings", "canPostToChannel", "postDirectMessage", "postToSlack"]);
   });
 
   it("no file outside slack-post.ts posts to a Slack response_url", () => {

@@ -6528,6 +6528,39 @@ export type Database = {
           },
         ]
       }
+      ringfuel_revenue_corrections: {
+        Row: {
+          applied_at: string | null
+          call_id: string
+          client_id: string
+          converted: boolean
+          created_at: string
+          id: string
+          revenue: number
+          source: string
+        }
+        Insert: {
+          applied_at?: string | null
+          call_id: string
+          client_id: string
+          converted: boolean
+          created_at?: string
+          id?: string
+          revenue: number
+          source: string
+        }
+        Update: {
+          applied_at?: string | null
+          call_id?: string
+          client_id?: string
+          converted?: boolean
+          created_at?: string
+          id?: string
+          revenue?: number
+          source?: string
+        }
+        Relationships: []
+      }
       roku_daily_metrics: {
         Row: {
           account_uid: string

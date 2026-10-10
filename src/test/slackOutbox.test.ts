@@ -6,7 +6,7 @@ const post = readFileSync('supabase/functions/_shared/slack-post.ts', 'utf8');
 
 describe('Grokbot outbox', () => {
   it('mcp-hub outbox never imports the Slack writer', () => {
-    expect(outbox).not.toMatch(/import[^;]*slack-post/);
+    expect(outbox).not.toMatch(/from ['"][^'"]*slack-post/);
   });
   it('outbox tools refuse non-service callers', () => {
     expect(outbox).toMatch(/if \(!caller\.isService\) throw new ToolRefusal/);

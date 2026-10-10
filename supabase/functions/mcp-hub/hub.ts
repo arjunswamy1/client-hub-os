@@ -24,7 +24,6 @@ import { SCHEMA_CATALOG } from './schema-catalog.ts';
 import { ToolRefusal, CREATIVE_TOOLS, runCreativeTool } from './creative.ts';
 import { OUTBOX_TOOLS, runOutboxTool } from './outbox.ts';
 import { separateContext, allowedFigures, figureMismatches, extractFigures } from '../_shared/update-context.ts';
-import { screenForInjection } from '../_shared/feedback-safety.ts';
 export { ToolRefusal };
 
 export const SERVER_INFO = { name: 'cpm-hub', title: 'Connect Paid Media Hub', version: '1.0.0' };
@@ -546,7 +545,7 @@ async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record
         db.from('clients').select('update_context_note, current_focus, current_focus_source, current_focus_updated_at').eq('id', c.id).maybeSingle(),
       ]);
       const ctx = separateContext((rows ?? []).filter((r: any) => r.client_id === c.id), (maps ?? []).filter((m: any) => m.client_id === c.id), c.id);
-      const pick = (o: string) => lane === 'client' ? (ctx as any)[o] : (ctx as any)[o].filter((i: any) => o === 'wispr_call' || true);
+      const pick = (o: 'internal_slack' | 'external_slack' | 'wispr_call') => ctx[o];
       let laneSlice: Record<string, unknown> = {};
       if (lane === 'client' || lane === 'media') {
         const t = await runTool(deps, caller, 'get_tasks', { client: c.id });

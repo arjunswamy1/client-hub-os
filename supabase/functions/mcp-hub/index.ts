@@ -42,7 +42,7 @@ async function invokeDrafter(clientId: string, forDate: string): Promise<string 
   });
   const body = await res.json().catch(() => null);
   const hit = (body?.results ?? []).find((r: any) => r.client_id === clientId && typeof r.draft_text === 'string');
-  return hit?.draft_text ?? null;
+  return hit?.hub_draft_text ?? hit?.draft_text ?? null;
 }
 
 Deno.serve(async (req) => {

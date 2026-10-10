@@ -202,7 +202,7 @@ async function firstDataDay(db: any, c: Client): Promise<string | null> {
   const probes: Array<[string, string]> = [];
   for (const t of c.spend_source_tables ?? []) if (SPEND_DATE_TABLES.includes(t)) probes.push([t, 'date']);
   for (const t of c.call_source_tables ?? []) if (CALL_DATE_COLS[t]) probes.push([t, CALL_DATE_COLS[t]]);
-  if (c.slug === 'jacuzzi') probes.push(['jacuzzi_leads', 'lead_date']);
+  if (c.slug === 'jacuzzi') probes.push(['jacuzzi_leads', 'transaction_date']);
   let first: string | null = null;
   for (const [t, col] of probes) {
     const { data } = await db.from(t).select(col).eq('client_id', c.id).order(col, { ascending: true }).limit(1);

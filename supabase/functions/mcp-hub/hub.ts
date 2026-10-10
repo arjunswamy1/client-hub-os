@@ -22,6 +22,7 @@ import { sanitiseContext } from '../_shared/daily-update-rules.ts';
 import { clientHealth, sourcesFor } from '../_shared/data-health.ts';
 import { SCHEMA_CATALOG } from './schema-catalog.ts';
 import { ToolRefusal, CREATIVE_TOOLS, runCreativeTool } from './creative.ts';
+import { OUTBOX_TOOLS, runOutboxTool } from './outbox.ts';
 export { ToolRefusal };
 
 export const SERVER_INFO = { name: 'cpm-hub', title: 'Connect Paid Media Hub', version: '1.0.0' };
@@ -83,6 +84,7 @@ export const TOOLS: { name: string; scope: 'read' | 'draft' | 'creative_write'; 
   { name: 'draft_update', scope: 'draft', description: 'Create or replace the DRAFT daily update for a client and date. Never sends. Refuses rows a person has edited or sent. Omit text to have the hub drafter write it.', inputSchema: { type: 'object', properties: { ...clientArg, for_date: { ...str, description: 'YYYY-MM-DD' }, text: { ...str, maxLength: 4000 } }, required: ['client', 'for_date'], additionalProperties: false } },
   { name: 'set_current_focus', scope: 'draft', description: "Set a client's current focus (marked context-derived). Never overwrites a focus a person set manually.", inputSchema: { type: 'object', properties: { ...clientArg, text: { ...str, maxLength: 500 } }, required: ['client', 'text'], additionalProperties: false } },
   ...(CREATIVE_TOOLS as unknown as { name: string; scope: 'read' | 'draft' | 'creative_write'; description: string; inputSchema: Record<string, unknown> }[]),
+  ...(OUTBOX_TOOLS as unknown as { name: string; scope: 'read' | 'draft' | 'creative_write'; description: string; inputSchema: Record<string, unknown> }[]),
 ];
 
 export const SHARED_TABLE_WARNINGS = [
@@ -515,6 +517,10 @@ async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record
   if (CREATIVE_TOOLS.some((t) => t.name === name)) {
     const o = await runCreativeTool(name, db, caller, args, now);
     return { payload: o.payload, clientId: o.clientId, audit: o.audit, provenance: prov({ engine: 'creative', tables_read: [...tablesBase, ...o.tables], withheld: o.withheld ?? [] }) };
+  }
+  if (OUTBOX_TOOLS.some((t) => t.name === name)) {
+    const o = await runOutboxTool(name, db, caller, args, now);
+    return { payload: o.payload, clientId: o.clientId, audit: o.audit, provenance: prov({ engine: 'outbox', tables_read: [...tablesBase, ...o.tables] }) };
   }
   throw new ToolRefusal('unknown_tool', `unknown tool "${name}"`);
 }

@@ -196,7 +196,7 @@ export function checkinPrompt(firstName: string, briefs: { title: string; client
 }
 
 export function followupText(i: FollowupItem, names: { designer?: string | null; hubUrl: string }) {
-  const link = `<${names.hubUrl}/creative/briefs/${i.brief_id}|Open the brief>`;
+  const link = `<${names.hubUrl}/creative?brief=${i.brief_id}|Open the brief>`;
   if (i.stage === 'designer') return `Quick check on *${i.title}* (${i.client}) — it's ${i.due_reason}. Where does it stand? ${link}`;
   if (i.rule === 'awaiting_review') return `*${i.title}* (${i.client}) is ${i.due_reason}. You're the reviewer — approve it or request changes. ${link}`;
   return `Heads-up: *${i.title}* (${i.client}) is ${i.due_reason}. ${names.designer ?? 'The designer'} was chased and it hasn't moved. ${link}`;

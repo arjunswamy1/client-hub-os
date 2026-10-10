@@ -52,7 +52,7 @@ export type Origin = 'internal_slack' | 'external_slack' | 'wispr_call';
 export interface ContextRow { source: string; content_type?: string | null; title?: string | null; content?: string | null; metadata?: Record<string, any> | null; occurred_at: string; client_id?: string | null }
 export interface MappingRow extends ChannelFlags { channel_id: string; channel_name?: string | null; client_id: string | null }
 
-export interface PackItem { origin: Origin; at: string; source: string; where: string | null; author_side: 'cpm' | 'client' | 'unknown'; quoted_text: string; injection_suspected: boolean; injection_signals: string[]; permalink: string | null }
+export interface PackItem { origin: Origin; at: string; source: string; where: string | null; author_side: 'cpm' | 'client' | 'unknown'; quoted_text: string; injection_suspected: boolean; injection_signals: unknown[]; permalink: string | null }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 

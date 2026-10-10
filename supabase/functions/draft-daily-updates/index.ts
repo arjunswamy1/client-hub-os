@@ -13,6 +13,7 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createOpenAI } from 'npm:@ai-sdk/openai';
 import { streamText } from 'npm:ai';
 import { postToSlack } from '../_shared/slack-post.ts';
+import { chooseDraftText } from '../_shared/update-context.ts';
 import { buildComparisonSet, isWeekendRollup, loadDailySeries, loadScopeEvents, periodSnapshot, scopeContextLines, snapshotFrom, type ComparisonClient, type DailySeries } from '../_shared/metric-comparison-data.ts';
 import { comparisonPromptBlock, headlineDelta, renderDailyComparison, type ComparisonSet } from '../_shared/metric-comparisons.ts';
 import { collectClientMetrics, type ClientMetrics, type DayRow } from '../_shared/daily-update-metrics.ts';
@@ -712,9 +713,16 @@ Deno.serve(async (req) => {
 
         // no_save: verification runs must never overwrite a saved (possibly hand-edited) draft.
         const noSave = body.no_save === true;
+        // An agent narrative already written for this date (draft_update, figures
+        // checked) wins; otherwise the hub's own draft posts, as it always has.
+        const { data: prior } = await supabase.from('client_daily_updates').select('status, draft_text, narrative_at').eq('client_id', clientId).eq('for_date', forDate).maybeSingle();
+        const chosen = chooseDraftText(prior as any, draftText);
+        const hubDraftText = draftText;
+        draftText = chosen.text;
         const { data: saved, error: saveErr } = noSave ? { data: { id: null } as any, error: null } : await supabase.from('client_daily_updates')
           .upsert({
             client_id: clientId, for_date: forDate, kind, draft_text: draftText,
+            ...(chosen.by === 'narrative' ? {} : { narrative_by: null, narrative_at: null }),
             form, update_mode: updateMode, triggers: evald.triggers as unknown as Record<string, unknown>[],
             context_used: context as unknown as Record<string, unknown>[],
             am_notes: amNotes || null, status: 'draft',
@@ -747,7 +755,7 @@ Deno.serve(async (req) => {
             `<${link}|[Edit in hub]>`,
           ].join('\n');
           // Every Slack write in this project goes through postToSlack().
-          const out = await postToSlack({ channel: channel!.id, text });
+          const out = await postToSlack({ channel: channel!.id, text, internalOnly: true, source: 'daily_update' });
           posted = out;
           if (out.ok && out.ts) {
             await supabase.from('client_daily_updates').update({ slack_ts: out.ts }).eq('id', saved.id);
@@ -757,7 +765,8 @@ Deno.serve(async (req) => {
         results.push({
           client: clientName, client_id: clientId, kind, for_date: forDate, update_mode: updateMode, comparison_mode: mode,
           channel: channel?.name ?? null, lead: lead?.name ?? null,
-          blockers, form, triggers: evald.triggers, one_line: oneLine, draft_text: draftText, am_notes: amNotes,
+          blockers, form, triggers: evald.triggers, one_line: oneLine, draft_text: draftText, hub_draft_text: hubDraftText, draft_source: chosen.by, am_notes: amNotes,
+          figures: dryRun ? { yesterday: metrics.yesterday ?? null, period: (metrics as any).period ?? null } : undefined,
           comparisons: cmp, comparison_error: cmpError,
           chars: draftText.length,
           fact_sheet: dryRun && form === 'full' ? factSheet(metrics, evald.triggers, context) : undefined,

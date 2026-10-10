@@ -66,6 +66,7 @@ async function logRefusal(channelId: string, channelName: string | null, method:
 async function refusalReason(
   channelId: string,
   directMessageVerifiedInternal = false,
+  internalOnly = false,
 ): Promise<{ reason: string | null; name: string | null }> {
   if (!channelId) return { reason: 'missing_channel_id', name: null };
 
@@ -77,7 +78,7 @@ async function refusalReason(
 
   const { data: row, error } = await admin()
     .from('slack_channel_mappings')
-    .select('channel_id, channel_name, is_external, classified_at')
+    .select('channel_id, channel_name, is_external, is_shared, is_ext_shared, is_org_shared, classified_at')
     .eq('channel_id', channelId)
     .maybeSingle();
 
@@ -85,6 +86,8 @@ async function refusalReason(
   if (!row) return { reason: 'channel_not_mapped', name: null };
   if (row.classified_at === null) return { reason: 'channel_not_classified', name: row.channel_name };
   if (row.is_external !== false) return { reason: 'channel_is_external', name: row.channel_name };
+  // Daily updates and other internal-only posts: shared in ANY way Slack reports is refused.
+  if (internalOnly && (row.is_shared === true || row.is_ext_shared === true || row.is_org_shared === true)) return { reason: 'channel_is_shared', name: row.channel_name };
   return { reason: null, name: row.channel_name };
 }
 
@@ -114,6 +117,8 @@ interface PostOptions {
   throwOnError?: boolean;
   /** Caller has verified this DM's human is an internal workspace member. */
   directMessageVerifiedInternal?: boolean;
+  /** Refuse any channel Slack reports as shared (is_shared / is_ext_shared / is_org_shared), and DMs. Daily updates always set this. */
+  internalOnly?: boolean;
   /** Which job produced the post; recorded on outbox rows. */
   source?: string;
 }
@@ -134,7 +139,10 @@ export async function botSettings(): Promise<BotSettings> {
  */
 export async function postToSlack(opts: PostOptions): Promise<SlackPostResult> {
   const method: SlackWriteMethod = opts.method ?? 'chat.postMessage';
-  const { reason, name } = await refusalReason(opts.channel, opts.directMessageVerifiedInternal === true);
+  const internalOnly = opts.internalOnly === true;
+  const { reason, name } = internalOnly && opts.channel.startsWith('D')
+    ? { reason: 'internal_only_post_to_dm', name: 'direct message' }
+    : await refusalReason(opts.channel, opts.directMessageVerifiedInternal === true, internalOnly);
   if (reason) {
     await logRefusal(opts.channel, name, method, reason, {
       thread_ts: opts.threadTs ?? null,
@@ -211,7 +219,7 @@ export async function postToSlack(opts: PostOptions): Promise<SlackPostResult> {
   if (botPersona() !== 'grokbot' && !opts.channel.startsWith('D') && (await botSettings()).outbound_sender === 'grokbot') {
     const { data, error } = await admin().from('slack_outbox').insert({
       source: opts.source ?? 'hub', channel_id: opts.channel, channel_name: name,
-      thread_ts: opts.threadTs ?? null, text: opts.text ?? null, blocks: opts.blocks ?? null,
+      thread_ts: opts.threadTs ?? null, text: opts.text ?? null, blocks: opts.blocks ?? null, internal_only: internalOnly,
     }).select('id').single();
     if (error) {
       const err = `outbox insert failed: ${error.message}`;

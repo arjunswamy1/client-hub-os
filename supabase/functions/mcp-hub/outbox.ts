@@ -2,6 +2,7 @@
 // cleared the Slack allowlist in _shared/slack-post.ts and record what Grokbot
 // did with them. Service accounts only. Never imports _shared/slack-post.ts.
 import { ToolRefusal, type CreativeCaller } from './creative.ts';
+import { isStrictlyInternal } from '../_shared/update-context.ts';
 
 const id = { type: 'string', description: 'Outbox row id.' };
 
@@ -15,15 +16,17 @@ export async function runOutboxTool(name: string, db: any, caller: CreativeCalle
   if (!caller.isService) throw new ToolRefusal('refused_not_service_account', 'outbox tools are for the Grokbot service identity only');
   if (name === 'list_outbox') {
     const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 50);
-    const { data: rows, error } = await db.from('slack_outbox').select('id, created_at, source, channel_id, channel_name, thread_ts, text, blocks')
+    const { data: rows, error } = await db.from('slack_outbox').select('id, created_at, source, channel_id, channel_name, thread_ts, text, blocks, internal_only')
       .eq('status', 'pending').order('created_at').limit(limit);
     if (error) throw new Error(error.message);
     const ids = [...new Set((rows ?? []).map((r: any) => r.channel_id))];
-    const { data: maps } = ids.length ? await db.from('slack_channel_mappings').select('channel_id, is_external, classified_at').in('channel_id', ids) : { data: [] };
-    const ok = new Set((maps ?? []).filter((m: any) => m.classified_at && m.is_external === false).map((m: any) => m.channel_id));
+    const { data: maps } = ids.length ? await db.from('slack_channel_mappings').select('channel_id, is_external, is_shared, is_ext_shared, is_org_shared, classified_at').in('channel_id', ids) : { data: [] };
+    const byId = new Map((maps ?? []).map((m: any) => [m.channel_id, m]));
+    // Internal-only rows (daily updates) need a channel shared in no way at all.
+    const cleared = (r: any) => { const m: any = byId.get(r.channel_id); return r.internal_only || r.source === 'daily_update' ? isStrictlyInternal(m) : !!m && !!m.classified_at && m.is_external === false; };
     const ready = [], withheld = [];
     for (const r of rows ?? []) {
-      if (ok.has(r.channel_id)) { ready.push(r); continue; }
+      if (cleared(r)) { ready.push(r); continue; }
       withheld.push(r.id);
       await db.from('slack_outbox').update({ status: 'skipped', skip_reason: 'channel no longer cleared as internal', handled_at: now.toISOString(), handled_by: caller.memberId }).eq('id', r.id).eq('status', 'pending');
     }

@@ -45,6 +45,7 @@ import AIVideoStudioPage from "./pages/AIVideoStudioPage";
 import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 import DataHealthPage from "./pages/DataHealthPage";
 import AgentTokensPage from "./pages/AgentTokensPage";
+import ChannelApprovalsPage from "./pages/ChannelApprovalsPage";
 import ClientDIDsPage from "./pages/ClientDIDsPage";
 import SpendUploadPage from "./pages/SpendUploadPage";
 import RingFuelNumbersPage from "./pages/RingFuelNumbersPage";

@@ -468,7 +468,7 @@ export async function computeClientMetrics(
     leadsThrough = await feedThrough(supabase, 'jacuzzi_leads', 'transaction_date', client.id, false, tz);
     const leadRows = await fetchAll((f, t) =>
       supabase.from('jacuzzi_leads').select('transaction_date, lead_type, payout_rate').eq('client_id', client.id)
-        .gte('transaction_date', window.from).lte('transaction_date', window.to).range(f, t), 'jacuzzi_leads');
+        .gte('transaction_date', window.from).lte('transaction_date', window.to).order('transaction_date').order('id').range(f, t), 'jacuzzi_leads');
     jacuzziLeads = leadRows.length;
     for (const l of leadRows as any[]) {
       const d = String(l.transaction_date ?? '').slice(0, 10);
@@ -729,7 +729,7 @@ export async function computeClientMetrics(
   // ── platform events — reported, labelled, never summed with validated calls ─
   if (spendTables.includes('ad_daily_metrics')) {
     const evRows = await fetchAll((f, t) => supabase.from('ad_daily_metrics').select('date, conversions')
-      .eq('client_id', client.id).gte('date', window.from).lte('date', window.to).range(f, t));
+      .eq('client_id', client.id).gte('date', window.from).lte('date', window.to).order('date').order('id').range(f, t));
     const withValue = (evRows as any[]).filter((r) => r.conversions !== null && r.conversions !== undefined);
     metrics.push({
       key: 'platform_events',

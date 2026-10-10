@@ -219,7 +219,7 @@ export async function computeClientBreakdown(
 
     const rows = await fetchAll((f, t) =>
       supabase.from(table).select(cols).eq('client_id', client.id)
-        .gte(spec.dateCol, startTs).lte(spec.dateCol, endTs).range(f, t));
+        .gte(spec.dateCol, startTs).lte(spec.dateCol, endTs).order(spec.dateCol).order('id').range(f, t));
 
     for (const r of rows as any[]) {
       if (spec.testFlagCol && r[spec.testFlagCol] === true) continue;
@@ -259,11 +259,13 @@ export async function computeClientBreakdown(
       spec.hasClicks ? 'clicks' : null, spec.hasImpressions ? 'impressions' : null,
       spec.entityFilter ? 'entity' : null].filter(Boolean).join(', ');
 
+    const allowed = (client as any).spend_source_platforms?.[table];
     const rows = await fetchAll((f, t) => {
       let q = supabase.from(table).select(cols).eq('client_id', client.id)
         .gte('date', window.from).lte('date', window.to);
       if (spec.entityFilter) q = q.eq('entity', spec.entityFilter);
-      return q.range(f, t);
+      if (Array.isArray(allowed) && allowed.length && spec.platformCol) q = q.in(spec.platformCol, allowed);
+      return q.order('date').order('id').range(f, t);
     });
 
     for (const r of rows as any[]) {

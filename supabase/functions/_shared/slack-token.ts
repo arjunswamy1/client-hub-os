@@ -79,6 +79,11 @@ async function exchangeStaticToken(token: string): Promise<{ token: string; expi
  * Pass `force` to always take the refresh path (used by the scheduled refresher).
  */
 export async function getValidBotToken(force = false): Promise<string> {
+  if (botPersona() === 'grokbot') {
+    const t = Deno.env.get('GROKBOT_BOT_TOKEN');
+    if (!t) throw new SlackTokenError('GROKBOT_BOT_TOKEN is not configured');
+    return t;
+  }
   return (await getValidBotTokenDetailed(force)).token;
 }
 

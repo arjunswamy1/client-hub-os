@@ -2,4 +2,4 @@
 // Grokbot's own token and signing secret, and draining the hub outbox through
 // the mcp-hub outbox tools. persona.ts must be imported first.
 import './persona.ts';
-import '../slack-ai-bot/index.ts';
+import '../_shared/slack-bot-app.ts';

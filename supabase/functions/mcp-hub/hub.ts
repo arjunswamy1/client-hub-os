@@ -79,7 +79,7 @@ export const TOOLS: { name: string; scope: 'read' | 'draft'; description: string
   { name: 'get_tasks', scope: 'read', description: 'Open tasks for a client with owners and due dates.', inputSchema: { type: 'object', properties: clientArg, required: ['client'], additionalProperties: false } },
   { name: 'get_scope_events', scope: 'read', description: 'What changed about what CPM manages or how it is measured (accounts added, scope/tracking changes).', inputSchema: { type: 'object', properties: clientArg, required: ['client'], additionalProperties: false } },
   { name: 'get_lifetime_performance', scope: 'read', description: `Month-by-month performance for the whole life of an account (first recorded spend or call through yesterday, max ${MAX_LIFETIME_MONTHS} months), from the same canonical engine the dashboards use, plus lifetime totals. A month with an unknown figure makes that lifetime total partial, never zero-filled.`, inputSchema: { type: 'object', properties: { ...clientArg, date_from: { ...str, description: 'Optional YYYY-MM-DD; default the first recorded data day.' }, date_to: { ...str, description: 'Optional YYYY-MM-DD; default yesterday in the client timezone.' } }, required: ['client'], additionalProperties: false } },
-  { name: 'get_campaign_performance', scope: 'read', description: 'Ad-platform campaign rows (keyed by platform campaign id) for a date range: spend, impressions, clicks, platform conversions, CTR, CPC, CPM. Platform conversions are the ad platform\'s own events, NOT validated calls; calls cannot be split by campaign here.', inputSchema: { type: 'object', properties: { ...clientArg, date_from: { ...str, description: 'YYYY-MM-DD' }, date_to: { ...str, description: 'YYYY-MM-DD' } }, required: ['client', 'date_from', 'date_to'], additionalProperties: false } },
+  { name: 'get_campaign_performance', scope: 'read', description: 'Ad-platform campaign rows (keyed by platform campaign id) for a date range: spend, impressions, clicks, platform conversions, CTR, CPC, CPM. Platform conversions are the ad platform\'s own events, NOT validated calls; calls cannot be split by campaign here. Set include_days for a per-day total of spend, impressions and clicks across campaigns.', inputSchema: { type: 'object', properties: { ...clientArg, include_days: { type: 'boolean', description: 'Also return one row per day (all campaigns summed).' }, date_from: { ...str, description: 'YYYY-MM-DD' }, date_to: { ...str, description: 'YYYY-MM-DD' } }, required: ['client', 'date_from', 'date_to'], additionalProperties: false } },
   { name: 'get_schema', scope: 'read', description: 'Column names and types of the tables behind the hub, with foreign keys, notes and known wrong-name gotchas. Omit table for the full list. Token columns are never listed.', inputSchema: { type: 'object', properties: { table: { ...str, description: 'Optional table name.' } }, additionalProperties: false } },
   { name: 'draft_update', scope: 'draft', description: 'Create or replace the DRAFT daily update for a client and date. Never sends. Refuses rows a person has edited or sent. Omit text to have the hub drafter write it.', inputSchema: { type: 'object', properties: { ...clientArg, for_date: { ...str, description: 'YYYY-MM-DD' }, text: { ...str, maxLength: 4000 } }, required: ['client', 'for_date'], additionalProperties: false } },
   { name: 'set_current_focus', scope: 'draft', description: "Set a client's current focus (marked context-derived). Never overwrites a focus a person set manually.", inputSchema: { type: 'object', properties: { ...clientArg, text: { ...str, maxLength: 500 } }, required: ['client', 'text'], additionalProperties: false } },
@@ -226,6 +226,17 @@ export function monthWindows(from: string, to: string): Array<{ from: string; to
   return out;
 }
 
+/** One row per date, every campaign summed. */
+export function dailyCampaignTotals(rows: any[]) {
+  const by = new Map<string, { date: string; spend: number; impressions: number; clicks: number; platform_conversions: number }>();
+  for (const r of rows) {
+    const d = by.get(r.date) ?? { date: r.date, spend: 0, impressions: 0, clicks: 0, platform_conversions: 0 };
+    d.spend += Number(r.spend ?? 0); d.impressions += Number(r.impressions ?? 0); d.clicks += Number(r.clicks ?? 0); d.platform_conversions += Number(r.conversions ?? 0);
+    by.set(r.date, d);
+  }
+  return [...by.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ ...d, spend: Math.round(d.spend * 100) / 100 }));
+}
+
 async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record<string, any>): Promise<Out> {
   const { db } = deps;
   const now = deps.now?.() ?? new Date();
@@ -366,7 +377,7 @@ async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record
       if (!rows.length) caveats.push(`No campaign rows recorded for ${c.name} in this range — not the same as zero spend; this account may report spend from a non-campaign source (see get_client_profile).`);
       return {
         clientId: c.id,
-        payload: { client: c.name, window: { from, to }, campaigns, total_spend: r2(campaigns.reduce((s, x) => s + x.spend, 0)), caveats },
+        payload: { client: c.name, window: { from, to }, campaigns, ...(args.include_days ? { days: dailyCampaignTotals(rows) } : {}), total_spend: r2(campaigns.reduce((s, x) => s + x.spend, 0)), caveats },
         provenance: prov({ engine: 'ad_campaigns rollup', tables_read: [...tablesBase, 'ad_campaigns'], publisher_scope: c.publisher_scope ?? null, timezone: reportingTimeZone(c), withheld }),
       };
     }

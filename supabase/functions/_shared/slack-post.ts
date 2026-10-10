@@ -9,6 +9,7 @@
 // Every refusal is recorded in `slack_post_refusals`.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getValidBotToken } from './slack-token.ts';
+import { botPersona } from './bot-persona.ts';
 
 const admin = () =>
   createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -207,7 +208,7 @@ export async function postToSlack(opts: PostOptions): Promise<SlackPostResult> {
   // Grokbot changeover: a cleared channel post waits in the outbox for Grokbot
   // to send instead of going out under the hub's bot. Only channels that passed
   // the allowlist above ever reach the outbox.
-  if (!opts.channel.startsWith('D') && (await botSettings()).outbound_sender === 'grokbot') {
+  if (botPersona() !== 'grokbot' && !opts.channel.startsWith('D') && (await botSettings()).outbound_sender === 'grokbot') {
     const { data, error } = await admin().from('slack_outbox').insert({
       source: opts.source ?? 'hub', channel_id: opts.channel, channel_name: name,
       thread_ts: opts.threadTs ?? null, text: opts.text ?? null, blocks: opts.blocks ?? null,

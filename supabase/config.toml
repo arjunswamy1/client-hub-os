@@ -24,3 +24,6 @@ project_id = "bmwjwsxfpzzruitevnmx"
   [functions.gate-task-candidates]
     verify_jwt = false
 
+
+[functions.grokbot]
+verify_jwt = false

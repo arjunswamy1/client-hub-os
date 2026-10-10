@@ -3750,6 +3750,63 @@ export type Database = {
           },
         ]
       }
+      creative_followups: {
+        Row: {
+          brief_id: string
+          created_at: string
+          due_reason: string
+          id: string
+          recipient_id: string | null
+          resolution: string | null
+          resolved_at: string | null
+          rule: string
+          sent_at: string | null
+          slack_ts: string | null
+          stage: string
+        }
+        Insert: {
+          brief_id: string
+          created_at?: string
+          due_reason: string
+          id?: string
+          recipient_id?: string | null
+          resolution?: string | null
+          resolved_at?: string | null
+          rule: string
+          sent_at?: string | null
+          slack_ts?: string | null
+          stage: string
+        }
+        Update: {
+          brief_id?: string
+          created_at?: string
+          due_reason?: string
+          id?: string
+          recipient_id?: string | null
+          resolution?: string | null
+          resolved_at?: string | null
+          rule?: string
+          sent_at?: string | null
+          slack_ts?: string | null
+          stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_followups_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_followups_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creative_reviews: {
         Row: {
           action: string
@@ -4049,6 +4106,68 @@ export type Database = {
           {
             foreignKeyName: "data_integrity_exceptions_created_by_id_fkey"
             columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      designer_checkins: {
+        Row: {
+          asked_at: string | null
+          asked_channel: string | null
+          asked_slack_ts: string | null
+          blocked_on: string | null
+          brief_ids: string[] | null
+          capacity_note: string | null
+          checkin_date: string
+          created_at: string
+          id: string
+          raw_reply: string | null
+          responded_at: string | null
+          source: string
+          team_member_id: string
+          updated_at: string
+          working_on: string[] | null
+        }
+        Insert: {
+          asked_at?: string | null
+          asked_channel?: string | null
+          asked_slack_ts?: string | null
+          blocked_on?: string | null
+          brief_ids?: string[] | null
+          capacity_note?: string | null
+          checkin_date: string
+          created_at?: string
+          id?: string
+          raw_reply?: string | null
+          responded_at?: string | null
+          source?: string
+          team_member_id: string
+          updated_at?: string
+          working_on?: string[] | null
+        }
+        Update: {
+          asked_at?: string | null
+          asked_channel?: string | null
+          asked_slack_ts?: string | null
+          blocked_on?: string | null
+          brief_ids?: string[] | null
+          capacity_note?: string | null
+          checkin_date?: string
+          created_at?: string
+          id?: string
+          raw_reply?: string | null
+          responded_at?: string | null
+          source?: string
+          team_member_id?: string
+          updated_at?: string
+          working_on?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "designer_checkins_team_member_id_fkey"
+            columns: ["team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]

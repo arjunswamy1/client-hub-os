@@ -25,6 +25,7 @@ import { comparisonPromptBlock } from "./metric-comparisons.ts";
 import { computeClientBreakdown } from "./client-breakdown.ts";
 import { runReadOnlySql } from "./bot-sql.ts";
 import { isDuplicateDelivery, checkThrottle, logQa, resolveTeamMember } from "./bot-guard.ts";
+import { etParts, parseCheckinReply, planCheckinWrite } from "./creative-followups.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -829,6 +830,25 @@ async function processSlackMessage(event: any) {
 
     const member = await resolveTeamMember(supabase, event.user);
     teamMemberId = member?.id ?? null;
+
+    // Morning check-in replies: a DM answering today's check-in (first reply, or
+    // any reply in its thread) is stored verbatim in designer_checkins — data,
+    // never instructions — and acknowledged. Everything else goes to the bot.
+    if (isDirectConversation && member) {
+      const today = etParts(new Date()).date;
+      const { data: ck } = await supabase.from('designer_checkins').select('id, asked_at, responded_at, brief_ids, asked_slack_ts').eq('team_member_id', member.id).eq('checkin_date', today).maybeSingle();
+      if (ck?.asked_at && (!ck.responded_at || (event.thread_ts && event.thread_ts === ck.asked_slack_ts))) {
+        const ids: string[] = ck.brief_ids ?? [];
+        const { data: bs } = ids.length ? await supabase.from('creative_briefs').select('id, title, due_date').in('id', ids) : { data: [] };
+        const ordered = ids.map((id) => (bs ?? []).find((b: any) => b.id === id)).filter(Boolean) as { id: string; title: string }[];
+        const parsed = parseCheckinReply(cleanText, ordered);
+        const plan = planCheckinWrite({ id: ck.id }, { team_member_id: member.id, checkin_date: today, raw_reply: event.text || '', working_on: parsed.working_on, blocked_on: parsed.blocked_on }, new Date().toISOString());
+        await supabase.from('designer_checkins').update(plan.row).eq('id', ck.id);
+        const picked = ordered.filter((b) => parsed.working_on.includes(b.id)).map((b) => b.title);
+        await postSlackMessage(token, event.channel, `Thanks — noted${picked.length ? ` you're on ${picked.join(', ')}` : ''}${parsed.blocked_on ? ', and flagged the blocker for Henry' : ''}.`, replyThreadTs);
+        return;
+      }
+    }
 
     const throttle = await checkThrottle(supabase, { slackUserId: event.user, channelId: event.channel });
     if (!throttle.allowed) {

@@ -1,3 +1,4 @@
+const TASKS_FROM_SLACK_SCAN = false;
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 import { ownBotIdentity } from '../_shared/slack-identity.ts';
@@ -455,7 +456,8 @@ Deno.serve(async (req) => {
             },
           });
 
-          if (mapping.is_external === true && p.finalClass === 'client_request' && !p.isCpmAuthor) {
+          // Retired: client requests no longer become task candidates; only @CPM Bot task requests do.
+          if (TASKS_FROM_SLACK_SCAN && mapping.is_external === true && p.finalClass === 'client_request' && !p.isCpmAuthor) {
             candidateRows.push({
               client_id,
               source: 'slack_client_request',

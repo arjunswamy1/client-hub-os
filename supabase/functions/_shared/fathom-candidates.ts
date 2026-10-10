@@ -20,6 +20,8 @@ function memberKeys(member: any): string[] {
     .filter(Boolean);
 }
 
+import { TASKS_FROM_REQUESTS_ONLY } from './task-gate.ts';
+
 /** Fathom extractors propose candidates; only task-gate.ts may promote them to tasks. */
 export async function proposeFathomCandidates(
   supabase: any,
@@ -28,7 +30,8 @@ export async function proposeFathomCandidates(
   items: FathomItem[],
   apiKey: string,
 ): Promise<{ candidates_created: number; gate: unknown }> {
-  if (items.length === 0) return { candidates_created: 0, gate: null };
+  // Retired: Fathom action items no longer become tasks; only spoken requests do.
+  if (TASKS_FROM_REQUESTS_ONLY || items.length === 0) return { candidates_created: 0, gate: null };
 
   const { data: members, error: memberError } = await supabase
     .from('team_members').select('id, name, email, aliases, is_active').eq('is_active', true).eq('is_service_account', false);

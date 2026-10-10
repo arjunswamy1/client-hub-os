@@ -561,6 +561,9 @@ export interface GateRunSummary {
   pending: number;
 }
 
+/** Tasks enter only through _shared/task-request.ts; candidate promotion is off. */
+export const TASKS_FROM_REQUESTS_ONLY = true;
+
 /** Copies a candidate into `tasks` and links both rows together. */
 export async function promoteCandidate(
   supabase: any,
@@ -568,6 +571,8 @@ export async function promoteCandidate(
   gate: GateOutcome,
   reviewerId: string | null = null,
 ): Promise<string | null> {
+  // Retired: tasks now come only from explicit requests (_shared/task-request.ts).
+  if (TASKS_FROM_REQUESTS_ONLY) return null;
   const ref = candidate.source_ref ?? {};
   const meetingDate = typeof ref.meeting_date === "string" ? ref.meeting_date : null;
   const due = meetingDate

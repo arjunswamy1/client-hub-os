@@ -33,6 +33,12 @@ export interface HubDeps {
   now?: () => Date;
   /** Runs the daily drafter in dry-run/no-save mode and returns its text. */
   invokeDrafter?: (clientId: string, forDate: string) => Promise<string | null>;
+  /**
+   * Verifies a sign-in token issued by the hub's OAuth server (Claude "custom
+   * connector" flow). Returns the hub user id and the OAuth client id, or null.
+   * Tokens without an OAuth client claim (a plain browser session) are rejected.
+   */
+  verifyOAuth?: (token: string) => Promise<{ userId: string; clientId: string } | null>;
 }
 
 export interface Withheld { metric: string; reason: string }
@@ -47,7 +53,7 @@ export interface Provenance {
 }
 
 type Client = ResolvedClientRow & { status?: string | null; daily_update_enabled?: boolean | null; daily_update_suppressed_reason?: string | null; publisher_scope_confirmed_at?: string | null; publisher_scope_note?: string | null; metrics_reliable_note?: string | null };
-interface Caller { tokenId: string; memberId: string; memberName: string; scopes: string[]; label: string; allClients: boolean; clientIds: Set<string> }
+interface Caller { authMethod: 'agent_token' | 'oauth'; oauthClientId: string | null; tokenId: string | null; memberId: string; memberName: string; scopes: string[]; label: string; allClients: boolean; clientIds: Set<string> }
 
 class ToolRefusal extends Error {
   constructor(public outcome: string, message: string, public clientId: string | null = null) { super(message); }
@@ -100,9 +106,41 @@ export const SCHEMA_GOTCHAS: { table: string; wrong: string; right: string; note
 
 // ─── auth ─────────────────────────────────────────────────────────────────
 
-async function authenticate(db: any, header: string | null, now: Date): Promise<{ caller?: Caller; refusal?: string; tokenId?: string; memberId?: string }> {
+/** Roles that may use the agent server. Client-portal users never can. */
+export const OAUTH_ROLES = ['admin', 'account_manager', 'designer'] as const;
+/** Draft tools over OAuth: people who own client updates. */
+export const OAUTH_DRAFT_ROLES = ['admin', 'account_manager'] as const;
+const looksLikeJwt = (t: string) => /^[\w-]+\.[\w-]+\.[\w-]+$/.test(t);
+
+async function accessFor(db: any, member: { id: string; role: string }) {
+  const allClients = member.role === 'admin';
+  const clientIds = new Set<string>();
+  if (!allClients) {
+    const { data: a } = await db.from('client_assignments').select('client_id').eq('team_member_id', member.id);
+    for (const r of a ?? []) clientIds.add(String(r.client_id));
+  }
+  return { allClients, clientIds };
+}
+
+async function authenticate(deps: HubDeps, header: string | null, now: Date): Promise<{ caller?: Caller; refusal?: string; tokenId?: string; memberId?: string; authMethod?: 'agent_token' | 'oauth'; oauthClientId?: string | null }> {
+  const db = deps.db;
   const token = (header ?? '').replace(/^Bearer\s+/i, '').trim();
   if (!token) return { refusal: 'missing bearer token' };
+
+  if (looksLikeJwt(token)) {
+    // Signed in through an MCP client (Claude) against the hub's OAuth server.
+    if (!deps.verifyOAuth) return { refusal: 'sign-in tokens are not accepted here', authMethod: 'oauth' };
+    const v = await deps.verifyOAuth(token).catch(() => null);
+    if (!v) return { refusal: 'sign-in token invalid, expired, or not issued to an OAuth client', authMethod: 'oauth' };
+    const { data: member } = await db.from('team_members').select('id, name, role, is_active').eq('user_id', v.userId).maybeSingle();
+    if (!member) return { refusal: 'this account is not a Connect Paid Media team member', authMethod: 'oauth', oauthClientId: v.clientId };
+    if (member.is_active === false) return { refusal: 'team member inactive', memberId: member.id, authMethod: 'oauth', oauthClientId: v.clientId };
+    if (!(OAUTH_ROLES as readonly string[]).includes(member.role)) return { refusal: `role "${member.role}" may not use the agent server`, memberId: member.id, authMethod: 'oauth', oauthClientId: v.clientId };
+    const scopes = (OAUTH_DRAFT_ROLES as readonly string[]).includes(member.role) ? ['read', 'draft'] : ['read'];
+    const access = await accessFor(db, member);
+    return { caller: { authMethod: 'oauth', oauthClientId: v.clientId, tokenId: null, memberId: member.id, memberName: member.name, scopes, label: `Claude sign-in (${member.name})`, ...access } };
+  }
+
   const hash = await sha256Hex(token);
   const { data: row } = await db.from('agent_tokens').select('id, team_member_id, scopes, label, revoked_at, expires_at').eq('token_hash', hash).maybeSingle();
   if (!row) return { refusal: 'unknown token' };
@@ -110,14 +148,9 @@ async function authenticate(db: any, header: string | null, now: Date): Promise<
   if (row.expires_at && new Date(row.expires_at).getTime() <= now.getTime()) return { refusal: 'token expired', tokenId: row.id, memberId: row.team_member_id };
   const { data: member } = await db.from('team_members').select('id, name, role, is_active').eq('id', row.team_member_id).maybeSingle();
   if (!member || member.is_active === false) return { refusal: 'team member inactive', tokenId: row.id, memberId: row.team_member_id };
-  const allClients = member.role === 'admin';
-  const clientIds = new Set<string>();
-  if (!allClients) {
-    const { data: a } = await db.from('client_assignments').select('client_id').eq('team_member_id', member.id);
-    for (const r of a ?? []) clientIds.add(String(r.client_id));
-  }
+  const access = await accessFor(db, member);
   await db.from('agent_tokens').update({ last_used_at: now.toISOString() }).eq('id', row.id);
-  return { caller: { tokenId: row.id, memberId: member.id, memberName: member.name, scopes: row.scopes ?? [], label: row.label, allClients, clientIds } };
+  return { caller: { authMethod: 'agent_token', oauthClientId: null, tokenId: row.id, memberId: member.id, memberName: member.name, scopes: row.scopes ?? [], label: row.label, ...access } };
 }
 
 const EXTRA_CLIENT_COLUMNS = ', status, daily_update_enabled, daily_update_suppressed_reason, publisher_scope_confirmed_at, publisher_scope_note, metrics_reliable_note';
@@ -375,13 +408,13 @@ export async function handleRpc(deps: HubDeps, authHeader: string | null, raw: u
   const toolName = msg.method === 'tools/call' ? String(msg.params?.name ?? '') : msg.method;
   const args = msg.method === 'tools/call' ? (msg.params?.arguments ?? {}) : (msg.params ?? null);
 
-  const auth = await authenticate(deps.db, authHeader, now);
+  const auth = await authenticate(deps, authHeader, now);
   if (!auth.caller) {
-    await log(deps.db, { token_id: auth.tokenId ?? null, team_member_id: auth.memberId ?? null, tool_name: toolName, arguments: args, outcome: 'refused_auth', withheld: { reason: auth.refusal }, duration_ms: Date.now() - started });
+    await log(deps.db, { token_id: auth.tokenId ?? null, team_member_id: auth.memberId ?? null, auth_method: auth.authMethod ?? 'agent_token', oauth_client_id: auth.oauthClientId ?? null, tool_name: toolName, arguments: args, outcome: 'refused_auth', withheld: { reason: auth.refusal }, duration_ms: Date.now() - started });
     return rpcError(msg.id, -32001, `unauthorised: ${auth.refusal}`, 401);
   }
   const caller = auth.caller;
-  const base = { token_id: caller.tokenId, team_member_id: caller.memberId, tool_name: toolName, arguments: args };
+  const base = { token_id: caller.tokenId, team_member_id: caller.memberId, auth_method: caller.authMethod, oauth_client_id: caller.oauthClientId, tool_name: toolName, arguments: args };
 
   if (isNotification) { await log(deps.db, { ...base, outcome: 'notification', duration_ms: Date.now() - started }); return { status: 202, body: null }; }
 

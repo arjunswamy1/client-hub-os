@@ -182,6 +182,15 @@ function spendSourcesFor(client: ResolvedClientRow): SourceResolution {
   return resolveSources(client.spend_source_tables, KNOWN_SPEND_TABLES, 'spend', client.name);
 }
 
+/**
+ * The platform labels this client may count from a spend table (clients.spend_source_platforms),
+ * or null for every row. Used where one platform is mirrored into two spend tables.
+ */
+export function spendPlatformFilter(client: Pick<ResolvedClientRow, 'spend_source_platforms'>, table: string): string[] | null {
+  const list = client.spend_source_platforms?.[table];
+  return Array.isArray(list) && list.length ? list : null;
+}
+
 function callSourcesFor(client: ResolvedClientRow): SourceResolution {
   return resolveSources(
     client.call_source_tables,
@@ -295,11 +304,14 @@ export async function computeClientMetrics(
         ? 'universal_ads'
         : 'unknown';
 
+    const allowed = spendPlatformFilter(client, table);
     const rows = await fetchAll((f, t) => {
       let q = supabase.from(table).select(cols).eq('client_id', client.id)
         .gte('date', window.from).lte('date', window.to);
       if (entityScoped) q = q.eq('entity', 'campaign');
-      return q.range(f, t);
+      if (allowed && labelCol) q = q.in(labelCol, allowed);
+      // A stable order is required: unordered pages can overlap and drop rows.
+      return q.order('date').order('id').range(f, t);
     });
     for (const r of rows as any[]) {
       spend += num(r.spend);
@@ -393,6 +405,8 @@ export async function computeClientMetrics(
       supabase.from(spec.table).select(cols).eq('client_id', client.id)
         .gte(spec.dateCol, spec.isTimestamp ? startTs : window.from)
         .lte(spec.dateCol, spec.isTimestamp ? endTs : window.to)
+        // Stable order: unordered pages overlap and drop calls on multi-page windows.
+        .order(spec.dateCol).order('id')
         .range(f, t), `${spec.table} calls`);
 
     for (const r of rows as any[]) {

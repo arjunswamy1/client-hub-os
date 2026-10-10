@@ -442,10 +442,16 @@ async function callAI(messages: Array<{ role: string; content: string }>, client
  */
 const METRIC_WORDS = /(spend|spent|call|calls|revenue|profit|margin|cost per|convert|payout|lead|leads|duration|connected)/i;
 
+/** The CPM Bot / Grokbot division of work, authored in daily_update_style. */
+async function loadBotLanes(): Promise<string> {
+  const { data } = await supabase.from('daily_update_style').select('guidance').eq('key', 'bot_lanes').eq('is_active', true).maybeSingle();
+  return (data?.guidance as string | undefined) ?? '';
+}
+
 /** Names and aliases of the team, so "AJ" is not searched for literally. */
 async function loadRoster(): Promise<string> {
   const { data } = await supabase.from('team_members')
-    .select('name, email, role, aliases, is_active').eq('is_active', true).order('name');
+    .select('name, email, role, aliases, is_active').eq('is_active', true).eq('is_service_account', false).order('name');
   return (data || []).map((m: any) =>
     `${m.name} (${m.role}${m.aliases?.length ? `; also called ${m.aliases.join(', ')}` : ''}) id-by-email ${m.email}`
   ).join('\n');
@@ -551,11 +557,12 @@ function buildSystemPrompt(args: {
   supportingBlock: string;
   sqlBlock: string;
   teamRoster: string;
+  botLanes?: string;
 }): string {
   const roster = args.clients.map((c) => `${c.name} (${c.engagement_type || 'engagement type not recorded'})`).join('; ');
 
   return `You are CPM Bot, the internal assistant for Connect Paid Media (CPM), a paid-media agency. You answer questions from the CPM team about our clients, campaigns, tasks and creative work.
-
+${args.botLanes ? `\nYOUR LANE (another bot, Grokbot, works in this workspace): ${args.botLanes}\n` : ''}
 NEVER STATE A NUMBER WHOSE PROVENANCE IS UNKNOWN. ABSENT IS NOT ZERO.
 Some calls reach us without revenue or conversion data (revenue_captured = false, conversion_captured = false, or payload_shape = webhook_minimal). Their revenue column reads 0 because nothing was captured, NOT because nothing was earned. Where the metrics below show a value as UNKNOWN you must say it is unknown, say how many calls are affected, and refuse to compute revenue, profit or margin. Never substitute 0, never estimate, never average around it. Saying "$0 revenue" about uncaptured data would be catastrophically wrong and you would be saying it to the whole team at speed.
 
@@ -733,6 +740,7 @@ async function composeAnswer(args: {
     supportingBlock,
     sqlBlock,
     teamRoster: roster,
+    botLanes: await loadBotLanes(),
   });
 
   const conversation = args.conversation?.length ? args.conversation : [{ role: 'user', content: args.question }];

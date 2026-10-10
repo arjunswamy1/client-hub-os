@@ -105,6 +105,17 @@ describe("mcp-hub auth and isolation", () => {
   });
 });
 
+describe("campaign daily totals", () => {
+  it("sums every campaign into one row per day", async () => {
+    const { dailyCampaignTotals } = await import("../../supabase/functions/mcp-hub/hub");
+    const out = dailyCampaignTotals([
+      { date: "2026-10-02", spend: 10, impressions: 1000, clicks: 5 }, { date: "2026-10-01", spend: 4, impressions: 500, clicks: 1 },
+      { date: "2026-10-02", spend: 2.5, impressions: 300, clicks: 2 },
+    ]);
+    expect(out.map((d) => [d.date, d.spend, d.impressions])).toEqual([["2026-10-01", 4, 500], ["2026-10-02", 12.5, 1300]]);
+  });
+});
+
 describe("lifetime windows", () => {
   it("splits a range into calendar months with partial ends", async () => {
     const { monthWindows } = await import("../../supabase/functions/mcp-hub/hub");

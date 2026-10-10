@@ -72,8 +72,8 @@ describe("sync-slack task write guard", () => {
 });
 
 describe("single task creation writer", () => {
-  it("only the shared task gate inserts or upserts tasks", () => {
-    const allowed = normalize("supabase/functions/_shared/task-gate.ts");
+  it("only the explicit-request writer inserts or upserts tasks", () => {
+    const allowed = normalize("supabase/functions/_shared/task-request.ts");
     const root = "supabase/functions";
     const stack = [root];
     const files: string[] = [];

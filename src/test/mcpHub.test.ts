@@ -78,6 +78,8 @@ describe("mcp-hub auth and isolation", () => {
       list_clients: {}, get_client_profile: { client: "alpha" }, get_performance: { client: "alpha", date_from: "2026-09-28", date_to: "2026-10-04" },
       compare_periods: { client: "alpha", basis: "same_weekday", for_date: "2026-10-04" }, get_data_health: { client: "alpha" },
       get_context: { client: "alpha", days: 2 }, get_tasks: { client: "alpha" }, get_scope_events: { client: "alpha" },
+      get_lifetime_performance: { client: "alpha", date_from: "2026-08-15", date_to: "2026-10-04" },
+      get_campaign_performance: { client: "alpha", date_from: "2026-09-28", date_to: "2026-10-04" },
     };
     for (const t of reads) {
       const r = await w.call(t.name, argsFor[t.name]);
@@ -100,6 +102,15 @@ describe("mcp-hub auth and isolation", () => {
     for (const m of p.metrics.filter((x: any) => x.value === null && x.key !== "duration_bands")) {
       expect(p.provenance.withheld.map((x: any) => x.metric)).toContain(m.key);
     }
+  });
+});
+
+describe("lifetime windows", () => {
+  it("splits a range into calendar months with partial ends", async () => {
+    const { monthWindows } = await import("../../supabase/functions/mcp-hub/hub");
+    expect(monthWindows("2026-08-15", "2026-10-04")).toEqual([
+      { from: "2026-08-15", to: "2026-08-31" }, { from: "2026-09-01", to: "2026-09-30" }, { from: "2026-10-01", to: "2026-10-04" },
+    ]);
   });
 });
 

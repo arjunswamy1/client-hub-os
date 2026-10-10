@@ -19,6 +19,8 @@ export interface ResolvedClientRow {
   call_source_tables?: string[] | null;
   /** Where this account's media spend lives. Empty = not recorded. */
   spend_source_tables?: string[] | null;
+  /** Per spend table, the only platform labels counted from it (absent = all). Stops a mirrored platform counting twice. */
+  spend_source_platforms?: Record<string, string[]> | null;
   /** Spend feeds carrying a campaign dimension. Empty = spend cannot be split per campaign. */
   campaign_spend_source_tables?: string[] | null;
   /** Timezone the platform cuts this account's reporting day on. Null = America/New_York (reporting-day.ts). */

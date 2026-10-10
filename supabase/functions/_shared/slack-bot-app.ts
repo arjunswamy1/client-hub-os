@@ -865,7 +865,7 @@ async function processSlackMessage(event: any) {
           ? "That didn't read as a task to me, so I didn't add anything. Try \"@CPM Bot add a task for Lou: …\"."
           : `I couldn't add that task (${r.error}). Nothing was saved.`;
       await postSlackMessage(token, event.channel, reply, replyThreadTs);
-      await logQa(supabase, { asked_by_slack_id: event.user, team_member_id: teamMemberId, channel_id: event.channel, thread_ts: replyThreadTs, question: cleanText, answer: reply, error: r.ok ? null : `task_request: ${r.error}`, latency_ms: Date.now() - startedAt });
+      await logQa(supabase, { asked_by_slack_id: event.user, team_member_id: teamMemberId, channel_id: event.channel, thread_ts: replyThreadTs, question: cleanText, answer: reply, error: r.ok ? undefined : `task_request: ${r.error}`, latency_ms: Date.now() - startedAt });
       return;
     }
 

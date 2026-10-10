@@ -301,7 +301,7 @@ async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record
     case 'get_lifetime_performance': {
       const c = resolveClient(all, caller, args.client);
       const tz = reportingTimeZone(c);
-      const to = args.date_to ? String(args.date_to) : reportingYesterday(now, tz);
+      const to = args.date_to ? String(args.date_to) : reportingYesterday(tz, now);
       let from = args.date_from ? String(args.date_from) : await firstDataDay(db, c);
       if (!from) throw new ToolRefusal('no_data', `${c.name} has no recorded spend or call rows, so there is no lifetime to report.`, c.id);
       if (!ISO.test(from) || !ISO.test(to) || from > to) throw new ToolRefusal('invalid_arguments', 'date_from and date_to must be YYYY-MM-DD with date_from <= date_to', c.id);

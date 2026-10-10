@@ -88,7 +88,7 @@ describe("provisional D-1", () => {
   const closed = dayClosesAt("2026-10-02", "America/New_York");
   it("the day closes at local midnight", () => expect(closed.toISOString()).toBe("2026-10-03T04:00:00.000Z"));
   it("no observation of the day since it closed is provisional", () => {
-    expect(isProvisional({ observations: [], closedAt: closed, trackedSources: ["roku_daily_metrics"] }).provisional).toBe(true);
+    expect(isProvisional({ observations: [], closedAt: closed, trackedSources: ["roku_daily_metrics"], now: new Date(closed.getTime() + 3600e3) }).provisional).toBe(true);
   });
   it("last two observations differing by >2% is provisional; settled otherwise", () => {
     const o = (t: string, spend: number) => ({ source: "roku_daily_metrics", observed_at: t, spend, revenue: null, calls: null });

@@ -148,7 +148,7 @@ describe("mcp-hub structural guards", () => {
   });
 
   it("issues no delete or upsert, and updates only tokens, focus and draft-status updates", () => {
-    const allowed = new Set(["agent_tokens", "clients", "client_daily_updates"]);
+    const allowed = new Set(["agent_tokens", "clients", "client_daily_updates", "slack_outbox"]);
     for (const f of files) {
       const body = readFileSync(f, "utf8");
       expect(body, f).not.toMatch(/\.delete\(/);
@@ -156,6 +156,7 @@ describe("mcp-hub structural guards", () => {
       for (const m of body.matchAll(/\.from\(\s*['"`](\w+)['"`]\s*\)\s*\.update\(([^;]*);/g)) {
         expect(allowed.has(m[1]), `${f}: update on ${m[1]}`).toBe(true);
         if (m[1] === "client_daily_updates") expect(m[2]).toMatch(/\.eq\('status', 'draft'\)/);
+        if (m[1] === "slack_outbox") expect(m[2]).toMatch(/\.eq\('status', 'pending'\)/);
       }
     }
   });

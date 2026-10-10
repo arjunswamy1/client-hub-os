@@ -58,7 +58,7 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
   const { data: teamMembers = [] } = useQuery({
     queryKey: ['team_members_active'],
     queryFn: async () => {
-      const { data } = await supabase.from('team_members').select('id, name, role').eq('is_active', true).order('name');
+      const { data } = await supabase.from('team_members').select('id, name, role').eq('is_active', true).eq('is_service_account', false).order('name');
       return data || [];
     },
   });

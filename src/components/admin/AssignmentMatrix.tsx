@@ -25,6 +25,7 @@ export function AssignmentMatrix() {
         .select('*')
         .in('role', ['account_manager', 'designer'])
         .eq('is_active', true)
+        .eq('is_service_account', false)
         .order('name');
       if (error) throw error;
       return data;

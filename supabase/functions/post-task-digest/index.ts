@@ -218,7 +218,7 @@ Deno.serve(async (req) => {
         .not('slack_ts', 'is', null);
       if (error) throw error;
 
-      const { data: members } = await supabase.from('team_members').select('id, name, slack_user_id');
+      const { data: members } = await supabase.from('team_members').select('id, name, slack_user_id').eq('is_service_account', false);
       const memberById = new Map((members ?? []).map((m: any) => [m.id, m]));
 
       const nudges: Record<string, unknown>[] = [];
@@ -257,7 +257,7 @@ Deno.serve(async (req) => {
       return json({ ok: true, mode, dry_run: dryRun, rollup: null, reason: 'everything acknowledged' });
     }
 
-    const { data: members } = await supabase.from('team_members').select('id, name, slack_user_id');
+    const { data: members } = await supabase.from('team_members').select('id, name, slack_user_id').eq('is_service_account', false);
     const memberById = new Map((members ?? []).map((m: any) => [m.id, m]));
     const aj: any = memberById.get(AJ_TEAM_MEMBER_ID);
 

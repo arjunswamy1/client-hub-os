@@ -31,7 +31,7 @@ export async function proposeFathomCandidates(
   if (items.length === 0) return { candidates_created: 0, gate: null };
 
   const { data: members, error: memberError } = await supabase
-    .from('team_members').select('id, name, email, aliases, is_active').eq('is_active', true);
+    .from('team_members').select('id, name, email, aliases, is_active').eq('is_active', true).eq('is_service_account', false);
   if (memberError) throw memberError;
   const owners = new Map<string, string>();
   for (const member of members ?? []) for (const key of memberKeys(member)) owners.set(key, member.id);

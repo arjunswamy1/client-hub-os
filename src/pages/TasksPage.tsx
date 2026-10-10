@@ -59,6 +59,7 @@ export default function TasksPage() {
         .from('team_members')
         .select('*')
         .eq('is_active', true)
+        .eq('is_service_account', false)
         .order('name');
       if (error) throw error;
       return data;

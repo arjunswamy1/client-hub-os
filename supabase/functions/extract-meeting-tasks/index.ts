@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
 
   try {
     const [{ data: members, error: memberErr }, { data: meetings, error: meetingErr }] = await Promise.all([
-      supabase.from('team_members').select('id, name, email, aliases, is_active'),
+      supabase.from('team_members').select('id, name, email, aliases, is_active').eq('is_service_account', false),
       supabase
         .from('context_items')
         .select('id, client_id, title, content, occurred_at, metadata')

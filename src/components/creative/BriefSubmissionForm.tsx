@@ -124,7 +124,7 @@ export function BriefSubmissionForm({ open, onOpenChange, clientId }: Props) {
   const { data: teamMembers = [] } = useQuery({
     queryKey: ['team_members'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('team_members').select('*').eq('is_active', true);
+      const { data, error } = await supabase.from('team_members').select('*').eq('is_active', true).eq('is_service_account', false);
       if (error) throw error;
       return data;
     },

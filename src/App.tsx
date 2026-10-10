@@ -181,6 +181,7 @@ function ProtectedRoutes() {
 
           <Route path="/settings" element={<SettingsPage />} />
           {isAdmin && <Route path="/settings/agent-tokens" element={<AgentTokensPage />} />}
+          {isAdmin && <Route path="/settings/channels" element={<ChannelApprovalsPage />} />}
           <Route path="/data-health" element={<DataHealthPage />} />
           <Route path="/team" element={<TeamPage />} />
           {isAdmin && <Route path="/admin" element={<AdminPage />} />}

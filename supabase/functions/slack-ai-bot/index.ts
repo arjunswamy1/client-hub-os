@@ -920,6 +920,21 @@ Deno.serve(async (req) => {
   }
 
   // Dry run: service-role only, answers a question WITHOUT touching Slack.
+  // Grokbot outbox wake: service-role only (sent by the slack_outbox insert trigger).
+  if (body.drain_outbox === true) {
+    const bearer = (req.headers.get('authorization') || '').replace('Bearer ', '').trim();
+    if (PERSONA !== 'grokbot' || !bearer || bearer !== Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+    const result = await drainOutbox();
+    return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // Slack app still being set up: acknowledge and ignore rather than fail deliveries.
+  if (!SLACK_SIGNING_SECRET) {
+    return new Response(JSON.stringify({ ok: true, ignored: 'signing_secret_missing' }), { headers: { 'Content-Type': 'application/json' } });
+  }
+
   if (body.dry_run === true) {
     const bearer = (req.headers.get('authorization') || '').replace('Bearer ', '').trim();
     const nonce = req.headers.get('x-cron-nonce') || '';
@@ -1012,7 +1027,7 @@ Deno.serve(async (req) => {
 
     if (event.type === 'app_mention' || isDirectConversationEvent(event)) {
       // Grokbot changeover: when CPM Bot's replies are switched off, Grokbot answers.
-      if (!(await botSettings()).cpm_bot_replies) {
+      if (PERSONA === 'cpm' && !(await botSettings()).cpm_bot_replies) {
         return new Response(JSON.stringify({ ok: true, ignored: 'cpm_bot_replies_off' }), {
           status: 200, headers: { 'Content-Type': 'application/json' },
         });

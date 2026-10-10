@@ -73,13 +73,14 @@ describe("mcp-hub auth and isolation", () => {
 
   it("every read tool returns provenance with a withheld array, and every call is logged", async () => {
     const w = await world();
-    const reads = TOOLS.filter((t) => t.scope === "read");
+    const reads = TOOLS.filter((t) => t.scope === "read" && t.name !== "get_brief"); // get_brief: mcpHubCreative.test.ts
     const argsFor: Record<string, Record<string, unknown>> = {
       list_clients: {}, get_client_profile: { client: "alpha" }, get_performance: { client: "alpha", date_from: "2026-09-28", date_to: "2026-10-04" },
       compare_periods: { client: "alpha", basis: "same_weekday", for_date: "2026-10-04" }, get_data_health: { client: "alpha" },
       get_context: { client: "alpha", days: 2 }, get_tasks: { client: "alpha" }, get_scope_events: { client: "alpha" },
       get_lifetime_performance: { client: "alpha", date_from: "2026-08-15", date_to: "2026-10-04" },
       get_campaign_performance: { client: "alpha", date_from: "2026-09-28", date_to: "2026-10-04" },
+      get_creative_queue: {}, get_designer_load: {}, get_creative_history: { client: "alpha" }, get_bot_accuracy: {},
     };
     for (const t of reads) {
       const r = await w.call(t.name, argsFor[t.name]);

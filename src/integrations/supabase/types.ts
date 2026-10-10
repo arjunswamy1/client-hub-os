@@ -1469,6 +1469,7 @@ export type Database = {
       }
       bot_runtime_settings: {
         Row: {
+          client_auto_send: string
           cpm_bot_replies: boolean
           dm_icon_url: string | null
           dm_username: string | null
@@ -1478,6 +1479,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          client_auto_send?: string
           cpm_bot_replies?: boolean
           dm_icon_url?: string | null
           dm_username?: string | null
@@ -1487,6 +1489,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          client_auto_send?: string
           cpm_bot_replies?: boolean
           dm_icon_url?: string | null
           dm_username?: string | null
@@ -2436,6 +2439,8 @@ export type Database = {
       client_daily_updates: {
         Row: {
           am_notes: string | null
+          approved_at: string | null
+          approved_by_id: string | null
           client_id: string
           context_used: Json | null
           created_at: string
@@ -2447,6 +2452,8 @@ export type Database = {
           id: string
           kind: string
           metrics: Json
+          narrative_at: string | null
+          narrative_by: string | null
           sent_at: string | null
           slack_channel_id: string | null
           slack_ts: string | null
@@ -2457,6 +2464,8 @@ export type Database = {
         }
         Insert: {
           am_notes?: string | null
+          approved_at?: string | null
+          approved_by_id?: string | null
           client_id: string
           context_used?: Json | null
           created_at?: string
@@ -2468,6 +2477,8 @@ export type Database = {
           id?: string
           kind?: string
           metrics?: Json
+          narrative_at?: string | null
+          narrative_by?: string | null
           sent_at?: string | null
           slack_channel_id?: string | null
           slack_ts?: string | null
@@ -2478,6 +2489,8 @@ export type Database = {
         }
         Update: {
           am_notes?: string | null
+          approved_at?: string | null
+          approved_by_id?: string | null
           client_id?: string
           context_used?: Json | null
           created_at?: string
@@ -2489,6 +2502,8 @@ export type Database = {
           id?: string
           kind?: string
           metrics?: Json
+          narrative_at?: string | null
+          narrative_by?: string | null
           sent_at?: string | null
           slack_channel_id?: string | null
           slack_ts?: string | null
@@ -2498,6 +2513,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "client_daily_updates_approved_by_id_fkey"
+            columns: ["approved_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "client_daily_updates_client_id_fkey"
             columns: ["client_id"]
@@ -7502,6 +7524,7 @@ export type Database = {
           classified_at: string | null
           client_id: string | null
           created_at: string
+          discovered_at: string | null
           id: string
           is_ext_shared: boolean | null
           is_external: boolean
@@ -7509,7 +7532,11 @@ export type Database = {
           is_private: boolean | null
           is_shared: boolean | null
           last_synced_ts: string | null
+          proposal_reason: string | null
+          proposed_client_id: string | null
           sync_enabled: boolean
+          sync_enabled_at: string | null
+          sync_enabled_by_id: string | null
           updated_at: string
         }
         Insert: {
@@ -7519,6 +7546,7 @@ export type Database = {
           classified_at?: string | null
           client_id?: string | null
           created_at?: string
+          discovered_at?: string | null
           id?: string
           is_ext_shared?: boolean | null
           is_external?: boolean
@@ -7526,7 +7554,11 @@ export type Database = {
           is_private?: boolean | null
           is_shared?: boolean | null
           last_synced_ts?: string | null
+          proposal_reason?: string | null
+          proposed_client_id?: string | null
           sync_enabled?: boolean
+          sync_enabled_at?: string | null
+          sync_enabled_by_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -7536,6 +7568,7 @@ export type Database = {
           classified_at?: string | null
           client_id?: string | null
           created_at?: string
+          discovered_at?: string | null
           id?: string
           is_ext_shared?: boolean | null
           is_external?: boolean
@@ -7543,7 +7576,11 @@ export type Database = {
           is_private?: boolean | null
           is_shared?: boolean | null
           last_synced_ts?: string | null
+          proposal_reason?: string | null
+          proposed_client_id?: string | null
           sync_enabled?: boolean
+          sync_enabled_at?: string | null
+          sync_enabled_by_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -7552,6 +7589,58 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_channel_mappings_proposed_client_id_fkey"
+            columns: ["proposed_client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_channel_mappings_sync_enabled_by_id_fkey"
+            columns: ["sync_enabled_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      slack_channel_sync_log: {
+        Row: {
+          action: string
+          channel_id: string
+          channel_name: string | null
+          client_id: string | null
+          created_at: string
+          id: string
+          team_member_id: string
+        }
+        Insert: {
+          action: string
+          channel_id: string
+          channel_name?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          team_member_id: string
+        }
+        Update: {
+          action?: string
+          channel_id?: string
+          channel_name?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_channel_sync_log_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -7619,6 +7708,7 @@ export type Database = {
           handled_at: string | null
           handled_by: string | null
           id: string
+          internal_only: boolean
           sent_ts: string | null
           skip_reason: string | null
           source: string
@@ -7634,6 +7724,7 @@ export type Database = {
           handled_at?: string | null
           handled_by?: string | null
           id?: string
+          internal_only?: boolean
           sent_ts?: string | null
           skip_reason?: string | null
           source: string
@@ -7649,6 +7740,7 @@ export type Database = {
           handled_at?: string | null
           handled_by?: string | null
           id?: string
+          internal_only?: boolean
           sent_ts?: string | null
           skip_reason?: string | null
           source?: string
@@ -9341,6 +9433,7 @@ export type Database = {
         }
         Returns: Json
       }
+      approve_daily_update: { Args: { p_update_id: string }; Returns: Json }
       bot_readonly_select: {
         Args: { p_row_limit?: number; p_sql: string }
         Returns: Json
@@ -9469,6 +9562,10 @@ export type Database = {
         Returns: Json
       }
       ringfuel_payload_is_rich: { Args: { p_payload: Json }; Returns: boolean }
+      set_channel_sync: {
+        Args: { p_channel_id: string; p_client_id: string; p_enabled: boolean }
+        Returns: Json
+      }
       working_hours_between: {
         Args: { p_end: string; p_start: string }
         Returns: number

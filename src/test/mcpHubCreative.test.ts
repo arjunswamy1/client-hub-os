@@ -178,7 +178,7 @@ describe("service accounts are excluded from pickers, digests and DMs", () => {
     "src/components/creative/EditBriefDialog.tsx", "src/components/creative/BriefSubmissionForm.tsx", "src/components/creative/DesignerWorkspace.tsx",
     "src/pages/TasksPage.tsx", "src/pages/TaskReviewPage.tsx", "src/components/admin/AssignmentMatrix.tsx",
     "supabase/functions/_shared/task-digest.ts", "supabase/functions/post-task-digest/index.ts", "supabase/functions/_shared/slack-post.ts",
-    "supabase/functions/_shared/fathom-candidates.ts", "supabase/functions/extract-meeting-tasks/index.ts", "supabase/functions/_shared/slack-bot-app.ts",
+    "supabase/functions/_shared/fathom-candidates.ts", "supabase/functions/_shared/task-request.ts", "supabase/functions/_shared/slack-bot-app.ts",
   ];
   for (const f of files) it(f, () => expect(readFileSync(f, "utf8")).toMatch(/is_service_account', false\)/));
 });

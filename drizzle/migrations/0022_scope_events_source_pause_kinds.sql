@@ -1,0 +1,2 @@
+ALTER TABLE public.client_scope_events DROP CONSTRAINT IF EXISTS client_scope_events_kind_check;
+ALTER TABLE public.client_scope_events ADD CONSTRAINT client_scope_events_kind_check CHECK (kind = ANY (ARRAY['accounts_added','accounts_removed','publisher_scope_changed','revenue_field_changed','tracking_changed','other','source_paused','source_resumed']));

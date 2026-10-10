@@ -19,6 +19,8 @@ export interface ResolvedClientRow {
   call_source_tables?: string[] | null;
   /** Where this account's media spend lives. Empty = not recorded. */
   spend_source_tables?: string[] | null;
+  /** Per spend table, the only platform labels counted from it (absent = all). Stops a mirrored platform counting twice. */
+  spend_source_platforms?: Record<string, string[]> | null;
   /** Spend feeds carrying a campaign dimension. Empty = spend cannot be split per campaign. */
   campaign_spend_source_tables?: string[] | null;
   /** Timezone the platform cuts this account's reporting day on. Null = America/New_York (reporting-day.ts). */
@@ -42,7 +44,7 @@ export interface ResolvedClientRow {
 }
 
 /** Every client column the reporting path reads. One list, so the drafter and the bot load the same row. */
-export const CLIENT_REPORTING_COLUMNS = 'id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from, client_call_day, daily_comparison_mode, daily_comparison_mode_resolved, daily_comparison_mode_reason, current_focus, current_focus_updated_at, current_focus_source, publisher_scope, weekend_rollup, update_context_note';
+export const CLIENT_REPORTING_COLUMNS = 'id, name, slug, engagement_type, expected_sources, data_model_note, aliases, revenue_field, call_source_tables, spend_source_tables, spend_source_platforms, campaign_spend_source_tables, reporting_timezone, metrics_reliable_from, client_call_day, daily_comparison_mode, daily_comparison_mode_resolved, daily_comparison_mode_reason, current_focus, current_focus_updated_at, current_focus_source, publisher_scope, weekend_rollup, update_context_note';
 
 export interface ClientResolution {
   client: ResolvedClientRow | null;

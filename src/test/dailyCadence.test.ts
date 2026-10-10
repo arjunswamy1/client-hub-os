@@ -123,7 +123,7 @@ describe("provisionality", () => {
     expect(renderDailyComparison(s, { mode: "same_weekday", weekly: false })).not.toMatch(/provisional|⚠/);
   });
   it("no observation after the day closed is provisional", () => {
-    expect(isProvisional({ observations: [o("2026-10-02T20:00:00Z", 100)], closedAt: closed, trackedSources: ["ad_daily_metrics"] }).provisional).toBe(true);
+    expect(isProvisional({ observations: [o("2026-10-02T20:00:00Z", 100)], closedAt: closed, trackedSources: ["ad_daily_metrics"], now: new Date(closed.getTime() + 3600e3) }).provisional).toBe(true);
   });
   it("an untracked feed is not guessed either way", () => {
     expect(isProvisional({ observations: [], closedAt: closed, trackedSources: [] })).toEqual({ provisional: false, reason: null, tracked: false });

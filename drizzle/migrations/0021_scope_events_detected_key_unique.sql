@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS client_scope_events_detected_key_full_uq ON public.client_scope_events (detected_key);

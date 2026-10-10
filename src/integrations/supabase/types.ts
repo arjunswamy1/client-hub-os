@@ -2823,30 +2823,36 @@ export type Database = {
           created_at: string
           description: string
           detail: Json | null
+          detected_key: string | null
           effective_date: string
           id: string
           kind: string
           recorded_by: string | null
+          source: string
         }
         Insert: {
           client_id: string
           created_at?: string
           description: string
           detail?: Json | null
+          detected_key?: string | null
           effective_date: string
           id?: string
           kind: string
           recorded_by?: string | null
+          source?: string
         }
         Update: {
           client_id?: string
           created_at?: string
           description?: string
           detail?: Json | null
+          detected_key?: string | null
           effective_date?: string
           id?: string
           kind?: string
           recorded_by?: string | null
+          source?: string
         }
         Relationships: [
           {
@@ -3058,6 +3064,7 @@ export type Database = {
           reporting_timezone: string | null
           revenue_field: string | null
           slug: string
+          spend_source_platforms: Json
           spend_source_tables: string[]
           status: string
           update_context_note: string | null
@@ -3097,6 +3104,7 @@ export type Database = {
           reporting_timezone?: string | null
           revenue_field?: string | null
           slug: string
+          spend_source_platforms?: Json
           spend_source_tables?: string[]
           status?: string
           update_context_note?: string | null
@@ -3136,6 +3144,7 @@ export type Database = {
           reporting_timezone?: string | null
           revenue_field?: string | null
           slug?: string
+          spend_source_platforms?: Json
           spend_source_tables?: string[]
           status?: string
           update_context_note?: string | null

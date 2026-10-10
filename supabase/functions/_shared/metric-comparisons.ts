@@ -316,15 +316,25 @@ export const REVISION_TOLERANCE = 0.02;
  * `trackedSources` empty = the account's spend feeds are not revision-logged, so
  * provisionality cannot be judged; `tracked: false` says so instead of guessing.
  */
+/**
+ * Syncs re-pull only a recent window. A day closed longer ago than this with no
+ * post-close observation was never going to get one (e.g. it predates revision
+ * logging) — it is unjudged by revisions, not provisional forever.
+ */
+export const SETTLE_AFTER_DAYS = 3;
+
 export function isProvisional(input: {
-  observations: Observation[]; closedAt: Date; trackedSources: string[];
-}): { provisional: boolean; reason: string | null; tracked: boolean } {
+  observations: Observation[]; closedAt: Date; trackedSources: string[]; now?: Date;
+}): { provisional: boolean; reason: string | null; tracked: boolean; unjudged?: string[] } {
   if (!input.trackedSources.length) return { provisional: false, reason: null, tracked: false };
+  const aged = (input.now ?? new Date()).getTime() - input.closedAt.getTime() > SETTLE_AFTER_DAYS * 86_400_000;
+  const unjudged: string[] = [];
   for (const source of input.trackedSources) {
     const list = input.observations.filter((o) => o.source === source)
       .sort((x, y) => y.observed_at.localeCompare(x.observed_at));
     const [a, b] = list;
     if (!a || new Date(a.observed_at).getTime() <= input.closedAt.getTime()) {
+      if (aged) { unjudged.push(source); continue; }
       return { provisional: true, reason: `no sync has recorded ${source} for this day since it closed`, tracked: true };
     }
     if (!b) continue;
@@ -337,7 +347,7 @@ export function isProvisional(input: {
       }
     }
   }
-  return { provisional: false, reason: null, tracked: true };
+  return { provisional: false, reason: null, tracked: true, ...(unjudged.length ? { unjudged } : {}) };
 }
 
 // ─── output ────────────────────────────────────────────────────────────────

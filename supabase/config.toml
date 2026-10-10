@@ -27,3 +27,6 @@ project_id = "bmwjwsxfpzzruitevnmx"
 
 [functions.grokbot]
 verify_jwt = false
+
+[functions.detect-scope-events]
+verify_jwt = false

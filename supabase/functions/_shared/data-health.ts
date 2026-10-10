@@ -90,6 +90,36 @@ export function sourcesFor(client: ResolvedClientRow): string[] {
   return [...s].filter((t) => SOURCE_SPECS[t]);
 }
 
+const MIRROR_SPEND: Record<string, { platformCol: string | null; label: string; entity?: boolean }> = {
+  roku_daily_metrics: { platformCol: null, label: 'roku', entity: true },
+  cannaball_spend: { platformCol: 'platform', label: 'unknown' },
+  platform_spend_4js: { platformCol: 'platform', label: 'unknown' },
+  ad_daily_metrics: { platformCol: 'platform', label: 'unknown' },
+};
+
+/**
+ * Pure: days where one platform's spend is counted from two or more sources with the
+ * same total (within 5 cents) — a mirrored feed counted twice. Exported for tests.
+ */
+export function findCrossSourceSpendDuplicates(rows: { source: string; date: string; platform: string; spend: number }[]) {
+  const by = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const k = `${r.date}|${r.platform}`;
+    const m = by.get(k) ?? new Map<string, number>();
+    m.set(r.source, (m.get(r.source) ?? 0) + Number(r.spend || 0));
+    by.set(k, m);
+  }
+  const out: { date: string; platform: string; spend: number; sources: string[] }[] = [];
+  for (const [k, m] of by) {
+    const entries = [...m.entries()].filter(([, v]) => v > 0);
+    if (entries.length < 2) continue;
+    const [first, ...rest] = entries;
+    const same = rest.filter(([, v]) => Math.abs(v - first[1]) <= 0.05);
+    if (same.length) out.push({ date: k.split('|')[0], platform: k.split('|')[1], spend: Math.round(first[1] * 100) / 100, sources: [first[0], ...same.map(([s]) => s)] });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** Pure: the duplicate-row rule over ad_campaigns rows. Exported for tests. */
 export function findDuplicateCampaignRows(rows: { date: string; campaign_name: string | null; spend: number | null }[]) {
   const groups = new Map<string, Set<string>>();
@@ -267,6 +297,33 @@ export async function clientHealth(db: any, client: ResolvedClientRow, now: Date
         ? `${dups.length} day/spend pair(s) appear under more than one campaign name (renames stored as new rows), e.g. ${dups[0].date} $${dups[0].spend} × ${dups[0].names.length}. Campaign breakdowns are inflated there; ad_daily_metrics (one row per client/date/platform) is NOT affected, so daily spend totals stayed correct.`
         : `No campaign rows in the last 90 days share a date and spend under different names. ad_daily_metrics is keyed per client/date/platform and cannot duplicate this way.`,
       detail: { duplicates: dups.slice(0, 20) },
+    });
+  }
+
+  // ── the same platform counted from two spend sources ──
+  const spendTables = (client.spend_source_tables ?? []).filter((t) => t in MIRROR_SPEND);
+  if (spendTables.length > 1) {
+    const counted: { source: string; date: string; platform: string; spend: number }[] = [];
+    for (const table of spendTables) {
+      const spec = MIRROR_SPEND[table];
+      read.add(table);
+      const cols = ['date', 'spend', spec.platformCol].filter(Boolean).join(', ');
+      const rows = await pagedRead((a, b) => {
+        let q = db.from(table).select(cols).eq('client_id', client.id).gte('date', addDays(latest, -89)).lte('date', latest);
+        if (spec.entity) q = q.eq('entity', 'campaign');
+        const allowed = client.spend_source_platforms?.[table];
+        if (Array.isArray(allowed) && allowed.length && spec.platformCol) q = q.in(spec.platformCol, allowed);
+        return q.order('date').order('id').range(a, b);
+      });
+      for (const r of rows as any[]) counted.push({ source: table, date: String(r.date).slice(0, 10), platform: (spec.platformCol ? r[spec.platformCol] : null) || spec.label, spend: Number(r.spend ?? 0) });
+    }
+    const dups = findCrossSourceSpendDuplicates(counted);
+    checks.push({
+      check: 'duplicate_rows', source: spendTables.join(' + '), status: dups.length ? 'fail' : 'ok',
+      explanation: dups.length
+        ? `${dups.length} day(s) count the same platform spend from two sources (e.g. ${dups[0].date} ${dups[0].platform} $${dups[0].spend} in ${dups[0].sources.join(' and ')}). Spend is double-counted on those days until clients.spend_source_platforms restricts one source.`
+        : `No platform's spend is counted from more than one source in the last 90 days.`,
+      detail: { duplicates: dups.slice(0, 20), days: dups.length },
     });
   }
 

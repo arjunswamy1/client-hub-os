@@ -141,6 +141,13 @@
       "when": 1791670897512,
       "tag": "0019_external_channels_update_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791674611939,
+      "tag": "0020_client_spend_source_platforms",
+      "breakpoints": true
     }
   ]
 }

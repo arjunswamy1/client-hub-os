@@ -980,6 +980,12 @@ Deno.serve(async (req) => {
     }
 
     if (event.type === 'app_mention' || isDirectConversationEvent(event)) {
+      // Grokbot changeover: when CPM Bot's replies are switched off, Grokbot answers.
+      if (!(await botSettings()).cpm_bot_replies) {
+        return new Response(JSON.stringify({ ok: true, ignored: 'cpm_bot_replies_off' }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+      }
       EdgeRuntime.waitUntil(processSlackMessage(event));
       return new Response(JSON.stringify({ ok: true, status: 'received' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },

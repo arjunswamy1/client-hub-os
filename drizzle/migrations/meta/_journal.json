@@ -148,6 +148,13 @@
       "when": 1791674611939,
       "tag": "0020_client_spend_source_platforms",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791674815196,
+      "tag": "0021_scope_events_detected_key_unique",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logIntegrationCall } from "../_shared/cost-tracking.ts";
 import { ownBotIdentity } from '../_shared/slack-identity.ts';
 import { isOwnBotMessage } from '../_shared/daily-update-rules.ts';
+import { discoveryPatch, proposeClient } from '../_shared/update-context.ts';
 import { getValidBotToken } from "../_shared/slack-token.ts";
 import { classifyMessage } from "../_shared/slack-message-class.ts";
 import type { MessageClass } from "../_shared/slack-message-class.ts";
@@ -57,6 +58,7 @@ Deno.serve(async (req) => {
     // Service-role callers and single-use cron nonces (ops / scheduled runs) are
     // trusted; anyone else must be a signed-in user.
     const bearer = (authHeader || '').replace('Bearer ', '').trim();
+    let callerUserId: string | null = null;
     let isServiceCall = bearer !== '' && bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     const cronNonce = req.headers.get('x-cron-nonce') || '';
@@ -89,6 +91,7 @@ Deno.serve(async (req) => {
           status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+      callerUserId = user.id;
     }
 
     const supabase = createClient(
@@ -151,6 +154,41 @@ Deno.serve(async (req) => {
       return jsonResp({ classified, bot_not_member: notMember, unmapped_bot_channels: unmapped });
     }
 
+    // ──── DISCOVER CHANNELS ────
+    // Every channel the bot is already in, shared ones included, with Slack's
+    // own flags. Never invites the bot, never enables sync, never sets client_id:
+    // only a name-based proposal for a person to approve at /settings/channels.
+    if (action === 'discover_channels') {
+      if (!isServiceCall) {
+        const { data: me } = await supabase.from('team_members').select('role').eq('user_id', callerUserId).maybeSingle();
+        if (me?.role !== 'admin') return jsonResp({ error: 'admins only' }, 403);
+      }
+      const channels = await listBotChannels(slackToken);
+      const [{ data: rows }, { data: clients }] = await Promise.all([
+        supabase.from('slack_channel_mappings').select('channel_id, client_id, sync_enabled'),
+        supabase.from('clients').select('id, name, slug, status'),
+      ]);
+      const existing = new Map((rows || []).map((r: any) => [r.channel_id, r]));
+      const now = new Date().toISOString();
+      const found: any[] = [];
+      for (const ch of channels) {
+        const prior: any = existing.get(ch.id);
+        const proposal = proposeClient(ch.name, (clients || []) as any);
+        const patch = discoveryPatch({ ...ch, purpose: ch.purpose }, !!prior, proposal, now);
+        const { error } = prior
+          ? await supabase.from('slack_channel_mappings').update(patch).eq('channel_id', ch.id)
+          : await supabase.from('slack_channel_mappings').insert(patch);
+        found.push({
+          channel: ch.name, channel_id: ch.id, new: !prior,
+          is_external: patch.is_external, is_shared: ch.is_shared ?? null, is_ext_shared: ch.is_ext_shared ?? null, is_org_shared: ch.is_org_shared ?? null, is_private: ch.is_private ?? null,
+          proposed_client: proposal ? (clients || []).find((c: any) => c.id === proposal.id)?.name ?? null : null,
+          client_id: prior?.client_id ?? null, sync_enabled: prior?.sync_enabled ?? false,
+          ...(error ? { error: error.message } : {}),
+        });
+      }
+      return jsonResp({ discovered: found.length, channels: found, note: 'Nothing invited, no sync enabled, no client mapped. Approve per channel at /settings/channels.' });
+    }
+
     // ──── LIST CHANNELS ────
     if (action === 'list_channels') {
       const channels = await listBotChannels(slackToken);
@@ -169,6 +207,8 @@ Deno.serve(async (req) => {
         const client = (clients || []).find((c: any) => c.slug === clientSlug);
         if (!client) continue;
 
+        // Client-facing channels are enabled only by a named admin at /settings/channels.
+        if (ch.is_shared || ch.is_ext_shared || ch.is_org_shared) continue;
         await supabase.from('slack_channel_mappings').upsert(
           { client_id: client.id, channel_id: ch.id, channel_name: ch.name, sync_enabled: true },
           { onConflict: 'channel_id' }
@@ -183,6 +223,10 @@ Deno.serve(async (req) => {
     if (action === 'map_channel') {
       if (!client_id || !channel_id || !channel_name) {
         return jsonResp({ error: 'Missing params' }, 400);
+      }
+      const { data: flags } = await supabase.from('slack_channel_mappings').select('is_external, is_shared, is_ext_shared, is_org_shared').eq('channel_id', channel_id).maybeSingle();
+      if (flags && (flags.is_external || flags.is_shared || flags.is_ext_shared || flags.is_org_shared)) {
+        return jsonResp({ error: 'client-facing channel: enable it by name at /settings/channels' }, 409);
       }
       const { error } = await supabase.from('slack_channel_mappings').upsert(
         { client_id, channel_id, channel_name, sync_enabled: true },
@@ -202,12 +246,15 @@ Deno.serve(async (req) => {
     if (action === 'sync') {
       if (!client_id) return jsonResp({ error: 'Missing client_id' }, 400);
 
-      const { data: mappings } = await supabase
+      const { data: mappingsRaw } = await supabase
         .from('slack_channel_mappings')
         .select('*')
         .eq('client_id', client_id)
         .eq('sync_enabled', true);
+      // A client-facing channel is read only after a named admin approved it.
+      const approvedMappings = (mappingsRaw || []).filter((m: any) => !(m.is_external || m.is_shared || m.is_ext_shared || m.is_org_shared) || m.sync_enabled_by_id);
 
+      const mappings = approvedMappings;
       if (!mappings || mappings.length === 0) {
         return jsonResp({ synced: 0, tasks_created: 0, message: 'No mapped channels' });
       }
@@ -740,6 +787,7 @@ async function listBotChannels(token: string) {
           is_ext_shared: ch.is_ext_shared,
           is_org_shared: ch.is_org_shared,
           topic: ch.topic?.value || '',
+          purpose: ch.purpose?.value || '',
         });
       }
     }

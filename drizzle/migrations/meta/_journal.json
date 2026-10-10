@@ -134,6 +134,13 @@
       "when": 1791668247316,
       "tag": "0018_creative_checkins_followups",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791670897512,
+      "tag": "0019_external_channels_update_approval",
+      "breakpoints": true
     }
   ]
 }

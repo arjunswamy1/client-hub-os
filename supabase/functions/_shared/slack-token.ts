@@ -10,6 +10,7 @@
 // posting on 2026-08-22 with the static one). If the database token cannot be
 // obtained we log loudly and throw.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { botPersona } from './bot-persona.ts';
 
 const admin = () =>
   createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);

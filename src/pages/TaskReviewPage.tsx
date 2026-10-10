@@ -78,7 +78,7 @@ export default function TaskReviewPage() {
   const members = useQuery({
     queryKey: ['team_members', 'review'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('team_members').select('id, name').eq('is_active', true);
+      const { data, error } = await supabase.from('team_members').select('id, name').eq('is_active', true).eq('is_service_account', false);
       if (error) throw new Error(error.message);
       return data ?? [];
     },

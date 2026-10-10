@@ -78,7 +78,8 @@ export default function ImprovementProposalsPage() {
         .order('occurrences', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(200);
-      if (tab !== 'all') q = q.eq('status', tab);
+      if (tab === 'open') q = q.in('status', ['open', 'proposed']);
+      else if (tab !== 'all') q = q.eq('status', tab);
       const { data, error } = await q;
       if (error) throw new Error(error.message);
       return (data ?? []) as unknown as Proposal[];
@@ -210,7 +211,7 @@ export default function ImprovementProposalsPage() {
                   <Button size="sm" onClick={() => copy(p)}>
                     <Copy className="mr-1 h-3.5 w-3.5" /> Copy prompt
                   </Button>
-                  {p.status === 'open' && (
+                  {(p.status === 'open' || p.status === 'proposed') && (
                     <Button size="sm" variant="outline" onClick={() => setStatus.mutate({ id: p.id, status: 'approved' })}>
                       <Check className="mr-1 h-3.5 w-3.5" /> Approve
                     </Button>

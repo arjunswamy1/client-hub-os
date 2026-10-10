@@ -3294,6 +3294,57 @@ export type Database = {
           },
         ]
       }
+      creative_brief_status_history: {
+        Row: {
+          brief_id: string
+          changed_by_id: string | null
+          created_at: string
+          forced: boolean
+          from_status: string | null
+          id: string
+          note: string | null
+          to_status: string
+          via: string
+        }
+        Insert: {
+          brief_id: string
+          changed_by_id?: string | null
+          created_at?: string
+          forced?: boolean
+          from_status?: string | null
+          id?: string
+          note?: string | null
+          to_status: string
+          via?: string
+        }
+        Update: {
+          brief_id?: string
+          changed_by_id?: string | null
+          created_at?: string
+          forced?: boolean
+          from_status?: string | null
+          id?: string
+          note?: string | null
+          to_status?: string
+          via?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_brief_status_history_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_brief_status_history_changed_by_id_fkey"
+            columns: ["changed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creative_brief_templates: {
         Row: {
           created_at: string
@@ -3341,6 +3392,9 @@ export type Database = {
           assigned_to_id: string | null
           brand_guidelines_url: string | null
           client_id: string | null
+          closed_out_at: string | null
+          closed_out_by_id: string | null
+          closed_out_note: string | null
           completion_confirmed_by_id: string | null
           copy_suggestions: Json | null
           created_at: string
@@ -3388,6 +3442,9 @@ export type Database = {
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
           client_id?: string | null
+          closed_out_at?: string | null
+          closed_out_by_id?: string | null
+          closed_out_note?: string | null
           completion_confirmed_by_id?: string | null
           copy_suggestions?: Json | null
           created_at?: string
@@ -3435,6 +3492,9 @@ export type Database = {
           assigned_to_id?: string | null
           brand_guidelines_url?: string | null
           client_id?: string | null
+          closed_out_at?: string | null
+          closed_out_by_id?: string | null
+          closed_out_note?: string | null
           completion_confirmed_by_id?: string | null
           copy_suggestions?: Json | null
           created_at?: string
@@ -3494,6 +3554,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_briefs_closed_out_by_id_fkey"
+            columns: ["closed_out_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {
@@ -7951,10 +8018,12 @@ export type Database = {
           slack_ts: string | null
           slack_user_id: string | null
           source_kind: string | null
+          subject_ref: string | null
           surface: string
           surface_target: string | null
           task_id: string | null
           team_member_id: string | null
+          verdict: string | null
         }
         Insert: {
           action: string
@@ -7979,10 +8048,12 @@ export type Database = {
           slack_ts?: string | null
           slack_user_id?: string | null
           source_kind?: string | null
+          subject_ref?: string | null
           surface: string
           surface_target?: string | null
           task_id?: string | null
           team_member_id?: string | null
+          verdict?: string | null
         }
         Update: {
           action?: string
@@ -8007,10 +8078,12 @@ export type Database = {
           slack_ts?: string | null
           slack_user_id?: string | null
           source_kind?: string | null
+          subject_ref?: string | null
           surface?: string
           surface_target?: string | null
           task_id?: string | null
           team_member_id?: string | null
+          verdict?: string | null
         }
         Relationships: [
           {
@@ -8239,8 +8312,10 @@ export type Database = {
           id: string
           is_active: boolean
           is_creative_lead: boolean
+          is_service_account: boolean
           name: string
           role: string
+          service_owner_id: string | null
           slack_user_id: string | null
           updated_at: string
           user_id: string | null
@@ -8253,8 +8328,10 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_creative_lead?: boolean
+          is_service_account?: boolean
           name: string
           role: string
+          service_owner_id?: string | null
           slack_user_id?: string | null
           updated_at?: string
           user_id?: string | null
@@ -8267,13 +8344,23 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_creative_lead?: boolean
+          is_service_account?: boolean
           name?: string
           role?: string
+          service_owner_id?: string | null
           slack_user_id?: string | null
           updated_at?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "team_members_service_owner_id_fkey"
+            columns: ["service_owner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tech_credit_allocations: {
         Row: {
@@ -9034,6 +9121,19 @@ export type Database = {
       accept_creative_brief: { Args: { p_brief_id: string }; Returns: Json }
       accept_creative_brief_as: {
         Args: { p_actor: string; p_brief_id: string; p_via: string }
+        Returns: Json
+      }
+      agent_write_creative_brief: {
+        Args: {
+          p_actor_id: string
+          p_brief_id: string
+          p_comment: string
+          p_expected_updated_at: string
+          p_forced: boolean
+          p_note: string
+          p_patch: Json
+          p_via: string
+        }
         Returns: Json
       }
       bot_readonly_select: {

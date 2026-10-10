@@ -419,7 +419,8 @@ export async function buildDigests(
   const { data: members, error: memberErr } = await supabase
     .from('team_members')
     .select('id, name, role, slack_user_id, is_active')
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .eq('is_service_account', false);
   if (memberErr) throw memberErr;
   const memberById = new Map<string, MemberRow>((members ?? []).map((m: MemberRow) => [m.id, m]));
 

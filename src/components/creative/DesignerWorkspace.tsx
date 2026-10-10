@@ -53,7 +53,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   const { data: designers = [] } = useQuery({
     queryKey: ['designers_list'],
     queryFn: async () => {
-      const { data } = await supabase.from('team_members').select('id, name, avatar_url').eq('role', 'designer').eq('is_active', true);
+      const { data } = await supabase.from('team_members').select('id, name, avatar_url').eq('role', 'designer').eq('is_active', true).eq('is_service_account', false);
       return data || [];
     },
     enabled: isAdminView === true,

@@ -298,7 +298,7 @@ export async function postDirectMessage(opts: DirectMessageOptions): Promise<Dir
   }
 
   const { data: member, error: memberErr } = await admin()
-    .from('team_members').select('id, name').eq('slack_user_id', userId).maybeSingle();
+    .from('team_members').select('id, name').eq('slack_user_id', userId).eq('is_service_account', false).maybeSingle();
   if (memberErr) return { ok: false, error: `team_members lookup failed: ${memberErr.message}` };
   if (!member) {
     await logRefusal(userId, null, method, 'dm_user_not_internal_team_member');

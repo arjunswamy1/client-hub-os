@@ -92,6 +92,13 @@
       "when": 1791556745877,
       "tag": "0012_platform_connections_safe_invoker",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791644123509,
+      "tag": "0013_agent_query_log_auth_method",
+      "breakpoints": true
     }
   ]
 }

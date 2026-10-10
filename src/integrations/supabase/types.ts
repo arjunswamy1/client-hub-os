@@ -457,10 +457,12 @@ export type Database = {
       agent_query_log: {
         Row: {
           arguments: Json | null
+          auth_method: string
           client_id: string | null
           created_at: string
           duration_ms: number | null
           id: string
+          oauth_client_id: string | null
           outcome: string
           team_member_id: string | null
           token_id: string | null
@@ -469,10 +471,12 @@ export type Database = {
         }
         Insert: {
           arguments?: Json | null
+          auth_method?: string
           client_id?: string | null
           created_at?: string
           duration_ms?: number | null
           id?: string
+          oauth_client_id?: string | null
           outcome: string
           team_member_id?: string | null
           token_id?: string | null
@@ -481,10 +485,12 @@ export type Database = {
         }
         Update: {
           arguments?: Json | null
+          auth_method?: string
           client_id?: string | null
           created_at?: string
           duration_ms?: number | null
           id?: string
+          oauth_client_id?: string | null
           outcome?: string
           team_member_id?: string | null
           token_id?: string | null

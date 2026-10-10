@@ -227,3 +227,48 @@ describe("platform_connections select-star guard", () => {
     expect(bad).toEqual([]);
   });
 });
+
+describe("mcp-hub Claude sign-in (OAuth)", () => {
+  const JWT = "aaa.bbb.ccc";
+  async function oauthWorld(role: string, opts: { verified?: boolean; member?: boolean } = {}) {
+    const tables: Record<string, any[]> = {
+      agent_tokens: [],
+      team_members: opts.member === false ? [] : [{ id: "m9", user_id: "u9", name: "Sam", role, is_active: true }],
+      client_assignments: [{ team_member_id: "m9", client_id: A }],
+      clients: [client(A, "Alpha"), client(B, "Beta")],
+      client_daily_updates: [], tasks: [], agent_query_log: [],
+    };
+    const { db } = fakeDb(tables);
+    const verifyOAuth = async (t: string) => (opts.verified === false || t !== JWT ? null : { userId: "u9", clientId: "claude-client" });
+    const call = (name: string, args: Record<string, unknown> = {}) =>
+      handleRpc({ db, now: () => NOW, verifyOAuth }, `Bearer ${JWT}`, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
+    return { tables, call };
+  }
+
+  it("a signed-in account manager sees only assigned clients, and the call is logged as oauth", async () => {
+    const w = await oauthWorld("account_manager");
+    expect(sc(await w.call("list_clients")).clients.map((c: any) => c.name)).toEqual(["Alpha"]);
+    expect(sc(await w.call("get_tasks", { client: "beta" })).outcome).toBe("not_authorised_client");
+    const log = w.tables.agent_query_log.at(-1);
+    expect(log.auth_method).toBe("oauth");
+    expect(log.oauth_client_id).toBe("claude-client");
+    expect(log.token_id).toBeNull();
+  });
+
+  it("refuses an invalid sign-in, a non-team account, and a client-portal role", async () => {
+    for (const [role, o, re] of [["admin", { verified: false }, /invalid/], ["admin", { member: false }, /not a Connect Paid Media team member/], ["client", {}, /may not use/]] as const) {
+      const w = await oauthWorld(role, o as any);
+      const r = await w.call("list_clients");
+      expect(r.status).toBe(401);
+      expect((r.body as any).error.message).toMatch(re);
+      expect(w.tables.agent_query_log.at(-1).outcome).toBe("refused_auth");
+    }
+  });
+
+  it("designers get read only — draft tools are refused", async () => {
+    const w = await oauthWorld("designer");
+    const r = await w.call("draft_update", { client: "alpha", for_date: "2026-10-05", text: "x" });
+    expect(JSON.stringify(r.body)).toMatch(/scope/i);
+    expect(w.tables.client_daily_updates).toHaveLength(0);
+  });
+});

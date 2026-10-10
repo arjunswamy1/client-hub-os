@@ -14,6 +14,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/anthropic.ts";
 import { logAiUsage } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
+import { botPersona } from "../_shared/bot-persona.ts";
 import { postToSlack, canPostToChannel, SlackRefusedError, botSettings } from "../_shared/slack-post.ts";
 import { handleKillReaction, captureKillComment, isKillReaction } from "../_shared/task-kill.ts";
 import { handleDigestReaction, captureDigestReply, ackKindForReaction } from "../_shared/task-digest-ack.ts";
@@ -27,7 +28,37 @@ import { isDuplicateDelivery, checkThrottle, logQa, resolveTeamMember } from "..
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
-const SLACK_SIGNING_SECRET = Deno.env.get('SLACK_SIGNING_SECRET')!;
+const PERSONA = botPersona();
+const SLACK_SIGNING_SECRET = (PERSONA === 'grokbot' ? Deno.env.get('GROKBOT_SIGNING_SECRET') : Deno.env.get('SLACK_SIGNING_SECRET')) ?? '';
+
+/** Grokbot only: send what the hub cleared, via the mcp-hub outbox tools. */
+async function drainOutbox(): Promise<{ sent: number; skipped: number; errors: string[] }> {
+  const hubToken = Deno.env.get('GROKBOT_HUB_TOKEN');
+  const out = { sent: 0, skipped: 0, errors: [] as string[] };
+  if (!hubToken) { out.errors.push('GROKBOT_HUB_TOKEN is not configured'); return out; }
+  const hub = async (name: string, args: Record<string, unknown>) => {
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/mcp-hub`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${hubToken}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method: 'tools/call', params: { name, arguments: args } }),
+    });
+    const j: any = await res.json().catch(() => ({}));
+    if (j.error || j.result?.isError) throw new Error(`${name}: ${j.error?.message ?? j.result?.content?.[0]?.text ?? res.status}`);
+    return j.result?.structuredContent ?? JSON.parse(j.result?.content?.[0]?.text ?? '{}');
+  };
+  let list: any;
+  try { list = await hub('list_outbox', { limit: 25 }); } catch (e) { out.errors.push(String(e)); return out; }
+  const pending = list?.payload?.pending ?? list?.pending ?? [];
+  for (const row of pending) {
+    const r = await postToSlack({ channel: row.channel_id, text: row.text ?? undefined, blocks: row.blocks ?? undefined, threadTs: row.thread_ts ?? undefined, source: row.source });
+    try {
+      if (r.ok && r.ts) { await hub('mark_outbox_sent', { outbox_id: row.id, slack_ts: r.ts }); out.sent++; }
+      else if (r.refused) { await hub('mark_outbox_skipped', { outbox_id: row.id, reason: `refused: ${r.reason}` }); out.skipped++; }
+      else out.errors.push(`${row.id}: ${r.error ?? 'unknown'}`); // left pending for the next wake
+    } catch (e) { out.errors.push(String(e)); }
+  }
+  return out;
+}
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,

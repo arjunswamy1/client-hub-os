@@ -76,6 +76,8 @@ export function ruleCondition(b: FollowupBrief, rule: Rule, today: string): { si
     case 'awaiting_review':
       return b.status === 'ready_for_review' && !b.review_since_status && at(b.status_since) ? { since: at(b.status_since)! } : null;
     case 'overdue':
+      // A ready_for_review brief is waiting on the reviewer, not the designer: awaiting_review covers it.
+      if (b.status === 'ready_for_review') return null;
       return b.due_date && b.due_date < today ? { since: b.due_date } : null;
   }
 }
@@ -219,7 +221,7 @@ export async function loadFollowupBriefs(db: any): Promise<FollowupBrief[]> {
     db.from('creative_deliverables').select('brief_id, uploaded_at').in('brief_id', ids),
     db.from('creative_time_entries').select('brief_id, started_at, deleted_at').in('brief_id', ids),
     db.from('creative_reviews').select('brief_id, action, created_at').in('brief_id', ids),
-    db.from('designer_checkins').select('working_on, responded_at').not('responded_at', 'is', null).range(0, 4999),
+    db.from('designer_checkins').select('working_on, responded_at').range(0, 4999),
   ]);
   return briefs.map((b: any) => {
     const h = (hist ?? []).filter((x: any) => x.brief_id === b.id);
@@ -231,7 +233,7 @@ export async function loadFollowupBriefs(db: any): Promise<FollowupBrief[]> {
       ...(dv ?? []).filter((x: any) => x.brief_id === b.id).map((x: any) => [x.uploaded_at, 'deliverable'] as [string, string]),
       ...(te ?? []).filter((x: any) => x.brief_id === b.id && !x.deleted_at).map((x: any) => [x.started_at, 'time_entry'] as [string, string]),
       ...(rv ?? []).filter((x: any) => x.brief_id === b.id).map((x: any) => [x.created_at, 'review'] as [string, string]),
-      ...(ck ?? []).filter((x: any) => (x.working_on ?? []).includes(b.id)).map((x: any) => [x.responded_at, 'checkin'] as [string, string]),
+      ...(ck ?? []).filter((x: any) => x.responded_at && (x.working_on ?? []).includes(b.id)).map((x: any) => [x.responded_at, 'checkin'] as [string, string]),
       [b.accepted_at, 'accepted'], [b.submitted_at, 'submitted'],
     ]);
     const review = (rv ?? []).filter((x: any) => x.brief_id === b.id && x.created_at >= statusSince).sort((x: any, y: any) => String(y.created_at).localeCompare(x.created_at))[0];

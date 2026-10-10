@@ -45,6 +45,8 @@ async function dayEvidence(db: any, client: ComparisonClient, from: string, to: 
   for (const table of sources) {
     let q = db.from(table).select('date, spend, impressions').eq('client_id', client.id).gte('date', from).lte('date', to);
     if (ENTITY_SCOPED.has(table)) q = q.eq('entity', 'campaign');
+    const allowed = client.spend_source_platforms?.[table];
+    if (Array.isArray(allowed) && allowed.length && table !== 'roku_daily_metrics') q = q.in('platform', allowed);
     const { data, error } = await q.limit(20000);
     if (error) throw new Error(`${table}: ${error.message}`);
     const m = new Map<string, { rows: number; spend: number }>();

@@ -25,6 +25,7 @@ import { comparisonPromptBlock } from "./metric-comparisons.ts";
 import { computeClientBreakdown } from "./client-breakdown.ts";
 import { runReadOnlySql } from "./bot-sql.ts";
 import { isDuplicateDelivery, checkThrottle, logQa, resolveTeamMember } from "./bot-guard.ts";
+import { etParts, parseCheckinReply, planCheckinWrite } from "./creative-followups.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 

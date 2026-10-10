@@ -30,6 +30,7 @@ export default function AgentTokensPage() {
   const [memberId, setMemberId] = useState('');
   const [label, setLabel] = useState('');
   const [draft, setDraft] = useState(true);
+  const [creative, setCreative] = useState(false);
   const [days, setDays] = useState('90');
   const [shown, setShown] = useState<string | null>(null);
 
@@ -49,7 +50,7 @@ export default function AgentTokensPage() {
     const expires = days === 'never' ? null : new Date(Date.now() + Number(days) * 86400000).toISOString();
     const { error } = await supabase.from('agent_tokens').insert({
       team_member_id: memberId, label: label.trim(), token_hash: await sha256Hex(token), token_prefix: token.slice(0, 12),
-      scopes: draft ? ['read', 'draft'] : ['read'], expires_at: expires,
+      scopes: ['read', ...(draft ? ['draft'] : []), ...(creative ? ['creative_write'] : [])], expires_at: expires,
     });
     if (error) return toast({ title: 'Could not create token', description: error.message, variant: 'destructive' });
     setShown(token); setLabel('');
@@ -100,7 +101,10 @@ export default function AgentTokensPage() {
             </SelectContent>
           </Select>
           <div className="flex items-center justify-between gap-3">
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={draft} onCheckedChange={(v) => setDraft(v === true)} />Can write drafts</label>
+            <div className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm"><Checkbox checked={draft} onCheckedChange={(v) => setDraft(v === true)} />Can write drafts</label>
+              <label className="flex items-center gap-2 text-sm"><Checkbox checked={creative} onCheckedChange={(v) => setCreative(v === true)} />Can change creative briefs</label>
+            </div>
             <Button onClick={mint}>Create</Button>
           </div>
         </CardContent>

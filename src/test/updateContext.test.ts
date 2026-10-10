@@ -91,6 +91,8 @@ describe("narrative fallback and sending", () => {
     for (const f of walk("supabase/functions")) {
       const src = readFileSync(f, "utf8");
       if (!src.includes("client_daily_updates") || f.includes("_shared/slack-post")) continue;
+      // The answering bot reads drafts as context but only replies where canPostToChannel clears it (external refused before any work).
+      if (f.includes("_shared/slack-bot-app")) { expect(src).toMatch(/else if \(!\(await canPostToChannel\(event\.channel\)\)\)/); continue; }
       expect(src, f).not.toMatch(/slack\.com\/api\/chat\.postMessage|chat\.postMessage['"`]/);
       for (const m of src.matchAll(/postToSlack\(\{([^}]*)\}/g)) expect(m[1], f).toMatch(/internalOnly: true/);
     }

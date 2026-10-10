@@ -26,6 +26,9 @@ export interface SlackPostResult {
   reason?: string;
   ts?: string;
   error?: string;
+  /** Held in slack_outbox for Grokbot rather than posted. */
+  queued?: boolean;
+  outboxId?: string;
 }
 
 export class SlackRefusedError extends Error {
@@ -110,6 +113,19 @@ interface PostOptions {
   throwOnError?: boolean;
   /** Caller has verified this DM's human is an internal workspace member. */
   directMessageVerifiedInternal?: boolean;
+  /** Which job produced the post; recorded on outbox rows. */
+  source?: string;
+}
+
+export interface BotSettings { cpm_bot_replies: boolean; outbound_sender: 'hub' | 'grokbot'; dm_username: string | null; dm_icon_url: string | null }
+
+/** Changeover switches. Missing row or read failure keeps today's behaviour. */
+export async function botSettings(): Promise<BotSettings> {
+  const fallback: BotSettings = { cpm_bot_replies: true, outbound_sender: 'hub', dm_username: null, dm_icon_url: null };
+  try {
+    const { data } = await admin().from('bot_runtime_settings').select('cpm_bot_replies, outbound_sender, dm_username, dm_icon_url').eq('id', 1).maybeSingle();
+    return data ? (data as BotSettings) : fallback;
+  } catch { return fallback; }
 }
 
 /**
@@ -186,6 +202,22 @@ export async function postToSlack(opts: PostOptions): Promise<SlackPostResult> {
   if (method === 'files.upload') {
     if (!opts.file) return { ok: false, error: 'files.upload requires a file' };
     return await uploadFile(token, opts);
+  }
+
+  // Grokbot changeover: a cleared channel post waits in the outbox for Grokbot
+  // to send instead of going out under the hub's bot. Only channels that passed
+  // the allowlist above ever reach the outbox.
+  if (!opts.channel.startsWith('D') && (await botSettings()).outbound_sender === 'grokbot') {
+    const { data, error } = await admin().from('slack_outbox').insert({
+      source: opts.source ?? 'hub', channel_id: opts.channel, channel_name: name,
+      thread_ts: opts.threadTs ?? null, text: opts.text ?? null, blocks: opts.blocks ?? null,
+    }).select('id').single();
+    if (error) {
+      const err = `outbox insert failed: ${error.message}`;
+      if (opts.throwOnError) throw new Error(err);
+      return { ok: false, error: err };
+    }
+    return { ok: true, queued: true, outboxId: data.id };
   }
 
   return await call('chat.postMessage', {
@@ -307,8 +339,12 @@ export async function postDirectMessage(opts: DirectMessageOptions): Promise<Dir
 
   const openBody = { users: userId };
   const writeMethod = opts.kind === 'send' ? 'chat.postMessage' : 'chat.update';
+  const brand = await botSettings();
+  const persona: Record<string, unknown> = opts.kind === 'send' && brand.dm_username
+    ? { username: brand.dm_username, ...(brand.dm_icon_url ? { icon_url: brand.dm_icon_url } : {}) }
+    : {};
   const writeBody: Record<string, unknown> = opts.kind === 'send'
-    ? { channel: '<im from conversations.open>', text: opts.text, ...(opts.blocks ? { blocks: opts.blocks } : {}), unfurl_links: false }
+    ? { channel: '<im from conversations.open>', text: opts.text, ...(opts.blocks ? { blocks: opts.blocks } : {}), unfurl_links: false, ...persona }
     : { channel: opts.channel, ts: opts.ts, text: opts.text, blocks: opts.blocks ?? [] };
   if (opts.dryRun) {
     return { ok: true, dryRun: true, wouldCall: [{ method: 'conversations.open', body: openBody }, { method: writeMethod, body: writeBody }] };

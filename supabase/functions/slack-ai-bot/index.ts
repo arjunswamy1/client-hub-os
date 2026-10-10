@@ -14,7 +14,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic, truncate, ANTHROPIC_DEFAULT_MODEL } from "../_shared/anthropic.ts";
 import { logAiUsage } from "../_shared/cost-tracking.ts";
 import { getValidBotToken } from "../_shared/slack-token.ts";
-import { postToSlack, canPostToChannel, SlackRefusedError } from "../_shared/slack-post.ts";
+import { postToSlack, canPostToChannel, SlackRefusedError, botSettings } from "../_shared/slack-post.ts";
 import { handleKillReaction, captureKillComment, isKillReaction } from "../_shared/task-kill.ts";
 import { handleDigestReaction, captureDigestReply, ackKindForReaction } from "../_shared/task-digest-ack.ts";
 import { resolveClient, loadActiveClients, type ResolvedClientRow } from "../_shared/client-resolve.ts";
@@ -980,6 +980,12 @@ Deno.serve(async (req) => {
     }
 
     if (event.type === 'app_mention' || isDirectConversationEvent(event)) {
+      // Grokbot changeover: when CPM Bot's replies are switched off, Grokbot answers.
+      if (!(await botSettings()).cpm_bot_replies) {
+        return new Response(JSON.stringify({ ok: true, ignored: 'cpm_bot_replies_off' }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+      }
       EdgeRuntime.waitUntil(processSlackMessage(event));
       return new Response(JSON.stringify({ ok: true, status: 'received' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },

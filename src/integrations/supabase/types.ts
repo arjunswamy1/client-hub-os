@@ -1467,6 +1467,36 @@ export type Database = {
           },
         ]
       }
+      bot_runtime_settings: {
+        Row: {
+          cpm_bot_replies: boolean
+          dm_icon_url: string | null
+          dm_username: string | null
+          id: number
+          outbound_sender: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          cpm_bot_replies?: boolean
+          dm_icon_url?: string | null
+          dm_username?: string | null
+          id?: number
+          outbound_sender?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          cpm_bot_replies?: boolean
+          dm_icon_url?: string | null
+          dm_username?: string | null
+          id?: number
+          outbound_sender?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       brief_notifications: {
         Row: {
           attempts: number
@@ -7457,6 +7487,62 @@ export type Database = {
             columns: ["brief_id"]
             isOneToOne: false
             referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      slack_outbox: {
+        Row: {
+          blocks: Json | null
+          channel_id: string
+          channel_name: string | null
+          created_at: string
+          handled_at: string | null
+          handled_by: string | null
+          id: string
+          sent_ts: string | null
+          skip_reason: string | null
+          source: string
+          status: string
+          text: string | null
+          thread_ts: string | null
+        }
+        Insert: {
+          blocks?: Json | null
+          channel_id: string
+          channel_name?: string | null
+          created_at?: string
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          sent_ts?: string | null
+          skip_reason?: string | null
+          source: string
+          status?: string
+          text?: string | null
+          thread_ts?: string | null
+        }
+        Update: {
+          blocks?: Json | null
+          channel_id?: string
+          channel_name?: string | null
+          created_at?: string
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          sent_ts?: string | null
+          skip_reason?: string | null
+          source?: string
+          status?: string
+          text?: string | null
+          thread_ts?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_outbox_handled_by_fkey"
+            columns: ["handled_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]

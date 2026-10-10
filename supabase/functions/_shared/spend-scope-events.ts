@@ -27,7 +27,7 @@ function addDays(d: string, n: number): string {
  * spendByDay: date -> platform -> spend (a missing platform on a day = $0).
  * A pause is the first weekday at $0 after spend, held for PAUSE_MIN_WEEKDAYS
  * consecutive weekdays. A restart is the first weekday with spend after a pause.
- * Weekends never start or end a pause on their own.
+ * Weekends never start or end a pause on their own; days with no row at all are skipped.
  */
 export function detectSpendScopeEvents(
   clientId: string,
@@ -38,7 +38,8 @@ export function detectSpendScopeEvents(
   const platforms = new Set<string>();
   for (const m of spendByDay.values()) for (const p of Object.keys(m)) platforms.add(p);
   const weekdays: string[] = [];
-  for (let d = from; d <= to; d = addDays(d, 1)) if (isWeekday(d)) weekdays.push(d);
+  // A weekday with no spend row from any source is UNKNOWN (feed gap), never a $0 day.
+  for (let d = from; d <= to; d = addDays(d, 1)) if (isWeekday(d) && spendByDay.has(d)) weekdays.push(d);
 
   const out: DetectedScopeEvent[] = [];
   for (const platform of [...platforms].sort()) {

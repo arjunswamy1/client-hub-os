@@ -29,18 +29,29 @@ const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { sta
 
 function gw(base: string, keyEnv: string) {
   return async (method: string, path: string, body?: unknown) => {
-    const res = await fetch(`${base}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
-        'X-Connection-Api-Key': Deno.env.get(keyEnv)!,
-        'Content-Type': 'application/json',
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`${base.includes('mail') ? 'Gmail' : 'Sheets'} ${method} ${path.split('?')[0]} [${res.status}]: ${text.slice(0, 400)}`);
-    return text ? JSON.parse(text) : {};
+    // Google's per-minute quota (429) and transient 5xx: back off and retry, max 4 attempts.
+    for (let attempt = 1; ; attempt++) {
+      const res = await fetch(`${base}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
+          'X-Connection-Api-Key': Deno.env.get(keyEnv)!,
+          'Content-Type': 'application/json',
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const text = await res.text();
+      const retryable = res.status === 429 || res.status >= 500;
+      if (!res.ok && retryable && attempt < 4) {
+        const ra = Number(res.headers.get('retry-after'));
+        const waitMs = Number.isFinite(ra) && ra > 0 ? ra * 1000 : [0, 15000, 30000, 45000][attempt];
+        console.warn(`${method} ${path.split('?')[0]} [${res.status}] retry ${attempt} in ${waitMs}ms`);
+        await new Promise((r) => setTimeout(r, Math.min(waitMs, 60000)));
+        continue;
+      }
+      if (!res.ok) throw new Error(`${base.includes('mail') ? 'Gmail' : 'Sheets'} ${method} ${path.split('?')[0]} [${res.status}]: ${text.slice(0, 400)}`);
+      return text ? JSON.parse(text) : {};
+    }
   };
 }
 const gmail = gw(GMAIL, 'GOOGLE_MAIL_API_KEY');

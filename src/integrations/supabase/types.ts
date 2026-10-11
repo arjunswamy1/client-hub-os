@@ -6619,6 +6619,8 @@ export type Database = {
           did: string | null
           disposition: string | null
           duration_seconds: number
+          end_call_source: string | null
+          end_reason: string | null
           event_type: string | null
           events_seen: string[]
           id: string
@@ -6630,6 +6632,7 @@ export type Database = {
           recording_url: string | null
           revenue: number
           revenue_captured: boolean | null
+          revenue_reconciled: boolean | null
           target_name: string | null
           updated_at: string
         }
@@ -6652,6 +6655,8 @@ export type Database = {
           did?: string | null
           disposition?: string | null
           duration_seconds?: number
+          end_call_source?: string | null
+          end_reason?: string | null
           event_type?: string | null
           events_seen?: string[]
           id?: string
@@ -6663,6 +6668,7 @@ export type Database = {
           recording_url?: string | null
           revenue?: number
           revenue_captured?: boolean | null
+          revenue_reconciled?: boolean | null
           target_name?: string | null
           updated_at?: string
         }
@@ -6685,6 +6691,8 @@ export type Database = {
           did?: string | null
           disposition?: string | null
           duration_seconds?: number
+          end_call_source?: string | null
+          end_reason?: string | null
           event_type?: string | null
           events_seen?: string[]
           id?: string
@@ -6696,6 +6704,7 @@ export type Database = {
           recording_url?: string | null
           revenue?: number
           revenue_captured?: boolean | null
+          revenue_reconciled?: boolean | null
           target_name?: string | null
           updated_at?: string
         }

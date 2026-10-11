@@ -162,6 +162,13 @@
       "when": 1791675002514,
       "tag": "0022_scope_events_source_pause_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791740169067,
+      "tag": "0023_migration",
+      "breakpoints": true
     }
   ]
 }

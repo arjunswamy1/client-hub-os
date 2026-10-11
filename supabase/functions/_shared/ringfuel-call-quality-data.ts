@@ -1,6 +1,6 @@
 // Reads RingFuel calls for one client and window and summarises them with the
 // pure rules in ringfuel-call-rules.ts. Test calls are always excluded.
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { reportingWindowBounds } from './reporting-day.ts';
 import { summariseCalls, type CallQualitySummary, type RingFuelCallLike } from './ringfuel-call-rules.ts';
 
@@ -35,4 +35,9 @@ export function callQualityLine(q: CallQualitySummary): string {
     q.repeat_call_rate !== null ? `${q.unique_callers} unique callers, repeat-call rate ${pct(q.repeat_call_rate)}` : 'repeat callers unknown (caller number missing)',
   ].filter(Boolean);
   return `Call quality: ${parts.join('; ')}.${q.revenue_provisional ? ' Revenue for some calls is still provisional (not yet confirmed by a RingFuel export or 7 days old).' : ''}`;
+}
+
+/** Strict call quality applies only to RingFuel call accounts paid per call (not the Jacuzzi lead sheet). */
+export function hasRingFuelCallQuality(c: { slug?: string | null; call_source_tables?: string[] | null }): boolean {
+  return c.slug !== 'jacuzzi' && (c.call_source_tables ?? []).includes('ringfuel_calls');
 }

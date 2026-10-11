@@ -80,6 +80,7 @@ describe("mcp-hub auth and isolation", () => {
       get_context: { client: "alpha", days: 2 }, get_tasks: { client: "alpha" }, get_scope_events: { client: "alpha" },
       get_lifetime_performance: { client: "alpha", date_from: "2026-08-15", date_to: "2026-10-04" },
       get_campaign_performance: { client: "alpha", date_from: "2026-09-28", date_to: "2026-10-04" },
+      get_call_quality: { client: "alpha", date_from: "2026-09-28", date_to: "2026-10-04" },
       get_creative_queue: {}, get_designer_load: {}, get_followups: {}, get_update_context: { client: "alpha", for_date: "2026-10-04" }, get_creative_history: { client: "alpha" }, get_bot_accuracy: {},
     };
     for (const t of reads) {

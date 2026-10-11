@@ -28,6 +28,7 @@ import { MIN_BASE_CALLS } from '../_shared/metric-comparisons.ts';
 import { detectAccountsAdded } from '../_shared/scope-detect.ts';
 import { ownBotIdentity, type OwnBotIdentity } from '../_shared/slack-identity.ts';
 import { getValidBotToken } from '../_shared/slack-token.ts';
+import { loadCallQuality, callQualityLine, hasRingFuelCallQuality } from '../_shared/ringfuel-call-quality-data.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -624,6 +625,12 @@ Deno.serve(async (req) => {
           : null;
         if (attrLine) extraNotes.push(attrLine);
         const standing = (target as { update_context_note?: string | null }).update_context_note ?? null;
+        let qualityLine: string | null = null;
+        if (hasRingFuelCallQuality(target as any) && !callsWithheld) {
+          try { qualityLine = callQualityLine(await loadCallQuality(supabase, clientId, { from: periodFrom, to: forDate }, tz)); }
+          catch (e) { extraNotes.push(`Call quality not available: ${(e as Error).message}`); }
+          if (qualityLine) extraNotes.push(qualityLine);
+        }
 
         let kind: 'draft' | 'prompt' = metrics.has_data || !performance ? 'draft' : 'prompt';
         let form: 'one_line' | 'full' | 'prompt';
@@ -691,6 +698,7 @@ Deno.serve(async (req) => {
             const why = `Why you're reading this: ${evald.triggers.map((t) => t.headline).join(' · ')}.`;
             const block = cmp ? renderDailyComparison(cmp, { mode: mode.mode, weekly: callDay }) : '';
             const sheet = factSheet(metrics, evald.triggers, context)
+              + (qualityLine ? `\n${qualityLine}` : '')
               + (cmp ? `\n\n${comparisonPromptBlock(cmp)}\nThe comparison block above is printed above your prose already — do not repeat its numbers; explain them only where the context says why.${callDay ? '' : ' Do not mention the 7-day comparison: it is for the client call.'}` : '');
             // Missing calls: no model prose, no recommendation — the figures that would ground one do not exist.
             const body = periodCallsMissing

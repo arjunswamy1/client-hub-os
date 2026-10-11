@@ -75,3 +75,16 @@ describe('calls per 1,000 impressions', () => {
   it('withheld on zero-impression days', () => expect(callsPerThousandImpressions(50, 0)).toBeNull());
   it('computed when impressions exist', () => expect(callsPerThousandImpressions(50, 100000)).toBe(0.5));
 });
+
+import { hasRingFuelCallQuality, callQualityLine } from '../../supabase/functions/_shared/ringfuel-call-quality-data';
+import { summariseCalls as _sum } from '../../supabase/functions/_shared/ringfuel-call-rules';
+describe('call quality wiring', () => {
+  it('applies to Spektrafin RingFuel calls but not the Jacuzzi lead account', () => {
+    expect(hasRingFuelCallQuality({ slug: 'spektrafin', call_source_tables: ['ringfuel_calls'] })).toBe(true);
+    expect(hasRingFuelCallQuality({ slug: 'jacuzzi', call_source_tables: ['ringfuel_calls'] })).toBe(false);
+  });
+  it('says connected calls are unknown rather than zero when end reason is missing', () => {
+    const line = callQualityLine(_sum([{ end_reason: null, connection_duration_seconds: 100, caller_number: '1' }], new Date()));
+    expect(line).toContain('connected calls unknown');
+  });
+});

@@ -123,7 +123,8 @@ Deno.serve(async (req) => {
     for (let i = 1; i < lines.length; i++) {
       const cells = splitCsvLine(lines[i]);
       const rec: Record<string, string> = {};
-      header.forEach((h, idx) => { rec[h] = cells[idx] ?? ''; });
+      // Headers that differ only in case ("Converted" vs "converted") normalise alike: the first non-empty value wins.
+      header.forEach((h, idx) => { const v = cells[idx] ?? ''; if (!(h in rec) || (rec[h] === '' && v !== '')) rec[h] = v; });
 
       const call_id = pick(rec, F.call_id);
       if (!call_id) { skipped.push(`line ${i + 1}: no call_id`); continue; }

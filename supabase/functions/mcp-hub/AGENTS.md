@@ -1,1 +1,2 @@
 - Agent changes to `creative_briefs` go only through the `agent_write_creative_brief` SQL function (called from `supabase/functions/mcp-hub/creative.ts`), which checks `updated_at`, attributes the change and writes status history atomically; `creative_write` scope gates them, approved/delivered briefs move only via close-out or recorded force, and each token may change at most 20 briefs an hour. Why: an agent must never overwrite a person's edit or rewrite the queue unattributed.
+- Call quality is read only via `_shared/ringfuel-call-quality-data.ts`. Why: one rule.

@@ -98,7 +98,9 @@ Deno.serve(async (req) => {
     }
     const { data: done } = await db.from('jacuzzi_lead_email_log').select('gmail_message_id').in('gmail_message_id', ids.length ? ids : ['-']);
     const doneSet = new Set((done ?? []).map((r: any) => r.gmail_message_id));
-    const todo = ids.filter((id) => !doneSet.has(id));
+    // resync:true with message_id rewrites that email's sheet cells again (hub counts are totals, so this is idempotent).
+    const resync = body.resync === true && typeof body.message_id === 'string';
+    const todo = ids.filter((id) => resync || !doneSet.has(id));
     if (!todo.length) return json({ ok: true, processed: 0, note: 'no new lead emails' });
 
     const { data: rates } = await db.from('jacuzzi_payout_rates').select('effective_from, rate').eq('client_id', JACUZZI_CLIENT_ID);
@@ -137,9 +139,8 @@ Deno.serve(async (req) => {
         const { error } = await db.from('jacuzzi_leads').insert(rows);
         if (error) throw new Error(`jacuzzi_leads insert: ${error.message}`);
       }
-      // Fresh lead dates plus the file's latest date, so a retry after a sheet failure still writes it.
-      const latestInFile = leads.map((l) => l.transaction_date).sort().pop()!;
-      const dates = [...new Set([...fresh.map((l) => l.transaction_date), latestInFile])].sort();
+      // Every date in the file: a retry after a sheet failure must rewrite dates whose leads the failed run already saved.
+      const dates = [...new Set(leads.map((l) => l.transaction_date))].sort();
 
       // ── 3. sheet ──
       const sheetNotes: string[] = [];
@@ -213,7 +214,7 @@ Deno.serve(async (req) => {
         revenue: rows.reduce((s, r) => s + Number(r.payout_rate ?? 0), 0), dates, sheet: sheetNotes,
       };
       if (!dryRun) {
-        await db.from('jacuzzi_lead_email_log').insert({ ...base, attachment_name: att.filename, sheet_rows: leads.length, leads_added: fresh.length, lead_dates: dates, sheet_updates: { notes: sheetNotes, cells: writes.length } });
+        if (!(resync && doneSet.has(id))) await db.from('jacuzzi_lead_email_log').insert({ ...base, attachment_name: att.filename, sheet_rows: leads.length, leads_added: fresh.length, lead_dates: dates, sheet_updates: { notes: sheetNotes, cells: writes.length } });
         const { data: aj } = await db.from('team_members').select('slack_user_id').eq('email', AJ_EMAIL).maybeSingle();
         if (aj?.slack_user_id) {
           const text = fresh.length

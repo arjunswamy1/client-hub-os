@@ -1,6 +1,7 @@
 // Reads RingFuel calls for one client and window and summarises them with the
 // pure rules in ringfuel-call-rules.ts. Test calls are always excluded.
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+// deno-lint-ignore no-explicit-any
+type SupabaseClient = any;
 import { reportingWindowBounds } from './reporting-day.ts';
 import { summariseCalls, type CallQualitySummary, type RingFuelCallLike } from './ringfuel-call-rules.ts';
 

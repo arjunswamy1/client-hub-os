@@ -143,7 +143,8 @@ Deno.serve(async (req) => {
       // Bounded to the file's last 7 days so older hand-checked rows (e.g. disputed spend days) are never rewritten.
       const latestInFile = leads.map((l) => l.transaction_date).sort().pop()!;
       const floor = new Date(Date.parse(`${latestInFile}T00:00:00Z`) - 6 * 86400000).toISOString().slice(0, 10);
-      const dates = [...new Set([...fresh.map((l) => l.transaction_date), ...leads.map((l) => l.transaction_date).filter((d) => d >= floor)])].sort();
+      const asked = resync && Array.isArray(body.dates) ? (body.dates as unknown[]).filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) : [];
+      const dates = asked.length ? [...new Set(asked)].sort() : [...new Set([...fresh.map((l) => l.transaction_date), ...leads.map((l) => l.transaction_date).filter((d) => d >= floor)])].sort();
 
       // ── 3. sheet ──
       const sheetNotes: string[] = [];

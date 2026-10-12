@@ -140,7 +140,10 @@ Deno.serve(async (req) => {
         if (error) throw new Error(`jacuzzi_leads insert: ${error.message}`);
       }
       // Every date in the file: a retry after a sheet failure must rewrite dates whose leads the failed run already saved.
-      const dates = [...new Set(leads.map((l) => l.transaction_date))].sort();
+      // Bounded to the file's last 7 days so older hand-checked rows (e.g. disputed spend days) are never rewritten.
+      const latestInFile = leads.map((l) => l.transaction_date).sort().pop()!;
+      const floor = new Date(Date.parse(`${latestInFile}T00:00:00Z`) - 6 * 86400000).toISOString().slice(0, 10);
+      const dates = [...new Set([...fresh.map((l) => l.transaction_date), ...leads.map((l) => l.transaction_date).filter((d) => d >= floor)])].sort();
 
       // ── 3. sheet ──
       const sheetNotes: string[] = [];

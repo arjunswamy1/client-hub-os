@@ -328,7 +328,7 @@ async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record
         payload: {
           client: c.name, window: m.window,
           metrics: m.metrics.map((x) => ({ key: x.key, label: x.label, value: x.value, display: x.display, note: x.note })),
-          days: m.days.map((d) => ({ date: d.date, spend: d.spend, calls: d.calls, revenue: d.revenue, connected: d.connected, converted: d.converted, calls_missing_reason: d.callsMissingReason ?? null })),
+          days: m.days.map((d) => ({ date: d.date, spend: d.spend, spend_by_source: d.spendBySource ?? null, calls: d.calls, revenue: d.revenue, connected: d.connected, converted: d.converted, calls_missing_reason: d.callsMissingReason ?? null })),
           caveats: m.caveats,
         },
         provenance: prov({ engine: 'computeClientMetrics', tables_read: [...tablesBase, ...tables], publisher_scope: c.publisher_scope ?? null, timezone: reportingTimeZone(c), provisional: p.provisional, provisional_reason: p.reason, withheld }),

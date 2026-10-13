@@ -71,6 +71,8 @@ export interface DayFigures {
   spendRows: number;
   /** null = no spend row (unknown), never $0. */
   spend: number | null;
+  /** This day's spend per source label (roku, universal_ads, meta…); absent label = no row that day. */
+  spendBySource?: Record<string, number>;
   /** The account's call metric (Jacuzzi: leads). null = no call feed. */
   calls: number | null;
   /** Tracked calls after publisher scoping (equals calls except on Jacuzzi). */
@@ -289,7 +291,9 @@ export async function computeClientMetrics(
   let latestSpendDate: string | null = null;
   /** Which calendar days actually carry a spend row — a missing day is UNKNOWN spend, not $0. */
   const spendDays = new Set<string>();
-  const spendByDay = new Map<string, { rows: number; spend: number }>();
+  const spendByDay = new Map<string, { rows: number; spend: number; bySource: Record<string, number> }>();
+  /** Per source label: whether the window carries any row, and the table it lives in. */
+  const sourceLabels = new Map<string, { table: string; rows: number }>();
 
   for (const table of spendTables) {
     // Every recorded spend table is read the same way: date, spend, and a
@@ -319,14 +323,33 @@ export async function computeClientMetrics(
       spendByPlatform[p] = (spendByPlatform[p] || 0) + num(r.spend);
       spendRows++;
       spendDays.add(String(r.date).slice(0, 10));
-      const sd = spendByDay.get(String(r.date).slice(0, 10)) ?? { rows: 0, spend: 0 };
+      const sd = spendByDay.get(String(r.date).slice(0, 10)) ?? { rows: 0, spend: 0, bySource: {} };
       sd.rows++; sd.spend += num(r.spend);
+      sd.bySource[p] = Math.round(((sd.bySource[p] ?? 0) + num(r.spend)) * 100) / 100;
+      const sl = sourceLabels.get(p) ?? { table, rows: 0 }; sl.rows++; sourceLabels.set(p, sl);
       spendByDay.set(String(r.date).slice(0, 10), sd);
       if (!latestSpendDate || r.date > latestSpendDate) latestSpendDate = r.date;
     }
   }
 
 
+
+  // A mapped source with no rows in the window is not silently $0: say when it last reported.
+  for (const table of spendTables) {
+    const labels = spendPlatformFilter(client, table) ?? [table === 'roku_daily_metrics' ? 'roku' : table === 'universal_ads_geo_metrics' ? 'universal_ads' : null].filter(Boolean) as string[];
+    for (const label of labels.length ? labels : [null]) {
+      if (label && sourceLabels.has(label)) continue;
+      if (!label && [...sourceLabels.values()].some((v) => v.table === table)) continue;
+      let q = supabase.from(table).select('date').eq('client_id', client.id).lte('date', window.to);
+      if (ENTITY_SCOPED_SPEND.has(table)) q = q.eq('entity', 'campaign');
+      if (label && table !== 'roku_daily_metrics' && table !== 'universal_ads_geo_metrics') q = q.eq('platform', label);
+      const { data: last } = await q.order('date', { ascending: false }).limit(1).maybeSingle();
+      const name = label ?? table;
+      caveats.push(last?.date
+        ? `${name} spend has no rows from ${window.from} to ${window.to} (last reported ${last.date}). If that source was live, spend here is INCOMPLETE — check for a recorded pause before treating it as $0.`
+        : `${name} is a mapped spend source but has never reported any rows, so spend here may be INCOMPLETE.`);
+    }
+  }
 
   const platformParts = Object.entries(spendByPlatform).map(([p, v]) => `${p} ${money(v)}`);
   metrics.push({
@@ -803,6 +826,7 @@ export async function computeClientMetrics(
       date: d,
       spendRows: sd?.rows ?? 0,
       spend: sd && sd.rows > 0 ? sd.spend : null,
+      spendBySource: sd && sd.rows > 0 ? sd.bySource : undefined,
       calls: noCallMetric || !metricCoversDay ? null
         : client.slug === 'jacuzzi' ? (leadsByDay.get(d) ?? 0) : callFiguresWithheld ? null : dayCalls.length,
       trackedCalls: dayCalls.length,

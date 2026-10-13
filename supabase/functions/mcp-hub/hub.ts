@@ -14,6 +14,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { CLIENT_REPORTING_COLUMNS, type ResolvedClientRow } from '../_shared/client-resolve.ts';
 import { computeClientMetrics } from '../_shared/client-metrics.ts';
+import { loadSourceSplit, callRates } from '../_shared/source-split.ts';
 import { loadCallQuality, hasRingFuelCallQuality } from '../_shared/ringfuel-call-quality-data.ts';
 import { buildComparisonSet } from '../_shared/metric-comparison-data.ts';
 import { isProvisional, type Observation } from '../_shared/metric-comparisons.ts';
@@ -322,6 +323,16 @@ async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record
       const m = await computeClientMetrics(db, c, { from, to });
       const withheld: Withheld[] = m.metrics.filter((x) => x.value === null && x.key !== 'duration_bands').map((x) => ({ metric: x.key, reason: x.note || 'not available' }));
       const p = await provisionalFor(db, c, to);
+      const sumKnown = (xs: (number | null)[]) => (xs.length && xs.every((x) => x !== null) ? xs.reduce<number>((a, b) => a + (b as number), 0) : null);
+      const bySource: Record<string, number> = {};
+      for (const d of m.days) for (const [k, v] of Object.entries(d.spendBySource ?? {})) bySource[k] = (bySource[k] ?? 0) + v;
+      const rates = callRates({
+        calls: m.days.reduce((a, d) => a + (d.calls ?? 0), 0),
+        connected: sumKnown(m.days.map((d) => d.connected)),
+        revenue: sumKnown(m.days.map((d) => d.revenue)),
+        spend: m.days.some((d) => d.spend !== null) ? m.days.reduce((a, d) => a + (d.spend ?? 0), 0) : null,
+      });
+      const split = await loadSourceSplit(db, c, { from, to }, reportingTimeZone(c), bySource).catch((e) => ({ unavailable: e instanceof Error ? e.message : String(e) }));
       const tables = [...new Set([...m.callSources, ...m.spendSources, ...(c.slug === 'jacuzzi' ? ['jacuzzi_leads'] : []), 'metric_revision_log'])];
       return {
         clientId: c.id,
@@ -329,6 +340,8 @@ async function runTool(deps: HubDeps, caller: Caller, name: string, args: Record
           client: c.name, window: m.window,
           metrics: m.metrics.map((x) => ({ key: x.key, label: x.label, value: x.value, display: x.display, note: x.note })),
           days: m.days.map((d) => ({ date: d.date, spend: d.spend, spend_by_source: d.spendBySource ?? null, calls: d.calls, revenue: d.revenue, connected: d.connected, converted: d.converted, calls_missing_reason: d.callsMissingReason ?? null })),
+          call_rates: rates,
+          source_split: split,
           caveats: m.caveats,
         },
         provenance: prov({ engine: 'computeClientMetrics', tables_read: [...tablesBase, ...tables], publisher_scope: c.publisher_scope ?? null, timezone: reportingTimeZone(c), provisional: p.provisional, provisional_reason: p.reason, withheld }),

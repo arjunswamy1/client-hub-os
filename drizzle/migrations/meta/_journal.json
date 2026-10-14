@@ -218,6 +218,13 @@
       "when": 1791993770151,
       "tag": "0030_hub_agent_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791995199578,
+      "tag": "0031_link_team_member_on_confirmed_signin",
+      "breakpoints": true
     }
   ]
 }

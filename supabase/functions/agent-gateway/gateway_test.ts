@@ -7,7 +7,7 @@ const IID = '11111111-1111-1111-1111-111111111111';
 
 async function fakeDb(o: { enabled?: boolean; status?: string; scopes?: string[]; allowed?: boolean; revoked?: boolean; expired?: boolean; noGrant?: boolean } = {}) {
   const hash = await sha256Hex(TOKEN);
-  const logs: any[] = [];
+  const logs: any[] = []; const rpcs: any[] = [];
   const rows: Record<string, any> = {
     agent_gateway_tokens: { id: 't1', agent_id: 'a1', token_hash: hash, revoked_at: o.revoked ? '2026-01-01' : null, expires_at: o.expired ? '2020-01-01' : '2099-01-01' },
     agent_gateway_settings: { gateway_enabled: o.enabled ?? true },
@@ -30,15 +30,32 @@ async function fakeDb(o: { enabled?: boolean; status?: string; scopes?: string[]
     };
     return b;
   };
-  return { logs, db: { from: q, rpc: async () => ({ data: { allowed: o.allowed ?? true } }) } };
+  return { logs, rpcs, db: { from: q, rpc: async (n: string, a: any) => { rpcs.push([n, a]); return { data: { allowed: o.allowed ?? true } }; } } };
 }
 const call = async (o: any, auth: string | null = `Bearer ${TOKEN}`, body: any = { integration_id: IID, action: 'meta.insights.read', scope: 'read', params: { a: 1 } }) => {
   const f = await fakeDb(o);
   const r = await handleGateway({ db: f.db, secrets: new OnePasswordProvider() }, auth, body);
-  return { r, logs: f.logs };
+  return { r, logs: f.logs, rpcs: f.rpcs };
 };
 
-Deno.test('missing token denied and audited', async () => { const { r, logs } = await call({}, null); assertEquals(r.body.outcome, 'denied_no_token'); assertEquals(logs.length, 1); });
+Deno.test('missing token denied and audited as denied', async () => { const { r, logs } = await call({}, null); assertEquals(r.body.outcome, 'denied_no_token'); assertEquals(logs.length, 1); assertEquals(logs[0].event_type, 'denied'); });
+Deno.test('killed agent refusal is logged', async () => { const { logs } = await call({ status: 'killed' }); assertEquals(logs[0].outcome, 'denied_agent_killed'); });
+Deno.test('gateway off refusal is logged', async () => { const { logs } = await call({ enabled: false }); assertEquals(logs[0].event_type, 'denied'); });
+Deno.test('rate-limited call is logged', async () => { const { logs } = await call({ allowed: false }); assertEquals(logs[0].outcome, 'rate_limited'); });
+Deno.test('successful read writes no log row, only a daily count', async () => {
+  const { logs, rpcs } = await call({});
+  assertEquals(logs.length, 0);
+  assertEquals(rpcs.find(([n]) => n === 'agent_gateway_count_read')?.[1], { p_agent_id: 'a1', p_integration_id: IID, p_action: 'meta.insights.read' });
+});
+Deno.test('successful write is logged in full and not counted as a read', async () => {
+  const { logs, rpcs } = await call({ scopes: ['read', 'write'] }, `Bearer ${TOKEN}`, { integration_id: IID, action: 'meta.adset.pause', scope: 'write', target: 'adset_123', params: { b: 2 } });
+  assertEquals(logs.length, 1);
+  const w = logs[0];
+  assertEquals([w.event_type, w.agent_id, w.grant_id, w.integration_id, w.action, w.target, w.outcome], ['write', 'a1', 'g1', IID, 'meta.adset.pause', 'adset_123', 'allowed_secret_not_configured']);
+  assertEquals(w.request_fingerprint.length, 64);
+  assert(!JSON.stringify(w).includes(TOKEN) && !JSON.stringify(w).includes('"b":2'));
+  assert(!rpcs.some(([n]) => n === 'agent_gateway_count_read'));
+});
 Deno.test('wrong token denied', async () => { const { r } = await call({}, 'Bearer nope'); assertEquals(r.body.outcome, 'denied_bad_token'); });
 Deno.test('revoked token denied', async () => { assertEquals((await call({ revoked: true })).r.body.outcome, 'denied_token_revoked'); });
 Deno.test('expired token denied', async () => { assertEquals((await call({ expired: true })).r.body.outcome, 'denied_token_expired'); });
@@ -51,7 +68,7 @@ Deno.test('write without write scope denied', async () => {
 });
 Deno.test('rate limit returns 429', async () => { const { r } = await call({ allowed: false }); assertEquals(r.status, 429); });
 Deno.test('allowed call: secret stub not configured, nothing secret logged', async () => {
-  const { r, logs } = await call({});
+  const { r, logs } = await call({ scopes: ['read', 'write'] }, `Bearer ${TOKEN}`, { integration_id: IID, action: 'x.write', scope: 'write', params: { a: 1 } });
   assertEquals(r.body.outcome, 'allowed_secret_not_configured');
   const dump = JSON.stringify(logs) + JSON.stringify(r.body);
   assert(!dump.includes(TOKEN) && !dump.includes('Bearer') && !dump.includes('"a":1'));

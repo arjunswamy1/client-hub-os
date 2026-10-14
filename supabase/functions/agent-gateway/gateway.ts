@@ -4,7 +4,7 @@
 // Audit: every refusal, every write attempt and every hand-off in full;
 // successful reads only as a daily count.
 // Never log or persist the token, auth headers, params, or any secret value.
-import type { SecretsProvider } from './secrets.ts';
+import type { SecretsProvider } from '../_shared/agent-secrets.ts';
 import { ACTIONS, buildRequest, scrub } from './actions.ts';
 
 export interface GatewayDeps {

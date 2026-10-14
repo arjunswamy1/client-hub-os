@@ -2,8 +2,8 @@
 // Reports whether the 1Password token is set, whether 1Password is reachable,
 // and optionally whether one op:// reference resolves. Never returns a value.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { opSdkFactory } from '../agent-gateway/op-sdk.ts';
-import { OnePasswordProvider } from '../agent-gateway/secrets.ts';
+import { opSdkFactory } from '../_shared/op-sdk.ts';
+import { OnePasswordProvider } from '../_shared/agent-secrets.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

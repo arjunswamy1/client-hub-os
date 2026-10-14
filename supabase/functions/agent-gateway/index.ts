@@ -1,9 +1,9 @@
 // HTTP entry for the Agent Access Gateway. Logic lives in gateway.ts.
 // Must not import _shared/slack-post.ts. Never logs headers or bodies.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { opSdkFactory } from './op-sdk.ts';
+import { opSdkFactory } from '../_shared/op-sdk.ts';
 import { handleGateway } from './gateway.ts';
-import { OnePasswordProvider } from './secrets.ts';
+import { OnePasswordProvider } from '../_shared/agent-secrets.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

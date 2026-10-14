@@ -1,6 +1,6 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { handleGateway, sha256Hex } from './gateway.ts';
-import { OnePasswordProvider, type SecretsProvider } from './secrets.ts';
+import { OnePasswordProvider, type SecretsProvider } from '../_shared/agent-secrets.ts';
 import { ACTIONS, buildRequest, scrub } from './actions.ts';
 
 const TOKEN = 'agw_secret_value_123';

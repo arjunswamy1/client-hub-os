@@ -457,44 +457,62 @@ export type Database = {
       agent_access_log: {
         Row: {
           action: string | null
+          admin_team_member_id: string | null
           agent_id: string | null
+          approved_by_id: string | null
           created_at: string
           detail: string | null
           duration_ms: number | null
+          event_type: string
           grant_id: string | null
           id: string
           integration_id: string | null
           outcome: string
           request_fingerprint: string | null
           scope: string | null
+          subject_id: string | null
+          subject_table: string | null
+          target: string | null
           token_id: string | null
         }
         Insert: {
           action?: string | null
+          admin_team_member_id?: string | null
           agent_id?: string | null
+          approved_by_id?: string | null
           created_at?: string
           detail?: string | null
           duration_ms?: number | null
+          event_type?: string
           grant_id?: string | null
           id?: string
           integration_id?: string | null
           outcome: string
           request_fingerprint?: string | null
           scope?: string | null
+          subject_id?: string | null
+          subject_table?: string | null
+          target?: string | null
           token_id?: string | null
         }
         Update: {
           action?: string | null
+          admin_team_member_id?: string | null
           agent_id?: string | null
+          approved_by_id?: string | null
           created_at?: string
           detail?: string | null
           duration_ms?: number | null
+          event_type?: string
           grant_id?: string | null
           id?: string
           integration_id?: string | null
           outcome?: string
           request_fingerprint?: string | null
           scope?: string | null
+          subject_id?: string | null
+          subject_table?: string | null
+          target?: string | null
           token_id?: string | null
         }
         Relationships: []
@@ -740,6 +758,48 @@ export type Database = {
             columns: ["token_id"]
             isOneToOne: false
             referencedRelation: "agent_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_read_usage_daily: {
+        Row: {
+          action: string
+          agent_id: string
+          count: number
+          day: string
+          integration_id: string
+          last_used_at: string
+        }
+        Insert: {
+          action: string
+          agent_id: string
+          count?: number
+          day: string
+          integration_id: string
+          last_used_at?: string
+        }
+        Update: {
+          action?: string
+          agent_id?: string
+          count?: number
+          day?: string
+          integration_id?: string
+          last_used_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_read_usage_daily_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_read_usage_daily_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "integrations"
             referencedColumns: ["id"]
           },
         ]
@@ -9801,6 +9861,10 @@ export type Database = {
       accept_creative_brief_as: {
         Args: { p_actor: string; p_brief_id: string; p_via: string }
         Returns: Json
+      }
+      agent_gateway_count_read: {
+        Args: { p_action: string; p_agent_id: string; p_integration_id: string }
+        Returns: undefined
       }
       agent_gateway_hit: {
         Args: { p_grant_id: string; p_per_day: number; p_per_minute: number }

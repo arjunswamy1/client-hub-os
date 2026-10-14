@@ -44,7 +44,7 @@ export default function AgentAccessPage() {
       db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
       db.from('integrations').select('*').order('created_at'),
       db.from('agent_grants').select('*').order('created_at'),
-      db.from('agent_access_log').select('*').order('created_at', { ascending: false }).limit(200),
+      Promise.resolve({ data: [] }),
     ]);
     setEnabled(!!s.data?.gateway_enabled); setAgents(ag.data ?? []); setTokens(tk.data ?? []);
     setIntegrations(it.data ?? []); setGrants(gr.data ?? []); setLogs(lg.data ?? []);
@@ -202,23 +202,104 @@ export default function AgentAccessPage() {
         </TabsContent>
 
         <TabsContent value="log">
-          <Card><CardContent className="overflow-x-auto pt-6">
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-muted-foreground"><th className="p-2">When</th><th className="p-2">Agent</th><th className="p-2">Account</th><th className="p-2">Action</th><th className="p-2">Result</th></tr></thead>
-              <tbody>{logs.map((x) => (
-                <tr key={x.id} className="border-t">
-                  <td className="p-2 whitespace-nowrap">{new Date(x.created_at).toLocaleString()}</td>
-                  <td className="p-2">{x.agent_id ? agentName(x.agent_id) : 'unknown'}</td>
-                  <td className="p-2">{x.integration_id ? integName(x.integration_id) : '—'}</td>
-                  <td className="p-2">{x.action ?? '—'} {x.scope ? `(${x.scope})` : ''}</td>
-                  <td className="p-2"><Badge variant={x.outcome.startsWith('allowed') ? 'default' : 'destructive'}>{x.outcome}</Badge></td>
-                </tr>))}
-                {!logs.length && <tr><td className="p-2 text-muted-foreground" colSpan={5}>No activity yet.</td></tr>}
-              </tbody>
-            </table>
-          </CardContent></Card>
+          <ActivityTab agents={agents} integrations={integrations} />
         </TabsContent>
       </Tabs>
     </div>
   );
+}
+
+function ActivityTab({ agents, integrations }: { agents: any[]; integrations: any[] }) {
+  const [view, setView] = useState<'events' | 'reads'>('events');
+  const [f, setF] = useState({ type: 'write', agent: 'all', integ: 'all', outcome: '', from: '', to: '' });
+  const [rows, setRows] = useState<any[]>([]);
+  const [reads, setReads] = useState<any[]>([]);
+  const agentName = (id: string) => agents.find((x) => x.id === id)?.name ?? 'unknown';
+  const integName = (id: string) => integrations.find((x) => x.id === id)?.label ?? '—';
+
+  useEffect(() => {
+    (async () => {
+      if (view === 'events') {
+        let q = db.from('agent_access_log').select('*').order('created_at', { ascending: false }).limit(500);
+        if (f.type !== 'all') q = q.eq('event_type', f.type);
+        if (f.agent !== 'all') q = q.eq('agent_id', f.agent);
+        if (f.integ !== 'all') q = q.eq('integration_id', f.integ);
+        if (f.outcome.trim()) q = q.ilike('outcome', `%${f.outcome.trim()}%`);
+        if (f.from) q = q.gte('created_at', new Date(`${f.from}T00:00:00`).toISOString());
+        if (f.to) q = q.lt('created_at', new Date(new Date(`${f.to}T00:00:00`).getTime() + 86400000).toISOString());
+        const { data, error } = await q; if (error) toast.error(error.message); setRows(data ?? []);
+      } else {
+        let q = db.from('agent_read_usage_daily').select('*').order('day', { ascending: false }).limit(500);
+        if (f.agent !== 'all') q = q.eq('agent_id', f.agent);
+        if (f.integ !== 'all') q = q.eq('integration_id', f.integ);
+        if (f.from) q = q.gte('day', f.from);
+        if (f.to) q = q.lte('day', f.to);
+        const { data, error } = await q; if (error) toast.error(error.message); setReads(data ?? []);
+      }
+    })();
+  }, [view, f]);
+
+  return (
+    <Card><CardContent className="space-y-4 pt-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant={view === 'events' ? 'default' : 'outline'} onClick={() => setView('events')}>Changes, refusals and admin</Button>
+        <Button size="sm" variant={view === 'reads' ? 'default' : 'outline'} onClick={() => setView('reads')}>Daily read usage</Button>
+      </div>
+      <div className="grid gap-2 md:grid-cols-6">
+        {view === 'events' && (
+          <Select value={f.type} onValueChange={(v) => setF({ ...f, type: v })}><SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="write">Changes</SelectItem><SelectItem value="denied">Refused</SelectItem><SelectItem value="admin">Admin</SelectItem><SelectItem value="all">All</SelectItem></SelectContent></Select>
+        )}
+        <Select value={f.agent} onValueChange={(v) => setF({ ...f, agent: v })}><SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All agents</SelectItem>{agents.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select>
+        <Select value={f.integ} onValueChange={(v) => setF({ ...f, integ: v })}><SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All accounts</SelectItem>{integrations.map((x) => <SelectItem key={x.id} value={x.id}>{x.label}</SelectItem>)}</SelectContent></Select>
+        {view === 'events' && <Input placeholder="Result contains…" value={f.outcome} onChange={(e) => setF({ ...f, outcome: e.target.value })} />}
+        <Input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} />
+        <Input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} />
+      </div>
+      <div className="overflow-x-auto">
+        {view === 'events' ? (
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-muted-foreground"><th className="p-2">When</th><th className="p-2">Type</th><th className="p-2">Agent</th><th className="p-2">Account</th><th className="p-2">Action</th><th className="p-2">Target</th><th className="p-2">Result</th><th className="p-2">By / approver</th><th className="p-2">Details</th></tr></thead>
+            <tbody>{rows.map((x) => (
+              <tr key={x.id} className="border-t align-top">
+                <td className="p-2 whitespace-nowrap">{new Date(x.created_at).toLocaleString()}</td>
+                <td className="p-2"><Badge variant="outline">{x.event_type}</Badge></td>
+                <td className="p-2">{x.agent_id ? agentName(x.agent_id) : '—'}</td>
+                <td className="p-2">{x.integration_id ? integName(x.integration_id) : '—'}</td>
+                <td className="p-2">{x.action ?? '—'}</td>
+                <td className="p-2">{x.target ?? '—'}</td>
+                <td className="p-2"><Badge variant={x.outcome.startsWith('allowed') || x.event_type === 'admin' ? 'default' : 'destructive'}>{x.outcome}</Badge></td>
+                <td className="p-2 text-xs">{x.admin_team_member_id || x.approved_by_id ? <PersonName id={x.admin_team_member_id ?? x.approved_by_id} /> : '—'}</td>
+                <td className="p-2 max-w-xs break-words text-xs text-muted-foreground">{x.detail ?? (x.request_fingerprint ? `request ${x.request_fingerprint.slice(0, 12)}…` : '')}</td>
+              </tr>))}
+              {!rows.length && <tr><td className="p-2 text-muted-foreground" colSpan={9}>Nothing matches these filters.</td></tr>}
+            </tbody>
+          </table>
+        ) : (
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-muted-foreground"><th className="p-2">Day</th><th className="p-2">Agent</th><th className="p-2">Account</th><th className="p-2">Action</th><th className="p-2">Reads</th><th className="p-2">Last used</th></tr></thead>
+            <tbody>{reads.map((x) => (
+              <tr key={`${x.agent_id}-${x.integration_id}-${x.action}-${x.day}`} className="border-t">
+                <td className="p-2">{x.day}</td><td className="p-2">{agentName(x.agent_id)}</td><td className="p-2">{integName(x.integration_id)}</td>
+                <td className="p-2">{x.action}</td><td className="p-2">{x.count}</td><td className="p-2">{new Date(x.last_used_at).toLocaleString()}</td>
+              </tr>))}
+              {!reads.length && <tr><td className="p-2 text-muted-foreground" colSpan={6}>No reads yet.</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </CardContent></Card>
+  );
+}
+
+const nameCache = new Map<string, string>();
+function PersonName({ id }: { id: string }) {
+  const [n, setN] = useState(nameCache.get(id) ?? '');
+  useEffect(() => {
+    if (nameCache.has(id)) return;
+    db.from('team_members').select('name').eq('id', id).maybeSingle().then(({ data }: any) => { nameCache.set(id, data?.name ?? 'unknown'); setN(data?.name ?? 'unknown'); });
+  }, [id]);
+  return <>{n || '…'}</>;
 }

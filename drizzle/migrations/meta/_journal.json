@@ -183,6 +183,13 @@
       "when": 1791936114318,
       "tag": "0025_agent_access_gateway_phase1",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791936806225,
+      "tag": "0026_agent_gateway_write_audit_read_aggregate",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 // Agent Access Gateway (phase 1): authenticate, check kill switches and grants,
-// rate-limit, and audit every call. No upstream calls yet.
+// rate-limit. Audit: every refusal and every write in full; successful reads
+// only as a daily count. No upstream calls yet.
 // Never log or persist the token, auth headers, params, or any secret value.
 import type { SecretsProvider } from './secrets.ts';
 
@@ -9,7 +10,7 @@ export interface GatewayDeps {
   now?: () => Date;
 }
 
-export interface GatewayRequest { integration_id?: unknown; action?: unknown; scope?: unknown; params?: unknown }
+export interface GatewayRequest { integration_id?: unknown; action?: unknown; scope?: unknown; target?: unknown; params?: unknown }
 export interface GatewayResult { status: number; body: Record<string, unknown> }
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -26,7 +27,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   const started = Date.now();
   const log: Record<string, unknown> = {};
   const deny = async (status: number, outcome: string, detail?: string): Promise<GatewayResult> => {
-    await db.from('agent_access_log').insert({ ...log, outcome, detail: detail ?? null, duration_ms: Date.now() - started });
+    await db.from('agent_access_log').insert({ ...log, event_type: 'denied', outcome, detail: detail ?? null, duration_ms: Date.now() - started });
     return { status, body: { ok: false, outcome, ...(detail ? { detail } : {}) } };
   };
 
@@ -34,6 +35,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   const action = typeof req?.action === 'string' && ACTION.test(req.action) ? req.action : null;
   const scope = req?.scope === 'write' ? 'write' : req?.scope === 'read' || req?.scope === undefined ? 'read' : null;
   const integrationId = typeof req?.integration_id === 'string' && UUID.test(req.integration_id) ? req.integration_id : null;
+  const target = typeof req?.target === 'string' && req.target.length <= 200 ? req.target : null;
   log.action = action; log.scope = scope; log.integration_id = integrationId;
   log.request_fingerprint = req?.params === undefined ? null : await sha256Hex(JSON.stringify(req.params));
 
@@ -79,6 +81,12 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   // 6. Secret resolution (stub in phase 1). The value is never logged or returned.
   const secret = integ.op_secret_ref ? await secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };
   const outcome = secret.ok ? 'allowed_no_upstream' : `allowed_secret_${secret.reason}`;
-  await db.from('agent_access_log').insert({ ...log, outcome, detail: `provider=${secrets.name}`, duration_ms: Date.now() - started });
+  if (scope === 'write') {
+    // Every write-scope use is kept in full, permanently.
+    await db.from('agent_access_log').insert({ ...log, event_type: 'write', target, approved_by_id: null, outcome, detail: `provider=${secrets.name}`, duration_ms: Date.now() - started });
+  } else {
+    // Successful reads are counted per day, not logged row by row.
+    await db.rpc('agent_gateway_count_read', { p_agent_id: agent.id, p_integration_id: integ.id, p_action: action });
+  }
   return { status: 200, body: { ok: true, outcome, authorized: true, upstream: 'not_implemented_phase_1' } };
 }

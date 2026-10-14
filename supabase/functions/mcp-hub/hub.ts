@@ -735,6 +735,7 @@ export async function handleRpc(deps: HubDeps, authHeader: string | null, raw: u
   };
   if (!tool) return fail('unknown_tool', `unknown tool "${toolName}"`);
   if (caller.authMethod === 'hub_agent' && !HUB_AGENT_TOOLS.includes(tool.name)) return fail('refused_tool', `${tool.name} is not available to per-person hub keys`);
+  if (caller.authMethod === 'hub_agent' && (args as any)?.force === true) return fail('refused_force', 'per-person hub keys cannot force changes to approved or delivered briefs');
   if (!caller.scopes.includes(tool.scope)) return fail('refused_scope', `this token lacks the "${tool.scope}" scope required by ${tool.name}`);
 
   try {

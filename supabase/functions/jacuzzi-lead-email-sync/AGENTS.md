@@ -1,0 +1,1 @@
+- Jacuzzi lead files arrive by email and are synced only by `supabase/functions/jacuzzi-lead-email-sync` (pure parsing and sheet row math in `_shared/jacuzzi-lead-sheet.ts`; each Gmail message processed once via `jacuzzi_lead_email_log`; inserts new leads only, prices from `jacuzzi_payout_rates`). Why: one idempotent path from email to hub to client sheet.

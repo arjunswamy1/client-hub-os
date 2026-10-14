@@ -58,6 +58,33 @@ export const ACTIONS: Record<string, ActionDef> = {
 
 export type BuildResult = { ok: true; url: URL; headers: Record<string, string> } | { ok: false; outcome: string; detail?: string };
 
+const ACCOUNT_ID = /^(act_)?[0-9]{1,32}$/;
+const stripAct = (s: string) => s.replace(/^act_/, '');
+
+/**
+ * Resolve which upstream account a call may use, and remove the caller's account_id
+ * from params so it is never forwarded upstream.
+ * Non-empty allowlist: account_id is required and must be in the list.
+ * Empty/null allowlist: legacy single account_ref; any differing account_id is refused.
+ */
+export function resolveAccount(
+  def: ActionDef, allowed: string[] | null | undefined, legacy: string | null, params: unknown,
+): { ok: true; account: string | null; params: unknown } | { ok: false; outcome: string } {
+  if (!params || typeof params !== 'object' || Array.isArray(params) || !('account_id' in params)) {
+    if (def.needsAccount && allowed && allowed.length > 0) return { ok: false, outcome: 'denied_missing_account_ref' };
+    return { ok: true, account: legacy, params };
+  }
+  const { account_id, ...rest } = params as Record<string, unknown>;
+  if (!def.needsAccount) return { ok: false, outcome: 'denied_bad_params' };
+  if (typeof account_id !== 'string' || !ACCOUNT_ID.test(account_id)) return { ok: false, outcome: 'denied_bad_params' };
+  const id = stripAct(account_id);
+  const list = (allowed ?? []).map(stripAct);
+  if (list.length > 0) return list.includes(id) ? { ok: true, account: id, params: rest } : { ok: false, outcome: 'denied_account_not_allowed' };
+  if (!legacy || stripAct(legacy) !== id) return { ok: false, outcome: 'denied_account_not_allowed' };
+  return { ok: true, account: legacy, params: rest };
+}
+
+
 /** Build the upstream request. Pure: no secret is placed in anything returned on failure. */
 export function buildRequest(
   name: string, def: ActionDef, integ: { provider: string; allowed_hosts: string[] },

@@ -593,7 +593,7 @@ export type Database = {
           agent_id: string
           created_at?: string
           created_by_id?: string | null
-          expires_at: string
+          expires_at?: string
           id?: string
           label?: string | null
           last_used_at?: string | null
@@ -643,6 +643,7 @@ export type Database = {
         Row: {
           account_ref: string | null
           agent_id: string
+          allow_browser_handoff: boolean
           created_at: string
           expires_at: string | null
           granted_by_id: string | null
@@ -658,6 +659,7 @@ export type Database = {
         Insert: {
           account_ref?: string | null
           agent_id: string
+          allow_browser_handoff?: boolean
           created_at?: string
           expires_at?: string | null
           granted_by_id?: string | null
@@ -673,6 +675,7 @@ export type Database = {
         Update: {
           account_ref?: string | null
           agent_id?: string
+          allow_browser_handoff?: boolean
           created_at?: string
           expires_at?: string | null
           granted_by_id?: string | null
@@ -702,6 +705,80 @@ export type Database = {
           },
           {
             foreignKeyName: "agent_grants_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_handoff_requests: {
+        Row: {
+          agent_id: string
+          approval_expires_at: string | null
+          created_at: string
+          decided_at: string | null
+          decided_by_id: string | null
+          decision_note: string | null
+          grant_id: string | null
+          id: string
+          integration_id: string
+          reason: string
+          status: string
+          used_at: string | null
+        }
+        Insert: {
+          agent_id: string
+          approval_expires_at?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by_id?: string | null
+          decision_note?: string | null
+          grant_id?: string | null
+          id?: string
+          integration_id: string
+          reason: string
+          status?: string
+          used_at?: string | null
+        }
+        Update: {
+          agent_id?: string
+          approval_expires_at?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by_id?: string | null
+          decision_note?: string | null
+          grant_id?: string | null
+          id?: string
+          integration_id?: string
+          reason?: string
+          status?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_handoff_requests_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_handoff_requests_decided_by_id_fkey"
+            columns: ["decided_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_handoff_requests_grant_id_fkey"
+            columns: ["grant_id"]
+            isOneToOne: false
+            referencedRelation: "agent_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_handoff_requests_integration_id_fkey"
             columns: ["integration_id"]
             isOneToOne: false
             referencedRelation: "integrations"
@@ -4760,6 +4837,7 @@ export type Database = {
           created_by_id: string | null
           enabled: boolean
           id: string
+          is_browser_login: boolean
           label: string
           op_secret_ref: string | null
           provider: string
@@ -4773,6 +4851,7 @@ export type Database = {
           created_by_id?: string | null
           enabled?: boolean
           id?: string
+          is_browser_login?: boolean
           label: string
           op_secret_ref?: string | null
           provider: string
@@ -4786,6 +4865,7 @@ export type Database = {
           created_by_id?: string | null
           enabled?: boolean
           id?: string
+          is_browser_login?: boolean
           label?: string
           op_secret_ref?: string | null
           provider?: string
@@ -9900,6 +9980,10 @@ export type Database = {
           p_unit: string
         }
         Returns: number
+      }
+      decide_agent_handoff: {
+        Args: { p_approve: boolean; p_note?: string; p_request_id: string }
+        Returns: Json
       }
       decline_creative_brief_as: {
         Args: { p_actor: string; p_brief_id: string }

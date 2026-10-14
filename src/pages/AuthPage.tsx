@@ -218,18 +218,12 @@ export default function AuthPage() {
             </Button>
           </form>
 
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">or</span>
-            </div>
-          </div>
-
-          <Button variant="outline" className="w-full" onClick={handleGoogleLogin}>
-            Sign in with Google
-          </Button>
+          {/* Google sign-in is not enabled for this hub; team members use email/password. */}
+          {false && (
+            <Button variant="outline" className="mt-4 w-full" onClick={handleGoogleLogin}>
+              Sign in with Google
+            </Button>
+          )}
 
           <p className="mt-4 text-center text-sm text-muted-foreground">
             {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}

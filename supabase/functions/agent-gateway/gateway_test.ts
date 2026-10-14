@@ -23,7 +23,7 @@ async function fakeDb(o: Opts = {}) {
     agent_gateway_tokens: { id: 't1', agent_id: 'a1', token_hash: hash, revoked_at: o.revoked ? '2026-01-01' : null, expires_at: o.expired ? '2020-01-01' : '2099-01-01' },
     agent_gateway_settings: { gateway_enabled: o.enabled ?? true },
     agents: { id: 'a1', status: o.status ?? 'active', kind: o.kind ?? 'ai_agent', owner_team_member_id: 'tm1' },
-    integrations: { id: IID, provider: o.provider ?? 'meta_ads', enabled: true, op_secret_ref: 'op://CPM-Agents/meta/key', account_ref: '123', allowed_hosts: o.hosts ?? ['graph.facebook.com'], client_id: o.clientId ?? null, is_browser_login: o.browser ?? false },
+    integrations: { id: IID, provider: o.provider ?? 'meta_ads', enabled: true, op_secret_ref: 'op://CPM Bot Vault/meta/key', account_ref: '123', allowed_hosts: o.hosts ?? ['graph.facebook.com'], client_id: o.clientId ?? null, is_browser_login: o.browser ?? false },
     agent_grants: o.noGrant ? null : { id: 'g1', scopes: o.scopes ?? ['read'], account_ref: null, rate_per_minute: 5, rate_per_day: 10, expires_at: null, revoked_at: null, allow_browser_handoff: o.handoffGrant ?? false },
     team_members: { role: o.ownerRole ?? 'designer' },
     client_assignments: o.assigned ? { id: 'ca1' } : null,
@@ -95,11 +95,11 @@ Deno.test('secret not configured: refused, no upstream call, 1Password not touch
 });
 Deno.test('1Password errors are never surfaced', async () => {
   const p = new OnePasswordProvider('tok', async () => ({ secrets: { resolve: async () => { throw new Error(`boom ${SECRET}`); } }, vaults: {} }));
-  const res = await p.resolve('op://CPM-Agents/meta/key'); assertEquals(res, { ok: false, reason: 'unavailable' });
+  const res = await p.resolve('op://CPM Bot Vault/meta/key'); assertEquals(res, { ok: false, reason: 'unavailable' });
 });
 Deno.test('test connection reports reachability and resolution without values', async () => {
   const p = new OnePasswordProvider('tok', async () => ({ secrets: { resolve: async () => SECRET }, vaults: { list: async () => [{ id: 'v' }] } }));
-  const res = await p.check('op://CPM-Agents/meta/key');
+  const res = await p.check('op://CPM Bot Vault/meta/key');
   assertEquals(res, { token_present: true, reachable: true, vault_count: 1, reference_resolves: true }); assert(noLeak(res));
 });
 Deno.test('test connection without a token says not configured', async () => { assertEquals((await noSecrets.check()).reason, 'not_configured'); });

@@ -45,6 +45,7 @@ import AIVideoStudioPage from "./pages/AIVideoStudioPage";
 import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 import DataHealthPage from "./pages/DataHealthPage";
 import AgentTokensPage from "./pages/AgentTokensPage";
+import AgentAccessPage from "./pages/AgentAccessPage";
 import ChannelApprovalsPage from "./pages/ChannelApprovalsPage";
 import ClientDIDsPage from "./pages/ClientDIDsPage";
 import SpendUploadPage from "./pages/SpendUploadPage";
@@ -182,6 +183,7 @@ function ProtectedRoutes() {
 
           <Route path="/settings" element={<SettingsPage />} />
           {isAdmin && <Route path="/settings/agent-tokens" element={<AgentTokensPage />} />}
+          {isAdmin && <Route path="/settings/agent-access" element={<AgentAccessPage />} />}
           {isAdmin && <Route path="/settings/channels" element={<ChannelApprovalsPage />} />}
           <Route path="/data-health" element={<DataHealthPage />} />
           <Route path="/team" element={<TeamPage />} />

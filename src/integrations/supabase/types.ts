@@ -454,6 +454,243 @@ export type Database = {
           },
         ]
       }
+      agent_access_log: {
+        Row: {
+          action: string | null
+          agent_id: string | null
+          created_at: string
+          detail: string | null
+          duration_ms: number | null
+          grant_id: string | null
+          id: string
+          integration_id: string | null
+          outcome: string
+          request_fingerprint: string | null
+          scope: string | null
+          token_id: string | null
+        }
+        Insert: {
+          action?: string | null
+          agent_id?: string | null
+          created_at?: string
+          detail?: string | null
+          duration_ms?: number | null
+          grant_id?: string | null
+          id?: string
+          integration_id?: string | null
+          outcome: string
+          request_fingerprint?: string | null
+          scope?: string | null
+          token_id?: string | null
+        }
+        Update: {
+          action?: string | null
+          agent_id?: string | null
+          created_at?: string
+          detail?: string | null
+          duration_ms?: number | null
+          grant_id?: string | null
+          id?: string
+          integration_id?: string | null
+          outcome?: string
+          request_fingerprint?: string | null
+          scope?: string | null
+          token_id?: string | null
+        }
+        Relationships: []
+      }
+      agent_gateway_rate_counters: {
+        Row: {
+          bucket: string
+          bucket_start: string
+          grant_id: string
+          hits: number
+        }
+        Insert: {
+          bucket: string
+          bucket_start: string
+          grant_id: string
+          hits?: number
+        }
+        Update: {
+          bucket?: string
+          bucket_start?: string
+          grant_id?: string
+          hits?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_gateway_rate_counters_grant_id_fkey"
+            columns: ["grant_id"]
+            isOneToOne: false
+            referencedRelation: "agent_grants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_gateway_settings: {
+        Row: {
+          gateway_enabled: boolean
+          id: number
+          updated_at: string
+          updated_by_id: string | null
+        }
+        Insert: {
+          gateway_enabled?: boolean
+          id?: number
+          updated_at?: string
+          updated_by_id?: string | null
+        }
+        Update: {
+          gateway_enabled?: boolean
+          id?: number
+          updated_at?: string
+          updated_by_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_gateway_settings_updated_by_id_fkey"
+            columns: ["updated_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_gateway_tokens: {
+        Row: {
+          agent_id: string
+          created_at: string
+          created_by_id: string | null
+          expires_at: string
+          id: string
+          label: string | null
+          last_used_at: string | null
+          revoked_at: string | null
+          revoked_by_id: string | null
+          token_hash: string
+          token_prefix: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          created_by_id?: string | null
+          expires_at: string
+          id?: string
+          label?: string | null
+          last_used_at?: string | null
+          revoked_at?: string | null
+          revoked_by_id?: string | null
+          token_hash: string
+          token_prefix: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          expires_at?: string
+          id?: string
+          label?: string | null
+          last_used_at?: string | null
+          revoked_at?: string | null
+          revoked_by_id?: string | null
+          token_hash?: string
+          token_prefix?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_gateway_tokens_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_gateway_tokens_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_gateway_tokens_revoked_by_id_fkey"
+            columns: ["revoked_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_grants: {
+        Row: {
+          account_ref: string | null
+          agent_id: string
+          created_at: string
+          expires_at: string | null
+          granted_by_id: string | null
+          id: string
+          integration_id: string
+          rate_per_day: number
+          rate_per_minute: number
+          reason: string | null
+          revoked_at: string | null
+          scopes: string[]
+          updated_at: string
+        }
+        Insert: {
+          account_ref?: string | null
+          agent_id: string
+          created_at?: string
+          expires_at?: string | null
+          granted_by_id?: string | null
+          id?: string
+          integration_id: string
+          rate_per_day?: number
+          rate_per_minute?: number
+          reason?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          updated_at?: string
+        }
+        Update: {
+          account_ref?: string | null
+          agent_id?: string
+          created_at?: string
+          expires_at?: string | null
+          granted_by_id?: string | null
+          id?: string
+          integration_id?: string
+          rate_per_day?: number
+          rate_per_minute?: number
+          reason?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_grants_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_grants_granted_by_id_fkey"
+            columns: ["granted_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_grants_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_query_log: {
         Row: {
           arguments: Json | null
@@ -548,6 +785,76 @@ export type Database = {
           {
             foreignKeyName: "agent_tokens_team_member_id_fkey"
             columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agents: {
+        Row: {
+          created_at: string
+          created_by_id: string | null
+          id: string
+          killed_at: string | null
+          killed_by_id: string | null
+          killed_reason: string | null
+          kind: string
+          name: string
+          notes: string | null
+          owner_team_member_id: string | null
+          status: string
+          team: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          killed_at?: string | null
+          killed_by_id?: string | null
+          killed_reason?: string | null
+          kind?: string
+          name: string
+          notes?: string | null
+          owner_team_member_id?: string | null
+          status?: string
+          team?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+          killed_at?: string | null
+          killed_by_id?: string | null
+          killed_reason?: string | null
+          kind?: string
+          name?: string
+          notes?: string | null
+          owner_team_member_id?: string | null
+          status?: string
+          team?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agents_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agents_killed_by_id_fkey"
+            columns: ["killed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agents_owner_team_member_id_fkey"
+            columns: ["owner_team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
@@ -4383,6 +4690,63 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      integrations: {
+        Row: {
+          account_ref: string | null
+          allowed_hosts: string[]
+          client_id: string | null
+          created_at: string
+          created_by_id: string | null
+          enabled: boolean
+          id: string
+          label: string
+          op_secret_ref: string | null
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          account_ref?: string | null
+          allowed_hosts?: string[]
+          client_id?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          enabled?: boolean
+          id?: string
+          label: string
+          op_secret_ref?: string | null
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          account_ref?: string | null
+          allowed_hosts?: string[]
+          client_id?: string | null
+          created_at?: string
+          created_by_id?: string | null
+          enabled?: boolean
+          id?: string
+          label?: string
+          op_secret_ref?: string | null
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integrations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "integrations_created_by_id_fkey"
+            columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       jacuzzi_delivery: {
         Row: {
@@ -9436,6 +9800,10 @@ export type Database = {
       accept_creative_brief: { Args: { p_brief_id: string }; Returns: Json }
       accept_creative_brief_as: {
         Args: { p_actor: string; p_brief_id: string; p_via: string }
+        Returns: Json
+      }
+      agent_gateway_hit: {
+        Args: { p_grant_id: string; p_per_day: number; p_per_minute: number }
         Returns: Json
       }
       agent_write_creative_brief: {

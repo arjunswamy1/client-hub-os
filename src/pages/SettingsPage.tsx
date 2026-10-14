@@ -206,7 +206,10 @@ export default function SettingsPage() {
               <p className="text-sm font-medium">Agent tokens</p>
               <p className="text-xs text-muted-foreground">Keys that let Claude agents read the hub and write drafts.</p>
             </div>
-            <Button variant="outline" size="sm" asChild><a href="/settings/agent-tokens">Manage</a></Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" asChild><a href="/settings/agent-access">Agent access</a></Button>
+              <Button variant="outline" size="sm" asChild><a href="/settings/agent-tokens">Manage</a></Button>
+            </div>
           </CardContent>
         </Card>
       )}

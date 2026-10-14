@@ -30,3 +30,6 @@ verify_jwt = false
 
 [functions.detect-scope-events]
 verify_jwt = false
+
+[functions.agent-gateway]
+verify_jwt = false

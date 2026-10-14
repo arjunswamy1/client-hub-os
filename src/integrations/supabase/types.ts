@@ -698,6 +698,7 @@ export type Database = {
           account_ref: string | null
           agent_id: string
           allow_browser_handoff: boolean
+          allowed_account_refs: string[] | null
           created_at: string
           expires_at: string | null
           granted_by_id: string | null
@@ -714,6 +715,7 @@ export type Database = {
           account_ref?: string | null
           agent_id: string
           allow_browser_handoff?: boolean
+          allowed_account_refs?: string[] | null
           created_at?: string
           expires_at?: string | null
           granted_by_id?: string | null
@@ -730,6 +732,7 @@ export type Database = {
           account_ref?: string | null
           agent_id?: string
           allow_browser_handoff?: boolean
+          allowed_account_refs?: string[] | null
           created_at?: string
           expires_at?: string | null
           granted_by_id?: string | null

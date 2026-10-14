@@ -76,10 +76,11 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
 
   // 4. Integration, Slack exclusion, grant, client scope.
   const { data: integ } = await db.from('integrations')
-    .select('id, provider, enabled, op_secret_ref, account_ref, allowed_hosts, client_id, is_browser_login').eq('id', integrationId).maybeSingle();
+    .select('id, provider, enabled, op_secret_ref, account_ref, allowed_hosts, client_id, is_browser_login, restricted_owner_team_member_id').eq('id', integrationId).maybeSingle();
   if (!integ) return deny(404, 'denied_unknown_integration');
   if (/slack/i.test(integ.provider ?? '')) return deny(403, 'denied_slack_excluded');
   if (!integ.enabled) return deny(403, 'denied_integration_disabled');
+  if (integ.restricted_owner_team_member_id && integ.restricted_owner_team_member_id !== agent.owner_team_member_id) return deny(403, 'denied_restricted_account');
   const { data: grant } = await db.from('agent_grants')
     .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff')
     .eq('agent_id', agent.id).eq('integration_id', integ.id).maybeSingle();

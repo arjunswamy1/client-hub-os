@@ -23,3 +23,7 @@
 - [x] Per-client 30-day publisher audit (report only)
 - [x] client_scope_events: straddling windows not comparable; 7-day context line
 - [x] clients.weekend_rollup: Monday = Sat+Sun block; same-period figures test
+
+## Agent Access Gateway
+- [x] Phase 1: agents, gateway keys, accounts (1Password pointers only), permissions, insert-only audit, rate limits, gateway skeleton (off by default), admin page
+- [ ] Phase 2: 1Password adapter + upstream calls — blocked on 1Password licence and open questions in the plan

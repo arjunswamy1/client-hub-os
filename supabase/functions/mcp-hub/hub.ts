@@ -60,7 +60,7 @@ export interface Provenance {
 }
 
 type Client = ResolvedClientRow & { status?: string | null; daily_update_enabled?: boolean | null; daily_update_suppressed_reason?: string | null; publisher_scope_confirmed_at?: string | null; publisher_scope_note?: string | null; metrics_reliable_note?: string | null };
-interface Caller { authMethod: 'agent_token' | 'oauth'; oauthClientId: string | null; tokenId: string | null; memberId: string; memberName: string; scopes: string[]; label: string; allClients: boolean; isService: boolean; clientIds: Set<string> }
+interface Caller { authMethod: 'agent_token' | 'oauth' | 'hub_agent'; agentId?: string | null; gatewayTokenId?: string | null; oauthClientId: string | null; tokenId: string | null; memberId: string; memberName: string; scopes: string[]; label: string; allClients: boolean; isService: boolean; clientIds: Set<string> }
 
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -139,7 +139,7 @@ async function accessFor(db: any, member: { id: string; role: string; is_service
   return { allClients, isService, clientIds };
 }
 
-async function authenticate(deps: HubDeps, header: string | null, now: Date): Promise<{ caller?: Caller; refusal?: string; tokenId?: string; memberId?: string; authMethod?: 'agent_token' | 'oauth'; oauthClientId?: string | null }> {
+async function authenticate(deps: HubDeps, header: string | null, now: Date): Promise<{ caller?: Caller; refusal?: string; tokenId?: string; memberId?: string; authMethod?: 'agent_token' | 'oauth' | 'hub_agent'; oauthClientId?: string | null; agentId?: string | null; gatewayTokenId?: string | null }> {
   const db = deps.db;
   const token = (header ?? '').replace(/^Bearer\s+/i, '').trim();
   if (!token) return { refusal: 'missing bearer token' };
@@ -160,7 +160,7 @@ async function authenticate(deps: HubDeps, header: string | null, now: Date): Pr
 
   const hash = await sha256Hex(token);
   const { data: row } = await db.from('agent_tokens').select('id, team_member_id, scopes, label, revoked_at, expires_at').eq('token_hash', hash).maybeSingle();
-  if (!row) return { refusal: 'unknown token' };
+  if (!row) return authenticateHubAgent(db, hash, now);
   if (row.revoked_at) return { refusal: 'token revoked', tokenId: row.id, memberId: row.team_member_id };
   if (row.expires_at && new Date(row.expires_at).getTime() <= now.getTime()) return { refusal: 'token expired', tokenId: row.id, memberId: row.team_member_id };
   const { data: member } = await db.from('team_members').select('id, name, role, is_active, is_service_account').eq('id', row.team_member_id).maybeSingle();
@@ -168,6 +168,48 @@ async function authenticate(deps: HubDeps, header: string | null, now: Date): Pr
   const access = await accessFor(db, member);
   await db.from('agent_tokens').update({ last_used_at: now.toISOString() }).eq('id', row.id);
   return { caller: { authMethod: 'agent_token', oauthClientId: null, tokenId: row.id, memberId: member.id, memberName: member.name, scopes: row.scopes ?? [], label: row.label, ...access } };
+}
+
+/**
+ * Per-person hub key (agent_gateway_tokens with audience 'hub'). The agent sees
+ * only its allowed clients that its owner is also assigned to, and only the
+ * tools in HUB_AGENT_TOOLS.
+ */
+async function authenticateHubAgent(db: any, hash: string, now: Date): Promise<{ caller?: Caller; refusal?: string; tokenId?: string; memberId?: string; authMethod?: 'agent_token' | 'oauth' | 'hub_agent'; agentId?: string | null; gatewayTokenId?: string | null }> {
+  const { data: tok } = await db.from('agent_gateway_tokens').select('id, agent_id, audience, label, expires_at, revoked_at').eq('token_hash', hash).maybeSingle();
+  if (!tok) return { refusal: 'unknown token' };
+  const ids = { authMethod: 'hub_agent' as const, agentId: tok.agent_id, gatewayTokenId: tok.id };
+  if (tok.audience !== 'hub') return { refusal: 'this key is for the account gateway, not the hub', ...ids };
+  if (tok.revoked_at) return { refusal: 'token revoked', ...ids };
+  if (!tok.expires_at || new Date(tok.expires_at).getTime() <= now.getTime()) return { refusal: 'token expired', ...ids };
+  const { data: agent } = await db.from('agents').select('id, name, status, owner_team_member_id').eq('id', tok.agent_id).maybeSingle();
+  if (!agent) return { refusal: 'unknown agent', ...ids };
+  if (agent.status !== 'active') return { refusal: `agent ${agent.status}`, ...ids };
+  if (!agent.owner_team_member_id) return { refusal: 'agent has no owner', ...ids };
+  const { data: member } = await db.from('team_members').select('id, name, role, is_active, is_service_account').eq('id', agent.owner_team_member_id).maybeSingle();
+  if (!member || member.is_active === false) return { refusal: 'owner inactive', memberId: agent.owner_team_member_id, ...ids };
+  const owner = await accessFor(db, member);
+  const { data: scopes } = await db.from('agent_client_scopes').select('client_id').eq('agent_id', agent.id);
+  const clientIds = new Set<string>();
+  for (const r of scopes ?? []) { const id = String(r.client_id); if (owner.allClients || owner.clientIds.has(id)) clientIds.add(id); }
+  await db.from('agent_gateway_tokens').update({ last_used_at: now.toISOString() }).eq('id', tok.id);
+  return { caller: { authMethod: 'hub_agent', agentId: agent.id, gatewayTokenId: tok.id, oauthClientId: null, tokenId: null, memberId: member.id, memberName: member.name, scopes: ['read', 'creative_write'], label: tok.label ?? agent.name, allClients: false, isService: false, clientIds } };
+}
+
+/** The only tools a per-person hub key may list or call. */
+export const HUB_AGENT_TOOLS = [
+  'list_clients', 'get_client_profile', 'get_performance', 'compare_periods', 'get_data_health', 'get_context', 'get_tasks',
+  'get_scope_events', 'get_lifetime_performance', 'get_campaign_performance', 'get_call_quality', 'get_update_context',
+  'get_creative_queue', 'get_brief', 'get_creative_history',
+  'create_brief', 'add_brief_comment', 'update_brief_status',
+];
+export const HUB_AGENT_WRITE_TOOLS = ['create_brief', 'add_brief_comment', 'update_brief_status'];
+
+async function fingerprint(tool: string, args: unknown) { return (await sha256Hex(`${tool}:${JSON.stringify(args ?? null)}`)).slice(0, 32); }
+
+/** agent_access_log for hub-agent writes and refusals; never throws. */
+async function accessLog(db: any, row: Record<string, unknown>) {
+  try { await db.from('agent_access_log').insert({ auth_surface: 'hub', ...row }); } catch { /* audit write never fails the call */ }
 }
 
 const EXTRA_CLIENT_COLUMNS = ', status, daily_update_enabled, daily_update_suppressed_reason, publisher_scope_confirmed_at, publisher_scope_note, metrics_reliable_note';
@@ -655,6 +697,7 @@ export async function handleRpc(deps: HubDeps, authHeader: string | null, raw: u
 
   const auth = await authenticate(deps, authHeader, now);
   if (!auth.caller) {
+    if (auth.authMethod === 'hub_agent') await accessLog(deps.db, { event_type: 'denied', outcome: 'denied_auth', agent_id: auth.agentId ?? null, token_id: auth.gatewayTokenId ?? null, tool: toolName, action: toolName, detail: auth.refusal, request_fingerprint: await fingerprint(toolName, args), duration_ms: Date.now() - started });
     await log(deps.db, { token_id: auth.tokenId ?? null, team_member_id: auth.memberId ?? null, auth_method: auth.authMethod ?? 'agent_token', oauth_client_id: auth.oauthClientId ?? null, tool_name: toolName, arguments: args, outcome: 'refused_auth', withheld: { reason: auth.refusal }, duration_ms: Date.now() - started });
     return rpcError(msg.id, -32001, `unauthorised: ${auth.refusal}`, 401);
   }
@@ -673,7 +716,7 @@ export async function handleRpc(deps: HubDeps, authHeader: string | null, raw: u
   if (msg.method === 'ping') return { status: 200, body: { jsonrpc: '2.0', id: msg.id, result: {} } };
   if (msg.method === 'tools/list') {
     await log(deps.db, { ...base, outcome: 'ok', duration_ms: Date.now() - started });
-    const tools = TOOLS.filter((t) => caller.scopes.includes(t.scope)).map(({ name, description, inputSchema, scope }) => ({
+    const tools = TOOLS.filter((t) => caller.scopes.includes(t.scope) && (caller.authMethod !== 'hub_agent' || HUB_AGENT_TOOLS.includes(t.name))).map(({ name, description, inputSchema, scope }) => ({
       name, description, inputSchema, annotations: { readOnlyHint: scope === 'read', destructiveHint: false, idempotentHint: scope === 'read', openWorldHint: false },
     }));
     return { status: 200, body: { jsonrpc: '2.0', id: msg.id, result: { tools } } };
@@ -686,15 +729,24 @@ export async function handleRpc(deps: HubDeps, authHeader: string | null, raw: u
   const tool = TOOLS.find((t) => t.name === toolName);
   const fail = async (outcome: string, message: string, clientId: string | null = null, detail: Record<string, unknown> | null = null) => {
     await log(deps.db, { ...base, ...(detail ? { arguments: { ...(args ?? {}), ...detail } } : {}), client_id: clientId, outcome, withheld: { reason: message }, duration_ms: Date.now() - started });
+    if (caller.authMethod === 'hub_agent') await accessLog(deps.db, { event_type: 'denied', outcome, agent_id: caller.agentId, token_id: caller.gatewayTokenId, tool: toolName, action: toolName, client_id: clientId, scope: tool?.scope ?? null, target: (args as any)?.brief_id ?? (args as any)?.client ?? null, detail: message.slice(0, 2000), request_fingerprint: await fingerprint(toolName, args), duration_ms: Date.now() - started });
     const payload = { error: message, outcome, provenance: prov({ tables_read: [] }) };
     return { status: 200, body: { jsonrpc: '2.0', id: msg.id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify(payload) }], structuredContent: payload } } };
   };
   if (!tool) return fail('unknown_tool', `unknown tool "${toolName}"`);
+  if (caller.authMethod === 'hub_agent' && !HUB_AGENT_TOOLS.includes(tool.name)) return fail('refused_tool', `${tool.name} is not available to per-person hub keys`);
   if (!caller.scopes.includes(tool.scope)) return fail('refused_scope', `this token lacks the "${tool.scope}" scope required by ${tool.name}`);
 
   try {
     const out = await runTool(deps, caller, tool.name, (args ?? {}) as Record<string, any>);
     const payload = { ...out.payload, provenance: out.provenance };
+    if (caller.authMethod === 'hub_agent') {
+      if (HUB_AGENT_WRITE_TOOLS.includes(tool.name)) {
+        await accessLog(deps.db, { event_type: 'write', outcome: 'allowed', agent_id: caller.agentId, token_id: caller.gatewayTokenId, tool: tool.name, action: tool.name, scope: tool.scope, client_id: out.clientId, target: String((out.audit as any)?.brief_id ?? (args as any)?.brief_id ?? ''), subject_table: 'creative_briefs', subject_id: (out.audit as any)?.brief_id ?? (args as any)?.brief_id ?? null, detail: JSON.stringify(out.audit ?? {}).slice(0, 2000), request_fingerprint: await fingerprint(tool.name, args), duration_ms: Date.now() - started });
+      } else {
+        try { await deps.db.rpc('agent_hub_count_read', { p_agent_id: caller.agentId, p_tool: tool.name, p_client_id: out.clientId }); } catch { /* counter never fails the call */ }
+      }
+    }
     await log(deps.db, { ...base, ...(out.audit ? { arguments: { ...(args ?? {}), ...out.audit } } : {}), client_id: out.clientId, outcome: out.provenance.withheld.length ? 'ok_with_withheld' : 'ok', withheld: out.provenance.withheld, duration_ms: Date.now() - started });
     return { status: 200, body: { jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: JSON.stringify(payload) }], structuredContent: payload } } };
   } catch (e) {

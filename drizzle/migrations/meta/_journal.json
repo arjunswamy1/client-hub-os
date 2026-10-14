@@ -204,6 +204,13 @@
       "when": 1791946151215,
       "tag": "0028_agent_access_log_handoff_event",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791948195043,
+      "tag": "0029_gateway_vault_setting_and_restriction",
+      "breakpoints": true
     }
   ]
 }

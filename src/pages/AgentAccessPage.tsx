@@ -216,7 +216,7 @@ export default function AgentAccessPage() {
             <Select value={t.days} onValueChange={(v) => setT({ ...t, days: v })}><SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="30">Expires in 30 days</SelectItem><SelectItem value="90">Expires in 90 days</SelectItem><SelectItem value="365">Expires in 1 year</SelectItem></SelectContent></Select>
             <Button onClick={mint}>Create key</Button>
-            <p className="text-xs text-muted-foreground md:col-span-4">Hub keys connect to the hub server at <code className="rounded bg-muted px-1">{`https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/mcp-hub`}</code> and see only the agent's hub clients its owner is assigned to.</p>
+            <p className="text-xs text-muted-foreground md:col-span-5">Hub keys connect to the hub server at <code className="rounded bg-muted px-1">{`https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/mcp-hub`}</code> and see only the agent's hub clients its owner is assigned to.</p>
           </CardContent></Card>
           {tokens.map((x) => {
             const expired = new Date(x.expires_at) < new Date();

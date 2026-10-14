@@ -22,10 +22,7 @@ export interface OpClient {
 }
 export type OpClientFactory = (token: string) => Promise<OpClient>;
 
-const defaultFactory: OpClientFactory = async (token) => {
-  const sdk: any = await import('npm:@1password/sdk@0.3.1');
-  return await sdk.createClient({ auth: token, integrationName: 'CPM Hub Agent Gateway', integrationVersion: 'v1.0.0' });
-};
+const noFactory: OpClientFactory = () => Promise.reject(new Error('no 1Password client factory'));
 
 async function countVaults(c: OpClient): Promise<number> {
   const r: any = c.vaults.list ? await c.vaults.list() : await c.vaults.listAll!();
@@ -38,7 +35,7 @@ async function countVaults(c: OpClient): Promise<number> {
 export class OnePasswordProvider implements SecretsProvider {
   readonly name = '1password';
   private client: Promise<OpClient> | null = null; // per-request instance only
-  constructor(private token: string | undefined = Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), private factory: OpClientFactory = defaultFactory) {}
+  constructor(private token: string | undefined = Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), private factory: OpClientFactory = noFactory) {}
 
   private getClient(): Promise<OpClient> {
     if (!this.client) this.client = this.factory(this.token!);

@@ -2,6 +2,7 @@
 // Reports whether the 1Password token is set, whether 1Password is reachable,
 // and optionally whether one op:// reference resolves. Never returns a value.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { opSdkFactory } from '../agent-gateway/op-sdk.ts';
 import { OnePasswordProvider } from '../agent-gateway/secrets.ts';
 
 const CORS = {
@@ -28,7 +29,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const ref = typeof body?.reference === 'string' && body.reference.trim() ? body.reference.trim() : undefined;
   try {
-    const result = await new OnePasswordProvider().check(ref);
+    const result = await new OnePasswordProvider(Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), opSdkFactory).check(ref);
     return json(200, { ok: true, ...result });
   } catch {
     console.error('agent-gateway-admin: check failed'); // no details

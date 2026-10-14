@@ -1,6 +1,7 @@
 // HTTP entry for the Agent Access Gateway. Logic lives in gateway.ts.
 // Must not import _shared/slack-post.ts. Never logs headers or bodies.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { opSdkFactory } from './op-sdk.ts';
 import { handleGateway } from './gateway.ts';
 import { OnePasswordProvider } from './secrets.ts';
 
@@ -17,7 +18,7 @@ Deno.serve(async (req) => {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
   const raw = await req.json().catch(() => null);
   try {
-    const out = await handleGateway({ db, secrets: new OnePasswordProvider() }, req.headers.get('authorization'), raw);
+    const out = await handleGateway({ db, secrets: new OnePasswordProvider(Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), opSdkFactory) }, req.headers.get('authorization'), raw);
     return json(out.status, out.body);
   } catch {
     console.error('agent-gateway: internal error'); // deliberately no details

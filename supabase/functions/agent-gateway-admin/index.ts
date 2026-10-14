@@ -28,6 +28,25 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const ref = typeof body?.reference === 'string' && body.reference.trim() ? body.reference.trim() : undefined;
+  // Optional: list vault and item TITLES only (never field values).
+  if (body?.list_titles === true) {
+    const token = Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN');
+    if (!token) return json(200, { ok: true, token_present: false, reason: 'not_configured' });
+    try {
+      const c: any = await opSdkFactory(token);
+      const collect = async (r: any) => { const a: any[] = []; if (Array.isArray(r)) return r; if (r?.[Symbol.asyncIterator]) { for await (const x of r) a.push(x); return a; } return r?.elements ?? []; };
+      const vaults = await collect(c.vaults.list ? await c.vaults.list() : await c.vaults.listAll());
+      const out = [];
+      for (const v of vaults) {
+        let titles: string[] = [];
+        try { titles = (await collect(await c.items.list(v.id))).map((i: any) => String(i.title)); } catch { titles = []; }
+        out.push({ vault: String(v.title), items: titles.sort() });
+      }
+      return json(200, { ok: true, vaults: out });
+    } catch {
+      return json(200, { ok: true, token_present: true, reachable: false, reason: 'list_failed' });
+    }
+  }
   try {
     const result = await new OnePasswordProvider(Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), opSdkFactory).check(ref);
     return json(200, { ok: true, ...result });

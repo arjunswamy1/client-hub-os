@@ -33,3 +33,6 @@ verify_jwt = false
 
 [functions.agent-gateway]
 verify_jwt = false
+
+[functions.agent-gateway-admin]
+verify_jwt = false

@@ -1,75 +1,149 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { handleGateway, sha256Hex } from './gateway.ts';
-import { OnePasswordProvider } from './secrets.ts';
+import { OnePasswordProvider, type SecretsProvider } from '../_shared/agent-secrets.ts';
+import { ACTIONS, buildRequest, scrub } from './actions.ts';
 
 const TOKEN = 'agw_secret_value_123';
+const SECRET = 'EAAB-super-secret-meta-key';
 const IID = '11111111-1111-1111-1111-111111111111';
+const HID = '22222222-2222-2222-2222-222222222222';
 
-async function fakeDb(o: { enabled?: boolean; status?: string; scopes?: string[]; allowed?: boolean; revoked?: boolean; expired?: boolean; noGrant?: boolean } = {}) {
+const okSecrets: SecretsProvider = { name: 'fake', resolve: async () => ({ ok: true, value: SECRET }), check: async () => ({ token_present: true, reachable: true }) };
+const noSecrets = new OnePasswordProvider(undefined, async () => { throw new Error('must not be called'); });
+
+interface Opts {
+  enabled?: boolean; status?: string; scopes?: string[]; allowed?: boolean; revoked?: boolean; expired?: boolean; noGrant?: boolean;
+  provider?: string; hosts?: string[]; kind?: string; clientId?: string | null; ownerRole?: string; assigned?: boolean;
+  browser?: boolean; handoffGrant?: boolean; handoff?: any;
+}
+async function fakeDb(o: Opts = {}) {
   const hash = await sha256Hex(TOKEN);
-  const logs: any[] = []; const rpcs: any[] = [];
+  const logs: any[] = []; const rpcs: any[] = []; const writes: any[] = [];
   const rows: Record<string, any> = {
     agent_gateway_tokens: { id: 't1', agent_id: 'a1', token_hash: hash, revoked_at: o.revoked ? '2026-01-01' : null, expires_at: o.expired ? '2020-01-01' : '2099-01-01' },
     agent_gateway_settings: { gateway_enabled: o.enabled ?? true },
-    agents: { id: 'a1', status: o.status ?? 'active' },
-    integrations: { id: IID, enabled: true, op_secret_ref: 'op://CPM-Agents/meta/key' },
-    agent_grants: o.noGrant ? null : { id: 'g1', scopes: o.scopes ?? ['read'], rate_per_minute: 5, rate_per_day: 10, expires_at: null, revoked_at: null },
+    agents: { id: 'a1', status: o.status ?? 'active', kind: o.kind ?? 'ai_agent', owner_team_member_id: 'tm1' },
+    integrations: { id: IID, provider: o.provider ?? 'meta_ads', enabled: true, op_secret_ref: 'op://CPM-Agents/meta/key', account_ref: '123', allowed_hosts: o.hosts ?? ['graph.facebook.com'], client_id: o.clientId ?? null, is_browser_login: o.browser ?? false },
+    agent_grants: o.noGrant ? null : { id: 'g1', scopes: o.scopes ?? ['read'], account_ref: null, rate_per_minute: 5, rate_per_day: 10, expires_at: null, revoked_at: null, allow_browser_handoff: o.handoffGrant ?? false },
+    team_members: { role: o.ownerRole ?? 'designer' },
+    client_assignments: o.assigned ? { id: 'ca1' } : null,
+    agent_handoff_requests: o.handoff ?? null,
   };
   const q = (t: string) => {
     const filters: [string, unknown][] = [];
+    let mode = 'select'; let payload: any = null;
     const b: any = {
-      select: () => b, update: () => b,
+      select: () => b,
+      update: (p: any) => { mode = 'update'; payload = p; return b; },
       eq: (k: string, v: unknown) => { filters.push([k, v]); return b; },
       maybeSingle: async () => {
-        const r = rows[t];
+        if (mode === 'insert') return { data: { id: HID } };
+        if (mode === 'update') { writes.push([t, payload]); return { data: rows[t] ? { id: rows[t].id } : null }; }
         if (t === 'agent_gateway_tokens' && filters.some(([k, v]) => k === 'token_hash' && v !== hash)) return { data: null };
-        return { data: r };
+        return { data: rows[t] };
       },
-      insert: async (row: any) => { logs.push(row); return {}; },
-      then: (f: any) => f({}),
+      insert: (row: any) => {
+        if (t === 'agent_access_log') { logs.push(row); return Promise.resolve({}); }
+        mode = 'insert'; writes.push([t, row]); return b;
+      },
+      then: (f: any) => { if (mode === 'update') writes.push([t, payload]); return f({}); },
     };
     return b;
   };
-  return { logs, rpcs, db: { from: q, rpc: async (n: string, a: any) => { rpcs.push([n, a]); return { data: { allowed: o.allowed ?? true } }; } } };
+  return { logs, rpcs, writes, db: { from: q, rpc: async (n: string, a: any) => { rpcs.push([n, a]); return { data: { allowed: o.allowed ?? true } }; } } };
 }
-const call = async (o: any, auth: string | null = `Bearer ${TOKEN}`, body: any = { integration_id: IID, action: 'meta.insights.read', scope: 'read', params: { a: 1 } }) => {
-  const f = await fakeDb(o);
-  const r = await handleGateway({ db: f.db, secrets: new OnePasswordProvider() }, auth, body);
-  return { r, logs: f.logs, rpcs: f.rpcs };
-};
 
-Deno.test('missing token denied and audited as denied', async () => { const { r, logs } = await call({}, null); assertEquals(r.body.outcome, 'denied_no_token'); assertEquals(logs.length, 1); assertEquals(logs[0].event_type, 'denied'); });
-Deno.test('killed agent refusal is logged', async () => { const { logs } = await call({ status: 'killed' }); assertEquals(logs[0].outcome, 'denied_agent_killed'); });
-Deno.test('gateway off refusal is logged', async () => { const { logs } = await call({ enabled: false }); assertEquals(logs[0].event_type, 'denied'); });
-Deno.test('rate-limited call is logged', async () => { const { logs } = await call({ allowed: false }); assertEquals(logs[0].outcome, 'rate_limited'); });
-Deno.test('successful read writes no log row, only a daily count', async () => {
-  const { logs, rpcs } = await call({});
-  assertEquals(logs.length, 0);
-  assertEquals(rpcs.find(([n]) => n === 'agent_gateway_count_read')?.[1], { p_agent_id: 'a1', p_integration_id: IID, p_action: 'meta.insights.read' });
-});
-Deno.test('successful write is logged in full and not counted as a read', async () => {
-  const { logs, rpcs } = await call({ scopes: ['read', 'write'] }, `Bearer ${TOKEN}`, { integration_id: IID, action: 'meta.adset.pause', scope: 'write', target: 'adset_123', params: { b: 2 } });
-  assertEquals(logs.length, 1);
-  const w = logs[0];
-  assertEquals([w.event_type, w.agent_id, w.grant_id, w.integration_id, w.action, w.target, w.outcome], ['write', 'a1', 'g1', IID, 'meta.adset.pause', 'adset_123', 'allowed_secret_not_configured']);
-  assertEquals(w.request_fingerprint.length, 64);
-  assert(!JSON.stringify(w).includes(TOKEN) && !JSON.stringify(w).includes('"b":2'));
-  assert(!rpcs.some(([n]) => n === 'agent_gateway_count_read'));
-});
-Deno.test('wrong token denied', async () => { const { r } = await call({}, 'Bearer nope'); assertEquals(r.body.outcome, 'denied_bad_token'); });
+const READ = { integration_id: IID, action: 'meta.insights.read', scope: 'read', params: { date_preset: 'yesterday' } };
+async function call(o: Opts, opts: { auth?: string | null; body?: any; secrets?: SecretsProvider; upstream?: (u: string, i: any) => Response } = {}) {
+  const f = await fakeDb(o);
+  const seen: { url: string; init: any }[] = [];
+  const fetchFn = (async (u: string, i: any) => { seen.push({ url: u, init: i }); return opts.upstream ? opts.upstream(u, i) : new Response(JSON.stringify({ data: [{ spend: '10' }] }), { status: 200 }); }) as any;
+  const r = await handleGateway({ db: f.db, secrets: opts.secrets ?? okSecrets, fetch: fetchFn }, opts.auth === undefined ? `Bearer ${TOKEN}` : opts.auth, opts.body ?? READ);
+  return { r, ...f, seen };
+}
+const noLeak = (x: unknown) => { const s = JSON.stringify(x); return !s.includes(TOKEN) && !s.includes(SECRET); };
+
+// Authentication and switches
+Deno.test('missing token denied and audited as denied', async () => { const { r, logs } = await call({}, { auth: null }); assertEquals(r.body.outcome, 'denied_no_token'); assertEquals(logs[0].event_type, 'denied'); });
+Deno.test('wrong token denied', async () => { assertEquals((await call({}, { auth: 'Bearer nope' })).r.body.outcome, 'denied_bad_token'); });
 Deno.test('revoked token denied', async () => { assertEquals((await call({ revoked: true })).r.body.outcome, 'denied_token_revoked'); });
 Deno.test('expired token denied', async () => { assertEquals((await call({ expired: true })).r.body.outcome, 'denied_token_expired'); });
-Deno.test('global switch off denies', async () => { assertEquals((await call({ enabled: false })).r.body.outcome, 'denied_gateway_disabled'); });
-Deno.test('killed agent denied', async () => { assertEquals((await call({ status: 'killed' })).r.body.outcome, 'denied_agent_killed'); });
+Deno.test('gateway off refused and logged', async () => { const { r, logs } = await call({ enabled: false }); assertEquals(r.body.outcome, 'denied_gateway_disabled'); assertEquals(logs[0].event_type, 'denied'); });
+Deno.test('killed agent refused and logged', async () => { const { logs } = await call({ status: 'killed' }); assertEquals(logs[0].outcome, 'denied_agent_killed'); });
 Deno.test('no grant denied', async () => { assertEquals((await call({ noGrant: true })).r.body.outcome, 'denied_no_grant'); });
-Deno.test('write without write scope denied', async () => {
-  const { r } = await call({}, `Bearer ${TOKEN}`, { integration_id: IID, action: 'meta.adset.pause', scope: 'write' });
-  assertEquals(r.body.outcome, 'denied_scope');
+Deno.test('rate limit returns 429 and is logged', async () => { const { r, logs } = await call({ allowed: false }); assertEquals(r.status, 429); assertEquals(logs[0].outcome, 'rate_limited'); });
+
+// v1 rules
+Deno.test('write scope refused in v1 even with a write grant, and logged', async () => {
+  const { r, logs, seen } = await call({ scopes: ['read', 'write'] }, { body: { integration_id: IID, action: 'meta.adset.pause', scope: 'write', target: 'adset_1' } });
+  assertEquals(r.body.outcome, 'denied_write_disabled_v1'); assertEquals(logs[0].event_type, 'denied'); assertEquals(seen.length, 0);
 });
-Deno.test('rate limit returns 429', async () => { const { r } = await call({ allowed: false }); assertEquals(r.status, 429); });
-Deno.test('allowed call: secret stub not configured, nothing secret logged', async () => {
-  const { r, logs } = await call({ scopes: ['read', 'write'] }, `Bearer ${TOKEN}`, { integration_id: IID, action: 'x.write', scope: 'write', params: { a: 1 } });
-  assertEquals(r.body.outcome, 'allowed_secret_not_configured');
-  const dump = JSON.stringify(logs) + JSON.stringify(r.body);
-  assert(!dump.includes(TOKEN) && !dump.includes('Bearer') && !dump.includes('"a":1'));
+Deno.test('slack integration refused', async () => { assertEquals((await call({ provider: 'slack_bot' })).r.body.outcome, 'denied_slack_excluded'); });
+Deno.test('unknown action refused, never a raw URL', async () => {
+  const { r, seen } = await call({}, { body: { ...READ, action: 'https.evil.com' } });
+  assertEquals(r.body.outcome, 'denied_unknown_action'); assertEquals(seen.length, 0);
+});
+Deno.test('host not on the integration allowlist refused', async () => { assertEquals((await call({ hosts: ['example.com'] })).r.body.outcome, 'denied_host_not_allowed'); });
+Deno.test('action for another provider refused', async () => { assertEquals((await call({}, { body: { ...READ, action: 'roku.accounts.read' } })).r.body.outcome, 'denied_action_provider_mismatch'); });
+Deno.test('unknown param refused', async () => { assertEquals((await call({}, { body: { ...READ, params: { url: 'x' } } })).r.body.outcome, 'denied_bad_params'); });
+Deno.test('teammate agent refused on an unassigned client', async () => { assertEquals((await call({ kind: 'teammate_agent', clientId: 'c1' })).r.body.outcome, 'denied_client_scope'); });
+Deno.test('teammate agent allowed on an assigned client', async () => { assertEquals((await call({ kind: 'teammate_agent', clientId: 'c1', assigned: true })).r.body.outcome, 'ok'); });
+
+// Secrets
+Deno.test('secret not configured: refused, no upstream call, 1Password not touched', async () => {
+  const { r, seen } = await call({}, { secrets: noSecrets }); assertEquals(r.body.outcome, 'secret_not_configured'); assertEquals(seen.length, 0);
+});
+Deno.test('1Password errors are never surfaced', async () => {
+  const p = new OnePasswordProvider('tok', async () => ({ secrets: { resolve: async () => { throw new Error(`boom ${SECRET}`); } }, vaults: {} }));
+  const res = await p.resolve('op://CPM-Agents/meta/key'); assertEquals(res, { ok: false, reason: 'unavailable' });
+});
+Deno.test('test connection reports reachability and resolution without values', async () => {
+  const p = new OnePasswordProvider('tok', async () => ({ secrets: { resolve: async () => SECRET }, vaults: { list: async () => [{ id: 'v' }] } }));
+  const res = await p.check('op://CPM-Agents/meta/key');
+  assertEquals(res, { token_present: true, reachable: true, vault_count: 1, reference_resolves: true }); assert(noLeak(res));
+});
+Deno.test('test connection without a token says not configured', async () => { assertEquals((await noSecrets.check()).reason, 'not_configured'); });
+
+// Successful read
+Deno.test('successful read: no log row, daily count, secret only in the upstream request', async () => {
+  const { r, logs, rpcs, seen } = await call({});
+  assertEquals(r.body.outcome, 'ok'); assertEquals(logs.length, 0);
+  assertEquals(rpcs.find(([n]) => n === 'agent_gateway_count_read')?.[1], { p_agent_id: 'a1', p_integration_id: IID, p_action: 'meta.insights.read' });
+  assert(seen[0].url.startsWith('https://graph.facebook.com/v21.0/act_123/insights'));
+  assert(noLeak(r.body));
+});
+Deno.test('secret echoed by upstream is scrubbed from the response', async () => {
+  const { r, logs } = await call({}, { upstream: () => new Response(JSON.stringify({ error: `bad token ${SECRET}` }), { status: 400 }) });
+  assertEquals(r.body.outcome, 'upstream_error'); assert(noLeak(r.body)); assert(noLeak(logs)); assertEquals(logs[0].detail, 'status 400');
+});
+Deno.test('callgrid uses bearer auth on its own host', () => {
+  const b = buildRequest('callgrid.calls.read', ACTIONS['callgrid.calls.read'], { provider: 'callgrid', allowed_hosts: ['api.callgrid.com'] }, null, { startDate: '2026-10-01', endDate: '2026-10-02' }, SECRET);
+  assert(b.ok && b.url.host === 'api.callgrid.com' && b.headers.Authorization === `Bearer ${SECRET}` && !b.url.toString().includes(SECRET));
+});
+Deno.test('scrub removes plain and URL-encoded secrets', () => { assertEquals(scrub(`a ${SECRET} b ${encodeURIComponent('x/y+z')}`, SECRET), 'a [redacted] b x%2Fy%2Bz'); });
+
+// Browser hand-off
+const HO_REQ = { integration_id: IID, handoff: 'request', reason: 'Need to check billing in Roku UI' };
+Deno.test('hand-off refused on a non-browser account', async () => { assertEquals((await call({ handoffGrant: true }, { body: HO_REQ })).r.body.outcome, 'denied_not_browser_login'); });
+Deno.test('hand-off refused without a hand-off grant', async () => { assertEquals((await call({ browser: true }, { body: HO_REQ })).r.body.outcome, 'denied_handoff_not_granted'); });
+Deno.test('hand-off request creates a pending request and is logged', async () => {
+  const { r, logs, writes } = await call({ browser: true, handoffGrant: true }, { body: HO_REQ });
+  assertEquals(r.body.outcome, 'handoff_pending_approval'); assertEquals(logs[0].event_type, 'handoff');
+  assert(writes.some(([t]) => t === 'agent_handoff_requests'));
+});
+Deno.test('hand-off redeem while pending returns nothing', async () => {
+  const { r } = await call({ browser: true, handoffGrant: true, handoff: { id: HID, agent_id: 'a1', integration_id: IID, status: 'pending' } }, { body: { integration_id: IID, handoff: 'redeem', request_id: HID } });
+  assertEquals(r.body.outcome, 'handoff_pending_approval'); assert(!('credential' in r.body));
+});
+Deno.test('approved hand-off redeems once and logs the approver', async () => {
+  const { r, logs } = await call({ browser: true, handoffGrant: true, handoff: { id: HID, agent_id: 'a1', integration_id: IID, status: 'approved', approval_expires_at: '2099-01-01', decided_by_id: 'admin1' } }, { body: { integration_id: IID, handoff: 'redeem', request_id: HID } });
+  assertEquals(r.body.outcome, 'handoff_redeemed'); assertEquals(logs[0].approved_by_id, 'admin1'); assert(noLeak(logs));
+});
+Deno.test('expired approval refused', async () => {
+  const { r } = await call({ browser: true, handoffGrant: true, handoff: { id: HID, agent_id: 'a1', integration_id: IID, status: 'approved', approval_expires_at: '2020-01-01' } }, { body: { integration_id: IID, handoff: 'redeem', request_id: HID } });
+  assertEquals(r.body.outcome, 'denied_handoff_expired');
+});
+Deno.test('denied hand-off refused', async () => {
+  const { r } = await call({ browser: true, handoffGrant: true, handoff: { id: HID, agent_id: 'a1', integration_id: IID, status: 'denied' } }, { body: { integration_id: IID, handoff: 'redeem', request_id: HID } });
+  assertEquals(r.body.outcome, 'denied_handoff_denied');
 });

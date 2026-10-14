@@ -1,0 +1,2 @@
+ALTER TABLE public.agent_access_log DROP CONSTRAINT IF EXISTS agent_access_log_event_type_check;
+ALTER TABLE public.agent_access_log ADD CONSTRAINT agent_access_log_event_type_check CHECK (event_type IN ('write','denied','admin','handoff'));

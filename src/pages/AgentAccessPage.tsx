@@ -14,6 +14,23 @@ import { Copy } from 'lucide-react';
 
 const db = supabase as any;
 const ENDPOINT = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/agent-gateway`;
+const PROVIDER_HOSTS: Record<string, string> = { meta_ads: 'graph.facebook.com', callgrid: 'api.callgrid.com', roku: 'api.ads.roku.com' };
+const ACTION_NAMES: Record<string, string[]> = {
+  meta_ads: ['meta.account.read', 'meta.campaigns.read', 'meta.insights.read'],
+  callgrid: ['callgrid.calls.read'],
+  roku: ['roku.accounts.read', 'roku.campaigns.read'],
+};
+function TestResult({ r }: { r: any }) {
+  if (r.error) return <p className="text-sm text-destructive">Could not run the test: {r.error}</p>;
+  const line = (ok: boolean | undefined, text: string) => <p className={ok ? 'text-sm' : 'text-sm text-destructive'}>{ok ? '✓' : '✗'} {text}</p>;
+  return (
+    <div className="space-y-1">
+      {line(r.token_present, r.token_present ? '1Password key is saved in the hub' : '1Password key is not saved yet')}
+      {r.token_present && line(r.reachable, r.reachable ? `1Password reachable (${r.vault_count ?? 0} vault${r.vault_count === 1 ? '' : 's'} visible)` : '1Password could not be reached')}
+      {r.reference_resolves !== undefined && line(r.reference_resolves, r.reference_resolves ? 'That reference resolves' : 'That reference does not resolve')}
+    </div>
+  );
+}
 const OP_REF = /^op:\/\/[^/\s]+\/[^/\s]+(\/[^/\s]+)+$/;
 
 async function sha256Hex(t: string) {
@@ -31,23 +48,26 @@ export default function AgentAccessPage() {
   const [integrations, setIntegrations] = useState<any[]>([]);
   const [grants, setGrants] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [handoffs, setHandoffs] = useState<any[]>([]);
+  const [test, setTest] = useState<{ ref: string; busy: boolean; result: any }>({ ref: '', busy: false, result: null });
   const [shown, setShown] = useState<string | null>(null);
   const [a, setA] = useState({ name: '', kind: 'ai_agent', team: 'ops' });
   const [t, setT] = useState({ agent_id: '', label: '', days: '90' });
-  const [i, setI] = useState({ provider: '', label: '', account_ref: '', op_secret_ref: '', allowed_hosts: '' });
-  const [g, setG] = useState({ agent_id: '', integration_id: '', write: false, per_min: '30', per_day: '2000', days: '' });
+  const [i, setI] = useState({ provider: '', label: '', account_ref: '', op_secret_ref: '', allowed_hosts: '', browser: false });
+  const [g, setG] = useState({ agent_id: '', integration_id: '', handoff: false, per_min: '30', per_day: '2000', days: '' });
 
   const load = async () => {
-    const [s, ag, tk, it, gr, lg] = await Promise.all([
+    const [s, ag, tk, it, gr, lg, ho] = await Promise.all([
       db.from('agent_gateway_settings').select('gateway_enabled').eq('id', 1).maybeSingle(),
       db.from('agents').select('*').order('created_at'),
       db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
       db.from('integrations').select('*').order('created_at'),
       db.from('agent_grants').select('*').order('created_at'),
-      Promise.resolve({ data: [] }),
+      db.from('agent_access_log').select('agent_id, created_at').eq('event_type', 'denied').gte('created_at', new Date(Date.now() - 86400000).toISOString()).limit(2000),
+      db.from('agent_handoff_requests').select('*').order('created_at', { ascending: false }).limit(100),
     ]);
     setEnabled(!!s.data?.gateway_enabled); setAgents(ag.data ?? []); setTokens(tk.data ?? []);
-    setIntegrations(it.data ?? []); setGrants(gr.data ?? []); setLogs(lg.data ?? []);
+    setIntegrations(it.data ?? []); setGrants(gr.data ?? []); setLogs(lg.data ?? []); setHandoffs(ho.data ?? []);
   };
   useEffect(() => { load(); }, []);
   const run = async (p: Promise<{ error: any }>, ok: string) => { const { error } = await p; if (error) toast.error(error.message); else { toast.success(ok); load(); } };
@@ -65,22 +85,39 @@ export default function AgentAccessPage() {
     setShown(token); setT({ ...t, label: '' }); load();
   };
   const addIntegration = () => {
-    if (!i.provider || !i.label) return toast.error('Provider and label are required');
+    if (!i.provider || !i.label) return toast.error('Service and label are required');
+    if (/slack/i.test(i.provider)) return toast.error('Slack is not available through the gateway');
     if (i.op_secret_ref && !OP_REF.test(i.op_secret_ref)) return toast.error('Reference must look like op://vault/item/field');
     run(db.from('integrations').insert({
       provider: i.provider.trim(), label: i.label.trim(), account_ref: i.account_ref || null, op_secret_ref: i.op_secret_ref || null,
-      allowed_hosts: i.allowed_hosts.split(',').map((h) => h.trim()).filter(Boolean), created_by_id: me,
+      allowed_hosts: (i.allowed_hosts || PROVIDER_HOSTS[i.provider.trim()] || '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean), is_browser_login: i.browser, created_by_id: me,
     }), 'Account added');
-    setI({ provider: '', label: '', account_ref: '', op_secret_ref: '', allowed_hosts: '' });
+    setI({ provider: '', label: '', account_ref: '', op_secret_ref: '', allowed_hosts: '', browser: false });
   };
   const addGrant = () => {
     if (!g.agent_id || !g.integration_id) return toast.error('Pick an agent and an account');
     run(db.from('agent_grants').upsert({
-      agent_id: g.agent_id, integration_id: g.integration_id, scopes: g.write ? ['read', 'write'] : ['read'],
+      agent_id: g.agent_id, integration_id: g.integration_id, scopes: ['read'], allow_browser_handoff: g.handoff,
       rate_per_minute: Number(g.per_min), rate_per_day: Number(g.per_day), revoked_at: null,
       expires_at: g.days ? new Date(Date.now() + Number(g.days) * 86400000).toISOString() : null, granted_by_id: me,
     }, { onConflict: 'agent_id,integration_id' }), 'Permission saved');
   };
+
+  const testConnection = async (ref?: string) => {
+    setTest((t) => ({ ...t, busy: true, result: null }));
+    const { data, error } = await supabase.functions.invoke('agent-gateway-admin', { body: ref ? { reference: ref } : {} });
+    setTest((t) => ({ ...t, busy: false, result: error ? { error: error.message } : data }));
+  };
+  const decide = (id: string, approve: boolean) => run(db.rpc('decide_agent_handoff', { p_request_id: id, p_approve: approve }), approve ? 'Approved for 15 minutes' : 'Denied');
+
+  // Unusual activity: 5+ refusals in any 10 minutes, or 20+ in 24 hours (flag only, no messages).
+  const flagged = agents.map((ag) => {
+    const ts = logs.filter((l) => l.agent_id === ag.id).map((l) => new Date(l.created_at).getTime()).sort((a, b) => a - b);
+    let burst = 0;
+    for (let k = 0, j = 0; k < ts.length; k++) { while (ts[k] - ts[j] > 600000) j++; burst = Math.max(burst, k - j + 1); }
+    return { agent: ag, total: ts.length, burst };
+  }).filter((x) => x.burst >= 5 || x.total >= 20);
+  const pending = handoffs.filter((h) => h.status === 'pending');
 
   return (
     <div className="space-y-6 p-6">
@@ -95,6 +132,15 @@ export default function AgentAccessPage() {
           <Switch checked={enabled} onCheckedChange={(v) => run(db.from('agent_gateway_settings').update({ gateway_enabled: v, updated_by_id: me, updated_at: new Date().toISOString() }).eq('id', 1), v ? 'Gateway on' : 'Gateway off')} />
         </label>
       </div>
+
+      {flagged.length > 0 && (
+        <Card className="border-destructive">
+          <CardHeader><CardTitle className="text-base">Unusual activity</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            {flagged.map((x) => <p key={x.agent.id}><span className="font-medium">{x.agent.name}</span>: {x.total} refused calls in the last 24 hours (up to {x.burst} within 10 minutes). Check Activity, or use the kill switch.</p>)}
+          </CardContent>
+        </Card>
+      )}
 
       {shown && (
         <Card className="border-primary">
@@ -113,6 +159,7 @@ export default function AgentAccessPage() {
           <TabsTrigger value="keys">Keys</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="grants">Permissions</TabsTrigger>
+          <TabsTrigger value="handoffs">Hand-offs{pending.length ? ` (${pending.length})` : ''}</TabsTrigger>
           <TabsTrigger value="log">Activity</TabsTrigger>
         </TabsList>
 
@@ -161,18 +208,33 @@ export default function AgentAccessPage() {
         </TabsContent>
 
         <TabsContent value="accounts" className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">Test 1Password connection</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Input className="max-w-md" placeholder="Optional: op://vault/item/field to check" value={test.ref} onChange={(e) => setTest({ ...test, ref: e.target.value })} />
+                <Button variant="outline" disabled={test.busy} onClick={() => testConnection(test.ref.trim() || undefined)}>{test.busy ? 'Testing…' : 'Test connection'}</Button>
+              </div>
+              {test.result && <TestResult r={test.result} />}
+              <p className="text-xs text-muted-foreground">Only shows whether things work. Values are never shown.</p>
+            </CardContent>
+          </Card>
+          <p className="text-xs text-muted-foreground">Read-only actions available: {Object.entries(ACTION_NAMES).map(([p, a]) => `${p}: ${a.join(', ')}`).join(' · ')}. Changes are switched off for now; Slack is not available here.</p>
           <Card><CardContent className="grid gap-3 pt-6 md:grid-cols-3">
-            <Input placeholder="Service, e.g. meta_ads" value={i.provider} onChange={(e) => setI({ ...i, provider: e.target.value })} />
+            <Input placeholder="Service: meta_ads, callgrid or roku" value={i.provider} onChange={(e) => setI({ ...i, provider: e.target.value })} />
             <Input placeholder="Label, e.g. Cannaball Meta" value={i.label} onChange={(e) => setI({ ...i, label: e.target.value })} />
             <Input placeholder="Account id (optional)" value={i.account_ref} onChange={(e) => setI({ ...i, account_ref: e.target.value })} />
             <Input placeholder="1Password reference: op://vault/item/field" value={i.op_secret_ref} onChange={(e) => setI({ ...i, op_secret_ref: e.target.value })} />
-            <Input placeholder="Allowed hosts, comma separated" value={i.allowed_hosts} onChange={(e) => setI({ ...i, allowed_hosts: e.target.value })} />
+            <Input placeholder={`Allowed hosts (default for ${i.provider || 'service'}: ${PROVIDER_HOSTS[i.provider.trim()] ?? 'none'})`} value={i.allowed_hosts} onChange={(e) => setI({ ...i, allowed_hosts: e.target.value })} />
+            <label className="flex items-center gap-2 text-sm"><Checkbox checked={i.browser} onCheckedChange={(v) => setI({ ...i, browser: v === true })} />Browser login (hand-off only)</label>
             <Button onClick={addIntegration}>Add account</Button>
           </CardContent></Card>
           {integrations.map((x) => (
             <div key={x.id} className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
               <span className="font-medium">{x.label}</span><Badge variant="outline">{x.provider}</Badge>
               <code className="text-xs text-muted-foreground">{x.op_secret_ref ?? 'no reference'}</code>
+              {x.is_browser_login && <Badge variant="secondary">browser login</Badge>}
+              {x.op_secret_ref && <Button variant="outline" size="sm" disabled={test.busy} onClick={() => { setTest({ ...test, ref: x.op_secret_ref }); testConnection(x.op_secret_ref); }}>Test</Button>}
               <label className="ml-auto flex items-center gap-2 text-xs">Enabled
                 <Switch checked={x.enabled} onCheckedChange={(v) => run(db.from('integrations').update({ enabled: v }).eq('id', x.id), v ? 'Account enabled' : 'Account disabled')} /></label>
             </div>
@@ -185,7 +247,7 @@ export default function AgentAccessPage() {
               <SelectContent>{agents.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select>
             <Select value={g.integration_id} onValueChange={(v) => setG({ ...g, integration_id: v })}><SelectTrigger><SelectValue placeholder="Account" /></SelectTrigger>
               <SelectContent>{integrations.map((x) => <SelectItem key={x.id} value={x.id}>{x.label}</SelectItem>)}</SelectContent></Select>
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={g.write} onCheckedChange={(v) => setG({ ...g, write: v === true })} />Can make changes</label>
+            <label className="flex items-center gap-2 text-sm"><Checkbox checked={g.handoff} onCheckedChange={(v) => setG({ ...g, handoff: v === true })} />May request browser hand-off</label>
             <Input type="number" placeholder="Per minute" value={g.per_min} onChange={(e) => setG({ ...g, per_min: e.target.value })} />
             <Input type="number" placeholder="Per day" value={g.per_day} onChange={(e) => setG({ ...g, per_day: e.target.value })} />
             <Button onClick={addGrant}>Save permission</Button>
@@ -194,11 +256,31 @@ export default function AgentAccessPage() {
             <div key={x.id} className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
               <span className="font-medium">{agentName(x.agent_id)}</span><span>→ {integName(x.integration_id)}</span>
               {x.scopes.map((s: string) => <Badge key={s} variant="outline">{s === 'read' ? 'view' : 'change'}</Badge>)}
+              {x.allow_browser_handoff && <Badge variant="outline">hand-off</Badge>}
               <span className="text-xs text-muted-foreground">{x.rate_per_minute}/min · {x.rate_per_day}/day{x.expires_at ? ` · until ${new Date(x.expires_at).toLocaleDateString()}` : ''}</span>
               {x.revoked_at ? <Badge variant="destructive">removed</Badge>
                 : <Button className="ml-auto" variant="outline" size="sm" onClick={() => run(db.from('agent_grants').update({ revoked_at: new Date().toISOString() }).eq('id', x.id), 'Permission removed')}>Remove</Button>}
             </div>
           ))}
+        </TabsContent>
+
+        <TabsContent value="handoffs" className="space-y-2">
+          <p className="text-sm text-muted-foreground">Agents asking to sign in to a website themselves. Approving lets that agent collect the login once, within 15 minutes.</p>
+          {handoffs.map((h) => (
+            <div key={h.id} className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
+              <span className="font-medium">{agentName(h.agent_id)}</span><span>→ {integName(h.integration_id)}</span>
+              <span className="text-muted-foreground">“{h.reason}”</span>
+              <Badge variant={h.status === 'pending' ? 'secondary' : h.status === 'denied' ? 'destructive' : 'outline'}>{h.status}</Badge>
+              <span className="text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString()}</span>
+              {h.status === 'pending' && (
+                <div className="ml-auto flex gap-2">
+                  <Button size="sm" onClick={() => decide(h.id, true)}>Approve</Button>
+                  <Button size="sm" variant="outline" onClick={() => decide(h.id, false)}>Deny</Button>
+                </div>
+              )}
+            </div>
+          ))}
+          {!handoffs.length && <p className="text-sm text-muted-foreground">No requests yet.</p>}
         </TabsContent>
 
         <TabsContent value="log">

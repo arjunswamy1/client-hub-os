@@ -548,18 +548,21 @@ export type Database = {
       }
       agent_gateway_settings: {
         Row: {
+          default_vault: string
           gateway_enabled: boolean
           id: number
           updated_at: string
           updated_by_id: string | null
         }
         Insert: {
+          default_vault?: string
           gateway_enabled?: boolean
           id?: number
           updated_at?: string
           updated_by_id?: string | null
         }
         Update: {
+          default_vault?: string
           gateway_enabled?: boolean
           id?: number
           updated_at?: string
@@ -4841,6 +4844,7 @@ export type Database = {
           label: string
           op_secret_ref: string | null
           provider: string
+          restricted_owner_team_member_id: string | null
           updated_at: string
         }
         Insert: {
@@ -4855,6 +4859,7 @@ export type Database = {
           label: string
           op_secret_ref?: string | null
           provider: string
+          restricted_owner_team_member_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -4869,6 +4874,7 @@ export type Database = {
           label?: string
           op_secret_ref?: string | null
           provider?: string
+          restricted_owner_team_member_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4882,6 +4888,13 @@ export type Database = {
           {
             foreignKeyName: "integrations_created_by_id_fkey"
             columns: ["created_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "integrations_restricted_owner_team_member_id_fkey"
+            columns: ["restricted_owner_team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]

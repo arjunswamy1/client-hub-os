@@ -13,7 +13,7 @@ export interface SecretsProvider {
   check(ref?: string): Promise<ReachabilityResult>;
 }
 
-export const OP_REF = /^op:\/\/[^/\s]+\/[^/\s]+(\/[^/\s]+)+$/;
+export const OP_REF = /^op:\/\/[^/\t\r\n]+\/[^/\t\r\n]+(\/[^/\t\r\n]+)+$/; // spaces allowed (e.g. "CPM Bot Vault")
 
 /** Minimal surface of the 1Password SDK client we use. */
 export interface OpClient {

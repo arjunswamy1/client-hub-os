@@ -31,7 +31,7 @@ function TestResult({ r }: { r: any }) {
     </div>
   );
 }
-const OP_REF = /^op:\/\/[^/\s]+\/[^/\s]+(\/[^/\s]+)+$/;
+const OP_REF = /^op:\/\/[^/\t\r\n]+\/[^/\t\r\n]+(\/[^/\t\r\n]+)+$/;
 
 async function sha256Hex(t: string) {
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
@@ -43,6 +43,8 @@ export default function AgentAccessPage() {
   const { teamMember } = useAuth();
   const me = teamMember?.id ?? null;
   const [enabled, setEnabled] = useState(false);
+  const [vault, setVault] = useState('CPM Bot Vault');
+  const [vaultDraft, setVaultDraft] = useState('CPM Bot Vault');
   const [agents, setAgents] = useState<any[]>([]);
   const [tokens, setTokens] = useState<any[]>([]);
   const [integrations, setIntegrations] = useState<any[]>([]);
@@ -58,7 +60,7 @@ export default function AgentAccessPage() {
 
   const load = async () => {
     const [s, ag, tk, it, gr, lg, ho] = await Promise.all([
-      db.from('agent_gateway_settings').select('gateway_enabled').eq('id', 1).maybeSingle(),
+      db.from('agent_gateway_settings').select('gateway_enabled, default_vault').eq('id', 1).maybeSingle(),
       db.from('agents').select('*').order('created_at'),
       db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
       db.from('integrations').select('*').order('created_at'),
@@ -67,6 +69,7 @@ export default function AgentAccessPage() {
       db.from('agent_handoff_requests').select('*').order('created_at', { ascending: false }).limit(100),
     ]);
     setEnabled(!!s.data?.gateway_enabled); setAgents(ag.data ?? []); setTokens(tk.data ?? []);
+    const v = s.data?.default_vault ?? 'CPM Bot Vault'; setVault(v); setVaultDraft(v);
     setIntegrations(it.data ?? []); setGrants(gr.data ?? []); setLogs(lg.data ?? []); setHandoffs(ho.data ?? []);
   };
   useEffect(() => { load(); }, []);
@@ -212,11 +215,17 @@ export default function AgentAccessPage() {
             <CardHeader><CardTitle className="text-base">Test 1Password connection</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap gap-2">
-                <Input className="max-w-md" placeholder="Optional: op://vault/item/field to check" value={test.ref} onChange={(e) => setTest({ ...test, ref: e.target.value })} />
+                <Input className="max-w-md" placeholder={`Optional: op://${vault}/item/field to check`} value={test.ref} onChange={(e) => setTest({ ...test, ref: e.target.value })} />
                 <Button variant="outline" disabled={test.busy} onClick={() => testConnection(test.ref.trim() || undefined)}>{test.busy ? 'Testing…' : 'Test connection'}</Button>
               </div>
               {test.result && <TestResult r={test.result} />}
               <p className="text-xs text-muted-foreground">Only shows whether things work. Values are never shown.</p>
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <span className="text-sm">Default vault</span>
+                <Input className="max-w-xs" value={vaultDraft} onChange={(e) => setVaultDraft(e.target.value)} />
+                <Button variant="outline" size="sm" disabled={!vaultDraft.trim() || vaultDraft.trim() === vault || vaultDraft.includes('/')}
+                  onClick={() => run(db.from('agent_gateway_settings').update({ default_vault: vaultDraft.trim() }).eq('id', 1), 'Default vault saved')}>Save</Button>
+              </div>
             </CardContent>
           </Card>
           <p className="text-xs text-muted-foreground">Read-only actions available: {Object.entries(ACTION_NAMES).map(([p, a]) => `${p}: ${a.join(', ')}`).join(' · ')}. Changes are switched off for now; Slack is not available here.</p>
@@ -224,7 +233,7 @@ export default function AgentAccessPage() {
             <Input placeholder="Service: meta_ads, callgrid or roku" value={i.provider} onChange={(e) => setI({ ...i, provider: e.target.value })} />
             <Input placeholder="Label, e.g. Cannaball Meta" value={i.label} onChange={(e) => setI({ ...i, label: e.target.value })} />
             <Input placeholder="Account id (optional)" value={i.account_ref} onChange={(e) => setI({ ...i, account_ref: e.target.value })} />
-            <Input placeholder="1Password reference: op://vault/item/field" value={i.op_secret_ref} onChange={(e) => setI({ ...i, op_secret_ref: e.target.value })} />
+            <Input placeholder={`1Password reference: op://${vault}/item/field`} value={i.op_secret_ref} onChange={(e) => setI({ ...i, op_secret_ref: e.target.value })} />
             <Input placeholder={`Allowed hosts (default for ${i.provider || 'service'}: ${PROVIDER_HOSTS[i.provider.trim()] ?? 'none'})`} value={i.allowed_hosts} onChange={(e) => setI({ ...i, allowed_hosts: e.target.value })} />
             <label className="flex items-center gap-2 text-sm"><Checkbox checked={i.browser} onCheckedChange={(v) => setI({ ...i, browser: v === true })} />Browser login (hand-off only)</label>
             <Button onClick={addIntegration}>Add account</Button>

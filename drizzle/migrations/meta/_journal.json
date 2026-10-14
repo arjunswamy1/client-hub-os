@@ -197,6 +197,13 @@
       "when": 1791946080563,
       "tag": "0027_agent_gateway_phase2",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791946151215,
+      "tag": "0028_agent_access_log_handoff_event",
+      "breakpoints": true
     }
   ]
 }

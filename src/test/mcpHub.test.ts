@@ -149,7 +149,7 @@ describe("mcp-hub structural guards", () => {
   });
 
   it("issues no delete or upsert, and updates only tokens, focus and draft-status updates", () => {
-    const allowed = new Set(["agent_tokens", "clients", "client_daily_updates", "slack_outbox", "designer_checkins"]);
+    const allowed = new Set(["agent_tokens", "agent_gateway_tokens", "clients", "client_daily_updates", "slack_outbox", "designer_checkins"]);
     for (const f of files) {
       const body = readFileSync(f, "utf8");
       expect(body, f).not.toMatch(/\.delete\(/);

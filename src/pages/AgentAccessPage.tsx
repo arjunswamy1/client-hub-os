@@ -54,20 +54,27 @@ export default function AgentAccessPage() {
   const [test, setTest] = useState<{ ref: string; busy: boolean; result: any }>({ ref: '', busy: false, result: null });
   const [shown, setShown] = useState<string | null>(null);
   const [a, setA] = useState({ name: '', kind: 'ai_agent', team: 'ops' });
-  const [t, setT] = useState({ agent_id: '', label: '', days: '90' });
+  const [t, setT] = useState({ agent_id: '', label: '', days: '90', audience: 'hub' });
+  const [clientsList, setClientsList] = useState<any[]>([]);
+  const [scopes, setScopes] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
   const [i, setI] = useState({ provider: '', label: '', account_ref: '', op_secret_ref: '', allowed_hosts: '', browser: false });
   const [g, setG] = useState({ agent_id: '', integration_id: '', handoff: false, per_min: '30', per_day: '2000', days: '' });
 
   const load = async () => {
-    const [s, ag, tk, it, gr, lg, ho] = await Promise.all([
+    const [s, ag, tk, it, gr, lg, ho, cl, sc, tm] = await Promise.all([
       db.from('agent_gateway_settings').select('gateway_enabled, default_vault').eq('id', 1).maybeSingle(),
       db.from('agents').select('*').order('created_at'),
-      db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
+      db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, audience, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
       db.from('integrations').select('*').order('created_at'),
       db.from('agent_grants').select('*').order('created_at'),
       db.from('agent_access_log').select('agent_id, created_at').eq('event_type', 'denied').gte('created_at', new Date(Date.now() - 86400000).toISOString()).limit(2000),
       db.from('agent_handoff_requests').select('*').order('created_at', { ascending: false }).limit(100),
+      db.from('clients').select('id, name').eq('status', 'active').order('name'),
+      db.from('agent_client_scopes').select('id, agent_id, client_id'),
+      db.from('team_members').select('id, name, is_active').eq('is_service_account', false).order('name'),
     ]);
+    setClientsList(cl.data ?? []); setScopes(sc.data ?? []); setMembers(tm.data ?? []);
     setEnabled(!!s.data?.gateway_enabled); setAgents(ag.data ?? []); setTokens(tk.data ?? []);
     const v = s.data?.default_vault ?? 'CPM Bot Vault'; setVault(v); setVaultDraft(v);
     setIntegrations(it.data ?? []); setGrants(gr.data ?? []); setLogs(lg.data ?? []); setHandoffs(ho.data ?? []);
@@ -82,7 +89,7 @@ export default function AgentAccessPage() {
     const token = newToken();
     const { error } = await db.from('agent_gateway_tokens').insert({
       agent_id: t.agent_id, label: t.label || null, token_hash: await sha256Hex(token), token_prefix: token.slice(0, 12),
-      expires_at: new Date(Date.now() + Number(t.days) * 86400000).toISOString(), created_by_id: me,
+      expires_at: new Date(Date.now() + Number(t.days) * 86400000).toISOString(), created_by_id: me, audience: t.audience,
     });
     if (error) return toast.error(error.message);
     setShown(token); setT({ ...t, label: '' }); load();
@@ -179,6 +186,17 @@ export default function AgentAccessPage() {
             <div key={x.id} className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
               <span className="font-medium">{x.name}</span><Badge variant="outline">{x.kind === 'ai_agent' ? 'AI agent' : "Teammate's agent"}</Badge><Badge variant="outline">{x.team}</Badge>
               <Badge variant={x.status === 'active' ? 'default' : 'destructive'}>{x.status}</Badge>
+              <span className="text-xs text-muted-foreground">owner {members.find((m) => m.id === x.owner_team_member_id)?.name ?? 'none'}{members.find((m) => m.id === x.owner_team_member_id)?.is_active === false ? ' (inactive)' : ''}</span>
+              <div className="flex w-full flex-wrap items-center gap-1">
+                <span className="text-xs text-muted-foreground">Hub clients:</span>
+                {scopes.filter((s) => s.agent_id === x.id).map((s) => (
+                  <Badge key={s.id} variant="secondary" className="cursor-pointer" title="Remove" onClick={() => run(db.from('agent_client_scopes').delete().eq('id', s.id), 'Client removed')}>{clientsList.find((c) => c.id === s.client_id)?.name ?? 'client'} ×</Badge>
+                ))}
+                <Select value="" onValueChange={(v) => run(db.from('agent_client_scopes').insert({ agent_id: x.id, client_id: v, created_by_id: me }), 'Client added')}>
+                  <SelectTrigger className="h-7 w-40"><SelectValue placeholder="Add client" /></SelectTrigger>
+                  <SelectContent>{clientsList.filter((c) => !scopes.some((s) => s.agent_id === x.id && s.client_id === c.id)).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
               <div className="ml-auto flex gap-2">
                 {x.status === 'active'
                   ? <Button variant="destructive" size="sm" onClick={() => run(db.from('agents').update({ status: 'killed', killed_at: new Date().toISOString(), killed_by_id: me, killed_reason: 'admin kill switch' }).eq('id', x.id), 'Agent stopped')}>Kill switch</Button>
@@ -189,19 +207,22 @@ export default function AgentAccessPage() {
         </TabsContent>
 
         <TabsContent value="keys" className="space-y-4">
-          <Card><CardContent className="grid gap-3 pt-6 md:grid-cols-4">
+          <Card><CardContent className="grid gap-3 pt-6 md:grid-cols-5">
             <Select value={t.agent_id} onValueChange={(v) => setT({ ...t, agent_id: v })}><SelectTrigger><SelectValue placeholder="Agent" /></SelectTrigger>
               <SelectContent>{agents.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select>
             <Input placeholder="Label" value={t.label} onChange={(e) => setT({ ...t, label: e.target.value })} />
+            <Select value={t.audience} onValueChange={(v) => setT({ ...t, audience: v })}><SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="hub">Hub key (its clients only)</SelectItem><SelectItem value="gateway">Account gateway key</SelectItem></SelectContent></Select>
             <Select value={t.days} onValueChange={(v) => setT({ ...t, days: v })}><SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="30">Expires in 30 days</SelectItem><SelectItem value="90">Expires in 90 days</SelectItem><SelectItem value="365">Expires in 1 year</SelectItem></SelectContent></Select>
             <Button onClick={mint}>Create key</Button>
+            <p className="text-xs text-muted-foreground md:col-span-5">Hub keys connect to the hub server at <code className="rounded bg-muted px-1">{`https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/mcp-hub`}</code> and see only the agent's hub clients its owner is assigned to.</p>
           </CardContent></Card>
           {tokens.map((x) => {
             const expired = new Date(x.expires_at) < new Date();
             return (
               <div key={x.id} className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
-                <code className="text-xs">{x.token_prefix}…</code><span className="font-medium">{agentName(x.agent_id)}</span><span className="text-muted-foreground">{x.label}</span>
+                <code className="text-xs">{x.token_prefix}…</code><Badge variant="outline">{x.audience === 'hub' ? 'hub' : 'gateway'}</Badge><span className="font-medium">{agentName(x.agent_id)}</span><span className="text-muted-foreground">{x.label}</span>
                 {x.revoked_at ? <Badge variant="destructive">revoked</Badge> : expired ? <Badge variant="secondary">expired</Badge> : <Badge>active</Badge>}
                 <span className="text-xs text-muted-foreground">last used {x.last_used_at ? new Date(x.last_used_at).toLocaleString() : 'never'} · expires {new Date(x.expires_at).toLocaleDateString()}</span>
                 {!x.revoked_at && <Button className="ml-auto" variant="outline" size="sm" onClick={() => run(db.from('agent_gateway_tokens').update({ revoked_at: new Date().toISOString(), revoked_by_id: me }).eq('id', x.id), 'Key revoked')}>Revoke</Button>}

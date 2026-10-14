@@ -460,6 +460,8 @@ export type Database = {
           admin_team_member_id: string | null
           agent_id: string | null
           approved_by_id: string | null
+          auth_surface: string
+          client_id: string | null
           created_at: string
           detail: string | null
           duration_ms: number | null
@@ -474,12 +476,15 @@ export type Database = {
           subject_table: string | null
           target: string | null
           token_id: string | null
+          tool: string | null
         }
         Insert: {
           action?: string | null
           admin_team_member_id?: string | null
           agent_id?: string | null
           approved_by_id?: string | null
+          auth_surface?: string
+          client_id?: string | null
           created_at?: string
           detail?: string | null
           duration_ms?: number | null
@@ -494,12 +499,15 @@ export type Database = {
           subject_table?: string | null
           target?: string | null
           token_id?: string | null
+          tool?: string | null
         }
         Update: {
           action?: string | null
           admin_team_member_id?: string | null
           agent_id?: string | null
           approved_by_id?: string | null
+          auth_surface?: string
+          client_id?: string | null
           created_at?: string
           detail?: string | null
           duration_ms?: number | null
@@ -514,8 +522,48 @@ export type Database = {
           subject_table?: string | null
           target?: string | null
           token_id?: string | null
+          tool?: string | null
         }
         Relationships: []
+      }
+      agent_client_scopes: {
+        Row: {
+          agent_id: string
+          client_id: string
+          created_at: string
+          created_by_id: string | null
+          id: string
+        }
+        Insert: {
+          agent_id: string
+          client_id: string
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+        }
+        Update: {
+          agent_id?: string
+          client_id?: string
+          created_at?: string
+          created_by_id?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_client_scopes_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_client_scopes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       agent_gateway_rate_counters: {
         Row: {
@@ -581,6 +629,7 @@ export type Database = {
       agent_gateway_tokens: {
         Row: {
           agent_id: string
+          audience: string
           created_at: string
           created_by_id: string | null
           expires_at: string
@@ -594,6 +643,7 @@ export type Database = {
         }
         Insert: {
           agent_id: string
+          audience?: string
           created_at?: string
           created_by_id?: string | null
           expires_at?: string
@@ -607,6 +657,7 @@ export type Database = {
         }
         Update: {
           agent_id?: string
+          audience?: string
           created_at?: string
           created_by_id?: string | null
           expires_at?: string
@@ -785,6 +836,41 @@ export type Database = {
             columns: ["integration_id"]
             isOneToOne: false
             referencedRelation: "integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_hub_read_usage_daily: {
+        Row: {
+          agent_id: string
+          client_key: string
+          count: number
+          day: string
+          last_used_at: string
+          tool: string
+        }
+        Insert: {
+          agent_id: string
+          client_key?: string
+          count?: number
+          day: string
+          last_used_at?: string
+          tool: string
+        }
+        Update: {
+          agent_id?: string
+          client_key?: string
+          count?: number
+          day?: string
+          last_used_at?: string
+          tool?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_hub_read_usage_daily_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
             referencedColumns: ["id"]
           },
         ]
@@ -9962,6 +10048,10 @@ export type Database = {
       agent_gateway_hit: {
         Args: { p_grant_id: string; p_per_day: number; p_per_minute: number }
         Returns: Json
+      }
+      agent_hub_count_read: {
+        Args: { p_agent_id: string; p_client_id: string; p_tool: string }
+        Returns: undefined
       }
       agent_write_creative_brief: {
         Args: {

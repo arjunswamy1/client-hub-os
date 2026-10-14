@@ -26,4 +26,5 @@
 
 ## Agent Access Gateway
 - [x] Phase 1: agents, gateway keys, accounts (1Password pointers only), permissions, insert-only audit, rate limits, gateway skeleton (off by default), admin page
-- [ ] Phase 2: 1Password adapter + upstream calls — blocked on 1Password licence and open questions in the plan
+- [x] Phase 2: 1Password adapter, read-only Meta/CallGrid/Roku actions, hand-off approvals, test connection, unusual-activity flags
+- [ ] Finish setup: AJ saves OP_SERVICE_ACCOUNT_TOKEN and adds accounts with op:// references

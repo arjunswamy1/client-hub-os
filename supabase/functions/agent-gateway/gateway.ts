@@ -55,8 +55,10 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   const m = /^Bearer\s+(\S+)$/i.exec(authHeader ?? '');
   if (!m) return deny(401, 'denied_no_token');
   const { data: tok } = await db.from('agent_gateway_tokens')
-    .select('id, agent_id, expires_at, revoked_at').eq('token_hash', await sha256Hex(m[1])).maybeSingle();
+    .select('id, agent_id, expires_at, revoked_at, audience').eq('token_hash', await sha256Hex(m[1])).maybeSingle();
   if (!tok) return deny(401, 'denied_bad_token');
+  // Hub keys open mcp-hub only, never the account gateway.
+  if (tok.audience === 'hub') { log.token_id = tok.id; log.agent_id = tok.agent_id; return deny(401, 'denied_wrong_audience'); }
   log.token_id = tok.id; log.agent_id = tok.agent_id;
   if (tok.revoked_at) return deny(401, 'denied_token_revoked');
   if (new Date(tok.expires_at) <= now) return deny(401, 'denied_token_expired');

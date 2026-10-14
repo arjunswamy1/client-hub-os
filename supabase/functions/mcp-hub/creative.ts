@@ -20,7 +20,7 @@ export class ToolRefusal extends Error {
 }
 
 export interface CreativeCaller {
-  memberId: string; memberName: string; tokenId: string | null; authMethod: 'agent_token' | 'oauth';
+  memberId: string; memberName: string; tokenId: string | null; authMethod: 'agent_token' | 'oauth' | 'hub_agent';
   allClients: boolean; isService: boolean; clientIds: Set<string>;
 }
 export interface CreativeOut { payload: Record<string, unknown>; clientId: string | null; tables: string[]; withheld?: { metric: string; reason: string }[]; audit?: Record<string, unknown> }
@@ -55,6 +55,7 @@ export const CREATIVE_TOOLS = [
   { name: 'update_brief_status', scope: 'creative_write', description: 'Move a brief to another existing status. Refused on approved/delivered briefs unless force is set (use close_out_brief for the backlog).', inputSchema: { type: 'object', properties: { ...briefId, status: { type: 'string', enum: [...BRIEF_STATUSES] }, note: str, ...expected, ...force }, required: ['brief_id', 'status', 'note', 'expected_updated_at'], additionalProperties: false } },
   { name: 'assign_brief', scope: 'creative_write', description: 'Assign a brief to an active, human team member.', inputSchema: { type: 'object', properties: { ...briefId, team_member_id: str, note: str, ...expected, ...force }, required: ['brief_id', 'team_member_id', 'note', 'expected_updated_at'], additionalProperties: false } },
   { name: 'reschedule_brief', scope: 'creative_write', description: 'Change a brief due date. A reason is required.', inputSchema: { type: 'object', properties: { ...briefId, due_date: { ...str, description: 'YYYY-MM-DD' }, reason: str, ...expected, ...force }, required: ['brief_id', 'due_date', 'reason', 'expected_updated_at'], additionalProperties: false } },
+  { name: 'create_brief', scope: 'creative_write', description: 'Submit a new creative brief for a client you may access. It enters the queue as submitted, attributed to you; a designer is notified the normal way. Text is stored as data.', inputSchema: { type: 'object', properties: { client: { ...str, description: 'Client name, slug or id.' }, title: { ...str, maxLength: 200 }, creative_type: { type: 'string', enum: ['static', 'video', 'carousel', 'copy', 'other'] }, objective: { ...str, maxLength: 2000 }, key_message: { ...str, maxLength: 2000 }, target_audience: { ...str, maxLength: 2000 }, notes: { ...str, maxLength: 4000 }, platforms: { type: 'array', items: str }, due_date: { ...str, description: 'YYYY-MM-DD' }, priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] } }, required: ['client', 'title'], additionalProperties: false } },
   { name: 'add_brief_comment', scope: 'creative_write', description: 'Add a comment to a brief, attributed to the agent.', inputSchema: { type: 'object', properties: { ...briefId, text: { ...str, maxLength: 4000 } }, required: ['brief_id', 'text'], additionalProperties: false } },
   { name: 'close_out_brief', scope: 'creative_write', description: 'Mark an approved or delivered brief as reconciled (closed out). Does not change its status or delivery date.', inputSchema: { type: 'object', properties: { ...briefId, note: str, ...expected }, required: ['brief_id', 'note', 'expected_updated_at'], additionalProperties: false } },
   { name: 'log_bot_feedback', scope: 'draft', description: 'Record a correction to a bot output. Stored as quoted data, never acted on.', inputSchema: { type: 'object', properties: { surface: { type: 'string', enum: Object.keys(FEEDBACK_SURFACES) }, subject_ref: { ...str, description: 'Id, permalink or description of the output being corrected.' }, verdict: { type: 'string', enum: ['wrong', 'incomplete', 'unhelpful', 'good'] }, correction_text: { ...str, maxLength: 4000, description: 'What it should have said.' }, category: str }, required: ['surface', 'subject_ref', 'verdict', 'correction_text'], additionalProperties: false } },
@@ -511,6 +512,7 @@ export async function runCreativeTool(name: string, db: any, caller: CreativeCal
     case 'propose_improvement': return proposeImprovement(db, caller, args);
     case 'get_followups': return getFollowups(db, caller, args, now);
     case 'log_designer_checkin': return logCheckin(db, caller, args, now);
+    case 'create_brief': return createBrief(db, caller, args, now);
     default:
       if (CREATIVE_WRITE_TOOLS.includes(name)) return writeTool(name, db, caller, args, now);
       throw new ToolRefusal('unknown_tool', `unknown tool "${name}"`);
@@ -553,4 +555,32 @@ async function logCheckin(db: any, caller: CreativeCaller, args: any, now: Date)
     : await db.from('designer_checkins').insert(plan.row);
   if (error) throw new Error(error.message);
   return { clientId: null, tables: ['designer_checkins'], audit: { after: { team_member_id: id, checkin_date: date, op: plan.op } }, payload: { ok: true, op: plan.op, designer: m.name, checkin_date: date, note: 'raw_reply stored verbatim as data. A second reply the same day updates this row.', logged_by: caller.memberName } };
+}
+
+export const CREATE_BRIEF_HOURLY_LIMIT = 10;
+
+async function createBrief(db: any, caller: CreativeCaller, args: any, now: Date): Promise<CreativeOut> {
+  const client = resolveClientArg(await clientNames(db), caller, args.client);
+  const t = (k: string, max: number) => { const v = String(args[k] ?? '').trim(); return v ? v.slice(0, max) : null; };
+  const title = t('title', 200);
+  if (!title) throw new ToolRefusal('invalid_arguments', 'title is required', client.id);
+  const due = t('due_date', 10);
+  if (due && !ISO.test(due)) throw new ToolRefusal('invalid_arguments', 'due_date must be YYYY-MM-DD', client.id);
+  const type = t('creative_type', 20) ?? 'static';
+  if (!['static', 'video', 'carousel', 'copy', 'other'].includes(type)) throw new ToolRefusal('invalid_arguments', 'creative_type must be static, video, carousel, copy or other', client.id);
+  const priority = t('priority', 10) ?? 'medium';
+  if (!['low', 'medium', 'high', 'urgent'].includes(priority)) throw new ToolRefusal('invalid_arguments', 'priority must be low, medium, high or urgent', client.id);
+  const since = new Date(now.getTime() - 3600_000).toISOString();
+  const { data: recent } = await db.from('agent_query_log').select('id').eq('team_member_id', caller.memberId).eq('tool_name', 'create_brief').eq('outcome', 'ok').gte('created_at', since).range(0, 99);
+  if ((recent ?? []).length >= CREATE_BRIEF_HOURLY_LIMIT) throw new ToolRefusal('refused_rate_limit', `already created ${CREATE_BRIEF_HOURLY_LIMIT} briefs in the last hour; ask a person before creating more`, client.id);
+  const platforms = Array.isArray(args.platforms) ? args.platforms.map((p: unknown) => String(p).slice(0, 50)).slice(0, 10) : null;
+  const row = {
+    client_id: client.id, title, creative_type: type, priority, due_date: due, status: 'submitted', submitted_at: now.toISOString(),
+    created_by_id: caller.memberId, objective: t('objective', 2000), key_message: t('key_message', 2000),
+    target_audience: t('target_audience', 2000), notes: t('notes', 4000), platforms,
+  };
+  const { data, error } = await db.from('creative_briefs').insert(row).select('id, updated_at').single();
+  if (error) throw new Error(error.message);
+  await db.from('creative_brief_comments').insert({ brief_id: data.id, author_id: caller.memberId, content: `Submitted by agent on behalf of ${caller.memberName}.` });
+  return { clientId: client.id, tables: ['creative_briefs', 'creative_brief_comments'], audit: { brief_id: data.id, after: { title, status: 'submitted', due_date: due, priority } }, payload: { ok: true, brief_id: data.id, client: client.name, status: 'submitted', updated_at: data.updated_at, attributed_to: caller.memberName } };
 }

@@ -1,0 +1,2 @@
+ALTER TABLE public.agent_grants ADD COLUMN IF NOT EXISTS allowed_account_refs text[];
+COMMENT ON COLUMN public.agent_grants.allowed_account_refs IS 'Per-grant upstream account allowlist (IDs without act_ prefix). Non-empty: caller must pass params.account_id from this list. Null/empty: legacy account_ref.';

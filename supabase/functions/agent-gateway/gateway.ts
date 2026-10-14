@@ -5,7 +5,7 @@
 // successful reads only as a daily count.
 // Never log or persist the token, auth headers, params, or any secret value.
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { ACTIONS, buildRequest, scrub } from './actions.ts';
+import { ACTIONS, buildRequest, resolveAccount, scrub } from './actions.ts';
 
 export interface GatewayDeps {
   db: any; // service-role client
@@ -84,7 +84,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   if (!integ.enabled) return deny(403, 'denied_integration_disabled');
   if (integ.restricted_owner_team_member_id && integ.restricted_owner_team_member_id !== agent.owner_team_member_id) return deny(403, 'denied_restricted_account');
   const { data: grant } = await db.from('agent_grants')
-    .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff')
+    .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff, allowed_account_refs')
     .eq('agent_id', agent.id).eq('integration_id', integ.id).maybeSingle();
   if (!grant || grant.revoked_at) return deny(403, 'denied_no_grant');
   log.grant_id = grant.id;
@@ -143,7 +143,9 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   if (!def) return deny(400, 'denied_unknown_action');
   const secret = integ.op_secret_ref ? await secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };
   if (!secret.ok) return deny(503, `secret_${secret.reason}`);
-  const built = buildRequest(action, def, integ, grant.account_ref ?? integ.account_ref ?? null, req?.params, secret.value);
+  const acct = resolveAccount(def, grant.allowed_account_refs, grant.account_ref ?? integ.account_ref ?? null, req?.params);
+  if (!acct.ok) return deny(acct.outcome === 'denied_account_not_allowed' ? 403 : 400, acct.outcome);
+  const built = buildRequest(action, def, integ, acct.account, acct.params, secret.value);
   if (!built.ok) return deny(400, built.outcome, built.detail);
 
   let res: Response;

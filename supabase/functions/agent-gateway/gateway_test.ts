@@ -14,7 +14,7 @@ const noSecrets = new OnePasswordProvider(undefined, async () => { throw new Err
 interface Opts {
   enabled?: boolean; status?: string; scopes?: string[]; allowed?: boolean; revoked?: boolean; expired?: boolean; noGrant?: boolean;
   provider?: string; hosts?: string[]; kind?: string; clientId?: string | null; ownerRole?: string; assigned?: boolean;
-  browser?: boolean; handoffGrant?: boolean; handoff?: any;
+  browser?: boolean; handoffGrant?: boolean; handoff?: any; allowList?: string[] | null; integAccount?: string | null;
 }
 async function fakeDb(o: Opts = {}) {
   const hash = await sha256Hex(TOKEN);
@@ -23,8 +23,8 @@ async function fakeDb(o: Opts = {}) {
     agent_gateway_tokens: { id: 't1', agent_id: 'a1', token_hash: hash, revoked_at: o.revoked ? '2026-01-01' : null, expires_at: o.expired ? '2020-01-01' : '2099-01-01' },
     agent_gateway_settings: { gateway_enabled: o.enabled ?? true },
     agents: { id: 'a1', status: o.status ?? 'active', kind: o.kind ?? 'ai_agent', owner_team_member_id: 'tm1' },
-    integrations: { id: IID, provider: o.provider ?? 'meta_ads', enabled: true, op_secret_ref: 'op://CPM Bot Vault/meta/key', account_ref: '123', allowed_hosts: o.hosts ?? ['graph.facebook.com'], client_id: o.clientId ?? null, is_browser_login: o.browser ?? false },
-    agent_grants: o.noGrant ? null : { id: 'g1', scopes: o.scopes ?? ['read'], account_ref: null, rate_per_minute: 5, rate_per_day: 10, expires_at: null, revoked_at: null, allow_browser_handoff: o.handoffGrant ?? false },
+    integrations: { id: IID, provider: o.provider ?? 'meta_ads', enabled: true, op_secret_ref: 'op://CPM Bot Vault/meta/key', account_ref: o.integAccount === undefined ? '123' : o.integAccount, allowed_hosts: o.hosts ?? ['graph.facebook.com'], client_id: o.clientId ?? null, is_browser_login: o.browser ?? false },
+    agent_grants: o.noGrant ? null : { id: 'g1', scopes: o.scopes ?? ['read'], account_ref: null, rate_per_minute: 5, rate_per_day: 10, expires_at: null, revoked_at: null, allow_browser_handoff: o.handoffGrant ?? false, allowed_account_refs: o.allowList ?? null },
     team_members: { role: o.ownerRole ?? 'designer' },
     client_assignments: o.assigned ? { id: 'ca1' } : null,
     agent_handoff_requests: o.handoff ?? null,
@@ -146,4 +146,37 @@ Deno.test('expired approval refused', async () => {
 Deno.test('denied hand-off refused', async () => {
   const { r } = await call({ browser: true, handoffGrant: true, handoff: { id: HID, agent_id: 'a1', integration_id: IID, status: 'denied' } }, { body: { integration_id: IID, handoff: 'redeem', request_id: HID } });
   assertEquals(r.body.outcome, 'denied_handoff_denied');
+});
+
+// Per-grant account allowlist
+const withAcct = (account_id?: string) => ({ ...READ, params: { date_preset: 'yesterday', ...(account_id ? { account_id } : {}) } });
+Deno.test('allowlist: listed account allowed and account_id not forwarded upstream', async () => {
+  const { r, seen, logs } = await call({ allowList: ['111', '222'] }, { body: withAcct('222') });
+  assertEquals(r.body.outcome, 'ok'); assert(seen[0].url.includes('/act_222/insights')); assert(!seen[0].url.includes('account_id')); assertEquals(logs.length, 0);
+});
+Deno.test('allowlist: account not in list refused 403, no upstream call', async () => {
+  const { r, seen, logs } = await call({ allowList: ['111'] }, { body: withAcct('999') });
+  assertEquals(r.status, 403); assertEquals(r.body.outcome, 'denied_account_not_allowed'); assertEquals(seen.length, 0);
+  assert(!JSON.stringify(logs).includes('999'));
+});
+Deno.test('allowlist: missing account_id refused', async () => {
+  const { r, seen } = await call({ allowList: ['111'] }, { body: withAcct() });
+  assertEquals(r.body.outcome, 'denied_missing_account_ref'); assertEquals(seen.length, 0);
+});
+Deno.test('allowlist: act_ prefix is stripped', async () => {
+  const { r, seen } = await call({ allowList: ['111'] }, { body: withAcct('act_111') });
+  assertEquals(r.body.outcome, 'ok'); assert(seen[0].url.includes('/act_111/insights')); assert(!seen[0].url.includes('act_act_'));
+});
+Deno.test('allowlist: malformed account_id refused', async () => {
+  assertEquals((await call({ allowList: ['111'] }, { body: withAcct('../x') })).r.body.outcome, 'denied_bad_params');
+});
+Deno.test('legacy account_ref: works without account_id', async () => {
+  const { r, seen } = await call({}, { body: withAcct() }); assertEquals(r.body.outcome, 'ok'); assert(seen[0].url.includes('/act_123/'));
+});
+Deno.test('legacy account_ref: matching account_id accepted, differing refused', async () => {
+  assertEquals((await call({}, { body: withAcct('act_123') })).r.body.outcome, 'ok');
+  assertEquals((await call({}, { body: withAcct('456') })).r.body.outcome, 'denied_account_not_allowed');
+});
+Deno.test('no account_ref and no list: still denied_missing_account_ref', async () => {
+  assertEquals((await call({ integAccount: null }, { body: withAcct() })).r.body.outcome, 'denied_missing_account_ref');
 });

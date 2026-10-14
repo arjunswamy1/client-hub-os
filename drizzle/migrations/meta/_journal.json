@@ -225,6 +225,13 @@
       "when": 1791995199578,
       "tag": "0031_link_team_member_on_confirmed_signin",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792001670124,
+      "tag": "0032_agent_grants_allowed_account_refs",
+      "breakpoints": true
     }
   ]
 }

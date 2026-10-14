@@ -5,7 +5,7 @@
 // successful reads only as a daily count.
 // Never log or persist the token, auth headers, params, or any secret value.
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { ACTIONS, buildRequest, scrub } from './actions.ts';
+import { ACTIONS, buildRequest, resolveAccount, scrub } from './actions.ts';
 
 export interface GatewayDeps {
   db: any; // service-role client
@@ -84,7 +84,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   if (!integ.enabled) return deny(403, 'denied_integration_disabled');
   if (integ.restricted_owner_team_member_id && integ.restricted_owner_team_member_id !== agent.owner_team_member_id) return deny(403, 'denied_restricted_account');
   const { data: grant } = await db.from('agent_grants')
-    .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff')
+    .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff, allowed_account_refs')
     .eq('agent_id', agent.id).eq('integration_id', integ.id).maybeSingle();
   if (!grant || grant.revoked_at) return deny(403, 'denied_no_grant');
   log.grant_id = grant.id;

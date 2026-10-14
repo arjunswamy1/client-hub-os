@@ -1,16 +1,23 @@
-// Agent Access Gateway (phase 1): authenticate, check kill switches and grants,
-// rate-limit. Audit: every refusal and every write in full; successful reads
-// only as a daily count. No upstream calls yet.
+// Agent Access Gateway: authenticate, check kill switches, grants and client scope,
+// rate-limit, then run a named read-only action upstream with a secret resolved
+// from 1Password at call time. v1 refuses write scope. Slack is excluded.
+// Audit: every refusal, every write attempt and every hand-off in full;
+// successful reads only as a daily count.
 // Never log or persist the token, auth headers, params, or any secret value.
 import type { SecretsProvider } from './secrets.ts';
+import { ACTIONS, buildRequest, scrub } from './actions.ts';
 
 export interface GatewayDeps {
   db: any; // service-role client
   secrets: SecretsProvider;
+  fetch?: typeof fetch;
   now?: () => Date;
 }
 
-export interface GatewayRequest { integration_id?: unknown; action?: unknown; scope?: unknown; target?: unknown; params?: unknown }
+export interface GatewayRequest {
+  integration_id?: unknown; action?: unknown; scope?: unknown; target?: unknown; params?: unknown;
+  handoff?: unknown; request_id?: unknown; reason?: unknown;
+}
 export interface GatewayResult { status: number; body: Record<string, unknown> }
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -20,20 +27,25 @@ export async function sha256Hex(text: string): Promise<string> {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTION = /^[a-z0-9_.]{1,80}$/;
+const MAX_BODY = 2_000_000;
+export const WRITES_ENABLED = false; // v1: read only
 
 export async function handleGateway(deps: GatewayDeps, authHeader: string | null, req: GatewayRequest | null): Promise<GatewayResult> {
   const { db, secrets } = deps;
+  const doFetch = deps.fetch ?? fetch;
   const now = (deps.now ?? (() => new Date()))();
   const started = Date.now();
   const log: Record<string, unknown> = {};
+  const audit = (event_type: string, outcome: string, detail?: string | null, extra: Record<string, unknown> = {}) =>
+    db.from('agent_access_log').insert({ ...log, ...extra, event_type, outcome, detail: detail ?? null, duration_ms: Date.now() - started });
   const deny = async (status: number, outcome: string, detail?: string): Promise<GatewayResult> => {
-    await db.from('agent_access_log').insert({ ...log, event_type: 'denied', outcome, detail: detail ?? null, duration_ms: Date.now() - started });
+    await audit('denied', outcome, detail);
     return { status, body: { ok: false, outcome, ...(detail ? { detail } : {}) } };
   };
 
-  // Request shape (validated before auth so the audit row can name it; values never stored).
-  const action = typeof req?.action === 'string' && ACTION.test(req.action) ? req.action : null;
-  const scope = req?.scope === 'write' ? 'write' : req?.scope === 'read' || req?.scope === undefined ? 'read' : null;
+  const handoff = req?.handoff === 'request' || req?.handoff === 'redeem' ? req.handoff : null;
+  const action = handoff ? `handoff.${handoff}` : typeof req?.action === 'string' && ACTION.test(req.action) ? req.action : null;
+  const scope = handoff ? 'handoff' : req?.scope === 'write' ? 'write' : req?.scope === 'read' || req?.scope === undefined ? 'read' : null;
   const integrationId = typeof req?.integration_id === 'string' && UUID.test(req.integration_id) ? req.integration_id : null;
   const target = typeof req?.target === 'string' && req.target.length <= 200 ? req.target : null;
   log.action = action; log.scope = scope; log.integration_id = integrationId;
@@ -53,40 +65,97 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   // 2. Kill switches: global, then per agent.
   const { data: settings } = await db.from('agent_gateway_settings').select('gateway_enabled').eq('id', 1).maybeSingle();
   if (!settings?.gateway_enabled) return deny(503, 'denied_gateway_disabled');
-  const { data: agent } = await db.from('agents').select('id, status').eq('id', tok.agent_id).maybeSingle();
+  const { data: agent } = await db.from('agents').select('id, status, kind, owner_team_member_id').eq('id', tok.agent_id).maybeSingle();
   if (!agent) return deny(403, 'denied_unknown_agent');
   if (agent.status === 'killed') return deny(403, 'denied_agent_killed');
   if (agent.status !== 'active') return deny(403, 'denied_agent_suspended');
 
-  // 3. Request validity.
-  if (!action || !scope || !integrationId) return deny(400, 'denied_bad_request', 'integration_id (uuid), action and scope (read|write) are required');
+  // 3. Request validity. Writes are refused outright in v1.
+  if (!action || !scope || !integrationId) return deny(400, 'denied_bad_request', 'integration_id (uuid), action and scope (read) are required');
+  if (scope === 'write' && !WRITES_ENABLED) return deny(403, 'denied_write_disabled_v1');
 
-  // 4. Integration + grant.
-  const { data: integ } = await db.from('integrations').select('id, enabled, op_secret_ref').eq('id', integrationId).maybeSingle();
+  // 4. Integration, Slack exclusion, grant, client scope.
+  const { data: integ } = await db.from('integrations')
+    .select('id, provider, enabled, op_secret_ref, account_ref, allowed_hosts, client_id, is_browser_login').eq('id', integrationId).maybeSingle();
   if (!integ) return deny(404, 'denied_unknown_integration');
+  if (/slack/i.test(integ.provider ?? '')) return deny(403, 'denied_slack_excluded');
   if (!integ.enabled) return deny(403, 'denied_integration_disabled');
   const { data: grant } = await db.from('agent_grants')
-    .select('id, scopes, rate_per_minute, rate_per_day, expires_at, revoked_at')
+    .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff')
     .eq('agent_id', agent.id).eq('integration_id', integ.id).maybeSingle();
   if (!grant || grant.revoked_at) return deny(403, 'denied_no_grant');
   log.grant_id = grant.id;
   if (grant.expires_at && new Date(grant.expires_at) <= now) return deny(403, 'denied_grant_expired');
-  if (!(grant.scopes ?? []).includes(scope)) return deny(403, 'denied_scope');
+  if (scope !== 'handoff' && !(grant.scopes ?? []).includes(scope)) return deny(403, 'denied_scope');
+  if (agent.kind === 'teammate_agent' && integ.client_id) {
+    const { data: owner } = await db.from('team_members').select('role').eq('id', agent.owner_team_member_id).maybeSingle();
+    if (owner?.role !== 'admin') {
+      const { data: asg } = await db.from('client_assignments').select('id')
+        .eq('team_member_id', agent.owner_team_member_id).eq('client_id', integ.client_id).maybeSingle();
+      if (!asg) return deny(403, 'denied_client_scope');
+    }
+  }
 
   // 5. Rate limit (atomic counter).
   const { data: hit, error: hitErr } = await db.rpc('agent_gateway_hit', { p_grant_id: grant.id, p_per_minute: grant.rate_per_minute, p_per_day: grant.rate_per_day });
   if (hitErr) return deny(500, 'error_rate_limiter');
   if (!hit?.allowed) return deny(429, 'rate_limited');
 
-  // 6. Secret resolution (stub in phase 1). The value is never logged or returned.
-  const secret = integ.op_secret_ref ? await secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };
-  const outcome = secret.ok ? 'allowed_no_upstream' : `allowed_secret_${secret.reason}`;
-  if (scope === 'write') {
-    // Every write-scope use is kept in full, permanently.
-    await db.from('agent_access_log').insert({ ...log, event_type: 'write', target, approved_by_id: null, outcome, detail: `provider=${secrets.name}`, duration_ms: Date.now() - started });
-  } else {
-    // Successful reads are counted per day, not logged row by row.
-    await db.rpc('agent_gateway_count_read', { p_agent_id: agent.id, p_integration_id: integ.id, p_action: action });
+  // 6a. Browser hand-off: request -> admin approves in the hub -> single redeem within 15 minutes.
+  if (handoff) {
+    if (!integ.is_browser_login) return deny(403, 'denied_not_browser_login');
+    if (!grant.allow_browser_handoff) return deny(403, 'denied_handoff_not_granted');
+    if (handoff === 'request') {
+      const reason = typeof req?.reason === 'string' ? req.reason.trim().slice(0, 500) : '';
+      if (reason.length < 5) return deny(400, 'denied_bad_request', 'a reason of at least 5 characters is required');
+      const { data: row, error } = await db.from('agent_handoff_requests')
+        .insert({ agent_id: agent.id, integration_id: integ.id, grant_id: grant.id, reason }).select('id').maybeSingle();
+      if (error || !row) return deny(500, 'error_handoff_request');
+      await audit('handoff', 'handoff_requested', null, { target: row.id });
+      return { status: 202, body: { ok: true, outcome: 'handoff_pending_approval', request_id: row.id } };
+    }
+    const reqId = typeof req?.request_id === 'string' && UUID.test(req.request_id) ? req.request_id : null;
+    if (!reqId) return deny(400, 'denied_bad_request', 'request_id is required');
+    log.target = reqId;
+    const { data: h } = await db.from('agent_handoff_requests')
+      .select('id, agent_id, integration_id, status, approval_expires_at, decided_by_id').eq('id', reqId).maybeSingle();
+    if (!h || h.agent_id !== agent.id || h.integration_id !== integ.id) return deny(404, 'denied_handoff_unknown');
+    if (h.status === 'pending') return { status: 202, body: { ok: false, outcome: 'handoff_pending_approval' } };
+    if (h.status !== 'approved') return deny(403, `denied_handoff_${h.status}`);
+    if (!h.approval_expires_at || new Date(h.approval_expires_at) <= now) {
+      await db.from('agent_handoff_requests').update({ status: 'expired' }).eq('id', h.id).eq('status', 'approved');
+      return deny(403, 'denied_handoff_expired');
+    }
+    const secret = integ.op_secret_ref ? await secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };
+    if (!secret.ok) return deny(503, `secret_${secret.reason}`);
+    const { data: used } = await db.from('agent_handoff_requests').update({ status: 'used', used_at: now.toISOString() })
+      .eq('id', h.id).eq('status', 'approved').select('id').maybeSingle();
+    if (!used) return deny(409, 'denied_handoff_already_used');
+    await audit('handoff', 'handoff_redeemed', null, { target: h.id, approved_by_id: h.decided_by_id });
+    return { status: 200, body: { ok: true, outcome: 'handoff_redeemed', credential: secret.value, single_use: true } };
   }
-  return { status: 200, body: { ok: true, outcome, authorized: true, upstream: 'not_implemented_phase_1' } };
+
+  // 6b. Named read action.
+  const def = ACTIONS[action];
+  if (!def) return deny(400, 'denied_unknown_action');
+  const secret = integ.op_secret_ref ? await secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };
+  if (!secret.ok) return deny(503, `secret_${secret.reason}`);
+  const built = buildRequest(action, def, integ, grant.account_ref ?? integ.account_ref ?? null, req?.params, secret.value);
+  if (!built.ok) return deny(400, built.outcome, built.detail);
+
+  let res: Response;
+  try {
+    res = await doFetch(built.url.toString(), { method: def.method, headers: built.headers, redirect: 'error', signal: AbortSignal.timeout(20_000) });
+  } catch {
+    return deny(502, 'upstream_unreachable');
+  }
+  const text = scrub((await res.text()).slice(0, MAX_BODY), secret.value);
+  let data: unknown = text;
+  try { data = JSON.parse(text); } catch { /* keep scrubbed text */ }
+  if (!res.ok) {
+    await audit('denied', 'upstream_error', `status ${res.status}`);
+    return { status: 502, body: { ok: false, outcome: 'upstream_error', upstream_status: res.status, data } };
+  }
+  await db.rpc('agent_gateway_count_read', { p_agent_id: agent.id, p_integration_id: integ.id, p_action: action });
+  return { status: 200, body: { ok: true, outcome: 'ok', upstream_status: res.status, target, data } };
 }

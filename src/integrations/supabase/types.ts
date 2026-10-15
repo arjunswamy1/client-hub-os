@@ -2840,6 +2840,7 @@ export type Database = {
       }
       cannaball_spend: {
         Row: {
+          adset_name: string | null
           campaign_name: string | null
           clicks: number | null
           client_id: string
@@ -2849,11 +2850,14 @@ export type Database = {
           id: string
           impressions: number | null
           platform: string
+          platform_ad_id: string
+          platform_adset_id: string
           raw: Json | null
           spend: number
           updated_at: string
         }
         Insert: {
+          adset_name?: string | null
           campaign_name?: string | null
           clicks?: number | null
           client_id: string
@@ -2863,11 +2867,14 @@ export type Database = {
           id?: string
           impressions?: number | null
           platform?: string
+          platform_ad_id?: string
+          platform_adset_id?: string
           raw?: Json | null
           spend?: number
           updated_at?: string
         }
         Update: {
+          adset_name?: string | null
           campaign_name?: string | null
           clicks?: number | null
           client_id?: string
@@ -2877,6 +2884,8 @@ export type Database = {
           id?: string
           impressions?: number | null
           platform?: string
+          platform_ad_id?: string
+          platform_adset_id?: string
           raw?: Json | null
           spend?: number
           updated_at?: string

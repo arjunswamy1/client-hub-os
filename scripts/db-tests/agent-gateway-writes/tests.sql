@@ -58,14 +58,14 @@ DO $$ DECLARE a uuid := 'b0000000-0000-4000-8000-00000000000a'; g uuid; o jsonb;
   DELETE FROM agent_write_requests WHERE agent_id = a;
   SELECT id INTO g FROM agent_grants WHERE agent_id = a;
   FOR k IN 1..20 LOOP PERFORM pg_temp.req(a, 'y' || k, 'denied', agent_write_day_start(now()) - interval '1 second'); END LOOP;
-  o := agent_write_request_create(jsonb_build_object('agent_id', a, 'grant_id', g, 'integration_id', '55694453-95b2-4c49-829b-517a50952d7b', 'action', 'meta.ad.pause',
+  o := agent_write_request_create(jsonb_build_object('agent_id', a, 'token_id', pg_temp.tok(a), 'grant_id', g, 'integration_id', '55694453-95b2-4c49-829b-517a50952d7b', 'action', 'meta.ad.pause',
        'account_id', '111', 'object_type', 'ad', 'object_id', 'n1', 'before', '{}'::jsonb, 'after', '{}'::jsonb, 'diff_text', 'd', 'decision_expires_at', now() + interval '1 day'), 20);
   PERFORM pg_temp.ok('limit: yesterday (Chicago) requests do not count', (o->>'ok')::boolean AND NOT (o->>'duplicate')::boolean);
-  o := agent_write_request_create(jsonb_build_object('agent_id', a, 'grant_id', g, 'integration_id', '55694453-95b2-4c49-829b-517a50952d7b', 'action', 'meta.ad.pause',
+  o := agent_write_request_create(jsonb_build_object('agent_id', a, 'token_id', pg_temp.tok(a), 'grant_id', g, 'integration_id', '55694453-95b2-4c49-829b-517a50952d7b', 'action', 'meta.ad.pause',
        'account_id', '111', 'object_type', 'ad', 'object_id', 'n1', 'before', '{}'::jsonb, 'after', '{}'::jsonb, 'diff_text', 'd', 'decision_expires_at', now() + interval '1 day'), 20);
   PERFORM pg_temp.ok('limit: open request on same object returned, not duplicated', (o->>'duplicate')::boolean AND (SELECT count(*) FROM agent_write_requests WHERE agent_id = a AND object_id = 'n1') = 1);
   FOR k IN 1..19 LOOP PERFORM pg_temp.req(a, 't' || k, 'denied'); END LOOP;
-  o := agent_write_request_create(jsonb_build_object('agent_id', a, 'grant_id', g, 'integration_id', '55694453-95b2-4c49-829b-517a50952d7b', 'action', 'meta.ad.pause',
+  o := agent_write_request_create(jsonb_build_object('agent_id', a, 'token_id', pg_temp.tok(a), 'grant_id', g, 'integration_id', '55694453-95b2-4c49-829b-517a50952d7b', 'action', 'meta.ad.pause',
        'account_id', '111', 'object_type', 'ad', 'object_id', 'n21', 'before', '{}'::jsonb, 'after', '{}'::jsonb, 'diff_text', 'd', 'decision_expires_at', now() + interval '1 day'), 20);
   PERFORM pg_temp.ok('limit: 21st request today refused', o->>'outcome' = 'write_rate_limited');
 END $$;
@@ -104,7 +104,7 @@ DO $$ DECLARE rc uuid; rj uuid; BEGIN
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
   UPDATE agent_grants SET scopes = '{read,write}' WHERE agent_id IN ('b0000000-0000-4000-8000-00000000000c', 'b0000000-0000-4000-8000-00000000000a');
   PERFORM pg_temp.as_user('');
-  rc := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000c','grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000c'),
+  rc := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000c','token_id',pg_temp.tok('b0000000-0000-4000-8000-00000000000c'),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000c'),
      'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','own1',
      'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 1000)->>'id')::uuid;
   PERFORM pg_temp.ok('snapshot: create stores the bot owner (Charles)', (SELECT agent_owner_team_member_id FROM agent_write_requests WHERE id = rc) = '014fa04a-80a5-41ce-9368-d1a81f6d2eec');

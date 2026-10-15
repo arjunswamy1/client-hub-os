@@ -404,7 +404,7 @@ Deno.serve(async (req) => {
       if (spendRows.length) {
         const { error } = await admin
           .from("cannaball_spend")
-          .upsert(spendRows, { onConflict: "client_id,date,platform,campaign_name,creative_name" });
+          .upsert(spendRows, { onConflict: "client_id,date,platform,campaign_name,creative_name,platform_adset_id,platform_ad_id" });
         if (error) throw error;
         cannaballWritten = spendRows.length;
         await recordSpendObservations(admin, clientId, "cannaball_spend", spendRows.map((r: any) => r.date));

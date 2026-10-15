@@ -2,6 +2,8 @@
 # Real-Postgres tests for the gateway write SQL (migrations 0034 + 0035 applied verbatim).
 # Usage: bash scripts/db-tests/agent-gateway-writes/run.sh   (needs initdb/pg_ctl/psql on PATH)
 set -euo pipefail
+# initdb refuses root: re-run as an unprivileged uid.
+if [ "$(id -u)" = 0 ]; then exec setpriv --reuid=65534 --regid=65534 --clear-groups env HOME=/tmp PATH="$PATH" M35="${M35:-}" bash "$0" "$@"; fi
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$HERE/../../.."
 D=$(mktemp -d); PORT=${DBTEST_PORT:-55432}
 initdb -D "$D/data" -U postgres -A trust >/dev/null

@@ -15,4 +15,4 @@
 - Daily-update context rules (strict internal-channel test, origin split, figure check, narrative fallback, discovery) live only in `_shared/update-context.ts`; daily updates post only via `postToSlack({ internalOnly: true })`. Why: no update reaches a shared channel and no agent figure goes unchecked.
 - Some subdirectories have their own AGENTS.md; read it before changing files there.
 - Unlinked non-service team_members rows link to their auth user by email on confirmation (auth.users trigger). Why: RLS reads user_id; no staff email/password sent.
-- Universal Ads spend rows in `cannaball_spend` are keyed by `platform_adset_id` + `platform_ad_id` (built only in `_shared/universal-ads-rows.ts`); names are labels, and the sync replaces legacy id-less rows for the days it re-pulls. Why: two ad sets sharing an ad name were merged into one row.
+- Universal Ads `cannaball_spend` rows are keyed by ad set + ad id (`_shared/universal-ads-rows.ts`), never names. Why: same-named ad sets merged.

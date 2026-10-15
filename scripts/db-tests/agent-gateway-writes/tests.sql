@@ -27,9 +27,13 @@ DO $$ DECLARE r uuid; o jsonb; BEGIN
   PERFORM pg_temp.ok('self-approval: AJ may approve Charles bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
 
   r := pg_temp.req('b0000000-0000-4000-8000-00000000000d', '3');
-  PERFORM pg_temp.ok('self-approval: AJ cannot approve his own bot', decide_agent_write_request(r, true)->>'outcome' = 'denied_self_approval');
+  PERFORM pg_temp.ok('owner: AJ (write owner) may approve his own bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved'
+     AND (SELECT status = 'approved' AND decided_by_id = '1fdd684e-6cb7-447e-b616-7e1b9c598971' FROM agent_write_requests WHERE id = r));
+  r := pg_temp.req('b0000000-0000-4000-8000-00000000000d', '3b');
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
-  PERFORM pg_temp.ok('self-approval: Charles may approve AJ bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
+  PERFORM pg_temp.ok('backup: Charles may approve AJ bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
+  r := pg_temp.req('b0000000-0000-4000-8000-00000000000a', '3c');
+  PERFORM pg_temp.ok('other owner: Charles may approve Juan bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
 
   r := pg_temp.req('b0000000-0000-4000-8000-00000000000e', '4');
   PERFORM pg_temp.ok('ownerless: Charles cannot approve', decide_agent_write_request(r, true)->>'outcome' = 'denied_ownerless_agent');

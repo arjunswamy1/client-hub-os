@@ -38,9 +38,10 @@ export function settingsFrom(row: any): WriteSettings {
 }
 
 /** Mirror of decide_agent_write_request's authority rule (the SQL function enforces it). */
-export function decisionAuthority(decider: string | null, approvers: string[], agentOwner: string | null): 'ok' | 'not_write_approver' | 'denied_self_approval' {
+export function decisionAuthority(decider: string | null, approvers: string[], agentOwner: string | null): 'ok' | 'not_write_approver' | 'denied_self_approval' | 'denied_ownerless_agent' {
   if (!decider || !approvers.includes(decider)) return 'not_write_approver';
-  if (agentOwner && agentOwner === decider) return 'denied_self_approval';
+  if (!agentOwner) return 'denied_ownerless_agent';
+  if (agentOwner === decider) return 'denied_self_approval';
   return 'ok';
 }
 
@@ -103,6 +104,8 @@ export type Plan = { ok: true; before: Record<string, unknown>; after: Record<st
 export function planChange(def: WriteDef, objectId: string, snap: Snapshot, acct: { name?: string | null; currency?: string | null }, input: Input, s: WriteSettings): Plan {
   const head = `Account ${acct.name ?? '?'} (act_${snap.account_id}) · ${LABEL[def.objectType]} "${snap.name ?? '?'}" (${objectId})`;
   const before = { name: snap.name, status: snap.status, daily_budget: snap.daily_budget, account_id: snap.account_id };
+  // Every write action (status, budget, duplicate) is USD-only.
+  if ((acct.currency ?? '').toUpperCase() !== 'USD') return { ok: false, outcome: 'denied_non_usd_account', detail: `account currency ${acct.currency ?? 'unknown'}` };
   if (def.kind === 'status') {
     if (snap.status === def.to) return { ok: false, outcome: 'denied_no_change', detail: `already ${def.to}` };
     return { ok: true, before, after: { status: def.to }, diff: `${head}: status ${snap.status} → ${def.to}` };
@@ -110,7 +113,6 @@ export function planChange(def: WriteDef, objectId: string, snap: Snapshot, acct
   if (def.kind === 'duplicate') {
     return { ok: true, before, after: { copy_status: 'PAUSED', deep_copy: true }, diff: `${head}: duplicate with all ad sets and ads, copy created PAUSED` };
   }
-  if ((acct.currency ?? '').toUpperCase() !== 'USD') return { ok: false, outcome: 'denied_non_usd_account', detail: `account currency ${acct.currency ?? 'unknown'}` };
   if (def.objectType === 'adset' && (snap.campaign_budget ?? 0) > 0) return { ok: false, outcome: 'denied_cbo_campaign' };
   if (snap.lifetime_budget && snap.lifetime_budget > 0) return { ok: false, outcome: 'denied_budget_not_on_object', detail: 'lifetime budget' };
   if (!snap.daily_budget || snap.daily_budget <= 0) return { ok: false, outcome: 'denied_budget_not_on_object' };
@@ -119,6 +121,46 @@ export function planChange(def: WriteDef, objectId: string, snap: Snapshot, acct
   if (next > Math.round(s.max_usd * 100)) return { ok: false, outcome: 'denied_budget_over_cap', detail: `max ${usd(Math.round(s.max_usd * 100))}/day` };
   if (Math.abs(next - cur) * 100 > s.max_pct * cur) return { ok: false, outcome: 'denied_budget_change_too_large', detail: `max ±${s.max_pct}% per request` };
   return { ok: true, before, after: { daily_budget: next }, diff: `${head}: daily_budget ${usd(cur)} → ${usd(next)}` };
+}
+
+/** Re-check at execution time against the LIVE object/account: USD for every action, budget caps vs the live budget. */
+export function executionCheck(def: WriteDef, after: Record<string, any>, live: Snapshot, acct: { currency?: string | null }, s: WriteSettings): string | null {
+  if ((acct.currency ?? '').toUpperCase() !== 'USD') return 'failed_non_usd_account';
+  if (def.kind !== 'budget') return null;
+  const cur = live.daily_budget; const next = Number(after?.daily_budget);
+  if (!cur || cur <= 0 || !Number.isFinite(next) || next <= 0) return 'failed_budget_not_on_object';
+  if (next > Math.round(s.max_usd * 100)) return 'failed_budget_over_cap';
+  if (Math.abs(next - cur) * 100 > s.max_pct * cur) return 'failed_budget_change_too_large';
+  return null;
+}
+
+export const BUDGET_ACTIONS = Object.entries(WRITE_ACTIONS).filter(([, d]) => d.kind === 'budget').map(([k]) => k);
+/** A budget change on an object is blocked for 24h after a prior executed budget change (no chained +50% steps). */
+export const BUDGET_COOLDOWN_MS = 24 * 3600_000;
+export const POST_TIMEOUT_MS = 20_000;
+export const GET_TIMEOUT_MS = 15_000;
+
+/** Tag put on every duplicate's name so a retry can find a copy whose response was lost. */
+export const copyTag = (requestId: string) => `[cpm:${requestId}]`;
+export function copyLookupUrl(accountId: string, tag: string, secret: string): URL {
+  const u = metaGet(`act_${stripAct(accountId)}/campaigns`, 'id,name', secret);
+  u.searchParams.set('filtering', JSON.stringify([{ field: 'name', operator: 'CONTAIN', value: tag }]));
+  u.searchParams.set('limit', '5');
+  return u;
+}
+
+/** Start of the America/Chicago calendar day containing `at`, as a UTC instant. Mirrors SQL agent_write_day_start. */
+export function chicagoDayStart(at: Date): Date {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+    .formatToParts(at).map((p) => [p.type, p.value]));
+  const wallAsUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  const offset = wallAsUtc - Math.floor(at.getTime() / 1000) * 1000; // Chicago = UTC + offset
+  const midnightWall = Date.UTC(+parts.year, +parts.month - 1, +parts.day);
+  // Offset at midnight can differ on DST days; re-derive once.
+  let guess = midnightWall - offset;
+  const p2 = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(guess)).map((p) => [p.type, p.value]));
+  if (+p2.hour !== 0) guess -= (+p2.hour > 12 ? +p2.hour - 24 : +p2.hour) * 3600_000;
+  return new Date(guess);
 }
 
 /** Fields that changed between the approved "before" and the live object. */
@@ -135,12 +177,13 @@ export function metaGet(path: string, fields: string, secret: string): URL {
 }
 
 /** The single Meta POST for an approved request. Token goes in the body, never the URL. */
-export function metaPost(def: WriteDef, objectId: string, after: Record<string, any>, secret: string): { url: string; body: URLSearchParams } {
+export function metaPost(def: WriteDef, objectId: string, after: Record<string, any>, secret: string, requestId = ''): { url: string; body: URLSearchParams } {
   const body = new URLSearchParams();
   let path = objectId;
   if (def.kind === 'status') body.set('status', String(after.status));
   else if (def.kind === 'budget') body.set('daily_budget', String(after.daily_budget));
-  else { path = `${objectId}/copies`; body.set('deep_copy', 'true'); body.set('status_option', 'PAUSED'); }
+  else { path = `${objectId}/copies`; body.set('deep_copy', 'true'); body.set('status_option', 'PAUSED');
+    if (requestId) body.set('rename_options', JSON.stringify({ rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ` ${copyTag(requestId)}` })); }
   body.set('access_token', secret);
   return { url: `https://${META_HOST}/${V}/${path}`, body };
 }
@@ -153,7 +196,7 @@ export function hasAdsManagement(json: any): boolean | null {
 }
 export async function checkAdsManagement(doFetch: typeof fetch, secret: string): Promise<boolean | null> {
   try {
-    const r = await doFetch(permissionsUrl(secret).toString(), { method: 'GET', redirect: 'error' });
+    const r = await doFetch(permissionsUrl(secret).toString(), { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(GET_TIMEOUT_MS) });
     const j = await r.json().catch(() => null);
     return r.ok ? hasAdsManagement(j) : null;
   } catch { return null; }

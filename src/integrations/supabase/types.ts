@@ -10219,6 +10219,11 @@ export type Database = {
         }
         Returns: Json
       }
+      agent_write_day_start: { Args: { p_at?: string }; Returns: string }
+      agent_write_request_create: {
+        Args: { p_per_day: number; p_row: Json }
+        Returns: Json
+      }
       approve_daily_update: { Args: { p_update_id: string }; Returns: Json }
       bot_readonly_select: {
         Args: { p_row_limit?: number; p_sql: string }
@@ -10360,6 +10365,7 @@ export type Database = {
         Args: { p_channel_id: string; p_client_id: string; p_enabled: boolean }
         Returns: Json
       }
+      sweep_stuck_agent_writes: { Args: never; Returns: number }
       working_hours_between: {
         Args: { p_end: string; p_start: string }
         Returns: number

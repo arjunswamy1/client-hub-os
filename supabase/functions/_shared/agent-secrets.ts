@@ -35,7 +35,7 @@ async function countVaults(c: OpClient): Promise<number> {
 export class OnePasswordProvider implements SecretsProvider {
   readonly name = '1password';
   private client: Promise<OpClient> | null = null; // per-request instance only
-  constructor(private token: string | undefined = Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), private factory: OpClientFactory = noFactory) {}
+  constructor(private token: string | undefined, private factory: OpClientFactory = noFactory) {}
 
   private getClient(): Promise<OpClient> {
     if (!this.client) this.client = this.factory(this.token!);

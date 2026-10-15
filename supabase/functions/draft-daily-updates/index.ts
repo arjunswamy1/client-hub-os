@@ -1,10 +1,7 @@
-// Drafts one daily client update per account and posts it to that client's
-// INTERNAL Slack channel for the account lead to edit and send on.
-//
-// It never posts to a client-facing channel: every post goes through
-// `postToSlack()`, whose fail-closed allowlist refuses any channel that is
-// external, unmapped or unclassified. The channel is additionally selected only
-// from `slack_channel_mappings` rows with channel_purpose = 'client_internal'.
+// Drafts one daily client update per account and saves it into the hub
+// (client_daily_updates). It never posts to Slack — Slack posting of daily
+// updates was removed on 2026-10-15 and it is no longer scheduled. It runs only
+// on demand, e.g. from the mcp-hub draft tools.
 //
 // Two blocks are produced per client and stored separately: client-facing prose
 // with no tooling talk in it, and internal notes for the lead carrying the data
@@ -38,7 +35,7 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-const HUB_BASE = 'https://hub.connectpaidmedia.com';
+
 
 /** Current wall-clock hour and weekday in US Eastern, DST included. */
 function easternNow(): { hour: number; weekday: string; date: string } {
@@ -740,35 +737,9 @@ Deno.serve(async (req) => {
           .select('id').single();
         if (saveErr) throw saveErr;
 
-        let posted: unknown;
-        if (blockers.length) {
-          posted = { skipped: blockers.join('; ') };
-        } else if (dryRun || noSave) {
-          posted = { skipped: 'dry_run' };
-        } else {
-          const mention = lead!.slack ? `<@${lead!.slack}>` : `@${lead!.name}`;
-          const link = `${HUB_BASE}/tasks?daily_update=${saved.id}`;
-          const header = kind === 'draft'
-            ? `${mention} — *${clientName}*, ${forDate}`
-            : `${mention} — *${clientName}*, ${forDate}: daily update needs writing`;
-          const text = [
-            header,
-            '',
-            '📋 *Draft — edit and send*',
-            draftText,
-            '',
-            '🔒 *Notes for you (not for the client)*',
-            amNotes || '• Nothing to flag',
-            '',
-            `<${link}|[Edit in hub]>`,
-          ].join('\n');
-          // Every Slack write in this project goes through postToSlack().
-          const out = await postToSlack({ channel: channel!.id, text, internalOnly: true, source: 'daily_update' });
-          posted = out;
-          if (out.ok && out.ts) {
-            await supabase.from('client_daily_updates').update({ slack_ts: out.ts }).eq('id', saved.id);
-          }
-        }
+        // Slack posting of daily updates was removed (AJ, 2026-10-15). Drafts
+        // are saved into the hub only; nothing here writes to Slack.
+        const posted: unknown = { skipped: blockers.length ? blockers.join('; ') : 'slack posting removed' };
 
         results.push({
           client: clientName, client_id: clientId, kind, for_date: forDate, update_mode: updateMode, comparison_mode: mode,

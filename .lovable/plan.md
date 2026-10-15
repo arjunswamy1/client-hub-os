@@ -1,40 +1,21 @@
-# Per-person hub tokens for teammates' Grok Bots
+Cannaball 14 Oct 2026 (ET) — read-only verification findings
 
-## What I found
-- There is no `CPM_HUB_TOKEN` setting anywhere in the code. AJ's Grokbot key is a hashed row in `agent_tokens` (read, draft, creative-write), checked by `mcp-hub`. Sign-in via Claude (OAuth) is the other way in. **Neither changes.**
-- The gateway already has `agents` (owner, team, status/kill switch) and `agent_gateway_tokens` (hashed, prefix, required expiry, revoke, last-used). I'll reuse both.
-- `mcp-hub` has no tool to create a brief. It already has `add_brief_comment` and `update_brief_status`.
-- Clients: Connatria, OneShare, Hablyte, BuyologyIQ, RRM and Tinned Fish Club all match exactly. **"Found" matches "Found Media"** (one row, slug `found-media`).
-- People: **Juan has no team member record.** **Belu exists but is marked inactive.** Henry and Charles are active (later).
+Nothing was changed. The required build_log row is not written yet because this turn was read-only. Approving this plan writes only that one row.
 
-## What gets built
-1. **Hub keys on the same agents.** A key can be marked "hub" (works on `mcp-hub`) or "gateway" (works on the account gateway), so one agent's hub key can't open 1Password accounts. Minted on the Agent access → Keys tab, shown once, 90 days by default, revocable one at a time.
-2. **Allowed clients per agent.** A new list of clients on each agent. A hub key only ever sees those clients. If the owner isn't assigned to a client, it isn't allowed (owner's access is the ceiling).
-3. **mcp-hub accepts a third key type.** Order: Claude sign-in → existing `agent_tokens` (AJ, unchanged) → new hub key. Killed agent, expired/revoked key, or inactive owner = refused and logged.
-4. **Filtering everywhere.** Every tool that takes a client refuses others (logged as denied). Tools without a client (list_clients, creative queue, data health, designer load, follow-ups, get_brief by id) return only allowed clients' rows. Tools that are global or about people (get_schema, bot accuracy, outbox, designer check-ins, propose_improvement) are hidden from hub keys.
-5. **Writes allowed for hub keys, own clients only:** new `create_brief`, `add_brief_comment`, `update_brief_status`. Everything else that writes is refused. Approved/delivered briefs stay protected (no force for hub keys).
-6. **New `create_brief` tool.** Client, title, brief type, description, due date, priority, deliverables; status starts `submitted`, submitted by the agent's owner; normal designer notification runs as it would from the hub form. Agent-written text is stored as data.
-7. **Logging.** Every write and every refusal in full in `agent_access_log` (agent, key, tool, client, brief, fingerprint, outcome). Successful reads only add to the daily counter.
-8. **Screens.** Agents tab: allowed-clients picker. Keys tab: key type + hub server address. Activity shows hub calls alongside gateway calls.
-9. **Agents created, no keys:** "Juan's Grok Bot" (Connatria, OneShare, Hablyte, Found Media) and "Belu's Grok Bot" (BuyologyIQ, RRM, Tinned Fish Club). See open questions about owners.
+1. Calls (cannaball_calls, 14 Oct 04:00 UTC to 15 Oct 04:00 UTC)
+- DID 8889653087: 58 calls, 47 connected, $1,210.15 payout. This matches the hub.
+- No other DID is counted as universal_ads. 8889653087 is the only number with a universal_ads period (from 30 Aug, open-ended).
+- Roku numbers that day: 8884489081 (47 calls, 34 connected, $844.55), 8885696370 (4, 0, $0), 8888660956 (1, 1, $32.00).
 
-## Tests
-- Hub key for client A: reads of client B refused and logged; list_clients/creative queue/briefs/tasks show only A.
-- create_brief / comment / status for B refused; for A allowed and logged in full.
-- Other writes (draft_update, assign_brief, outbox) refused.
-- Gateway key refused by mcp-hub and hub key refused by gateway; killed agent refused.
-- Existing `agent_tokens` and Claude sign-in behave exactly as today (existing tests unchanged).
-- Successful read writes no log row, only bumps the daily count.
+2. Universal spend
+- Source: one cannaball_spend row with platform universal_ads, campaign "Cannaball Final Expense V2", creative/ad set "Final Expense $6.74" (ad set 06756162…), date 2026-10-14, reported in America/New_York.
+- When first read: $512.62 (72,778 impressions), which matches the hub. A sync at 01:00 UTC then raised it to $554.52 (78,807 impressions).
+- No overlap with Roku: the four Roku rows in cannaball_spend total $535.74, the same as roku_daily_metrics (4 campaign rows, $535.74). The universal_ads row is the only non-Roku row, and universal_geo has no rows for that day. The revision log confirms it: cannaball_spend total $1,090.26 = Roku $535.74 + Universal $554.52.
 
-## Open questions
-1. **Juan** isn't in the team. Should I add him (name, email, role), or create his agent with no owner until he's added? With no owner, no key can be minted.
-2. **Belu** is inactive. Reactivate her, or keep inactive (her key would be refused until reactivated)?
-3. Since a teammate's owner must also be assigned to those clients, should I also add the matching client assignments for Juan and Belu?
-4. Confirm "Found" = Found Media.
+3. Is it final?
+- No, it is still partial. The spend went up during this check, and the campaign had been running for less than a full day. The day is not closed while Universal is still revising every 15 minutes.
+- Last Universal update was at 01:00:11 UTC on 15 Oct (8:00 pm CT on 14 Oct). platform_connections_safe has no last_synced_at value for universal_ads (it is null), so the row's updated_at time and the revision log are the only record of syncs. Roku last synced at 00:45 UTC.
 
-## Technical details
-- Migration (additive, gateway tables only): `agent_gateway_tokens.audience text not null default 'gateway' check in ('gateway','hub')`; new `agent_client_scopes(agent_id, client_id, created_by_id, created_at)` unique pair, admin-manage RLS, service-role grants, admin audit trigger. `agent_access_log` gets nullable `client_id`, `tool`, `auth_surface` ('gateway'|'hub'). Gateway rejects `audience='hub'` keys.
-- `mcp-hub/hub.ts`: `authenticate()` adds the gateway-key branch after `agent_tokens` lookup; Caller gains `authMethod: 'hub_agent'`, `agentId`, `clientIds = scopes ∩ owner access`, `allClients=false`, and a tool allowlist. Existing `agent_query_log` writes continue; hub-agent calls also write `agent_access_log` / `agent_read_usage_daily` via the existing `agent_gateway_count_read()`.
-- `create_brief` lives in `mcp-hub/creative.ts`, scope `creative_write`, inserts into `creative_briefs` respecting the existing designer-notification trigger. Exposed to existing creative-write tokens too.
-- mcp-hub never imports `_shared/slack-post.ts` (still enforced by test). No change to gateway switch or 1Password accounts.
-- Build log row written at the start of the build turn (plan mode can't write data) and again at the end.
+Result: calls, connected calls and payout match exactly. Spend matched at $512.62 when first read and is now $554.52, provisional.
+
+On approval: write one build_log row (read-only verification, no data changes, open question: universal_ads has no last_synced_at in platform connections).

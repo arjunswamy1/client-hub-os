@@ -128,4 +128,86 @@ DO $$ DECLARE rc uuid; rj uuid; BEGIN
 END $$;
 SELECT pg_temp.ok('owner lock: trigger fires ALWAYS', (SELECT tgenabled = 'A' FROM pg_trigger WHERE tgname = 'agent_owner_write_lock'));
 
+-- Key lock, key creator, grant delete/removal alerts, owner history (migration 0039)
+-- Here agents a (Juan bot) and c (Charles bot) hold write scope; d (AJ bot) and e do not.
+DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
+  ka := pg_temp.tok('b0000000-0000-4000-8000-00000000000a');
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('key lock: Charles cannot mint a key for a write bot', pg_temp.raises($q$INSERT INTO agent_gateway_tokens (agent_id, token_hash) VALUES ('b0000000-0000-4000-8000-00000000000a', 'x1')$q$));
+  PERFORM pg_temp.ok('key lock: Charles cannot rotate a write bot key', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET token_hash = 'x2' WHERE id = %L$q$, ka)));
+  PERFORM pg_temp.ok('key lock: Charles cannot extend a write bot key', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET expires_at = expires_at + interval '30 days' WHERE id = %L$q$, ka)));
+  PERFORM pg_temp.ok('key lock: Charles may revoke a write bot key', NOT pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = now() WHERE id = %L$q$, ka)));
+  PERFORM pg_temp.ok('key lock: Charles cannot reactivate a write bot key', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = NULL WHERE id = %L$q$, ka)));
+  PERFORM pg_temp.ok('key lock: Charles cannot move a read-bot key onto a write bot', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET agent_id = 'b0000000-0000-4000-8000-00000000000a' WHERE id = %L$q$, pg_temp.tok('b0000000-0000-4000-8000-00000000000d'))));
+  PERFORM pg_temp.as_user('');
+  PERFORM pg_temp.ok('key lock: service role cannot mint for a write bot', pg_temp.raises($q$INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) VALUES ('b0000000-0000-4000-8000-00000000000a', 'x3', '1fdd684e-6cb7-447e-b616-7e1b9c598971')$q$));
+  PERFORM pg_temp.ok('key lock: service role cannot reactivate', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = NULL WHERE id = %L$q$, ka)));
+  PERFORM pg_temp.ok('key record: service-role key without a creator refused', pg_temp.raises($q$INSERT INTO agent_gateway_tokens (agent_id, token_hash) VALUES ('b0000000-0000-4000-8000-00000000000e', 'x4')$q$));
+  SET LOCAL session_replication_role = replica;
+  PERFORM pg_temp.ok('key lock: replica session cannot mint for a write bot', pg_temp.raises($q$INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) VALUES ('b0000000-0000-4000-8000-00000000000a', 'x5', '1fdd684e-6cb7-447e-b616-7e1b9c598971')$q$));
+  PERFORM pg_temp.ok('key lock: replica session cannot rotate', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET token_hash = 'x6' WHERE id = %L$q$, ka)));
+  PERFORM pg_temp.ok('key lock: replica session cannot reactivate', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = NULL WHERE id = %L$q$, ka)));
+  SET LOCAL session_replication_role = origin;
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  PERFORM pg_temp.ok('key lock: AJ may reactivate, rotate and mint for a write bot',
+    NOT pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = NULL WHERE id = %L$q$, ka))
+    AND NOT pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET token_hash = 'x7' WHERE id = %L$q$, ka))
+    AND NOT pg_temp.raises($q$INSERT INTO agent_gateway_tokens (agent_id, token_hash) VALUES ('b0000000-0000-4000-8000-00000000000a', 'x8')$q$));
+  PERFORM pg_temp.ok('key record: creator is the signed-in user, not a supplied value',
+    (SELECT created_by_id FROM agent_gateway_tokens WHERE token_hash = 'x8') = '1fdd684e-6cb7-447e-b616-7e1b9c598971');
+  PERFORM pg_temp.ok('key record: creator cannot be changed, even by AJ', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET created_by_id = '014fa04a-80a5-41ce-9368-d1a81f6d2eec' WHERE id = %L$q$, ka)));
+
+  -- Charles mints a key for AJ's read-only bot (allowed), then AJ gives that bot write scope.
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) VALUES ('b0000000-0000-4000-8000-00000000000d', 'charles-key', '1fdd684e-6cb7-447e-b616-7e1b9c598971') RETURNING id INTO kd;
+  PERFORM pg_temp.ok('key record: Charles key records Charles even when AJ is supplied', (SELECT created_by_id FROM agent_gateway_tokens WHERE id = kd) = '014fa04a-80a5-41ce-9368-d1a81f6d2eec');
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  UPDATE agent_grants SET scopes = '{read,write}' WHERE agent_id = 'b0000000-0000-4000-8000-00000000000d';
+  PERFORM pg_temp.as_user('');
+  o := agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000d','token_id',kd,'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000d'),
+     'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','kc1',
+     'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 1000);
+  r := (o->>'id')::uuid;
+  PERFORM pg_temp.ok('key snapshot: request stores key and its creator', (SELECT token_id = kd AND token_created_by_id = '014fa04a-80a5-41ce-9368-d1a81f6d2eec' FROM agent_write_requests WHERE id = r));
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('key creator: Charles (made the key) cannot approve', decide_agent_write_request(r, true)->>'outcome' = 'denied_key_creator');
+  PERFORM pg_temp.ok('key creator: Charles cannot deny either', decide_agent_write_request(r, false)->>'outcome' = 'denied_key_creator');
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  PERFORM pg_temp.ok('key creator: AJ (not the key creator) may approve', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
+  PERFORM pg_temp.as_user('');
+  r := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',(SELECT id FROM agent_gateway_tokens WHERE token_hash='x8'),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000a'),
+     'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','kc2',
+     'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 1000)->>'id')::uuid;
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  PERFORM pg_temp.ok('key creator: AJ cannot approve a request on a key he made', decide_agent_write_request(r, true)->>'outcome' = 'denied_key_creator');
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('key creator: Charles may approve it', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
+  PERFORM pg_temp.as_user('');
+  PERFORM pg_temp.ok('key snapshot: unknown key refused at create', agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',gen_random_uuid(),'action','meta.ad.pause','object_id','kc3'), 1000)->>'outcome' = 'denied_unknown_key');
+  PERFORM pg_temp.ok('key snapshot: another agent''s key refused at create', agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',kd,'action','meta.ad.pause','object_id','kc4'), 1000)->>'outcome' = 'denied_unknown_key');
+  PERFORM pg_temp.ok('key snapshot: missing key refused at create', agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','action','meta.ad.pause','object_id','kc5'), 1000)->>'outcome' = 'denied_unknown_key');
+
+  -- Grant deletes and write-scope removals alert like additions.
+  DELETE FROM agent_access_log WHERE outcome = 'write_control_changed'; DELETE FROM notifications;
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  UPDATE agent_grants SET scopes = '{read}' WHERE agent_id = 'b0000000-0000-4000-8000-00000000000c';
+  PERFORM pg_temp.ok('removal: write scope removal logged and notified', EXISTS (SELECT 1 FROM agent_access_log WHERE outcome = 'write_control_changed' AND detail LIKE 'write scope removed from grant%' AND agent_id = 'b0000000-0000-4000-8000-00000000000c')
+     AND EXISTS (SELECT 1 FROM notifications WHERE type = 'agent_write_control' AND message LIKE 'write scope removed from grant%'));
+  PERFORM pg_temp.ok('removal: grant stamped with removal time and owner then', (SELECT write_scope_removed_at IS NOT NULL AND write_scope_removed_owner_id = '004cb16a-0000-4000-8000-000000000003' FROM agent_grants WHERE agent_id = 'b0000000-0000-4000-8000-00000000000c'));
+  UPDATE agent_grants SET revoked_at = now() WHERE agent_id = 'b0000000-0000-4000-8000-00000000000d';
+  PERFORM pg_temp.ok('removal: revoking a write grant is logged as removal', EXISTS (SELECT 1 FROM agent_access_log WHERE detail LIKE 'write scope removed from grant%' AND agent_id = 'b0000000-0000-4000-8000-00000000000d'));
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('re-grant: Charles cannot un-revoke a write grant', pg_temp.raises($q$UPDATE agent_grants SET revoked_at = NULL WHERE agent_id = 'b0000000-0000-4000-8000-00000000000d'$q$));
+  PERFORM pg_temp.as_user('');
+  DELETE FROM agent_grants WHERE agent_id = 'b0000000-0000-4000-8000-00000000000a';
+  PERFORM pg_temp.ok('delete: deleting a write grant (service role) logged and notified', EXISTS (SELECT 1 FROM agent_access_log WHERE detail LIKE 'write scope removed: grant deleted%(no signed-in user)' AND agent_id = 'b0000000-0000-4000-8000-00000000000a')
+     AND EXISTS (SELECT 1 FROM notifications WHERE message LIKE 'write scope removed: grant deleted%'));
+  SET LOCAL session_replication_role = replica;
+  DELETE FROM agent_grants WHERE agent_id = 'b0000000-0000-4000-8000-00000000000e';
+  SET LOCAL session_replication_role = origin;
+  PERFORM pg_temp.ok('delete: read grant deleted in a replica session still logged', EXISTS (SELECT 1 FROM agent_access_log WHERE detail LIKE 'grant deleted%' AND agent_id = 'b0000000-0000-4000-8000-00000000000e'));
+  PERFORM pg_temp.ok('owner history: owner changes recorded', (SELECT count(*) FROM agent_owner_history WHERE agent_id = 'b0000000-0000-4000-8000-00000000000c') >= 1);
+END $$;
+SELECT pg_temp.ok('0039 triggers fire ALWAYS', (SELECT count(*) FROM pg_trigger WHERE tgenabled = 'A' AND tgname IN ('agent_gateway_token_write_lock','agent_grants_write_alert','agent_owner_history_record')) = 3);
+
 SELECT (CASE WHEN pass THEN 'PASS ' ELSE 'FAIL ' END) || name FROM results;

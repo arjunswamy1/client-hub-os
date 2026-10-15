@@ -153,7 +153,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
 
   // 6b. Write request: validated, checked live against Meta, then queued for approval.
   if (scope === 'write') {
-    return requestWrite({ db, secrets, fetch: doFetch, now, agent, grant, integ, settings: ws, audit, deny }, action, req?.params, req?.reason);
+    return requestWrite({ db, secrets, fetch: doFetch, now, agent, tokenId: tok.id, grant, integ, settings: ws, audit, deny }, action, req?.params, req?.reason);
   }
 
   // 6c. Named read action.

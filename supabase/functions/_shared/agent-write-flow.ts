@@ -98,6 +98,8 @@ export async function settle(db: any, row: any, now: Date): Promise<any> {
 
 export interface RequestCtx extends WriteDeps {
   agent: { id: string; owner_team_member_id: string | null };
+  /** Gateway key the request arrived on; the database records it and its creator on the request. */
+  tokenId: string;
   grant: { id: string; allowed_account_refs: string[] | null };
   integ: { id: string; provider: string; allowed_hosts: string[]; op_secret_ref: string | null };
   settings: WriteSettings; audit: Audit;
@@ -153,19 +155,20 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
 
   const decisionExpires = new Date(now.getTime() + settings.pending_ttl_min * 60_000).toISOString();
   const { data: created, error } = await db.rpc('agent_write_request_create', { p_per_day: settings.per_day, p_row: {
-    agent_id: ctx.agent.id, grant_id: ctx.grant.id, integration_id: ctx.integ.id, action, account_id: input.account_id,
+    agent_id: ctx.agent.id, token_id: ctx.tokenId, grant_id: ctx.grant.id, integration_id: ctx.integ.id, action, account_id: input.account_id,
     account_name: look.acct.name, currency: look.acct.currency, object_type: def.objectType, object_id: input.object_id,
     object_name: look.snap.name, before: plan.before, after: plan.after, diff_text: plan.diff, reason,
     requested_at: now.toISOString(), decision_expires_at: decisionExpires,
   } });
   if (error || !created) return deny(500, 'error_write_request');
+  if (created.ok === false && created.outcome === 'denied_unknown_key') return deny(403, 'denied_unknown_key');
   if (created.ok === false) return deny(429, created.outcome ?? 'write_rate_limited', `max ${settings.per_day} write requests per day`);
   if (created.duplicate) return { status: 202, body: { ok: true, outcome: 'write_pending_approval', request_id: created.id, status: created.status, diff: created.diff_text, decision_expires_at: created.decision_expires_at, duplicate: true } };
   const row = { id: created.id as string };
   await ctx.audit('write', 'write_requested', null, { target: row.id });
 
   // In-hub notification to every approver allowed to decide this request.
-  const recipients = settings.approvers.filter((id) => decisionAuthority(id, settings.approvers, ctx.agent.owner_team_member_id) === 'ok');
+  const recipients = settings.approvers.filter((id) => decisionAuthority(id, settings.approvers, ctx.agent.owner_team_member_id, undefined, created.token_created_by_id ?? null) === 'ok');
   if (recipients.length) {
     await db.from('notifications').insert(recipients.map((recipient_id) => ({
       recipient_id, type: 'agent_write_request', title: 'Agent change waiting for approval', message: `${plan.diff}. Reason: ${reason}`.slice(0, 1000),

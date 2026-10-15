@@ -53,7 +53,9 @@ function memDb(tables: Record<string, any[]>) {
       const ds = chicagoDayStart(new Date(p.requested_at)).toISOString();
       if (W.filter((r) => r.agent_id === p.agent_id && r.requested_at >= ds).length >= args.p_per_day) return { data: { ok: false, outcome: 'write_rate_limited' }, error: null };
       const id = `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
-      W.push({ id, status: 'pending', ...p }); return { data: { ok: true, duplicate: false, id }, error: null };
+      const tk = (T.agent_gateway_tokens ?? []).find((t: any) => t.id === p.token_id && t.agent_id === p.agent_id);
+      if (!tk?.created_by_id) return { data: { ok: false, outcome: 'denied_unknown_key' }, error: null };
+      W.push({ id, status: 'pending', ...p, token_created_by_id: tk.created_by_id }); return { data: { ok: true, duplicate: false, id, token_created_by_id: tk.created_by_id }, error: null };
     }
     if (name === 'sweep_stuck_agent_writes') {
       const cut = new Date(Date.now() - 10 * 60_000).toISOString(); let n = 0;

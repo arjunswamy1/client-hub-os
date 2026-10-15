@@ -42,10 +42,12 @@ export const WRITE_OWNER_ID = '1fdd684e-6cb7-447e-b616-7e1b9c598971';
 
 /** Mirror of decide_agent_write_request's authority rule (the SQL function enforces it).
  *  Any listed approver may decide; nobody else may decide their own bot's request, except the write owner. */
-export function decisionAuthority(decider: string | null, approvers: string[], agentOwner: string | null, writeOwner: string = WRITE_OWNER_ID): 'ok' | 'not_write_approver' | 'denied_self_approval' | 'denied_ownerless_agent' {
+export function decisionAuthority(decider: string | null, approvers: string[], agentOwner: string | null, writeOwner: string = WRITE_OWNER_ID, keyCreator?: string | null): 'ok' | 'not_write_approver' | 'denied_self_approval' | 'denied_ownerless_agent' | 'denied_key_creator' {
   if (!decider || !approvers.includes(decider)) return 'not_write_approver';
   if (!agentOwner) return 'denied_ownerless_agent';
   if (agentOwner === decider && decider !== writeOwner) return 'denied_self_approval';
+  // Whoever made the key a request arrived on may not decide it (mirrors decide_agent_write_request).
+  if (keyCreator && keyCreator === decider) return 'denied_key_creator';
   return 'ok';
 }
 

@@ -199,6 +199,7 @@ DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
   PERFORM pg_temp.ok('re-grant: Charles cannot un-revoke a write grant', pg_temp.raises($q$UPDATE agent_grants SET revoked_at = NULL WHERE agent_id = 'b0000000-0000-4000-8000-00000000000d'$q$));
   PERFORM pg_temp.as_user('');
+  DELETE FROM agent_write_requests WHERE agent_id IN ('b0000000-0000-4000-8000-00000000000a','b0000000-0000-4000-8000-00000000000e');
   DELETE FROM agent_grants WHERE agent_id = 'b0000000-0000-4000-8000-00000000000a';
   PERFORM pg_temp.ok('delete: deleting a write grant (service role) logged and notified', EXISTS (SELECT 1 FROM agent_access_log WHERE detail LIKE 'write scope removed: grant deleted%(no signed-in user)' AND agent_id = 'b0000000-0000-4000-8000-00000000000a')
      AND EXISTS (SELECT 1 FROM notifications WHERE message LIKE 'write scope removed: grant deleted%'));

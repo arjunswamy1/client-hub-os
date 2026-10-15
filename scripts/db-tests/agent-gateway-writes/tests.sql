@@ -39,8 +39,8 @@ DO $$ DECLARE r uuid; o jsonb; BEGIN
 
   r := pg_temp.req('b0000000-0000-4000-8000-00000000000a', '5');
   UPDATE agent_write_requests SET decision_expires_at = now() - interval '1 minute' WHERE id = r;
-  PERFORM pg_temp.ok('expiry: expired pending request cannot be approved', decide_agent_write_request(r, true)->>'outcome' = 'write_expired'
-     AND (SELECT status FROM agent_write_requests WHERE id = r) = 'expired');
+  PERFORM pg_temp.ok('expiry: expired pending request cannot be approved', decide_agent_write_request(r, true)->>'outcome' = 'write_expired');
+  PERFORM pg_temp.ok('expiry: request marked expired', (SELECT status FROM agent_write_requests WHERE id = r) = 'expired');
 END $$;
 
 -- Chicago day boundary

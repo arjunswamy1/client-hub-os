@@ -11,6 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { reviewWriteGrant, canSaveWriteGrant, type WriteGrantReview } from '@/lib/agentWriteGrantReview';
 
 const db = supabase as any;
 const ENDPOINT = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/agent-gateway`;
@@ -54,6 +56,8 @@ export default function AgentAccessPage() {
   const [handoffs, setHandoffs] = useState<any[]>([]);
   const [ws, setWs] = useState<any>(null);
   const [writeReqs, setWriteReqs] = useState<any[]>([]);
+  const [ownerHistory, setOwnerHistory] = useState<any[]>([]);
+  const [grantReview, setGrantReview] = useState<{ grant: any; review: WriteGrantReview; confirmed: boolean } | null>(null);
   const [perm, setPerm] = useState<{ busy: boolean; result: any }>({ busy: false, result: null });
   const [test, setTest] = useState<{ ref: string; busy: boolean; result: any }>({ ref: '', busy: false, result: null });
   const [shown, setShown] = useState<string | null>(null);
@@ -66,7 +70,7 @@ export default function AgentAccessPage() {
   const [g, setG] = useState({ agent_id: '', integration_id: '', handoff: false, per_min: '30', per_day: '2000', days: '' });
 
   const load = async () => {
-    const [s, ag, tk, it, gr, lg, ho, cl, sc, tm, wr] = await Promise.all([
+    const [s, ag, tk, it, gr, lg, ho, cl, sc, tm, wr, oh] = await Promise.all([
       db.from('agent_gateway_settings').select('*').eq('id', 1).maybeSingle(),
       db.from('agents').select('*').order('created_at'),
       db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, audience, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
@@ -78,7 +82,9 @@ export default function AgentAccessPage() {
       db.from('agent_client_scopes').select('id, agent_id, client_id'),
       db.from('team_members').select('id, name, is_active').eq('is_service_account', false).order('name'),
       db.from('agent_write_requests').select('*').order('requested_at', { ascending: false }).limit(100),
+      db.from('agent_owner_history').select('*').order('changed_at'),
     ]);
+    setOwnerHistory(oh.data ?? []);
     setWs(s.data ?? null); setWriteReqs(wr.data ?? []);
     setClientsList(cl.data ?? []); setScopes(sc.data ?? []); setMembers(tm.data ?? []);
     setEnabled(!!s.data?.gateway_enabled); setAgents(ag.data ?? []); setTokens(tk.data ?? []);
@@ -139,10 +145,15 @@ export default function AgentAccessPage() {
     } else toast.success('Denied');
     load();
   };
+  const saveWriteScope = (x: any, give: boolean) => {
+    const next = give ? [...new Set([...(x.scopes ?? []), 'write'])] : (x.scopes ?? []).filter((s: string) => s !== 'write');
+    run(db.from('agent_grants').update({ scopes: next }).eq('id', x.id), give ? 'Changes allowed (each one still needs approval)' : 'Changes no longer allowed');
+  };
   const toggleWriteScope = (x: any) => {
-    const has = (x.scopes ?? []).includes('write');
-    const next = has ? x.scopes.filter((s: string) => s !== 'write') : [...x.scopes, 'write'];
-    run(db.from('agent_grants').update({ scopes: next }).eq('id', x.id), has ? 'Changes no longer allowed' : 'Changes allowed (each one still needs approval)');
+    const review = reviewWriteGrant(x, ownerOf(x.agent_id), ownerHistory);
+    // Giving write scope (first time or again) always goes through an explicit owner confirmation.
+    if (review.needsConfirm) return setGrantReview({ grant: x, review, confirmed: false });
+    saveWriteScope(x, false);
   };
   const checkPerm = async () => {
     setPerm({ busy: true, result: null });
@@ -344,7 +355,10 @@ export default function AgentAccessPage() {
             {perm.result && <span className="text-sm">{perm.result.error ? `Check failed: ${perm.result.error}` : perm.result.ads_management === true ? 'Meta key can make changes (ads_management: yes)' : perm.result.ads_management === false ? 'Meta key cannot make changes (ads_management: no)' : `Could not tell (${perm.result.reason})`}</span>}
           </div>
           {writeReqs.map((w) => {
-            const canDecide = !!me && approvers.includes(me) && ownerOf(w.agent_id) !== me;
+            const reqOwner = w.agent_owner_team_member_id ?? null;
+            const keyMine = !!me && w.token_created_by_id === me;
+            const ownMine = reqOwner === me && me !== WRITE_OWNER;
+            const canDecide = !!me && approvers.includes(me) && !ownMine && !keyMine && !!reqOwner && !!w.token_created_by_id;
             const open = w.status === 'pending' && new Date(w.decision_expires_at) > new Date();
             return (
               <div key={w.id} className="space-y-1 rounded border p-3 text-sm">
@@ -358,7 +372,7 @@ export default function AgentAccessPage() {
                       <Button size="sm" onClick={() => decideWrite(w.id, true)}>Approve</Button>
                       <Button size="sm" variant="outline" onClick={() => decideWrite(w.id, false)}>Deny</Button>
                     </div>
-                  ) : <span className="ml-auto text-xs text-muted-foreground">{ownerOf(w.agent_id) === me ? 'Your own agent — another approver must decide' : 'Waiting for an approver'}</span>)}
+                  ) : <span className="ml-auto text-xs text-muted-foreground">{keyMine ? 'You made the key this came in on — another approver must decide' : ownMine ? 'Your own agent — another approver must decide' : 'Waiting for an approver'}</span>)}
                 </div>
                 <p>{w.diff_text}</p>
                 <p className="text-muted-foreground">Reason: “{w.reason}”{w.decided_by_id ? ` · decided by ${memberName(w.decided_by_id)}` : ''}{w.failure_outcome ? ` · ${w.failure_outcome}` : ''}</p>
@@ -367,6 +381,39 @@ export default function AgentAccessPage() {
           })}
           {!writeReqs.length && <p className="text-sm text-muted-foreground">No change requests yet.</p>}
         </TabsContent>
+        <Dialog open={!!grantReview} onOpenChange={(o) => { if (!o) setGrantReview(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Allow {grantReview ? agentName(grantReview.grant.agent_id) : ''} to request Meta changes?</DialogTitle>
+              <DialogDescription>Check who owns this agent before saving. Each change it asks for will still need approval.</DialogDescription>
+            </DialogHeader>
+            {grantReview && (
+              <div className="space-y-2 text-sm">
+                <p>Current owner: <span className="font-medium">{grantReview.review.currentOwnerId ? memberName(grantReview.review.currentOwnerId) : 'nobody'}</span></p>
+                <p className="text-muted-foreground">{grantReview.review.lastHeldAt
+                  ? `Last allowed changes until ${new Date(grantReview.review.lastHeldAt).toLocaleString()}, when the owner was ${grantReview.review.ownerAtLastHold ? memberName(grantReview.review.ownerAtLastHold) : 'nobody'}.`
+                  : 'This permission has never allowed changes before.'}</p>
+                <div>
+                  <p className="font-medium">{grantReview.review.lastHeldAt ? 'Owner changes since then' : 'Owner changes'}</p>
+                  {grantReview.review.changes.length ? (
+                    <ul className="list-disc pl-5">{grantReview.review.changes.map((c) => (
+                      <li key={c.changed_at + (c.new_owner_team_member_id ?? '')}>{new Date(c.changed_at).toLocaleString()}: {c.old_owner_team_member_id ? memberName(c.old_owner_team_member_id) : 'nobody'} → {c.new_owner_team_member_id ? memberName(c.new_owner_team_member_id) : 'nobody'}{c.changed_by_team_member_id ? ` (by ${memberName(c.changed_by_team_member_id)})` : ''}</li>
+                    ))}</ul>
+                  ) : <p className="text-muted-foreground">None recorded.</p>}
+                </div>
+                {grantReview.review.currentOwnerId ? (
+                  <label className="flex items-center gap-2"><Checkbox checked={grantReview.confirmed} onCheckedChange={(v) => setGrantReview({ ...grantReview, confirmed: v === true })} />
+                    I confirm {memberName(grantReview.review.currentOwnerId)} owns this agent and should have it request changes.</label>
+                ) : <p className="text-destructive">This agent has no owner, so it cannot be allowed to request changes.</p>}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setGrantReview(null)}>Cancel</Button>
+              <Button disabled={!grantReview || !canSaveWriteGrant(grantReview.review, grantReview.confirmed ? grantReview.review.currentOwnerId : undefined)}
+                onClick={() => { if (grantReview) { saveWriteScope(grantReview.grant, true); setGrantReview(null); } }}>Allow changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <TabsContent value="handoffs" className="space-y-2">
           <p className="text-sm text-muted-foreground">Agents asking to sign in to a website themselves. Approving lets that agent collect the login once, within 15 minutes.</p>

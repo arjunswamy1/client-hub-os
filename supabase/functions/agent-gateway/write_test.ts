@@ -53,7 +53,9 @@ function memDb(tables: Record<string, any[]>) {
       const ds = chicagoDayStart(new Date(p.requested_at)).toISOString();
       if (W.filter((r) => r.agent_id === p.agent_id && r.requested_at >= ds).length >= args.p_per_day) return { data: { ok: false, outcome: 'write_rate_limited' }, error: null };
       const id = `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
-      W.push({ id, status: 'pending', ...p }); return { data: { ok: true, duplicate: false, id }, error: null };
+      const tk = (tables.agent_gateway_tokens ?? []).find((t: any) => t.id === p.token_id && t.agent_id === p.agent_id);
+      if (!tk?.created_by_id) return { data: { ok: false, outcome: 'denied_unknown_key' }, error: null };
+      W.push({ id, status: 'pending', ...p, token_created_by_id: tk.created_by_id }); return { data: { ok: true, duplicate: false, id, token_created_by_id: tk.created_by_id }, error: null };
     }
     if (name === 'sweep_stuck_agent_writes') {
       const cut = new Date(Date.now() - 10 * 60_000).toISOString(); let n = 0;
@@ -65,10 +67,10 @@ function memDb(tables: Record<string, any[]>) {
   return { from, rpc, tables };
 }
 
-interface Opts { writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string | null }
+interface Opts { keyCreator?: string | null; writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string | null }
 async function world(o: Opts = {}) {
   const tables: Record<string, any[]> = {
-    agent_gateway_tokens: [{ id: 't1', agent_id: 'a1', token_hash: await sha256Hex(TOKEN), expires_at: '2099-01-01', revoked_at: null, audience: 'gateway' }],
+    agent_gateway_tokens: [{ id: 't1', agent_id: 'a1', token_hash: await sha256Hex(TOKEN), expires_at: '2099-01-01', revoked_at: null, audience: 'gateway', created_by_id: 'keyCreator' in o ? o.keyCreator : 'juan' }],
     agent_gateway_settings: [{ id: 1, gateway_enabled: true, writes_enabled: o.writes ?? true, write_approver_team_member_ids: [AJ, CHARLES], write_requests_per_day: o.perDay ?? 20 }],
     agents: [{ id: 'a1', status: 'active', kind: 'ai_agent', owner_team_member_id: 'owner' in o ? o.owner : 'juan' }],
     integrations: [{ id: IID, provider: 'meta_ads', enabled: true, op_secret_ref: 'op://shared/meta/key', account_ref: null, allowed_hosts: ['graph.facebook.com'], client_id: null, is_browser_login: false }],
@@ -584,4 +586,31 @@ Deno.test('duplicate: Meta copy-limit error is reported as failed_copy_too_large
   const db = await world(); const m = meta({ postStatus: 400, postBody: { error: { message: 'Too many objects to copy synchronously. Please use an async batch request to copy this campaign.' } } });
   const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
   assertEquals((await poll(db, m, a.body.request_id)).body.failure_outcome, 'failed_copy_too_large');
+});
+
+// ---------- Key lock follow-up (migration 0040): key used + its creator recorded; creator may not decide ----------
+Deno.test('key snapshot: request records the key it arrived on and that key\'s creator', async () => {
+  const db = await world({ keyCreator: CHARLES }); const r = await call(db, meta(), budgetReq(120));
+  assertEquals(r.status, 202);
+  const w = db.tables.agent_write_requests.at(-1);
+  assertEquals(w.token_id, 't1'); assertEquals(w.token_created_by_id, CHARLES);
+});
+Deno.test('key snapshot: a key with no recorded creator cannot raise a write request', async () => {
+  const db = await world({ keyCreator: null }); const m = meta(); const r = await call(db, m, budgetReq(120));
+  assertEquals(r.status, 403); assertEquals(r.body.outcome, 'denied_unknown_key');
+  assertEquals(db.tables.agent_write_requests.length, 0); assertEquals(m.posts().length, 0);
+});
+Deno.test('key creator: approvers who made the key are not notified (Juan bot, Charles key -> AJ only)', async () => {
+  const db = await world({ keyCreator: CHARLES }); await call(db, meta(), budgetReq(120));
+  assertEquals(notified(db), [AJ]);
+});
+Deno.test('key creator: AJ-made key on Juan bot -> Charles only', async () => {
+  const db = await world({ keyCreator: AJ }); await call(db, meta(), budgetReq(120));
+  assertEquals(notified(db), [CHARLES]);
+});
+Deno.test('decisionAuthority: key creator refused, others unaffected', () => {
+  assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], 'juan', undefined, CHARLES), 'denied_key_creator');
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, AJ), 'denied_key_creator');
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, CHARLES), 'ok');
+  assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], CHARLES, undefined, 'juan'), 'denied_self_approval');
 });

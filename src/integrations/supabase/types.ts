@@ -731,6 +731,8 @@ export type Database = {
           revoked_at: string | null
           scopes: string[]
           updated_at: string
+          write_scope_removed_at: string | null
+          write_scope_removed_owner_id: string | null
         }
         Insert: {
           account_ref?: string | null
@@ -748,6 +750,8 @@ export type Database = {
           revoked_at?: string | null
           scopes?: string[]
           updated_at?: string
+          write_scope_removed_at?: string | null
+          write_scope_removed_owner_id?: string | null
         }
         Update: {
           account_ref?: string | null
@@ -765,6 +769,8 @@ export type Database = {
           revoked_at?: string | null
           scopes?: string[]
           updated_at?: string
+          write_scope_removed_at?: string | null
+          write_scope_removed_owner_id?: string | null
         }
         Relationships: [
           {
@@ -898,6 +904,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      agent_owner_history: {
+        Row: {
+          agent_id: string
+          changed_at: string
+          changed_by_team_member_id: string | null
+          id: string
+          new_owner_team_member_id: string | null
+          old_owner_team_member_id: string | null
+        }
+        Insert: {
+          agent_id: string
+          changed_at?: string
+          changed_by_team_member_id?: string | null
+          id?: string
+          new_owner_team_member_id?: string | null
+          old_owner_team_member_id?: string | null
+        }
+        Update: {
+          agent_id?: string
+          changed_at?: string
+          changed_by_team_member_id?: string | null
+          id?: string
+          new_owner_team_member_id?: string | null
+          old_owner_team_member_id?: string | null
+        }
+        Relationships: []
       }
       agent_query_log: {
         Row: {
@@ -1070,6 +1103,8 @@ export type Database = {
           requested_at: string
           result: Json | null
           status: string
+          token_created_by_id: string | null
+          token_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1100,6 +1135,8 @@ export type Database = {
           requested_at?: string
           result?: Json | null
           status?: string
+          token_created_by_id?: string | null
+          token_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1130,6 +1167,8 @@ export type Database = {
           requested_at?: string
           result?: Json | null
           status?: string
+          token_created_by_id?: string | null
+          token_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -10205,6 +10244,7 @@ export type Database = {
         Returns: Json
       }
       agent_gateway_write_owner: { Args: never; Returns: string }
+      agent_has_write_grant: { Args: { p_agent: string }; Returns: boolean }
       agent_hub_count_read: {
         Args: { p_agent_id: string; p_client_id: string; p_tool: string }
         Returns: undefined

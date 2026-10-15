@@ -13,7 +13,7 @@ P="psql -X -q -t -A -h $D -p $PORT -U postgres -v ON_ERROR_STOP=1"
 setup() {
   $P -c "DROP DATABASE IF EXISTS t" -c "CREATE DATABASE t" >/dev/null
   $P -d t -f "$HERE/stub_schema.sql" >/dev/null
-  for m in "$ROOT"/drizzle/migrations/003[4-9]_*.sql; do $P -d t -f "$m" >/dev/null; done
+  for m in $(ls "$ROOT"/drizzle/migrations/0*.sql | awk -F/ '{n=substr($NF,1,4)+0; if(n>=34) print}'); do $P -d t -f "$m" >/dev/null; done
 }
 setup
 OUT=$(cd "$HERE" && $P -d t -f tests.sql)
@@ -32,7 +32,7 @@ WIN=$(race "UPDATE agent_write_requests SET status='executing', execution_starte
 # Concurrency 2: 19 requests today, eight concurrent creates on different objects; exactly one fits under 20/day.
 $P -d t -c "INSERT INTO agent_write_requests (agent_id, grant_id, integration_id, action, account_id, object_type, object_id, before, after, diff_text, decision_expires_at, status)
   SELECT agent_id, id, integration_id, 'meta.ad.pause','111','ad','p'||k,'{}','{}','d', now()+interval '1 day','denied' FROM agent_grants, generate_series(1,18) k WHERE agent_id='b0000000-0000-4000-8000-00000000000a'" >/dev/null
-OKS=$(race "SELECT agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000a'),'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','race'||pg_backend_pid(),'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 20)->>'ok'")
+OKS=$(race "SELECT agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',(SELECT id FROM agent_gateway_tokens WHERE agent_id='b0000000-0000-4000-8000-00000000000a' LIMIT 1),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000a'),'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','race'||pg_backend_pid(),'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 20)->>'ok'")
 NT=$(grep -c '^true$' <<<"$OKS" || true); NF=$(grep -c '^false$' <<<"$OKS" || true)
 TOTAL=$($P -d t -c "SELECT count(*) FROM agent_write_requests WHERE agent_id='b0000000-0000-4000-8000-00000000000a' AND requested_at >= agent_write_day_start(now())")
 [ "$NT" = 1 ] && [ "$NF" = 7 ] && [ "$TOTAL" = 20 ] && OUT+=$'\n'"PASS concurrency: 8 concurrent requests at 19/20, exactly 1 accepted, total stays 20" || OUT+=$'\n'"FAIL concurrency: limit accepted=$NT refused=$NF total=$TOTAL"

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Real-Postgres tests for the gateway write SQL (migrations 0034 + 0035 applied verbatim).
+# Real-Postgres tests for the gateway write SQL (migrations 0034 onward applied verbatim from drizzle/migrations).
 # Usage: bash scripts/db-tests/agent-gateway-writes/run.sh   (needs initdb/pg_ctl/psql on PATH)
 set -euo pipefail
 # initdb refuses root: re-run as an unprivileged uid.
-if [ "$(id -u)" = 0 ]; then exec setpriv --reuid=65534 --regid=65534 --clear-groups env HOME=/tmp PATH="$PATH" M35="${M35:-}" bash "$0" "$@"; fi
+if [ "$(id -u)" = 0 ]; then exec setpriv --reuid=65534 --regid=65534 --clear-groups env HOME=/tmp PATH="$PATH" bash "$0" "$@"; fi
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$HERE/../../.."
 D=$(mktemp -d); PORT=${DBTEST_PORT:-55432}
 initdb -D "$D/data" -U postgres -A trust >/dev/null
@@ -13,7 +13,7 @@ P="psql -X -q -t -A -h $D -p $PORT -U postgres -v ON_ERROR_STOP=1"
 setup() {
   $P -c "DROP DATABASE IF EXISTS t" -c "CREATE DATABASE t" >/dev/null
   $P -d t -f "$HERE/stub_schema.sql" >/dev/null
-  for m in "$ROOT"/drizzle/migrations/0034_*.sql "${M35:-$(ls "$ROOT"/drizzle/migrations/0035_*.sql)}"; do $P -d t -f "$m" >/dev/null; done
+  for m in "$ROOT"/drizzle/migrations/003[4-9]_*.sql; do $P -d t -f "$m" >/dev/null; done
 }
 setup
 OUT=$(cd "$HERE" && $P -d t -f tests.sql)

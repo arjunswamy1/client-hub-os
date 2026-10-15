@@ -37,13 +37,43 @@ export function settingsFrom(row: any): WriteSettings {
   };
 }
 
-/** Mirror of decide_agent_write_request's authority rule (the SQL function enforces it). */
-export function decisionAuthority(decider: string | null, approvers: string[], agentOwner: string | null): 'ok' | 'not_write_approver' | 'denied_self_approval' | 'denied_ownerless_agent' {
+/** The write owner (AJ). Mirrors SQL agent_gateway_write_owner(); may approve requests from his own bots. */
+export const WRITE_OWNER_ID = '1fdd684e-6cb7-447e-b616-7e1b9c598971';
+
+/** Mirror of decide_agent_write_request's authority rule (the SQL function enforces it).
+ *  Any listed approver may decide; nobody else may decide their own bot's request, except the write owner. */
+export function decisionAuthority(decider: string | null, approvers: string[], agentOwner: string | null, writeOwner: string = WRITE_OWNER_ID): 'ok' | 'not_write_approver' | 'denied_self_approval' | 'denied_ownerless_agent' {
   if (!decider || !approvers.includes(decider)) return 'not_write_approver';
   if (!agentOwner) return 'denied_ownerless_agent';
-  if (agentOwner === decider) return 'denied_self_approval';
+  if (agentOwner === decider && decider !== writeOwner) return 'denied_self_approval';
   return 'ok';
 }
+
+/** Prior outcomes where Meta may have applied the change: treated as applied by the chain and duplicate rules. */
+export const UNKNOWN_OUTCOMES = ['failed_upstream_timeout', 'failed_upstream_unreachable', 'failed_stuck_executing'];
+export function outcomeUnknown(r: { status?: string; failure_outcome?: string | null; result?: any }): boolean {
+  if (r.status !== 'failed') return false;
+  if (UNKNOWN_OUTCOMES.includes(r.failure_outcome ?? '')) return true;
+  return r.failure_outcome === 'failed_upstream' && Number(r.result?.upstream_status) >= 500;
+}
+
+/** Meta's synchronous deep copy refuses campaigns with more child objects (ad sets + ads) than this.
+ *  Value from Meta docs; not yet verified against live Meta. Larger campaigns are refused (no async batch copy). */
+export const SYNC_COPY_MAX_CHILDREN = 3;
+export const childCountUrl = (campaignId: string, edge: 'adsets' | 'ads', secret: string) => {
+  const u = metaGet(`${campaignId}/${edge}`, 'id', secret);
+  u.searchParams.set('summary', 'total_count'); u.searchParams.set('limit', '1');
+  u.searchParams.set('effective_status', JSON.stringify(COPY_LOOKUP_STATUSES));
+  return u;
+};
+/** True when a Meta error body is the synchronous-copy size limit. */
+export function isCopyTooLargeError(data: any): boolean {
+  const e = data?.error; if (!e) return false;
+  const msg = `${e.message ?? ''} ${e.error_user_msg ?? ''} ${e.error_user_title ?? ''}`.toLowerCase();
+  return /async|too many|number of (child )?objects|copy limit/.test(msg) && /cop(y|ies)/.test(msg);
+}
+/** Every effective status, so archived/deleted copies are still found. */
+export const COPY_LOOKUP_STATUSES = ['ACTIVE', 'PAUSED', 'DELETED', 'ARCHIVED', 'IN_PROCESS', 'WITH_ISSUES', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'DISAPPROVED', 'PENDING_REVIEW', 'PREAPPROVED', 'PENDING_BILLING_INFO'];
 
 /** Remove every occurrence of the secret (and its URL-encoded form) from text. */
 export function scrub(text: string, secret: string | null): string {
@@ -144,7 +174,7 @@ export const GET_TIMEOUT_MS = 15_000;
 export const copyTag = (requestId: string) => `[cpm:${requestId}]`;
 export function copyLookupUrl(accountId: string, tag: string, secret: string): URL {
   const u = metaGet(`act_${stripAct(accountId)}/campaigns`, 'id,name', secret);
-  u.searchParams.set('filtering', JSON.stringify([{ field: 'name', operator: 'CONTAIN', value: tag }]));
+  u.searchParams.set('filtering', JSON.stringify([{ field: 'name', operator: 'CONTAIN', value: tag }, { field: 'effective_status', operator: 'IN', value: COPY_LOOKUP_STATUSES }]));
   u.searchParams.set('limit', '5');
   return u;
 }

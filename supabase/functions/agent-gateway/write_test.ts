@@ -79,7 +79,7 @@ async function world(o: Opts = {}) {
 }
 
 // ---------- Fake Meta ----------
-function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; perms?: string[] | null; postFails?: 'timeout' | 'lost' } = {}) {
+function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; perms?: string[] | null; postFails?: 'timeout' | 'lost'; children?: number | null; postStatus?: number; postBody?: unknown } = {}) {
   const calls: { method: string; url: string; body?: string }[] = [];
   const st = {
     adset: { id: '555', name: 'FE Adset', account_id: '111', status: 'ACTIVE', daily_budget: '10000', ...state.adset },
@@ -87,7 +87,8 @@ function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; per
     ad: { id: '999', name: 'FE Ad', account_id: '111', status: 'ACTIVE', ...state.ad },
     account: { name: 'Juan Acct', currency: 'USD', ...state.account },
     perms: state.perms === undefined ? ['ads_management', 'ads_read'] : state.perms,
-    copies: [] as { id: string; name: string }[], postFails: state.postFails as undefined | 'timeout' | 'lost',
+    children: state.children === undefined ? 2 : state.children, postStatus: state.postStatus, postBody: state.postBody,
+    copies: [] as { id: string; name: string; effective_status?: string }[], postFails: state.postFails as undefined | 'timeout' | 'lost',
   };
   const timeout = () => { const e = new Error('timed out'); e.name = 'TimeoutError'; return e; };
   const fn = (async (u: string, init: any) => {
@@ -97,6 +98,7 @@ function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; per
     if (method === 'POST') {
       assert(init?.signal instanceof AbortSignal, 'Meta POST must carry a timeout signal');
       if (st.postFails === 'timeout') throw timeout();
+      if (st.postStatus) return j(st.postBody ?? { error: { message: 'x' } }, st.postStatus);
       if (url.pathname.endsWith('/copies')) {
         const ro = JSON.parse(new URLSearchParams(init.body.toString()).get('rename_options') ?? '{}');
         const id = String(888 + st.copies.length); st.copies.push({ id, name: `${st.campaign.name}${ro.rename_suffix ?? ''}` });
@@ -109,9 +111,17 @@ function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; per
       return j({ success: true });
     }
     if (url.pathname.endsWith('/me/permissions')) return st.perms === null ? j({ error: 'x' }, 400) : j({ data: st.perms.map((permission) => ({ permission, status: 'granted' })) });
+    if (url.pathname.endsWith('/adsets') || url.pathname.endsWith('/ads')) {
+      if (st.children === null) return j({ error: { message: 'x' } }, 500);
+      const half = url.pathname.endsWith('/adsets') ? Math.ceil(st.children / 2) : Math.floor(st.children / 2);
+      return j({ data: [], summary: { total_count: half } });
+    }
     if (url.pathname.endsWith('/campaigns')) {
-      const v = JSON.parse(url.searchParams.get('filtering') ?? '[]')[0]?.value ?? '';
-      return j({ data: st.copies.filter((c) => c.name.includes(v)) });
+      const fl = JSON.parse(url.searchParams.get('filtering') ?? '[]');
+      const v = fl.find((x: any) => x.field === 'name')?.value ?? '';
+      // Like Meta: without an effective_status filter, archived/deleted campaigns are not returned.
+      const statuses: string[] = fl.find((x: any) => x.field === 'effective_status')?.value ?? ['ACTIVE', 'PAUSED'];
+      return j({ data: st.copies.filter((c) => c.name.includes(v) && statuses.includes(c.effective_status ?? 'PAUSED')) });
     }
     if (url.pathname.includes('/act_')) return j(st.account);
     const id = url.pathname.split('/').pop();
@@ -311,8 +321,10 @@ Deno.test('hasAdsManagement reads Meta permission lists', () => {
 });
 
 // ---------- Approval authority ----------
-Deno.test('only listed approvers may decide; owners never decide their own agent', () => {
+Deno.test('only listed approvers may decide; only AJ may decide his own bots', () => {
   assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan'), 'ok');
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], AJ), 'ok');
+  assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], AJ), 'ok');
   assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], 'juan'), 'ok');
   assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], CHARLES), 'denied_self_approval');
   assertEquals(decisionAuthority('other-admin', [AJ, CHARLES], 'juan'), 'not_write_approver');
@@ -477,4 +489,92 @@ Deno.test('ownerless bot: write request refused before any Meta call', async () 
 Deno.test('ownerless bot: neither approver may approve', () => {
   assertEquals(decisionAuthority(AJ, [AJ, CHARLES], null), 'denied_ownerless_agent');
   assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], null), 'denied_ownerless_agent');
+});
+
+// ---------- Follow-up hardening (approval rule, unknown-outcome chain, copy safety) ----------
+const notified = (db: any) => db.tables.notifications.map((n: any) => n.recipient_id).sort();
+Deno.test('notify: AJ-owned bot request goes to AJ and Charles', async () => {
+  const db = await world({ owner: AJ }); await call(db, meta(), budgetReq(120));
+  assertEquals(notified(db), [AJ, CHARLES].sort());
+});
+Deno.test('notify: Charles-owned bot request goes to AJ only', async () => {
+  const db = await world({ owner: CHARLES }); await call(db, meta(), budgetReq(120));
+  assertEquals(notified(db), [AJ]);
+});
+const prior = (o: Record<string, unknown>) => ({ id: 'prev', agent_id: 'a1', action: 'meta.adset.update_budget', object_id: '555', status: 'failed', execution_started_at: '2026-10-15T10:00:00.000Z', requested_at: '2026-10-15T09:00:00.000Z', ...o });
+for (const [label, row] of [
+  ['timeout', { failure_outcome: 'failed_upstream_timeout' }],
+  ['stuck executing', { failure_outcome: 'failed_stuck_executing' }],
+  ['upstream 5xx', { failure_outcome: 'failed_upstream', result: { upstream_status: 503 } }],
+] as const) {
+  Deno.test(`chained budget: prior ${label} (unknown outcome) within 24h blocks a new request`, async () => {
+    const db = await world(); db.tables.agent_write_requests.push(prior(row));
+    const r = await call(db, meta(), budgetReq(120));
+    assertEquals(r.body.outcome, 'denied_budget_changed_recently'); assert(String(r.body.detail).includes('unknown outcome'));
+  });
+}
+Deno.test('chained budget: prior upstream 4xx (Meta refused) does not block', async () => {
+  const db = await world(); db.tables.agent_write_requests.push(prior({ failure_outcome: 'failed_upstream', result: { upstream_status: 400 } }));
+  assertEquals((await call(db, meta(), budgetReq(120))).body.outcome, 'write_pending_approval');
+});
+Deno.test('chained budget: unknown outcome older than 24h does not block', async () => {
+  const db = await world(); db.tables.agent_write_requests.push(prior({ failure_outcome: 'failed_upstream_timeout', execution_started_at: '2026-10-14T12:00:00.000Z' }));
+  assertEquals((await call(db, meta(), budgetReq(120))).body.outcome, 'write_pending_approval');
+});
+Deno.test('chained budget: unknown-outcome change after approval blocks execution, no POST', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, budgetReq(120)); approve(db, a.body.request_id as string);
+  db.tables.agent_write_requests.push(prior({ id: 'other', agent_id: 'a2', failure_outcome: 'failed_stuck_executing', execution_started_at: '2026-10-15T13:06:00.000Z' }));
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.failure_outcome, 'failed_budget_changed_recently'); assertEquals(m.posts().length, 0);
+});
+Deno.test('duplicate: copy lookup asks Meta for archived and deleted copies too', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string); await poll(db, m, a.body.request_id);
+  const look = m.calls.find((c) => new URL(c.url).pathname.endsWith('/campaigns'))!;
+  const st = JSON.parse(new URL(look.url).searchParams.get('filtering')!).find((x: any) => x.field === 'effective_status').value;
+  for (const v of ['ARCHIVED', 'DELETED', 'PAUSED', 'ACTIVE']) assert(st.includes(v), v);
+});
+Deno.test('duplicate: after a 5xx, an ARCHIVED tagged copy blocks the retry', async () => {
+  const db = await world(); const m = meta({ postStatus: 502 });
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.failure_outcome, 'failed_upstream');
+  m.st.postStatus = undefined; m.st.copies.push({ id: '5151', name: `FE Campaign ${copyTag(a.body.request_id as string)}`, effective_status: 'ARCHIVED' });
+  const b = await call(db, m, dupReq, new Date('2026-10-15T13:20:00Z'));
+  assertEquals(b.body.outcome, 'denied_prior_copy_exists'); assertEquals(m.posts().length, 1);
+});
+Deno.test('duplicate: after a 5xx with no copy found, a new request is allowed', async () => {
+  const db = await world(); const m = meta({ postStatus: 500 });
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string); await poll(db, m, a.body.request_id);
+  m.st.postStatus = undefined;
+  assertEquals((await call(db, m, dupReq, new Date('2026-10-15T13:20:00Z'))).body.outcome, 'write_pending_approval');
+});
+Deno.test('duplicate: a new copy found at execution for an earlier unknown request blocks the POST', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
+  db.tables.agent_write_requests.push({ id: 'old', agent_id: 'a1', action: 'meta.campaign.duplicate', object_id: '777', status: 'failed', failure_outcome: 'failed_upstream_timeout' });
+  m.st.copies.push({ id: '6161', name: `FE Campaign ${copyTag('old')}`, effective_status: 'DELETED' });
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.failure_outcome, 'failed_prior_copy_exists'); assertEquals(m.posts().length, 0);
+});
+Deno.test('duplicate: campaign over the synchronous copy limit refused at request, no row', async () => {
+  const db = await world(); const m = meta({ children: 4 });
+  const r = await call(db, m, dupReq);
+  assertEquals(r.body.outcome, 'denied_copy_too_large'); assertEquals(db.tables.agent_write_requests.length, 0); assertEquals(m.posts().length, 0);
+});
+Deno.test('duplicate: child count unreadable refused at request', async () => {
+  const db = await world(); const m = meta({ children: null });
+  assertEquals((await call(db, m, dupReq)).body.outcome, 'denied_copy_size_unknown');
+});
+Deno.test('duplicate: campaign grew past the limit after approval -> failed_copy_too_large, no POST', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string); m.st.children = 10;
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.failure_outcome, 'failed_copy_too_large'); assertEquals(m.posts().length, 0);
+});
+Deno.test('duplicate: Meta copy-limit error is reported as failed_copy_too_large', async () => {
+  const db = await world(); const m = meta({ postStatus: 400, postBody: { error: { message: 'Too many objects to copy synchronously. Please use an async batch request to copy this campaign.' } } });
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
+  assertEquals((await poll(db, m, a.body.request_id)).body.failure_outcome, 'failed_copy_too_large');
 });

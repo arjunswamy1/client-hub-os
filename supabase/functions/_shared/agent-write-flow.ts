@@ -5,7 +5,7 @@ import type { SecretsProvider } from './agent-secrets.ts';
 import {
   WRITE_ACTIONS, META_HOST, META_PROVIDER, type WriteSettings, parseWriteParams, objectFields, snapshot, planChange,
   drift, metaGet, metaPost, checkAdsManagement, stripAct, scrub, executionCheck, BUDGET_ACTIONS, BUDGET_COOLDOWN_MS,
-  POST_TIMEOUT_MS, GET_TIMEOUT_MS, copyTag, copyLookupUrl, chicagoDayStart,
+  POST_TIMEOUT_MS, GET_TIMEOUT_MS, copyTag, copyLookupUrl, chicagoDayStart, outcomeUnknown, childCountUrl, decisionAuthority, SYNC_COPY_MAX_CHILDREN, isCopyTooLargeError,
 } from './agent-write-actions.ts';
 
 export interface WriteDeps { db: any; secrets: SecretsProvider; fetch: typeof fetch; now: Date }
@@ -37,12 +37,42 @@ async function lookup(deps: WriteDeps, def: { objectType: any }, objectId: strin
   return { ok: true as const, snap: snapshot(obj.data), acct: acct.ok && acct.data ? { name: acct.data.name ?? null, currency: acct.data.currency ?? null } : { name: null, currency: null } };
 }
 
-/** Last executed budget change on this object within the cooldown, if any. */
+/** Last budget change on this object within the cooldown that executed, or whose Meta outcome is unknown. */
 async function recentBudgetChange(db: any, objectId: string, now: Date, excludeId?: string): Promise<any | null> {
-  const since = new Date(now.getTime() - BUDGET_COOLDOWN_MS).toISOString();
-  const { data } = await db.from('agent_write_requests').select('id, executed_at').eq('object_id', objectId).in('action', BUDGET_ACTIONS)
-    .eq('status', 'executed').gte('executed_at', since);
-  return (data ?? []).find((r: any) => r.id !== excludeId) ?? null;
+  const since = now.getTime() - BUDGET_COOLDOWN_MS;
+  const { data } = await db.from('agent_write_requests').select('id, status, executed_at, execution_started_at, updated_at, failure_outcome, result')
+    .eq('object_id', objectId).in('action', BUDGET_ACTIONS).in('status', ['executed', 'failed']);
+  for (const r of data ?? []) {
+    if (r.id === excludeId) continue;
+    const at = r.status === 'executed' ? r.executed_at : (r.execution_started_at ?? r.updated_at);
+    if (!at || new Date(at).getTime() < since) continue;
+    if (r.status === 'executed') return { ...r, at, unknown: false };
+    if (outcomeUnknown(r)) return { ...r, at, unknown: true };
+  }
+  return null;
+}
+
+/** Prior duplicates of this campaign whose outcome is unknown; any tagged copy (any status, archived included) blocks. */
+async function priorCopyCheck(deps: WriteDeps, objectId: string, action: string, accountId: string, secret: string, excludeId?: string): Promise<{ ok: true } | { ok: false; outcome: 'copy_lookup_failed' | 'prior_copy_exists'; detail?: string }> {
+  const { data } = await deps.db.from('agent_write_requests').select('id, status, failure_outcome, result').eq('object_id', objectId).eq('action', action).eq('status', 'failed');
+  for (const u of (data ?? []).filter((r: any) => r.id !== excludeId && outcomeUnknown(r))) {
+    const f = await findTaggedCopy(deps, accountId, u.id, secret);
+    if (!f.ok) return { ok: false, outcome: 'copy_lookup_failed' };
+    if (f.id) return { ok: false, outcome: 'prior_copy_exists', detail: `copy ${f.id} from request ${u.id}` };
+  }
+  return { ok: true };
+}
+
+/** Child objects (ad sets + ads) of a campaign; null when unreadable. */
+async function copyChildren(deps: WriteDeps, campaignId: string, secret: string): Promise<number | null> {
+  let n = 0;
+  for (const edge of ['adsets', 'ads'] as const) {
+    const r = await metaJson(deps.fetch, childCountUrl(campaignId, edge, secret).toString(), secret);
+    const c = Number(r.data?.summary?.total_count);
+    if (!r.ok || !Number.isFinite(c)) return null;
+    n += c;
+  }
+  return n;
 }
 
 /** Find a campaign copy carrying this request's tag (a copy whose response was lost). */
@@ -52,7 +82,6 @@ async function findTaggedCopy(deps: WriteDeps, accountId: string, requestId: str
   const hit = r.data.data.find((c: any) => typeof c?.name === 'string' && c.name.includes(copyTag(requestId)));
   return { ok: true, id: hit ? String(hit.id) : null };
 }
-const UNKNOWN_OUTCOMES = ['failed_upstream_timeout', 'failed_upstream_unreachable', 'failed_stuck_executing'];
 
 /** Lazily persist expiry derived from timestamps. Returns the current row. */
 export async function settle(db: any, row: any, now: Date): Promise<any> {
@@ -109,17 +138,17 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   if (!plan.ok) return deny(400, plan.outcome, plan.detail);
   if (def.kind === 'budget') {
     const prior = await recentBudgetChange(db, input.object_id, now);
-    if (prior) return deny(409, 'denied_budget_changed_recently', `budget changed at ${prior.executed_at}; next change allowed 24h later`);
+    if (prior) return deny(409, 'denied_budget_changed_recently', prior.unknown
+      ? `a budget change at ${prior.at} has an unknown outcome (${prior.failure_outcome}); treated as applied; next change allowed 24h later`
+      : `budget changed at ${prior.at}; next change allowed 24h later`);
   }
   if (def.kind === 'duplicate') {
-    // A prior duplicate whose Meta outcome is unknown may already have made a copy.
-    const { data: unsure } = await db.from('agent_write_requests').select('id, failure_outcome').eq('object_id', input.object_id)
-      .eq('action', action).eq('status', 'failed').in('failure_outcome', UNKNOWN_OUTCOMES);
-    for (const u of unsure ?? []) {
-      const f = await findTaggedCopy(ctx, input.account_id, u.id, secret.value);
-      if (!f.ok) return deny(502, 'denied_copy_lookup_failed');
-      if (f.id) return deny(409, 'denied_prior_copy_exists', `copy ${f.id} from request ${u.id}`);
-    }
+    // A prior duplicate whose Meta outcome is unknown (timeout, stuck, 5xx) may already have made a copy.
+    const pc = await priorCopyCheck(ctx, input.object_id, action, input.account_id, secret.value);
+    if (!pc.ok) return pc.outcome === 'copy_lookup_failed' ? deny(502, 'denied_copy_lookup_failed') : deny(409, 'denied_prior_copy_exists', pc.detail);
+    const kids = await copyChildren(ctx, input.object_id, secret.value);
+    if (kids === null) return deny(502, 'denied_copy_size_unknown');
+    if (kids > SYNC_COPY_MAX_CHILDREN) return deny(400, 'denied_copy_too_large', `campaign has ${kids} ad sets + ads; Meta's synchronous copy allows at most ${SYNC_COPY_MAX_CHILDREN}. Duplicate it in Ads Manager instead.`);
   }
 
   const decisionExpires = new Date(now.getTime() + settings.pending_ttl_min * 60_000).toISOString();
@@ -135,8 +164,8 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const row = { id: created.id as string };
   await ctx.audit('write', 'write_requested', null, { target: row.id });
 
-  // In-hub notification to every approver who is not the agent's owner.
-  const recipients = settings.approvers.filter((id) => id !== ctx.agent.owner_team_member_id);
+  // In-hub notification to every approver allowed to decide this request.
+  const recipients = settings.approvers.filter((id) => decisionAuthority(id, settings.approvers, ctx.agent.owner_team_member_id) === 'ok');
   if (recipients.length) {
     await db.from('notifications').insert(recipients.map((recipient_id) => ({
       recipient_id, type: 'agent_write_request', title: 'Agent change waiting for approval', message: `${plan.diff}. Reason: ${reason}`.slice(0, 1000),
@@ -209,6 +238,8 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
   if (def.kind === 'budget' && await recentBudgetChange(db, row.object_id, now, row.id)) return fail('failed_budget_changed_recently');
 
   if (def.kind === 'duplicate') {
+    const pc = await priorCopyCheck(deps, row.object_id, row.action, row.account_id, secret.value, row.id);
+    if (!pc.ok) return fail(pc.outcome === 'copy_lookup_failed' ? 'failed_copy_lookup' : 'failed_prior_copy_exists', pc.detail ?? null);
     const f = await findTaggedCopy(deps, row.account_id, row.id, secret.value);
     if (!f.ok) return fail('failed_copy_lookup');
     if (f.id) {
@@ -218,6 +249,9 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
       await logRow(db, row, 'write_executed', 'existing tagged copy found; no new copy created', { approved_by_id: row.decided_by_id });
       return done ?? { ...row, status: 'executed', result };
     }
+    const kids = await copyChildren(deps, row.object_id, secret.value);
+    if (kids === null) return fail('failed_copy_size_unknown');
+    if (kids > SYNC_COPY_MAX_CHILDREN) return fail('failed_copy_too_large', `${kids} child objects`);
   }
 
   const post = metaPost(def, row.object_id, row.after, secret.value, row.id);
@@ -226,6 +260,7 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
   catch (e) { return fail((e as any)?.name === 'TimeoutError' ? 'failed_upstream_timeout' : 'failed_upstream_unreachable', 'Meta outcome unknown; verify the object'); }
   const text = scrub((await res.text()).slice(0, MAX_BODY), secret.value);
   let data: any = text; try { data = JSON.parse(text); } catch { /* keep text */ }
+  if (def.kind === 'duplicate' && !res.ok && isCopyTooLargeError(data)) return fail('failed_copy_too_large', `status ${res.status}`, { upstream_status: res.status, data });
   if (!res.ok || (data && typeof data === 'object' && data.success === false)) return fail('failed_upstream', `status ${res.status}`, { upstream_status: res.status, data });
 
   const result = { upstream_status: res.status, data, ...(def.kind === 'duplicate' && data?.copied_campaign_id ? { new_campaign_id: String(data.copied_campaign_id) } : {}) };

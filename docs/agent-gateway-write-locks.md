@@ -35,3 +35,12 @@ Only the table owner / a superuser can `ALTER TABLE ... DISABLE TRIGGER` or repl
 
 - Each write request stores the requesting bot's owner at creation (`agent_write_requests.agent_owner_team_member_id`, set inside `agent_write_request_create`). `decide_agent_write_request` applies the self-approval and ownerless rules to that snapshot, never the live `agents` row, so changing a bot's owner afterwards cannot change who may approve an existing request.
 - `agent_owner_write_lock` (BEFORE UPDATE on `agents`, `ENABLE ALWAYS`) refuses any change to `owner_team_member_id` on an agent that has a write-scoped grant unless the signed-in user is the write owner (AJ). There is no service-role bypass and it fires in replica/maintenance sessions.
+
+## Gateway keys and grant removals (migration 0040)
+
+- `agent_gateway_token_write_lock` (BEFORE INSERT/UPDATE, `ENABLE ALWAYS`): for any agent holding an active write grant, only the write owner may create a key, change its hash (rotate), move it to the agent, un-revoke it or extend its expiry. Service role and replica sessions are refused like anyone else. Anyone may still revoke.
+- Every key records `created_by_id`: taken from the signed-in user on insert (a supplied value is ignored), required when there is none, never changeable.
+- `agent_write_request_create` stores the key the request arrived on (`token_id`) and its creator (`token_created_by_id`); unknown keys are refused (`denied_unknown_key`). `decide_agent_write_request` refuses the key's creator (`denied_key_creator`) for approve and deny.
+- `agent_grants_write_alert` now also fires on DELETE (`ENABLE ALWAYS`), and un-revoking a write grant counts as giving write scope (locked) while revoking counts as removal (alerted and stamped `write_scope_removed_at` / owner then).
+- `agent_owner_history` records every owner change (all roles). The Agent access page shows the current owner and owner changes since write was last held, and needs an explicit confirmation before giving write scope.
+- Migration 0039 is an accidental no-op (`SELECT 1`); 0040 holds the substance.

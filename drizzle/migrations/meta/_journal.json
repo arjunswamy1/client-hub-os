@@ -253,6 +253,13 @@
       "when": 1792096755506,
       "tag": "0035_agent_gateway_write_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792096845067,
+      "tag": "0036_agent_gateway_write_hardening_sql",
+      "breakpoints": true
     }
   ]
 }

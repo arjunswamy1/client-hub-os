@@ -10,6 +10,6 @@ INSERT INTO agents VALUES
  ('b0000000-0000-4000-8000-00000000000e','Ownerless bot',NULL);
 INSERT INTO agent_grants (id, agent_id, integration_id) SELECT gen_random_uuid(), id, '55694453-95b2-4c49-829b-517a50952d7b' FROM agents;
 CREATE FUNCTION pg_temp.req(p_agent uuid, p_obj text, p_status text DEFAULT 'pending', p_at timestamptz DEFAULT now()) RETURNS uuid LANGUAGE sql AS $$
-  INSERT INTO agent_write_requests (agent_id, grant_id, integration_id, action, account_id, object_type, object_id, before, after, diff_text, decision_expires_at, status, requested_at)
-  SELECT p_agent, g.id, g.integration_id, 'meta.ad.pause', '111', 'ad', p_obj, '{}', '{}', 'd', now() + interval '1 day', p_status, p_at
+  INSERT INTO agent_write_requests (agent_owner_team_member_id, agent_id, grant_id, integration_id, action, account_id, object_type, object_id, before, after, diff_text, decision_expires_at, status, requested_at)
+  SELECT (SELECT owner_team_member_id FROM agents WHERE id = p_agent), p_agent, g.id, g.integration_id, 'meta.ad.pause', '111', 'ad', p_obj, '{}', '{}', 'd', now() + interval '1 day', p_status, p_at
   FROM agent_grants g WHERE g.agent_id = p_agent RETURNING id $$;

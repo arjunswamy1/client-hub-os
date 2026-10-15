@@ -1048,6 +1048,7 @@ export type Database = {
           action: string
           after: Json
           agent_id: string
+          agent_owner_team_member_id: string | null
           approval_expires_at: string | null
           before: Json
           currency: string | null
@@ -1077,6 +1078,7 @@ export type Database = {
           action: string
           after: Json
           agent_id: string
+          agent_owner_team_member_id?: string | null
           approval_expires_at?: string | null
           before: Json
           currency?: string | null
@@ -1106,6 +1108,7 @@ export type Database = {
           action?: string
           after?: Json
           agent_id?: string
+          agent_owner_team_member_id?: string | null
           approval_expires_at?: string | null
           before?: Json
           currency?: string | null

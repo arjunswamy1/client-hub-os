@@ -188,7 +188,7 @@ export default function CannaballDashboard() {
       }).filter((r) => r.date && !isNaN(new Date(r.date).getTime()));
 
       const { error } = await supabase.from("cannaball_spend" as any).upsert(rows as any, {
-        onConflict: "client_id,date,platform,campaign_name,creative_name",
+        onConflict: "client_id,date,platform,campaign_name,creative_name,platform_adset_id,platform_ad_id",
       });
       if (error) throw error;
       toast.success(`Imported ${rows.length} rows of Roku spend`);

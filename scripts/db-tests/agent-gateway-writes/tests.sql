@@ -27,7 +27,7 @@ DO $$ DECLARE r uuid; o jsonb; BEGIN
   PERFORM pg_temp.ok('self-approval: AJ may approve Charles bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
 
   r := pg_temp.req('b0000000-0000-4000-8000-00000000000d', '3');
-  o := decide_agent_write_request(r, true); RAISE NOTICE 'OUT %', o;
+  o := decide_agent_write_request(r, true);
   PERFORM pg_temp.ok('owner: AJ (write owner) may approve his own bot', o->>'outcome' = 'write_approved'
      AND (SELECT status = 'approved' AND decided_by_id = '1fdd684e-6cb7-447e-b616-7e1b9c598971' FROM agent_write_requests WHERE id = r));
   r := pg_temp.req('b0000000-0000-4000-8000-00000000000d', '3b');

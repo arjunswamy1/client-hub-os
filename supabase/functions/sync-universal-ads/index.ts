@@ -1,7 +1,8 @@
 import { recordSpendObservations } from "../_shared/metric-revision-log.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-import { uaFetch, pickNum, pickStr } from "../_shared/universal-ads.ts";
+import { uaFetch } from "../_shared/universal-ads.ts";
+import { mapUniversalRows } from "../_shared/universal-ads-rows.ts";
 
 const CANNABALL_CLIENT_ID = "a1dabea1-5518-4c7f-a29d-23739cb52f9b";
 
@@ -140,6 +141,8 @@ Deno.serve(async (req) => {
       range: { start: ymd(start), end: ymd(end) },
       rows_returned: rows.length,
       rows_written: finalRows.length,
+      legacy_rows_replaced: legacyRowsReplaced,
+      by_adset: finalRows.map((r) => ({ date: r.date, adset_id: r.platform_adset_id, adset_name: r.adset_name, ad_id: r.platform_ad_id, spend: r.spend })),
       total_spend: finalRows.reduce((s, r) => s + r.spend, 0),
       total_impressions: finalRows.reduce((s, r) => s + r.impressions, 0),
     });

@@ -1,10 +1,7 @@
-// Drafts one daily client update per account and posts it to that client's
-// INTERNAL Slack channel for the account lead to edit and send on.
-//
-// It never posts to a client-facing channel: every post goes through
-// `postToSlack()`, whose fail-closed allowlist refuses any channel that is
-// external, unmapped or unclassified. The channel is additionally selected only
-// from `slack_channel_mappings` rows with channel_purpose = 'client_internal'.
+// Drafts one daily client update per account and saves it into the hub
+// (client_daily_updates). It never posts to Slack — Slack posting of daily
+// updates was removed on 2026-10-15 and it is no longer scheduled. It runs only
+// on demand, e.g. from the mcp-hub draft tools.
 //
 // Two blocks are produced per client and stored separately: client-facing prose
 // with no tooling talk in it, and internal notes for the lead carrying the data

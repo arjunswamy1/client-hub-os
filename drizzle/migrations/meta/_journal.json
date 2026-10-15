@@ -281,6 +281,13 @@
       "when": 1792105984919,
       "tag": "0039_agent_gateway_key_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792106049016,
+      "tag": "0040_agent_gateway_key_lock_sql",
+      "breakpoints": true
     }
   ]
 }

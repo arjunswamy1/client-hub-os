@@ -28,3 +28,7 @@
 - [x] Phase 1: agents, gateway keys, accounts (1Password pointers only), permissions, insert-only audit, rate limits, gateway skeleton (off by default), admin page
 - [x] Phase 2: 1Password adapter, read-only Meta/CallGrid/Roku actions, hand-off approvals, test connection, unusual-activity flags
 - [ ] Finish setup: AJ saves OP_SERVICE_ACCOUNT_TOKEN and adds accounts with op:// references
+
+## Universal Ads ad set grain (Oct 15)
+- [x] cannaball_spend keyed by ad set id + ad id; sync merges on ids, not names
+- [x] Backfill 9–14 Oct; Cannaball source split shows spend per ad set

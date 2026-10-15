@@ -45,21 +45,4 @@ export async function uaFetch(
   return { status: res.status, parsed, text };
 }
 
-export function pickNum(row: Record<string, any>, keys: string[]): number {
-  for (const k of keys) {
-    const v = row?.[k] ?? row?.metrics?.[k];
-    if (v !== undefined && v !== null && v !== "") {
-      const n = Number(v);
-      if (!Number.isNaN(n)) return n;
-    }
-  }
-  return 0;
-}
-
-export function pickStr(row: Record<string, any>, keys: string[]): string | null {
-  for (const k of keys) {
-    const v = row?.[k] ?? row?.dimensions?.[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  return null;
-}
+export { pickNum, pickStr } from "./universal-ads-rows.ts";

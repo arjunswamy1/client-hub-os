@@ -2,7 +2,6 @@
 // Rows merge on date + ad set id + ad id. Names are labels only: two ad sets
 // sharing an ad name stay separate rows. Rows with no ad set id keep their
 // API row identity rather than being folded into a named sibling.
-import { pickNum, pickStr } from "./universal-ads.ts";
 
 export interface UniversalSpendRow {
   client_id: string;
@@ -54,4 +53,23 @@ export function mapUniversalRows(
     });
   }
   return [...merged.values()].map((x) => ({ ...x, spend: Math.round(x.spend * 1e6) / 1e6 }));
+}
+
+export function pickNum(row: Record<string, any>, keys: string[]): number {
+  for (const k of keys) {
+    const v = row?.[k] ?? row?.metrics?.[k];
+    if (v !== undefined && v !== null && v !== "") {
+      const n = Number(v);
+      if (!Number.isNaN(n)) return n;
+    }
+  }
+  return 0;
+}
+
+export function pickStr(row: Record<string, any>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = row?.[k] ?? row?.dimensions?.[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
 }

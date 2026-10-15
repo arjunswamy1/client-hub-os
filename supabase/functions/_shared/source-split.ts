@@ -63,6 +63,22 @@ export function splitBySource(calls: SplitCall[], periods: DidPeriod[], spendByS
   });
 }
 
+export interface AdsetSpendRow { platform: string; platform_adset_id: string | null; adset_name: string | null; campaign_name: string | null; spend: number | null; impressions: number | null }
+
+/** Spend per ad set, keyed on ad set id (names are labels; two ad sets sharing a name stay apart). Rows without an id group as legacy. */
+export function adsetBreakdown(rows: AdsetSpendRow[]) {
+  const acc = new Map<string, { source: string; adset_id: string | null; adset_name: string | null; campaign_name: string | null; spend: number; impressions: number }>();
+  for (const r of rows) {
+    const id = r.platform_adset_id || null;
+    const key = `${r.platform}|${id ?? `legacy:${r.campaign_name ?? ''}`}`;
+    const a = acc.get(key) ?? { source: r.platform, adset_id: id, adset_name: r.adset_name ?? null, campaign_name: r.campaign_name ?? null, spend: 0, impressions: 0 };
+    a.spend += Number(r.spend ?? 0); a.impressions += Number(r.impressions ?? 0);
+    if (!a.adset_name && r.adset_name) a.adset_name = r.adset_name;
+    acc.set(key, a);
+  }
+  return [...acc.values()].map((a) => ({ ...a, spend: r2(a.spend) })).sort((x, y) => y.spend - x.spend);
+}
+
 /** Accounts that split by source: Cannaball (cannaball_calls + date-ranged DID periods). */
 export const SPLIT_CALL_TABLES: Record<string, string> = { cannaball: 'cannaball_calls' };
 
@@ -82,7 +98,16 @@ export async function loadSourceSplit(
     calls.push(...(data ?? []));
     if (!data || data.length < 1000) break;
   }
+  const adsets: AdsetSpendRow[] = [];
+  for (let f = 0; ; f += 1000) {
+    const { data, error } = await db.from('cannaball_spend').select('id, platform, platform_adset_id, adset_name, campaign_name, spend, impressions')
+      .eq('client_id', client.id).eq('platform', 'universal_ads').gte('date', window.from).lte('date', window.to).order('id').range(f, f + 999);
+    if (error) throw new Error(`cannaball_spend: ${error.message}`);
+    adsets.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
   return {
+    by_adset: adsetBreakdown(adsets),
     basis: 'Calls and payout follow the tracking number\'s platform on the call day (client_did_periods); spend is per source from the spend feeds. Revenue = payout.',
     sources: splitBySource(calls, periods, spendBySource, timeZone),
   };

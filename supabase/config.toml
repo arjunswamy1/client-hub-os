@@ -36,3 +36,6 @@ verify_jwt = false
 
 [functions.agent-gateway-admin]
 verify_jwt = false
+
+[functions.agent-gateway-write-exec]
+verify_jwt = false

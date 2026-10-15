@@ -74,9 +74,9 @@ Deno.test('no grant denied', async () => { assertEquals((await call({ noGrant: t
 Deno.test('rate limit returns 429 and is logged', async () => { const { r, logs } = await call({ allowed: false }); assertEquals(r.status, 429); assertEquals(logs[0].outcome, 'rate_limited'); });
 
 // v1 rules
-Deno.test('write scope refused in v1 even with a write grant, and logged', async () => {
+Deno.test('write refused while the writes switch is off, even with a write grant, and logged', async () => {
   const { r, logs, seen } = await call({ scopes: ['read', 'write'] }, { body: { integration_id: IID, action: 'meta.adset.pause', scope: 'write', target: 'adset_1' } });
-  assertEquals(r.body.outcome, 'denied_write_disabled_v1'); assertEquals(logs[0].event_type, 'denied'); assertEquals(seen.length, 0);
+  assertEquals(r.body.outcome, 'denied_writes_disabled'); assertEquals(logs[0].event_type, 'denied'); assertEquals(seen.length, 0);
 });
 Deno.test('slack integration refused', async () => { assertEquals((await call({ provider: 'slack_bot' })).r.body.outcome, 'denied_slack_excluded'); });
 Deno.test('unknown action refused, never a raw URL', async () => {

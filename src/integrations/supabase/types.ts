@@ -601,6 +601,13 @@ export type Database = {
           id: number
           updated_at: string
           updated_by_id: string | null
+          write_approval_ttl_minutes: number
+          write_approver_team_member_ids: string[]
+          write_max_budget_change_pct: number
+          write_max_daily_budget_usd: number
+          write_pending_ttl_minutes: number
+          write_requests_per_day: number
+          writes_enabled: boolean
         }
         Insert: {
           default_vault?: string
@@ -608,6 +615,13 @@ export type Database = {
           id?: number
           updated_at?: string
           updated_by_id?: string | null
+          write_approval_ttl_minutes?: number
+          write_approver_team_member_ids?: string[]
+          write_max_budget_change_pct?: number
+          write_max_daily_budget_usd?: number
+          write_pending_ttl_minutes?: number
+          write_requests_per_day?: number
+          writes_enabled?: boolean
         }
         Update: {
           default_vault?: string
@@ -615,6 +629,13 @@ export type Database = {
           id?: number
           updated_at?: string
           updated_by_id?: string | null
+          write_approval_ttl_minutes?: number
+          write_approver_team_member_ids?: string[]
+          write_max_budget_change_pct?: number
+          write_max_daily_budget_usd?: number
+          write_pending_ttl_minutes?: number
+          write_requests_per_day?: number
+          writes_enabled?: boolean
         }
         Relationships: [
           {
@@ -1016,6 +1037,125 @@ export type Database = {
             columns: ["team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_write_requests: {
+        Row: {
+          account_id: string
+          account_name: string | null
+          action: string
+          after: Json
+          agent_id: string
+          approval_expires_at: string | null
+          before: Json
+          currency: string | null
+          decided_at: string | null
+          decided_by_id: string | null
+          decision_expires_at: string
+          decision_note: string | null
+          diff_text: string
+          executed_at: string | null
+          execution_started_at: string | null
+          failure_outcome: string | null
+          grant_id: string
+          id: string
+          integration_id: string
+          object_id: string
+          object_name: string | null
+          object_type: string
+          reason: string | null
+          requested_at: string
+          result: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          account_name?: string | null
+          action: string
+          after: Json
+          agent_id: string
+          approval_expires_at?: string | null
+          before: Json
+          currency?: string | null
+          decided_at?: string | null
+          decided_by_id?: string | null
+          decision_expires_at: string
+          decision_note?: string | null
+          diff_text: string
+          executed_at?: string | null
+          execution_started_at?: string | null
+          failure_outcome?: string | null
+          grant_id: string
+          id?: string
+          integration_id: string
+          object_id: string
+          object_name?: string | null
+          object_type: string
+          reason?: string | null
+          requested_at?: string
+          result?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          account_name?: string | null
+          action?: string
+          after?: Json
+          agent_id?: string
+          approval_expires_at?: string | null
+          before?: Json
+          currency?: string | null
+          decided_at?: string | null
+          decided_by_id?: string | null
+          decision_expires_at?: string
+          decision_note?: string | null
+          diff_text?: string
+          executed_at?: string | null
+          execution_started_at?: string | null
+          failure_outcome?: string | null
+          grant_id?: string
+          id?: string
+          integration_id?: string
+          object_id?: string
+          object_name?: string | null
+          object_type?: string
+          reason?: string | null
+          requested_at?: string
+          result?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_write_requests_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_write_requests_decided_by_id_fkey"
+            columns: ["decided_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_write_requests_grant_id_fkey"
+            columns: ["grant_id"]
+            isOneToOne: false
+            referencedRelation: "agent_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_write_requests_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "integrations"
             referencedColumns: ["id"]
           },
         ]
@@ -10061,6 +10201,7 @@ export type Database = {
         Args: { p_grant_id: string; p_per_day: number; p_per_minute: number }
         Returns: Json
       }
+      agent_gateway_write_owner: { Args: never; Returns: string }
       agent_hub_count_read: {
         Args: { p_agent_id: string; p_client_id: string; p_tool: string }
         Returns: undefined
@@ -10097,6 +10238,10 @@ export type Database = {
         Returns: number
       }
       decide_agent_handoff: {
+        Args: { p_approve: boolean; p_note?: string; p_request_id: string }
+        Returns: Json
+      }
+      decide_agent_write_request: {
         Args: { p_approve: boolean; p_note?: string; p_request_id: string }
         Returns: Json
       }

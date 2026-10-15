@@ -1,5 +1,5 @@
 -- Minimal pre-0034 shape of the tables the gateway write migrations touch, plus Supabase stand-ins.
-CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+DO $$ BEGIN CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 CREATE SCHEMA cron;

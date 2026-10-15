@@ -175,7 +175,11 @@ DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
   PERFORM pg_temp.ok('key creator: AJ (not the key creator) may approve', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
   PERFORM pg_temp.as_user('');
-  r := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',(SELECT id FROM agent_gateway_tokens WHERE token_hash='x8'),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000a'),
+  -- Charles bot c is owned by Juan by now; AJ mints its key.
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  INSERT INTO agent_gateway_tokens (agent_id, token_hash) VALUES ('b0000000-0000-4000-8000-00000000000c', 'x9');
+  PERFORM pg_temp.as_user('');
+  r := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000c','token_id',(SELECT id FROM agent_gateway_tokens WHERE token_hash='x9'),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000c'),
      'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','kc2',
      'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 1000)->>'id')::uuid;
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');

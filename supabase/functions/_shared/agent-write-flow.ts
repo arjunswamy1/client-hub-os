@@ -4,8 +4,8 @@
 import type { SecretsProvider } from './agent-secrets.ts';
 import {
   WRITE_ACTIONS, META_HOST, META_PROVIDER, type WriteSettings, parseWriteParams, objectFields, snapshot, planChange,
-  drift, metaGet, metaPost, checkAdsManagement, stripAct,
-  scrub,
+  drift, metaGet, metaPost, checkAdsManagement, stripAct, scrub, executionCheck, BUDGET_ACTIONS, BUDGET_COOLDOWN_MS,
+  POST_TIMEOUT_MS, GET_TIMEOUT_MS, copyTag, copyLookupUrl, chicagoDayStart,
 } from './agent-write-actions.ts';
 
 export interface WriteDeps { db: any; secrets: SecretsProvider; fetch: typeof fetch; now: Date }
@@ -23,7 +23,7 @@ const logRow = (db: any, row: any, outcome: string, detail: string | null = null
 
 async function metaJson(doFetch: typeof fetch, url: string, secret: string): Promise<{ ok: boolean; status: number; data: any }> {
   try {
-    const r = await doFetch(url, { method: 'GET', headers: { Accept: 'application/json' }, redirect: 'error' });
+    const r = await doFetch(url, { method: 'GET', headers: { Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(GET_TIMEOUT_MS) });
     const text = scrub((await r.text()).slice(0, MAX_BODY), secret);
     let data: any = null; try { data = JSON.parse(text); } catch { data = null; }
     return { ok: r.ok, status: r.status, data };
@@ -36,6 +36,23 @@ async function lookup(deps: WriteDeps, def: { objectType: any }, objectId: strin
   const acct = await metaJson(deps.fetch, metaGet(`act_${accountId}`, 'name,currency', secret).toString(), secret);
   return { ok: true as const, snap: snapshot(obj.data), acct: acct.ok && acct.data ? { name: acct.data.name ?? null, currency: acct.data.currency ?? null } : { name: null, currency: null } };
 }
+
+/** Last executed budget change on this object within the cooldown, if any. */
+async function recentBudgetChange(db: any, objectId: string, now: Date, excludeId?: string): Promise<any | null> {
+  const since = new Date(now.getTime() - BUDGET_COOLDOWN_MS).toISOString();
+  const { data } = await db.from('agent_write_requests').select('id, executed_at').eq('object_id', objectId).in('action', BUDGET_ACTIONS)
+    .eq('status', 'executed').gte('executed_at', since);
+  return (data ?? []).find((r: any) => r.id !== excludeId) ?? null;
+}
+
+/** Find a campaign copy carrying this request's tag (a copy whose response was lost). */
+async function findTaggedCopy(deps: WriteDeps, accountId: string, requestId: string, secret: string): Promise<{ ok: boolean; id: string | null }> {
+  const r = await metaJson(deps.fetch, copyLookupUrl(accountId, copyTag(requestId), secret).toString(), secret);
+  if (!r.ok || !r.data || !Array.isArray(r.data.data)) return { ok: false, id: null };
+  const hit = r.data.data.find((c: any) => typeof c?.name === 'string' && c.name.includes(copyTag(requestId)));
+  return { ok: true, id: hit ? String(hit.id) : null };
+}
+const UNKNOWN_OUTCOMES = ['failed_upstream_timeout', 'failed_upstream_unreachable', 'failed_stuck_executing'];
 
 /** Lazily persist expiry derived from timestamps. Returns the current row. */
 export async function settle(db: any, row: any, now: Date): Promise<any> {
@@ -62,6 +79,8 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const { db, deny, settings, now } = ctx;
   const def = WRITE_ACTIONS[action];
   if (!def) return deny(400, 'denied_unknown_action');
+  // A bot with no owner has nobody accountable for it; its writes are never approvable.
+  if (!ctx.agent.owner_team_member_id) return deny(403, 'denied_ownerless_agent');
   if (ctx.integ.provider !== META_PROVIDER) return deny(403, 'denied_action_provider_mismatch');
   if (!(ctx.integ.allowed_hosts ?? []).map((h) => h.toLowerCase()).includes(META_HOST)) return deny(403, 'denied_host_not_allowed', META_HOST);
   const parsed = parseWriteParams(def, params);
@@ -72,7 +91,8 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const reason = typeof reasonRaw === 'string' ? reasonRaw.trim().slice(0, 500) : '';
   if (reason.length < 5) return deny(400, 'denied_bad_request', 'a reason of at least 5 characters is required');
 
-  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  // Cheap pre-check (America/Chicago day); the authoritative count+insert is atomic in agent_write_request_create.
+  const dayStart = chicagoDayStart(now).toISOString();
   const { count } = await db.from('agent_write_requests').select('id', { count: 'exact', head: true }).eq('agent_id', ctx.agent.id).gte('requested_at', dayStart);
   if ((count ?? 0) >= settings.per_day) return deny(429, 'write_rate_limited', `max ${settings.per_day} write requests per day`);
 
@@ -87,15 +107,32 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   if (look.snap.account_id !== input.account_id) return deny(403, 'denied_object_not_in_account');
   const plan = planChange(def, input.object_id, look.snap, look.acct, input, settings);
   if (!plan.ok) return deny(400, plan.outcome, plan.detail);
+  if (def.kind === 'budget') {
+    const prior = await recentBudgetChange(db, input.object_id, now);
+    if (prior) return deny(409, 'denied_budget_changed_recently', `budget changed at ${prior.executed_at}; next change allowed 24h later`);
+  }
+  if (def.kind === 'duplicate') {
+    // A prior duplicate whose Meta outcome is unknown may already have made a copy.
+    const { data: unsure } = await db.from('agent_write_requests').select('id, failure_outcome').eq('object_id', input.object_id)
+      .eq('action', action).eq('status', 'failed').in('failure_outcome', UNKNOWN_OUTCOMES);
+    for (const u of unsure ?? []) {
+      const f = await findTaggedCopy(ctx, input.account_id, u.id, secret.value);
+      if (!f.ok) return deny(502, 'denied_copy_lookup_failed');
+      if (f.id) return deny(409, 'denied_prior_copy_exists', `copy ${f.id} from request ${u.id}`);
+    }
+  }
 
   const decisionExpires = new Date(now.getTime() + settings.pending_ttl_min * 60_000).toISOString();
-  const { data: row, error } = await db.from('agent_write_requests').insert({
+  const { data: created, error } = await db.rpc('agent_write_request_create', { p_per_day: settings.per_day, p_row: {
     agent_id: ctx.agent.id, grant_id: ctx.grant.id, integration_id: ctx.integ.id, action, account_id: input.account_id,
     account_name: look.acct.name, currency: look.acct.currency, object_type: def.objectType, object_id: input.object_id,
     object_name: look.snap.name, before: plan.before, after: plan.after, diff_text: plan.diff, reason,
     requested_at: now.toISOString(), decision_expires_at: decisionExpires,
-  }).select('id').maybeSingle();
-  if (error || !row) return deny(500, 'error_write_request');
+  } });
+  if (error || !created) return deny(500, 'error_write_request');
+  if (created.ok === false) return deny(429, created.outcome ?? 'write_rate_limited', `max ${settings.per_day} write requests per day`);
+  if (created.duplicate) return { status: 202, body: { ok: true, outcome: 'write_pending_approval', request_id: created.id, status: created.status, diff: created.diff_text, decision_expires_at: created.decision_expires_at, duplicate: true } };
+  const row = { id: created.id as string };
   await ctx.audit('write', 'write_requested', null, { target: row.id });
 
   // In-hub notification to every approver who is not the agent's owner.
@@ -117,6 +154,11 @@ const view = (r: any) => ({
 export async function writeStatus(deps: WriteDeps & { settings: WriteSettings }, agentId: string, requestId: string): Promise<Res> {
   const { data: r0 } = await deps.db.from('agent_write_requests').select('*').eq('id', requestId).maybeSingle();
   if (!r0 || r0.agent_id !== agentId) return { status: 404, body: { ok: false, outcome: 'denied_write_unknown' } };
+  if (r0.status === 'executing') {
+    try { await deps.db.rpc('sweep_stuck_agent_writes'); } catch { /* the scheduled sweep covers it */ }
+    const { data: fresh } = await deps.db.from('agent_write_requests').select('*').eq('id', requestId).maybeSingle();
+    if (fresh) Object.assign(r0, fresh);
+  }
   let r = await settle(deps.db, r0, deps.now);
   if (r.status === 'approved' && deps.settings.writes_enabled) r = await executeWrite(deps, r.id);
   return { status: 200, body: { ok: true, outcome: 'write_status', ...view(r) } };
@@ -161,10 +203,27 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
   const changed = drift(row.before, look.snap);
   if (changed.length) return fail('failed_drift', `changed: ${changed.join(',')}`, { drift: changed, live: { name: look.snap.name, status: look.snap.status, daily_budget: look.snap.daily_budget } });
 
-  const post = metaPost(def, row.object_id, row.after, secret.value);
+  // Re-check rules against the live values just read: USD for every action, caps vs live budget, 24h budget cooldown.
+  const bad = executionCheck(def, row.after, look.snap, look.acct, deps.settings);
+  if (bad) return fail(bad, null, { live: { daily_budget: look.snap.daily_budget }, currency: look.acct.currency });
+  if (def.kind === 'budget' && await recentBudgetChange(db, row.object_id, now, row.id)) return fail('failed_budget_changed_recently');
+
+  if (def.kind === 'duplicate') {
+    const f = await findTaggedCopy(deps, row.account_id, row.id, secret.value);
+    if (!f.ok) return fail('failed_copy_lookup');
+    if (f.id) {
+      const result = { reused_existing_copy: true, new_campaign_id: f.id };
+      const { data: done } = await db.from('agent_write_requests').update({ status: 'executed', executed_at: now.toISOString(), result, updated_at: now.toISOString() })
+        .eq('id', row.id).eq('status', 'executing').select('*').maybeSingle();
+      await logRow(db, row, 'write_executed', 'existing tagged copy found; no new copy created', { approved_by_id: row.decided_by_id });
+      return done ?? { ...row, status: 'executed', result };
+    }
+  }
+
+  const post = metaPost(def, row.object_id, row.after, secret.value, row.id);
   let res: Response;
-  try { res = await deps.fetch(post.url, { method: 'POST', body: post.body, headers: { Accept: 'application/json' }, redirect: 'error' }); }
-  catch { return fail('failed_upstream_unreachable'); }
+  try { res = await deps.fetch(post.url, { method: 'POST', body: post.body, headers: { Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(POST_TIMEOUT_MS) }); }
+  catch (e) { return fail((e as any)?.name === 'TimeoutError' ? 'failed_upstream_timeout' : 'failed_upstream_unreachable', 'Meta outcome unknown; verify the object'); }
   const text = scrub((await res.text()).slice(0, MAX_BODY), secret.value);
   let data: any = text; try { data = JSON.parse(text); } catch { /* keep text */ }
   if (!res.ok || (data && typeof data === 'object' && data.success === false)) return fail('failed_upstream', `status ${res.status}`, { upstream_status: res.status, data });

@@ -73,7 +73,7 @@ DO $$ DECLARE a uuid := 'b0000000-0000-4000-8000-00000000000c'; r1 uuid; r2 uuid
   PERFORM pg_temp.ok('sweep: >10 min executing becomes failed', n = 1 AND (SELECT status = 'failed' AND failure_outcome = 'failed_stuck_executing' FROM agent_write_requests WHERE id = r1));
   PERFORM pg_temp.ok('sweep: 5 min executing untouched', (SELECT status FROM agent_write_requests WHERE id = r2) = 'executing');
   PERFORM pg_temp.ok('sweep: audit row written', EXISTS (SELECT 1 FROM agent_access_log WHERE target = r1::text AND outcome = 'failed_stuck_executing'));
-  PERFORM pg_temp.ok('sweep: scheduled every 5 minutes', EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'agent-write-stuck-sweep' AND schedule = '*/5 * * * *'));
+  PERFORM pg_temp.ok('sweep: scheduled every 10 minutes', EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'agent-write-stuck-sweep' AND schedule = '*/10 * * * *'));
 END $$;
 
 -- Lock triggers: no role bypass

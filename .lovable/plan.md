@@ -19,3 +19,12 @@ Nothing was changed. The required build_log row is not written yet because this 
 Result: calls, connected calls and payout match exactly. Spend matched at $512.62 when first read and is now $554.52, provisional.
 
 On approval: write one build_log row (read-only verification, no data changes, open question: universal_ads has no last_synced_at in platform connections).
+
+Follow-up — the "missing" second Universal ad set (read-only)
+
+- The second ad set is not missing. Its spend has been merged into the same row as the first. The sync combines API rows that share the same date, campaign name and ad name ("Final Expense $6.74"). It adds their spend and impressions together but keeps only the first row's details.
+- Evidence: the 14 Oct row reads $554.52 in total, yet its stored details show ad set 06756162 with only $138.18. So other API rows (the other ad set, or several pieces of the day) were added into it. On 12–13 Oct the stored ad set is 4d99c2d9 ($48.73, $227.14). On 14 Oct the stored ad set is 06756162. That is two different ad set IDs in the same campaign (82a2d652), both named "Final Expense $6.74".
+- Other tables: ad_campaigns, ad_sets and universal_ads_geo_metrics have no Universal rows for Cannaball over 10–14 Oct. The latest geo report jobs wrote 0 rows.
+- The sync does not filter by ad set, campaign or status. It pulls every ad-level row for the ad account and drops only rows with zero spend and zero impressions. A new ad set is therefore included, but its spend is merged with any other ad set that has the same ad name.
+- Last pull: 01:00:11 UTC 15 Oct. It rewrote the 12, 13 and 14 Oct rows and gave $554.52 for 14 Oct. The per-ad-set split cannot be recovered from the database because only the first part's details are kept.
+- Total spend is not lost. The split between the two ad sets is. A possible fix (not done): include the ad set ID when combining rows, so each ad set gets its own row.

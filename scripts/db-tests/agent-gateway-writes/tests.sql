@@ -99,4 +99,33 @@ SELECT pg_temp.ok('alert: AJ change logged and notified', EXISTS (SELECT 1 FROM 
    AND EXISTS (SELECT 1 FROM notifications WHERE type = 'agent_write_control'));
 SELECT pg_temp.ok('lock: triggers fire ALWAYS', (SELECT bool_and(tgenabled = 'A') FROM pg_trigger WHERE tgname IN ('agent_gateway_settings_write_lock','agent_grant_write_scope_lock','agent_gateway_settings_write_alert','agent_grants_write_alert')) AND (SELECT count(*) FROM pg_trigger WHERE tgname IN ('agent_gateway_settings_write_lock','agent_grant_write_scope_lock','agent_gateway_settings_write_alert','agent_grants_write_alert')) = 4);
 
+-- Owner snapshot + owner lock (migration 0038)
+DO $$ DECLARE rc uuid; rj uuid; BEGIN
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  UPDATE agent_grants SET scopes = '{read,write}' WHERE agent_id IN ('b0000000-0000-4000-8000-00000000000c', 'b0000000-0000-4000-8000-00000000000a');
+  PERFORM pg_temp.as_user('');
+  rc := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000c','grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000c'),
+     'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','own1',
+     'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 1000)->>'id')::uuid;
+  PERFORM pg_temp.ok('snapshot: create stores the bot owner (Charles)', (SELECT agent_owner_team_member_id FROM agent_write_requests WHERE id = rc) = '014fa04a-80a5-41ce-9368-d1a81f6d2eec');
+  rj := pg_temp.req('b0000000-0000-4000-8000-00000000000a', 'own2');
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('owner lock: Charles cannot change his write bot owner', pg_temp.raises($q$UPDATE agents SET owner_team_member_id = '004cb16a-0000-4000-8000-000000000003' WHERE id = 'b0000000-0000-4000-8000-00000000000c'$q$));
+  PERFORM pg_temp.as_user('');
+  PERFORM pg_temp.ok('owner lock: service role cannot change it', pg_temp.raises($q$UPDATE agents SET owner_team_member_id = NULL WHERE id = 'b0000000-0000-4000-8000-00000000000c'$q$));
+  SET LOCAL session_replication_role = replica;
+  PERFORM pg_temp.ok('owner lock: replica session cannot change it', pg_temp.raises($q$UPDATE agents SET owner_team_member_id = NULL WHERE id = 'b0000000-0000-4000-8000-00000000000c'$q$));
+  SET LOCAL session_replication_role = origin;
+  PERFORM pg_temp.ok('owner lock: agent without write grant still editable', NOT pg_temp.raises($q$UPDATE agents SET name = 'AJ bot 2', owner_team_member_id = owner_team_member_id WHERE id = 'b0000000-0000-4000-8000-00000000000d'$q$)
+     AND NOT pg_temp.raises($q$UPDATE agents SET owner_team_member_id = '1fdd684e-6cb7-447e-b616-7e1b9c598971' WHERE id = 'b0000000-0000-4000-8000-00000000000e'$q$));
+  UPDATE agents SET owner_team_member_id = NULL WHERE id = 'b0000000-0000-4000-8000-00000000000e';
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  PERFORM pg_temp.ok('owner lock: AJ can change it', NOT pg_temp.raises($q$UPDATE agents SET owner_team_member_id = '004cb16a-0000-4000-8000-000000000003' WHERE id = 'b0000000-0000-4000-8000-00000000000c'$q$));
+  UPDATE agents SET owner_team_member_id = '014fa04a-80a5-41ce-9368-d1a81f6d2eec' WHERE id = 'b0000000-0000-4000-8000-00000000000a';
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('snapshot: after AJ moves Charles bot to Juan, Charles still cannot approve its earlier request', decide_agent_write_request(rc, true)->>'outcome' = 'denied_self_approval');
+  PERFORM pg_temp.ok('snapshot: after AJ moves Juan bot to Charles, Charles may still approve its earlier request', decide_agent_write_request(rj, true)->>'outcome' = 'write_approved');
+END $$;
+SELECT pg_temp.ok('owner lock: trigger fires ALWAYS', (SELECT tgenabled = 'A' FROM pg_trigger WHERE tgname = 'agent_owner_write_lock'));
+
 SELECT (CASE WHEN pass THEN 'PASS ' ELSE 'FAIL ' END) || name FROM results;

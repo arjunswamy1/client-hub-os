@@ -104,45 +104,32 @@ Deno.serve(async (req) => {
       if (c?.id && c?.name) campaignNames.set(String(c.id), String(c.name));
     }
 
-    const upserts = rows.map((r) => {
-      const dateRaw = pickStr(r, ["date", "day", "report_date", "start_date", "datetime", "timestamp"]) ?? ymd(end);
-      const spendRaw = pickNum(r, ["spend", "cost", "amount_spent", "total_spend", "spend_usd"]);
-      const micros = pickNum(r, ["spend_micros", "cost_micros"]);
-      const rawCampaign = pickStr(r, ["campaign_name", "campaign"]) ??
-        (level === "campaign" ? pickStr(r, ["name"]) : pickStr(r, ["campaign_id"]));
-      return {
-        client_id: clientId,
-        date: dateRaw.slice(0, 10),
-        platform: "universal_ads",
-        campaign_name: (rawCampaign && campaignNames.get(rawCampaign)) ?? rawCampaign,
-        creative_name: level === "ad" ? pickStr(r, ["ad_name", "ad", "creative_name", "name", "ad_id"]) : null,
-        spend: spendRaw || micros / 1_000_000,
-        impressions: Math.round(pickNum(r, ["impressions", "impression", "total_impressions"])),
-        clicks: Math.round(pickNum(r, ["clicks", "click", "total_clicks"])),
-        raw: r,
-      };
-    }).filter((r) => r.spend > 0 || r.impressions > 0);
-
-    // Collapse duplicate keys (same day/campaign/creative) before upserting.
-    const merged = new Map<string, typeof upserts[number]>();
-    for (const row of upserts) {
-      const key = `${row.date}|${row.campaign_name}|${row.creative_name}`;
-      const existing = merged.get(key);
-      if (existing) {
-        existing.spend += row.spend;
-        existing.impressions += row.impressions;
-        existing.clicks += row.clicks;
-      } else {
-        merged.set(key, row);
-      }
+    // Ad set id → name map (best effort; ad-level rows carry only the ad set id).
+    const adsetNames = new Map<string, string>();
+    const adsets = await uaFetch(API_KEY, PRIVATE_KEY, "GET", "/adset", { adaccount_id: adaccountId, limit: "100" });
+    for (const a of adsets.parsed?.data ?? []) {
+      if (a?.id && a?.name) adsetNames.set(String(a.id), String(a.name));
     }
-    const finalRows = [...merged.values()];
 
+    // One row per date + ad set id + ad id; names never merge two ad sets.
+    const finalRows = mapUniversalRows(rows, {
+      clientId, level: level as "ad" | "campaign", fallbackDate: ymd(end), campaignNames, adsetNames,
+    });
+
+    let legacyRowsReplaced = 0;
     if (finalRows.length) {
       const { error } = await admin
         .from("cannaball_spend")
-        .upsert(finalRows, { onConflict: "client_id,date,platform,campaign_name,creative_name" });
+        .upsert(finalRows, { onConflict: "client_id,date,platform,campaign_name,creative_name,platform_adset_id,platform_ad_id" });
       if (error) throw error;
+      // Legacy name-keyed rows (no ad set id) for re-pulled days are superseded by the ad-set rows.
+      const keyed = [...new Set(finalRows.filter((r) => r.platform_adset_id).map((r) => r.date))];
+      if (keyed.length) {
+        const { data: gone, error: delErr } = await admin.from("cannaball_spend").delete()
+          .eq("client_id", clientId).eq("platform", "universal_ads").eq("platform_adset_id", "").in("date", keyed).select("id");
+        if (delErr) throw delErr;
+        legacyRowsReplaced = gone?.length ?? 0;
+      }
       await recordSpendObservations(admin, clientId, "cannaball_spend", finalRows.map((r: any) => r.date));
     }
 

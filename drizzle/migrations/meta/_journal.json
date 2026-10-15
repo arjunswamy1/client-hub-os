@@ -246,6 +246,13 @@
       "when": 1792069402225,
       "tag": "0034_agent_gateway_meta_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792096755506,
+      "tag": "0035_agent_gateway_write_hardening",
+      "breakpoints": true
     }
   ]
 }

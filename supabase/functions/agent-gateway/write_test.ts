@@ -535,6 +535,13 @@ Deno.test('duplicate: copy lookup asks Meta for archived and deleted copies too'
   const st = JSON.parse(new URL(look.url).searchParams.get('filtering')!).find((x: any) => x.field === 'effective_status').value;
   for (const v of ['ARCHIVED', 'DELETED', 'PAUSED', 'ACTIVE']) assert(st.includes(v), v);
 });
+Deno.test('duplicate: copy lookup sends only campaign-valid statuses', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string); await poll(db, m, a.body.request_id);
+  const look = m.calls.find((c) => new URL(c.url).pathname.endsWith('/campaigns'))!;
+  const st = JSON.parse(new URL(look.url).searchParams.get('filtering')!).find((x: any) => x.field === 'effective_status').value;
+  assertEquals([...st].sort(), ['ACTIVE', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'PAUSED', 'WITH_ISSUES']);
+});
 Deno.test('duplicate: after a 5xx, an ARCHIVED tagged copy blocks the retry', async () => {
   const db = await world(); const m = meta({ postStatus: 502 });
   const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);

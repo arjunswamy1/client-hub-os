@@ -57,13 +57,14 @@ export function outcomeUnknown(r: { status?: string; failure_outcome?: string | 
   return r.failure_outcome === 'failed_upstream' && Number(r.result?.upstream_status) >= 500;
 }
 
-/** Meta's synchronous deep copy refuses campaigns with more child objects (ad sets + ads) than this.
- *  Value from Meta docs; not yet verified against live Meta. Larger campaigns are refused (no async batch copy). */
+/** THE single place for the instant (synchronous) deep-copy limit: a campaign with more child objects
+ *  (ad sets + ads combined) than this is refused for duplication (no async batch copy).
+ *  UNVERIFIED: value taken from Meta docs, pending a live Meta test. Adjust here only; every check reads this. */
 export const SYNC_COPY_MAX_CHILDREN = 3;
 export const childCountUrl = (campaignId: string, edge: 'adsets' | 'ads', secret: string) => {
   const u = metaGet(`${campaignId}/${edge}`, 'id', secret);
   u.searchParams.set('summary', 'total_count'); u.searchParams.set('limit', '1');
-  u.searchParams.set('effective_status', JSON.stringify(COPY_LOOKUP_STATUSES));
+  u.searchParams.set('effective_status', JSON.stringify(CHILD_COUNT_STATUSES));
   return u;
 };
 /** True when a Meta error body is the synchronous-copy size limit. */
@@ -73,7 +74,10 @@ export function isCopyTooLargeError(data: any): boolean {
   return /async|too many|number of (child )?objects|copy limit/.test(msg) && /cop(y|ies)/.test(msg);
 }
 /** Every effective status, so archived/deleted copies are still found. */
-export const COPY_LOOKUP_STATUSES = ['ACTIVE', 'PAUSED', 'DELETED', 'ARCHIVED', 'IN_PROCESS', 'WITH_ISSUES', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'DISAPPROVED', 'PENDING_REVIEW', 'PREAPPROVED', 'PENDING_BILLING_INFO'];
+/** Campaign-valid effective_status values for the tagged-copy lookup (archived/deleted included). */
+export const COPY_LOOKUP_STATUSES = ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES'];
+/** Ad set / ad statuses for counting a campaign's children; children can also be parent-paused or in review. */
+export const CHILD_COUNT_STATUSES = [...COPY_LOOKUP_STATUSES, 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'DISAPPROVED', 'PENDING_REVIEW', 'PREAPPROVED', 'PENDING_BILLING_INFO'];
 
 /** Remove every occurrence of the secret (and its URL-encoded form) from text. */
 export function scrub(text: string, secret: string | null): string {

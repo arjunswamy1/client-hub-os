@@ -1,12 +1,12 @@
 // Approval-gated Meta writes: request -> approver decides (SQL) -> gateway executes once.
 // State: pending -> approved|denied|expired; approved -> executing -> executed|failed; approved -> expired.
 // Every transition is written to agent_access_log. No token or secret is ever stored or returned.
-import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { scrub } from './actions.ts';
+import type { SecretsProvider } from './agent-secrets.ts';
 import {
   WRITE_ACTIONS, META_HOST, META_PROVIDER, type WriteSettings, parseWriteParams, objectFields, snapshot, planChange,
   drift, metaGet, metaPost, checkAdsManagement, stripAct,
-} from './write-actions.ts';
+  scrub,
+} from './agent-write-actions.ts';
 
 export interface WriteDeps { db: any; secrets: SecretsProvider; fetch: typeof fetch; now: Date }
 type Res = { status: number; body: Record<string, unknown> };

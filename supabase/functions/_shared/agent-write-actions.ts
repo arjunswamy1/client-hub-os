@@ -44,6 +44,14 @@ export function decisionAuthority(decider: string | null, approvers: string[], a
   return 'ok';
 }
 
+/** Remove every occurrence of the secret (and its URL-encoded form) from text. */
+export function scrub(text: string, secret: string | null): string {
+  if (!secret) return text;
+  let out = text;
+  for (const s of new Set([secret, encodeURIComponent(secret)])) if (s.length >= 4) out = out.split(s).join('[redacted]');
+  return out;
+}
+
 export const stripAct = (s: string) => String(s).replace(/^act_/, '');
 const ACCOUNT_ID = /^(act_)?[0-9]{1,32}$/;
 const OBJECT_ID = /^[0-9]{1,32}$/;

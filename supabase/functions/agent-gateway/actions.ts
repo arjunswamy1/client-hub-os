@@ -115,10 +115,4 @@ export function buildRequest(
   return { ok: true, url, headers };
 }
 
-/** Remove every occurrence of the secret (and its URL-encoded form) from text. */
-export function scrub(text: string, secret: string | null): string {
-  if (!secret) return text;
-  let out = text;
-  for (const s of new Set([secret, encodeURIComponent(secret)])) if (s.length >= 4) out = out.split(s).join('[redacted]');
-  return out;
-}
+export { scrub } from '../_shared/agent-write-actions.ts';

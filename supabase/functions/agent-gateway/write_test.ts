@@ -1,8 +1,8 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { handleGateway, sha256Hex } from './gateway.ts';
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot } from './write-actions.ts';
-import { executeWrite } from './write-flow.ts';
+import { WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot } from '../_shared/agent-write-actions.ts';
+import { executeWrite } from '../_shared/agent-write-flow.ts';
 
 const TOKEN = 'agw_write_token_abc';
 const SECRET = 'EAAB-meta-system-user-secret';

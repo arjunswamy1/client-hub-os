@@ -7,8 +7,8 @@
 // Never log or persist the token, auth headers, params, or any secret value.
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
 import { ACTIONS, buildRequest, resolveAccount, scrub } from './actions.ts';
-import { settingsFrom } from './write-actions.ts';
-import { requestWrite, writeStatus } from './write-flow.ts';
+import { settingsFrom } from '../_shared/agent-write-actions.ts';
+import { requestWrite, writeStatus } from '../_shared/agent-write-flow.ts';
 
 export interface GatewayDeps {
   db: any; // service-role client

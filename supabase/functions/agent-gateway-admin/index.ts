@@ -4,7 +4,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { opSdkFactory } from '../_shared/op-sdk.ts';
 import { OnePasswordProvider } from '../_shared/agent-secrets.ts';
-import { checkAdsManagement } from '../agent-gateway/write-actions.ts';
+import { checkAdsManagement } from '../_shared/agent-write-actions.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

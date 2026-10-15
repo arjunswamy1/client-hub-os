@@ -1,7 +1,7 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { handleGateway, sha256Hex } from './gateway.ts';
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot } from '../_shared/agent-write-actions.ts';
+import { WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot, executionCheck, chicagoDayStart, copyTag } from '../_shared/agent-write-actions.ts';
 import { executeWrite } from '../_shared/agent-write-flow.ts';
 
 const TOKEN = 'agw_write_token_abc';
@@ -42,15 +42,35 @@ function memDb(tables: Record<string, any[]>) {
     };
     return b;
   };
-  return { from, rpc: async () => ({ data: { allowed: true } }), tables };
+  const OPEN = ['pending', 'approved', 'executing'];
+  // In-memory stand-ins for the SQL functions (their real behaviour is covered by scripts/db-tests).
+  const rpc = async (name: string, args: any) => {
+    const W = tables.agent_write_requests ??= [];
+    if (name === 'agent_write_request_create') {
+      const p = args.p_row;
+      const open = W.find((r) => r.agent_id === p.agent_id && r.action === p.action && r.object_id === p.object_id && OPEN.includes(r.status));
+      if (open) return { data: { ok: true, duplicate: true, id: open.id, status: open.status, diff_text: open.diff_text, decision_expires_at: open.decision_expires_at }, error: null };
+      const ds = chicagoDayStart(new Date(p.requested_at)).toISOString();
+      if (W.filter((r) => r.agent_id === p.agent_id && r.requested_at >= ds).length >= args.p_per_day) return { data: { ok: false, outcome: 'write_rate_limited' }, error: null };
+      const id = `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
+      W.push({ id, status: 'pending', ...p }); return { data: { ok: true, duplicate: false, id }, error: null };
+    }
+    if (name === 'sweep_stuck_agent_writes') {
+      const cut = new Date(Date.now() - 10 * 60_000).toISOString(); let n = 0;
+      for (const r of W) if (r.status === 'executing' && r.execution_started_at < cut) { r.status = 'failed'; r.failure_outcome = 'failed_stuck_executing'; n++; }
+      return { data: n, error: null };
+    }
+    return { data: { allowed: true }, error: null };
+  };
+  return { from, rpc, tables };
 }
 
-interface Opts { writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string }
+interface Opts { writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string | null }
 async function world(o: Opts = {}) {
   const tables: Record<string, any[]> = {
     agent_gateway_tokens: [{ id: 't1', agent_id: 'a1', token_hash: await sha256Hex(TOKEN), expires_at: '2099-01-01', revoked_at: null, audience: 'gateway' }],
     agent_gateway_settings: [{ id: 1, gateway_enabled: true, writes_enabled: o.writes ?? true, write_approver_team_member_ids: [AJ, CHARLES], write_requests_per_day: o.perDay ?? 20 }],
-    agents: [{ id: 'a1', status: 'active', kind: 'ai_agent', owner_team_member_id: o.owner ?? 'juan' }],
+    agents: [{ id: 'a1', status: 'active', kind: 'ai_agent', owner_team_member_id: 'owner' in o ? o.owner : 'juan' }],
     integrations: [{ id: IID, provider: 'meta_ads', enabled: true, op_secret_ref: 'op://shared/meta/key', account_ref: null, allowed_hosts: ['graph.facebook.com'], client_id: null, is_browser_login: false }],
     agent_grants: [{ id: 'g1', agent_id: 'a1', integration_id: IID, scopes: o.scopes ?? ['read', 'write'], rate_per_minute: 30, rate_per_day: 2000, allowed_account_refs: o.allow === undefined ? ['111'] : o.allow }],
     agent_write_requests: [], agent_access_log: [], notifications: [],
@@ -59,7 +79,7 @@ async function world(o: Opts = {}) {
 }
 
 // ---------- Fake Meta ----------
-function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; perms?: string[] | null } = {}) {
+function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; perms?: string[] | null; postFails?: 'timeout' | 'lost' } = {}) {
   const calls: { method: string; url: string; body?: string }[] = [];
   const st = {
     adset: { id: '555', name: 'FE Adset', account_id: '111', status: 'ACTIVE', daily_budget: '10000', ...state.adset },
@@ -67,19 +87,32 @@ function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; per
     ad: { id: '999', name: 'FE Ad', account_id: '111', status: 'ACTIVE', ...state.ad },
     account: { name: 'Juan Acct', currency: 'USD', ...state.account },
     perms: state.perms === undefined ? ['ads_management', 'ads_read'] : state.perms,
+    copies: [] as { id: string; name: string }[], postFails: state.postFails as undefined | 'timeout' | 'lost',
   };
+  const timeout = () => { const e = new Error('timed out'); e.name = 'TimeoutError'; return e; };
   const fn = (async (u: string, init: any) => {
     const url = new URL(u); const method = init?.method ?? 'GET';
     calls.push({ method, url: u, body: init?.body?.toString() });
     const j = (x: unknown, s = 200) => new Response(JSON.stringify(x), { status: s });
     if (method === 'POST') {
-      if (url.pathname.endsWith('/copies')) return j({ copied_campaign_id: '888' });
+      assert(init?.signal instanceof AbortSignal, 'Meta POST must carry a timeout signal');
+      if (st.postFails === 'timeout') throw timeout();
+      if (url.pathname.endsWith('/copies')) {
+        const ro = JSON.parse(new URLSearchParams(init.body.toString()).get('rename_options') ?? '{}');
+        const id = String(888 + st.copies.length); st.copies.push({ id, name: `${st.campaign.name}${ro.rename_suffix ?? ''}` });
+        if (st.postFails === 'lost') throw timeout(); // copy made, response lost
+        return j({ copied_campaign_id: id });
+      }
       const id = url.pathname.split('/').pop()!; const p = new URLSearchParams(init.body.toString());
       const obj = [st.adset, st.campaign, st.ad].find((x) => x.id === id);
       if (p.get('status')) obj.status = p.get('status'); if (p.get('daily_budget')) obj.daily_budget = p.get('daily_budget');
       return j({ success: true });
     }
     if (url.pathname.endsWith('/me/permissions')) return st.perms === null ? j({ error: 'x' }, 400) : j({ data: st.perms.map((permission) => ({ permission, status: 'granted' })) });
+    if (url.pathname.endsWith('/campaigns')) {
+      const v = JSON.parse(url.searchParams.get('filtering') ?? '[]')[0]?.value ?? '';
+      return j({ data: st.copies.filter((c) => c.name.includes(v)) });
+    }
     if (url.pathname.includes('/act_')) return j(st.account);
     const id = url.pathname.split('/').pop();
     const obj = [st.adset, st.campaign, st.ad].find((x) => x.id === id);
@@ -179,7 +212,7 @@ Deno.test('budget: lifetime budget refused', () => { assertEquals((plan(120, { d
 // ---------- Rate limit ----------
 Deno.test('21st write request in a day refused with 429', async () => {
   const db = await world({ perDay: 20 });
-  for (let k = 0; k < 20; k++) db.tables.agent_write_requests.push({ id: `r${k}`, agent_id: 'a1', action: 'x', object_id: String(k), status: 'denied', requested_at: '2026-10-15T01:00:00.000Z' });
+  for (let k = 0; k < 20; k++) db.tables.agent_write_requests.push({ id: `r${k}`, agent_id: 'a1', action: 'x', object_id: String(k), status: 'denied', requested_at: '2026-10-15T06:00:00.000Z' });
   const r = await call(db, meta(), budgetReq()); assertEquals(r.status, 429); assertEquals(r.body.outcome, 'write_rate_limited');
 });
 
@@ -288,4 +321,160 @@ Deno.test('only listed approvers may decide; owners never decide their own agent
 Deno.test('status poll for another agent\'s request is refused', async () => {
   const db = await world(); db.tables.agent_write_requests.push({ id: '00000000-0000-4000-8000-00000000abcd', agent_id: 'other', status: 'pending' });
   assertEquals((await call(db, meta(), { integration_id: IID, write: 'status', request_id: '00000000-0000-4000-8000-00000000abcd' })).body.outcome, 'denied_write_unknown');
+});
+
+// ---------- Hardening (Build QA) ----------
+const dupReq = { integration_id: IID, scope: 'write', action: 'meta.campaign.duplicate', reason: 'test new angle', params: { account_id: '111', object_id: '777' } };
+const reqFor = (action: string) => {
+  const def = WRITE_ACTIONS[action]; const id = def.objectType === 'adset' ? '555' : def.objectType === 'campaign' ? '777' : '999';
+  return { integration_id: IID, scope: 'write', action, reason: 'hardening test', params: { account_id: '111', object_id: id, ...(def.kind === 'budget' ? { new_daily_budget_usd: def.objectType === 'adset' ? 120 : 220 } : {}) } };
+};
+const poll = (db: any, m: any, id: unknown, at = '2026-10-15T13:10:00Z') => call(db, m, { integration_id: IID, write: 'status', request_id: id }, new Date(at));
+const PAUSED = { status: 'PAUSED' };
+
+// 1. Non-USD refused for every action, at request time and at execution time.
+for (const action of Object.keys(WRITE_ACTIONS)) {
+  Deno.test(`non-USD: ${action} refused at request time, nothing queued`, async () => {
+    const def = WRITE_ACTIONS[action];
+    const m = meta({ account: { currency: 'EUR' }, adset: def.to === 'ACTIVE' ? PAUSED : {}, campaign: def.to === 'ACTIVE' ? PAUSED : {}, ad: def.to === 'ACTIVE' ? PAUSED : {} });
+    const db = await world();
+    const r = await call(db, m, reqFor(action));
+    assertEquals(r.body.outcome, 'denied_non_usd_account'); assertEquals(db.tables.agent_write_requests.length, 0); assertEquals(m.posts().length, 0);
+  });
+  Deno.test(`non-USD: ${action} refused at execution time if the account currency changes`, async () => {
+    const def = WRITE_ACTIONS[action];
+    const m = meta({ adset: def.to === 'ACTIVE' ? PAUSED : {}, campaign: def.to === 'ACTIVE' ? PAUSED : {}, ad: def.to === 'ACTIVE' ? PAUSED : {} });
+    const db = await world();
+    const a = await call(db, m, reqFor(action)); assertEquals(a.body.outcome, 'write_pending_approval'); approve(db, a.body.request_id as string);
+    m.st.account.currency = 'CAD';
+    const s = await poll(db, m, a.body.request_id);
+    assertEquals(s.body.status, 'failed'); assertEquals(s.body.failure_outcome, 'failed_non_usd_account'); assertEquals(m.posts().length, 0);
+  });
+}
+Deno.test('non-USD: missing currency treated as non-USD', () => {
+  assertEquals((planChange(WRITE_ACTIONS['meta.ad.pause'], '999', snap(), { currency: null }, { account_id: '111', object_id: '999' }, S) as any).outcome, 'denied_non_usd_account');
+});
+
+// 2. Timeout, stuck sweep, idempotent duplicates.
+Deno.test('POST timeout -> failed_upstream_timeout (outcome unknown), logged', async () => {
+  const db = await world(); const m = meta({ postFails: 'timeout' });
+  const a = await call(db, m, budgetReq(120)); approve(db, a.body.request_id as string);
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.failure_outcome, 'failed_upstream_timeout');
+  assert(db.tables.agent_access_log.some((l: any) => l.outcome === 'failed_upstream_timeout'));
+});
+Deno.test('duplicate POST carries the request-id tag on the copy name', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
+  await poll(db, m, a.body.request_id);
+  const ro = JSON.parse(new URLSearchParams(m.posts()[0].body).get('rename_options')!);
+  assertEquals(ro.rename_suffix, ` ${copyTag(a.body.request_id as string)}`); assertEquals(m.st.copies.length, 1);
+});
+Deno.test('duplicate: existing tagged copy is reused, no second copy', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
+  m.st.copies.push({ id: '4242', name: `FE Campaign ${copyTag(a.body.request_id as string)}` });
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.status, 'executed'); assertEquals((s.body.result as any).new_campaign_id, '4242'); assertEquals((s.body.result as any).reused_existing_copy, true);
+  assertEquals(m.posts().length, 0); assertEquals(m.st.copies.length, 1);
+});
+Deno.test('duplicate: lost response then retry request cannot create a second copy', async () => {
+  const db = await world(); const m = meta({ postFails: 'lost' });
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.failure_outcome, 'failed_upstream_timeout'); assertEquals(m.st.copies.length, 1);
+  m.st.postFails = undefined;
+  const b = await call(db, m, dupReq, new Date('2026-10-15T13:20:00Z'));
+  assertEquals(b.body.outcome, 'denied_prior_copy_exists'); assertEquals(m.st.copies.length, 1); assertEquals(m.posts().length, 1);
+});
+Deno.test('duplicate: copy lookup unreadable -> no POST', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
+  const orig = m.fn; const wrapped = (async (u: string, i: any) => (new URL(u).pathname.endsWith('/campaigns') ? new Response('{}', { status: 500 }) : orig(u, i))) as any;
+  const s = await call(db, { ...m, fn: wrapped }, { integration_id: IID, write: 'status', request_id: a.body.request_id }, new Date('2026-10-15T13:10:00Z'));
+  assertEquals(s.body.failure_outcome, 'failed_copy_lookup'); assertEquals(m.posts().length, 0);
+});
+Deno.test('status poll on a request stuck executing > 10 min runs the sweep', async () => {
+  const db = await world(); const id = '00000000-0000-4000-8000-0000000000ee';
+  db.tables.agent_write_requests.push({ id, agent_id: 'a1', status: 'executing', execution_started_at: new Date(Date.now() - 11 * 60_000).toISOString(), decision_expires_at: '2099-01-01' });
+  const s = await poll(db, meta(), id);
+  assertEquals(s.body.status, 'failed'); assertEquals(s.body.failure_outcome, 'failed_stuck_executing');
+});
+
+// 3. Day boundary is America/Chicago.
+Deno.test('chicagoDayStart: CDT, CST and DST-change days', () => {
+  assertEquals(chicagoDayStart(new Date('2026-10-15T04:30:00Z')).toISOString(), '2026-10-14T05:00:00.000Z');
+  assertEquals(chicagoDayStart(new Date('2026-10-15T05:30:00Z')).toISOString(), '2026-10-15T05:00:00.000Z');
+  assertEquals(chicagoDayStart(new Date('2026-12-15T12:00:00Z')).toISOString(), '2026-12-15T06:00:00.000Z');
+  assertEquals(chicagoDayStart(new Date('2026-11-01T12:00:00Z')).toISOString(), '2026-11-01T05:00:00.000Z');
+});
+Deno.test('20/day limit: requests before Chicago midnight (04:59Z) do not count', async () => {
+  const db = await world({ perDay: 20 });
+  for (let k = 0; k < 20; k++) db.tables.agent_write_requests.push({ id: `r${k}`, agent_id: 'a1', action: 'x', object_id: String(k), status: 'denied', requested_at: '2026-10-15T04:59:00.000Z' });
+  assertEquals((await call(db, meta(), budgetReq())).body.outcome, 'write_pending_approval');
+});
+Deno.test('20/day limit: requests after Chicago midnight (05:01Z) count', async () => {
+  const db = await world({ perDay: 20 });
+  for (let k = 0; k < 20; k++) db.tables.agent_write_requests.push({ id: `r${k}`, agent_id: 'a1', action: 'x', object_id: String(k), status: 'denied', requested_at: '2026-10-15T05:01:00.000Z' });
+  assertEquals((await call(db, meta(), budgetReq())).body.outcome, 'write_rate_limited');
+});
+Deno.test('20/day limit: the atomic create function refusing is surfaced as 429', async () => {
+  const db = await world(); const orig = db.rpc;
+  db.rpc = (async (n: string, a: any) => n === 'agent_write_request_create' ? { data: { ok: false, outcome: 'write_rate_limited' }, error: null } : orig(n, a)) as any;
+  const r = await call(db, meta(), budgetReq()); assertEquals(r.status, 429); assertEquals(r.body.outcome, 'write_rate_limited');
+});
+
+// 5. Caps re-checked at execution against the live budget; no chained increases.
+Deno.test('executionCheck: +/-50% vs LIVE budget and $1,000 ceiling', () => {
+  const d = WRITE_ACTIONS['meta.adset.update_budget']; const usdA = { currency: 'USD' };
+  assertEquals(executionCheck(d, { daily_budget: 15000 }, snap({ daily_budget: '10000' }), usdA, S), null);
+  assertEquals(executionCheck(d, { daily_budget: 15000 }, snap({ daily_budget: '9000' }), usdA, S), 'failed_budget_change_too_large');
+  assertEquals(executionCheck(d, { daily_budget: 100001 }, snap({ daily_budget: '90000' }), usdA, S), 'failed_budget_over_cap');
+  assertEquals(executionCheck(d, { daily_budget: 15000 }, snap({ daily_budget: null }), usdA, S), 'failed_budget_not_on_object');
+});
+Deno.test('execution: cap lowered after approval -> failed_budget_over_cap, no POST', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, budgetReq(120)); approve(db, a.body.request_id as string);
+  const s = await executeWrite({ db, secrets, fetch: m.fn, now: new Date('2026-10-15T13:10:00Z'), settings: { ...S, max_usd: 110 } }, a.body.request_id as string);
+  assertEquals(s.failure_outcome, 'failed_budget_over_cap'); assertEquals(m.posts().length, 0);
+});
+Deno.test('execution: pct cap tightened after approval -> failed_budget_change_too_large, no POST', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, budgetReq(140)); approve(db, a.body.request_id as string);
+  const s = await executeWrite({ db, secrets, fetch: m.fn, now: new Date('2026-10-15T13:10:00Z'), settings: { ...S, max_pct: 20 } }, a.body.request_id as string);
+  assertEquals(s.failure_outcome, 'failed_budget_change_too_large'); assertEquals(m.posts().length, 0);
+});
+Deno.test('chained budget: new request within 24h of an executed change refused', async () => {
+  const db = await world(); const m = meta();
+  db.tables.agent_write_requests.push({ id: 'prev', agent_id: 'a1', action: 'meta.adset.update_budget', object_id: '555', status: 'executed', executed_at: '2026-10-15T01:00:00.000Z', requested_at: '2026-10-14T20:00:00.000Z' });
+  const r = await call(db, m, budgetReq(120));
+  assertEquals(r.body.outcome, 'denied_budget_changed_recently'); assertEquals(db.tables.agent_write_requests.length, 1);
+});
+Deno.test('chained budget: allowed once 24h have passed', async () => {
+  const db = await world();
+  db.tables.agent_write_requests.push({ id: 'prev', agent_id: 'a1', action: 'meta.adset.update_budget', object_id: '555', status: 'executed', executed_at: '2026-10-14T12:59:00.000Z', requested_at: '2026-10-14T06:00:00.000Z' });
+  assertEquals((await call(db, meta(), budgetReq(120))).body.outcome, 'write_pending_approval');
+});
+Deno.test('chained budget: change executed by another bot after approval blocks execution', async () => {
+  const db = await world(); const m = meta();
+  const a = await call(db, m, budgetReq(120)); approve(db, a.body.request_id as string);
+  db.tables.agent_write_requests.push({ id: 'other', agent_id: 'a2', action: 'meta.adset.update_budget', object_id: '555', status: 'executed', executed_at: '2026-10-15T13:06:00.000Z', requested_at: '2026-10-15T12:00:00.000Z' });
+  const s = await poll(db, m, a.body.request_id);
+  assertEquals(s.body.failure_outcome, 'failed_budget_changed_recently'); assertEquals(m.posts().length, 0);
+});
+Deno.test('pause after a budget change is not blocked by the budget cooldown', async () => {
+  const db = await world();
+  db.tables.agent_write_requests.push({ id: 'prev', agent_id: 'a1', action: 'meta.adset.update_budget', object_id: '555', status: 'executed', executed_at: '2026-10-15T12:00:00.000Z', requested_at: '2026-10-15T11:00:00.000Z' });
+  assertEquals((await call(db, meta(), reqFor('meta.adset.pause'))).body.outcome, 'write_pending_approval');
+});
+
+// 6. Ownerless bots.
+Deno.test('ownerless bot: write request refused before any Meta call', async () => {
+  const db = await world({ owner: null }); const m = meta();
+  const r = await call(db, m, budgetReq(120));
+  assertEquals(r.body.outcome, 'denied_ownerless_agent'); assertEquals(m.calls.length, 0); assertEquals(db.tables.agent_write_requests.length, 0);
+});
+Deno.test('ownerless bot: neither approver may approve', () => {
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], null), 'denied_ownerless_agent');
+  assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], null), 'denied_ownerless_agent');
 });

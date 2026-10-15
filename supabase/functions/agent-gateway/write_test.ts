@@ -53,7 +53,7 @@ function memDb(tables: Record<string, any[]>) {
       const ds = chicagoDayStart(new Date(p.requested_at)).toISOString();
       if (W.filter((r) => r.agent_id === p.agent_id && r.requested_at >= ds).length >= args.p_per_day) return { data: { ok: false, outcome: 'write_rate_limited' }, error: null };
       const id = `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
-      const tk = (T.agent_gateway_tokens ?? []).find((t: any) => t.id === p.token_id && t.agent_id === p.agent_id);
+      const tk = (tables.agent_gateway_tokens ?? []).find((t: any) => t.id === p.token_id && t.agent_id === p.agent_id);
       if (!tk?.created_by_id) return { data: { ok: false, outcome: 'denied_unknown_key' }, error: null };
       W.push({ id, status: 'pending', ...p, token_created_by_id: tk.created_by_id }); return { data: { ok: true, duplicate: false, id, token_created_by_id: tk.created_by_id }, error: null };
     }
@@ -67,10 +67,10 @@ function memDb(tables: Record<string, any[]>) {
   return { from, rpc, tables };
 }
 
-interface Opts { writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string | null }
+interface Opts { keyCreator?: string | null; writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string | null }
 async function world(o: Opts = {}) {
   const tables: Record<string, any[]> = {
-    agent_gateway_tokens: [{ id: 't1', agent_id: 'a1', token_hash: await sha256Hex(TOKEN), expires_at: '2099-01-01', revoked_at: null, audience: 'gateway' }],
+    agent_gateway_tokens: [{ id: 't1', agent_id: 'a1', token_hash: await sha256Hex(TOKEN), expires_at: '2099-01-01', revoked_at: null, audience: 'gateway', created_by_id: 'keyCreator' in o ? o.keyCreator : 'juan' }],
     agent_gateway_settings: [{ id: 1, gateway_enabled: true, writes_enabled: o.writes ?? true, write_approver_team_member_ids: [AJ, CHARLES], write_requests_per_day: o.perDay ?? 20 }],
     agents: [{ id: 'a1', status: 'active', kind: 'ai_agent', owner_team_member_id: 'owner' in o ? o.owner : 'juan' }],
     integrations: [{ id: IID, provider: 'meta_ads', enabled: true, op_secret_ref: 'op://shared/meta/key', account_ref: null, allowed_hosts: ['graph.facebook.com'], client_id: null, is_browser_login: false }],

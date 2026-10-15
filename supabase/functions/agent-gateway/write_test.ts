@@ -587,3 +587,30 @@ Deno.test('duplicate: Meta copy-limit error is reported as failed_copy_too_large
   const a = await call(db, m, dupReq); approve(db, a.body.request_id as string);
   assertEquals((await poll(db, m, a.body.request_id)).body.failure_outcome, 'failed_copy_too_large');
 });
+
+// ---------- Key lock follow-up (migration 0040): key used + its creator recorded; creator may not decide ----------
+Deno.test('key snapshot: request records the key it arrived on and that key\'s creator', async () => {
+  const db = await world({ keyCreator: CHARLES }); const r = await call(db, meta(), budgetReq(120));
+  assertEquals(r.status, 202);
+  const w = db.tables.agent_write_requests.at(-1);
+  assertEquals(w.token_id, 't1'); assertEquals(w.token_created_by_id, CHARLES);
+});
+Deno.test('key snapshot: a key with no recorded creator cannot raise a write request', async () => {
+  const db = await world({ keyCreator: null }); const m = meta(); const r = await call(db, m, budgetReq(120));
+  assertEquals(r.status, 403); assertEquals(r.body.outcome, 'denied_unknown_key');
+  assertEquals(db.tables.agent_write_requests.length, 0); assertEquals(m.posts().length, 0);
+});
+Deno.test('key creator: approvers who made the key are not notified (Juan bot, Charles key -> AJ only)', async () => {
+  const db = await world({ keyCreator: CHARLES }); await call(db, meta(), budgetReq(120));
+  assertEquals(notified(db), [AJ]);
+});
+Deno.test('key creator: AJ-made key on Juan bot -> Charles only', async () => {
+  const db = await world({ keyCreator: AJ }); await call(db, meta(), budgetReq(120));
+  assertEquals(notified(db), [CHARLES]);
+});
+Deno.test('decisionAuthority: key creator refused, others unaffected', () => {
+  assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], 'juan', undefined, CHARLES), 'denied_key_creator');
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, AJ), 'denied_key_creator');
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, CHARLES), 'ok');
+  assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], CHARLES, undefined, 'juan'), 'denied_self_approval');
+});

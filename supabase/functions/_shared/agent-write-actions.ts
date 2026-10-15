@@ -151,16 +151,11 @@ export function copyLookupUrl(accountId: string, tag: string, secret: string): U
 
 /** Start of the America/Chicago calendar day containing `at`, as a UTC instant. Mirrors SQL agent_write_day_start. */
 export function chicagoDayStart(at: Date): Date {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
-    .formatToParts(at).map((p) => [p.type, p.value]));
-  const wallAsUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
-  const offset = wallAsUtc - Math.floor(at.getTime() / 1000) * 1000; // Chicago = UTC + offset
-  const midnightWall = Date.UTC(+parts.year, +parts.month - 1, +parts.day);
-  // Offset at midnight can differ on DST days; re-derive once.
-  let guess = midnightWall - offset;
-  const p2 = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(guess)).map((p) => [p.type, p.value]));
-  if (+p2.hour !== 0) guess -= (+p2.hour > 12 ? +p2.hour - 24 : +p2.hour) * 3600_000;
-  return new Date(guess);
+  const fmt = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).format(d);
+  const ymd = fmt(at).slice(0, 10);
+  const [y, m, d] = ymd.split('-').map(Number);
+  for (const h of [5, 6]) { const c = new Date(Date.UTC(y, m - 1, d, h)); if (fmt(c) === `${ymd}, 00`) return c; }
+  return new Date(Date.UTC(y, m - 1, d, 6));
 }
 
 /** Fields that changed between the approved "before" and the live object. */

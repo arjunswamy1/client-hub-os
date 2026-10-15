@@ -174,7 +174,7 @@ export const GET_TIMEOUT_MS = 15_000;
 export const copyTag = (requestId: string) => `[cpm:${requestId}]`;
 export function copyLookupUrl(accountId: string, tag: string, secret: string): URL {
   const u = metaGet(`act_${stripAct(accountId)}/campaigns`, 'id,name', secret);
-  u.searchParams.set('filtering', JSON.stringify([{ field: 'name', operator: 'CONTAIN', value: tag }]));
+  u.searchParams.set('filtering', JSON.stringify([{ field: 'name', operator: 'CONTAIN', value: tag }, { field: 'effective_status', operator: 'IN', value: COPY_LOOKUP_STATUSES }]));
   u.searchParams.set('limit', '5');
   return u;
 }

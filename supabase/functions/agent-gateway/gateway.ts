@@ -1,11 +1,14 @@
 // Agent Access Gateway: authenticate, check kill switches, grants and client scope,
 // rate-limit, then run a named read-only action upstream with a secret resolved
-// from 1Password at call time. v1 refuses write scope. Slack is excluded.
+// from 1Password at call time. Writes need an approver's decision (write-flow.ts)
+// and the writes_enabled switch. Slack is excluded.
 // Audit: every refusal, every write attempt and every hand-off in full;
 // successful reads only as a daily count.
 // Never log or persist the token, auth headers, params, or any secret value.
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
 import { ACTIONS, buildRequest, resolveAccount, scrub } from './actions.ts';
+import { settingsFrom } from '../_shared/agent-write-actions.ts';
+import { requestWrite, writeStatus } from '../_shared/agent-write-flow.ts';
 
 export interface GatewayDeps {
   db: any; // service-role client
@@ -16,7 +19,7 @@ export interface GatewayDeps {
 
 export interface GatewayRequest {
   integration_id?: unknown; action?: unknown; scope?: unknown; target?: unknown; params?: unknown;
-  handoff?: unknown; request_id?: unknown; reason?: unknown;
+  handoff?: unknown; write?: unknown; request_id?: unknown; reason?: unknown;
 }
 export interface GatewayResult { status: number; body: Record<string, unknown> }
 
@@ -28,7 +31,6 @@ export async function sha256Hex(text: string): Promise<string> {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTION = /^[a-z0-9_.]{1,80}$/;
 const MAX_BODY = 2_000_000;
-export const WRITES_ENABLED = false; // v1: read only
 
 export async function handleGateway(deps: GatewayDeps, authHeader: string | null, req: GatewayRequest | null): Promise<GatewayResult> {
   const { db, secrets } = deps;
@@ -44,8 +46,9 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   };
 
   const handoff = req?.handoff === 'request' || req?.handoff === 'redeem' ? req.handoff : null;
-  const action = handoff ? `handoff.${handoff}` : typeof req?.action === 'string' && ACTION.test(req.action) ? req.action : null;
-  const scope = handoff ? 'handoff' : req?.scope === 'write' ? 'write' : req?.scope === 'read' || req?.scope === undefined ? 'read' : null;
+  const writeStatusCall = !handoff && req?.write === 'status';
+  const action = handoff ? `handoff.${handoff}` : writeStatusCall ? 'write.status' : typeof req?.action === 'string' && ACTION.test(req.action) ? req.action : null;
+  const scope = handoff ? 'handoff' : writeStatusCall ? 'write_status' : req?.scope === 'write' ? 'write' : req?.scope === 'read' || req?.scope === undefined ? 'read' : null;
   const integrationId = typeof req?.integration_id === 'string' && UUID.test(req.integration_id) ? req.integration_id : null;
   const target = typeof req?.target === 'string' && req.target.length <= 200 ? req.target : null;
   log.action = action; log.scope = scope; log.integration_id = integrationId;
@@ -65,7 +68,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   await db.from('agent_gateway_tokens').update({ last_used_at: now.toISOString() }).eq('id', tok.id);
 
   // 2. Kill switches: global, then per agent.
-  const { data: settings } = await db.from('agent_gateway_settings').select('gateway_enabled').eq('id', 1).maybeSingle();
+  const { data: settings } = await db.from('agent_gateway_settings').select('*').eq('id', 1).maybeSingle();
   if (!settings?.gateway_enabled) return deny(503, 'denied_gateway_disabled');
   const { data: agent } = await db.from('agents').select('id, status, kind, owner_team_member_id').eq('id', tok.agent_id).maybeSingle();
   if (!agent) return deny(403, 'denied_unknown_agent');
@@ -74,7 +77,8 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
 
   // 3. Request validity. Writes are refused outright in v1.
   if (!action || !scope || !integrationId) return deny(400, 'denied_bad_request', 'integration_id (uuid), action and scope (read) are required');
-  if (scope === 'write' && !WRITES_ENABLED) return deny(403, 'denied_write_disabled_v1');
+  const ws = settingsFrom(settings);
+  if (scope === 'write' && !ws.writes_enabled) return deny(403, 'denied_writes_disabled');
 
   // 4. Integration, Slack exclusion, grant, client scope.
   const { data: integ } = await db.from('integrations')
@@ -89,7 +93,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   if (!grant || grant.revoked_at) return deny(403, 'denied_no_grant');
   log.grant_id = grant.id;
   if (grant.expires_at && new Date(grant.expires_at) <= now) return deny(403, 'denied_grant_expired');
-  if (scope !== 'handoff' && !(grant.scopes ?? []).includes(scope)) return deny(403, 'denied_scope');
+  if (scope !== 'handoff' && scope !== 'write_status' && !(grant.scopes ?? []).includes(scope)) return deny(403, 'denied_scope');
   if (agent.kind === 'teammate_agent' && integ.client_id) {
     const { data: owner } = await db.from('team_members').select('role').eq('id', agent.owner_team_member_id).maybeSingle();
     if (owner?.role !== 'admin') {
@@ -97,6 +101,15 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
         .eq('team_member_id', agent.owner_team_member_id).eq('client_id', integ.client_id).maybeSingle();
       if (!asg) return deny(403, 'denied_client_scope');
     }
+  }
+
+  // 5a. Write status poll: exempt from rate limits; may execute an approved request.
+  if (scope === 'write_status') {
+    const reqId = typeof req?.request_id === 'string' && UUID.test(req.request_id) ? req.request_id : null;
+    if (!reqId) return deny(400, 'denied_bad_request', 'request_id is required');
+    const out = await writeStatus({ db, secrets, fetch: doFetch, now, settings: ws }, agent.id, reqId);
+    if (out.status === 404) return deny(404, 'denied_write_unknown');
+    return out;
   }
 
   // 5. Rate limit (atomic counter).
@@ -138,7 +151,12 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
     return { status: 200, body: { ok: true, outcome: 'handoff_redeemed', credential: secret.value, single_use: true } };
   }
 
-  // 6b. Named read action.
+  // 6b. Write request: validated, checked live against Meta, then queued for approval.
+  if (scope === 'write') {
+    return requestWrite({ db, secrets, fetch: doFetch, now, agent, grant, integ, settings: ws, audit, deny }, action, req?.params, req?.reason);
+  }
+
+  // 6c. Named read action.
   const def = ACTIONS[action];
   if (!def) return deny(400, 'denied_unknown_action');
   const secret = integ.op_secret_ref ? await secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };

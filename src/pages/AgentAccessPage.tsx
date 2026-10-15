@@ -37,6 +37,7 @@ async function sha256Hex(t: string) {
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
+const WRITE_OWNER = '1fdd684e-6cb7-447e-b616-7e1b9c598971'; // AJ: only person who may switch writes on or give a grant write scope (also enforced in the database)
 const newToken = () => `agw_${[...crypto.getRandomValues(new Uint8Array(24))].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 
 export default function AgentAccessPage() {
@@ -51,6 +52,9 @@ export default function AgentAccessPage() {
   const [grants, setGrants] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [handoffs, setHandoffs] = useState<any[]>([]);
+  const [ws, setWs] = useState<any>(null);
+  const [writeReqs, setWriteReqs] = useState<any[]>([]);
+  const [perm, setPerm] = useState<{ busy: boolean; result: any }>({ busy: false, result: null });
   const [test, setTest] = useState<{ ref: string; busy: boolean; result: any }>({ ref: '', busy: false, result: null });
   const [shown, setShown] = useState<string | null>(null);
   const [a, setA] = useState({ name: '', kind: 'ai_agent', team: 'ops' });
@@ -62,8 +66,8 @@ export default function AgentAccessPage() {
   const [g, setG] = useState({ agent_id: '', integration_id: '', handoff: false, per_min: '30', per_day: '2000', days: '' });
 
   const load = async () => {
-    const [s, ag, tk, it, gr, lg, ho, cl, sc, tm] = await Promise.all([
-      db.from('agent_gateway_settings').select('gateway_enabled, default_vault').eq('id', 1).maybeSingle(),
+    const [s, ag, tk, it, gr, lg, ho, cl, sc, tm, wr] = await Promise.all([
+      db.from('agent_gateway_settings').select('*').eq('id', 1).maybeSingle(),
       db.from('agents').select('*').order('created_at'),
       db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, audience, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
       db.from('integrations').select('*').order('created_at'),
@@ -73,7 +77,9 @@ export default function AgentAccessPage() {
       db.from('clients').select('id, name').eq('status', 'active').order('name'),
       db.from('agent_client_scopes').select('id, agent_id, client_id'),
       db.from('team_members').select('id, name, is_active').eq('is_service_account', false).order('name'),
+      db.from('agent_write_requests').select('*').order('requested_at', { ascending: false }).limit(100),
     ]);
+    setWs(s.data ?? null); setWriteReqs(wr.data ?? []);
     setClientsList(cl.data ?? []); setScopes(sc.data ?? []); setMembers(tm.data ?? []);
     setEnabled(!!s.data?.gateway_enabled); setAgents(ag.data ?? []); setTokens(tk.data ?? []);
     const v = s.data?.default_vault ?? 'CPM Bot Vault'; setVault(v); setVaultDraft(v);
@@ -118,6 +124,32 @@ export default function AgentAccessPage() {
     const { data, error } = await supabase.functions.invoke('agent-gateway-admin', { body: ref ? { reference: ref } : {} });
     setTest((t) => ({ ...t, busy: false, result: error ? { error: error.message } : data }));
   };
+  const isOwner = me === WRITE_OWNER;
+  const approvers: string[] = ws?.write_approver_team_member_ids ?? [];
+  const memberName = (id: string) => members.find((x) => x.id === id)?.name ?? '—';
+  const ownerOf = (agentId: string) => agents.find((x) => x.id === agentId)?.owner_team_member_id ?? null;
+  const decideWrite = async (id: string, approve: boolean) => {
+    const { data, error } = await db.rpc('decide_agent_write_request', { p_request_id: id, p_approve: approve });
+    if (error) return toast.error(error.message);
+    if (!data?.ok) return toast.error(`Not done: ${data?.outcome}`);
+    if (approve) {
+      const { data: ex, error: exErr } = await supabase.functions.invoke('agent-gateway-write-exec', { body: { request_id: id } });
+      if (exErr) toast.error('Approved, but the change did not run yet; it will run when the bot checks back (within 30 minutes).');
+      else toast.success(ex?.status === 'executed' ? 'Approved and made on Meta' : `Approved — ${ex?.status}${ex?.failure_outcome ? ` (${ex.failure_outcome})` : ''}`);
+    } else toast.success('Denied');
+    load();
+  };
+  const toggleWriteScope = (x: any) => {
+    const has = (x.scopes ?? []).includes('write');
+    const next = has ? x.scopes.filter((s: string) => s !== 'write') : [...x.scopes, 'write'];
+    run(db.from('agent_grants').update({ scopes: next }).eq('id', x.id), has ? 'Changes no longer allowed' : 'Changes allowed (each one still needs approval)');
+  };
+  const checkPerm = async () => {
+    setPerm({ busy: true, result: null });
+    const { data, error } = await supabase.functions.invoke('agent-gateway-admin', { body: { check_meta_write_permission: true } });
+    setPerm({ busy: false, result: error ? { error: error.message } : data });
+  };
+  const pendingWrites = writeReqs.filter((w) => w.status === 'pending' && new Date(w.decision_expires_at) > new Date());
   const decide = (id: string, approve: boolean) => run(db.rpc('decide_agent_handoff', { p_request_id: id, p_approve: approve }), approve ? 'Approved for 15 minutes' : 'Denied');
 
   // Unusual activity: 5+ refusals in any 10 minutes, or 20+ in 24 hours (flag only, no messages).
@@ -140,6 +172,10 @@ export default function AgentAccessPage() {
         <label className="flex items-center gap-2 text-sm">
           Gateway {enabled ? 'on' : 'off'}
           <Switch checked={enabled} onCheckedChange={(v) => run(db.from('agent_gateway_settings').update({ gateway_enabled: v, updated_by_id: me, updated_at: new Date().toISOString() }).eq('id', 1), v ? 'Gateway on' : 'Gateway off')} />
+        </label>
+        <label className="flex items-center gap-2 text-sm" title={isOwner ? '' : 'Only AJ can switch changes on or off'}>
+          Changes {ws?.writes_enabled ? 'on' : 'off'}
+          <Switch disabled={!isOwner} checked={!!ws?.writes_enabled} onCheckedChange={(v) => run(db.from('agent_gateway_settings').update({ writes_enabled: v, updated_by_id: me, updated_at: new Date().toISOString() }).eq('id', 1), v ? 'Agent changes on' : 'Agent changes off')} />
         </label>
       </div>
 
@@ -169,6 +205,7 @@ export default function AgentAccessPage() {
           <TabsTrigger value="keys">Keys</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="grants">Permissions</TabsTrigger>
+          <TabsTrigger value="changes">Changes{pendingWrites.length ? ` (${pendingWrites.length})` : ''}</TabsTrigger>
           <TabsTrigger value="handoffs">Hand-offs{pending.length ? ` (${pending.length})` : ''}</TabsTrigger>
           <TabsTrigger value="log">Activity</TabsTrigger>
         </TabsList>
@@ -287,11 +324,48 @@ export default function AgentAccessPage() {
               <span className="font-medium">{agentName(x.agent_id)}</span><span>→ {integName(x.integration_id)}</span>
               {x.scopes.map((s: string) => <Badge key={s} variant="outline">{s === 'read' ? 'view' : 'change'}</Badge>)}
               {x.allow_browser_handoff && <Badge variant="outline">hand-off</Badge>}
+              {isOwner && !x.revoked_at && integrations.find((it) => it.id === x.integration_id)?.provider === 'meta_ads' && (
+                <Button variant="outline" size="sm" onClick={() => toggleWriteScope(x)}>{(x.scopes ?? []).includes('write') ? 'Stop changes' : 'Allow changes'}</Button>
+              )}
               <span className="text-xs text-muted-foreground">{x.rate_per_minute}/min · {x.rate_per_day}/day{x.expires_at ? ` · until ${new Date(x.expires_at).toLocaleDateString()}` : ''}</span>
               {x.revoked_at ? <Badge variant="destructive">removed</Badge>
                 : <Button className="ml-auto" variant="outline" size="sm" onClick={() => run(db.from('agent_grants').update({ revoked_at: new Date().toISOString() }).eq('id', x.id), 'Permission removed')}>Remove</Button>}
             </div>
           ))}
+        </TabsContent>
+
+        <TabsContent value="changes" className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Meta changes agents have asked for. Nothing happens on Meta until an approver approves; the hub then makes that exact change once, within {ws?.write_approval_ttl_minutes ?? 30} minutes.
+            Approvers: {approvers.map(memberName).join(', ') || 'none'}. Nobody can approve requests from their own agent. Caps: ±{ws?.write_max_budget_change_pct ?? 50}% and ${ws?.write_max_daily_budget_usd ?? 1000}/day per budget change, {ws?.write_requests_per_day ?? 20} requests per agent per day.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" disabled={perm.busy} onClick={checkPerm}>Check Meta permission</Button>
+            {perm.result && <span className="text-sm">{perm.result.error ? `Check failed: ${perm.result.error}` : perm.result.ads_management === true ? 'Meta key can make changes (ads_management: yes)' : perm.result.ads_management === false ? 'Meta key cannot make changes (ads_management: no)' : `Could not tell (${perm.result.reason})`}</span>}
+          </div>
+          {writeReqs.map((w) => {
+            const canDecide = !!me && approvers.includes(me) && ownerOf(w.agent_id) !== me;
+            const open = w.status === 'pending' && new Date(w.decision_expires_at) > new Date();
+            return (
+              <div key={w.id} className="space-y-1 rounded border p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-medium">{agentName(w.agent_id)}</span>
+                  <code className="rounded bg-muted px-1 text-xs">{w.action}</code>
+                  <Badge variant={w.status === 'pending' ? 'secondary' : ['denied', 'failed', 'expired'].includes(w.status) ? 'destructive' : 'outline'}>{open || w.status !== 'pending' ? w.status : 'expired'}</Badge>
+                  <span className="text-xs text-muted-foreground">{new Date(w.requested_at).toLocaleString()}</span>
+                  {open && (canDecide ? (
+                    <div className="ml-auto flex gap-2">
+                      <Button size="sm" onClick={() => decideWrite(w.id, true)}>Approve</Button>
+                      <Button size="sm" variant="outline" onClick={() => decideWrite(w.id, false)}>Deny</Button>
+                    </div>
+                  ) : <span className="ml-auto text-xs text-muted-foreground">{ownerOf(w.agent_id) === me ? 'Your own agent — another approver must decide' : 'Waiting for an approver'}</span>)}
+                </div>
+                <p>{w.diff_text}</p>
+                <p className="text-muted-foreground">Reason: “{w.reason}”{w.decided_by_id ? ` · decided by ${memberName(w.decided_by_id)}` : ''}{w.failure_outcome ? ` · ${w.failure_outcome}` : ''}</p>
+              </div>
+            );
+          })}
+          {!writeReqs.length && <p className="text-sm text-muted-foreground">No change requests yet.</p>}
         </TabsContent>
 
         <TabsContent value="handoffs" className="space-y-2">

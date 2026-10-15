@@ -239,6 +239,13 @@
       "when": 1792026271180,
       "tag": "0033_cannaball_spend_adset_grain",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792069402225,
+      "tag": "0034_agent_gateway_meta_writes",
+      "breakpoints": true
     }
   ]
 }

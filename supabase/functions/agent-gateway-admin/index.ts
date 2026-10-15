@@ -4,6 +4,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { opSdkFactory } from '../_shared/op-sdk.ts';
 import { OnePasswordProvider } from '../_shared/agent-secrets.ts';
+import { checkAdsManagement } from '../_shared/agent-write-actions.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -28,6 +29,17 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const ref = typeof body?.reference === 'string' && body.reference.trim() ? body.reference.trim() : undefined;
+  // Does the Meta token in 1Password have ads_management? Answers yes/no only.
+  if (body?.check_meta_write_permission === true) {
+    const iid = typeof body?.integration_id === 'string' && /^[0-9a-f-]{36}$/i.test(body.integration_id) ? body.integration_id : '55694453-95b2-4c49-829b-517a50952d7b';
+    const svc = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+    const { data: integ } = await svc.from('integrations').select('provider, op_secret_ref').eq('id', iid).maybeSingle();
+    if (!integ || integ.provider !== 'meta_ads' || !integ.op_secret_ref) return json(200, { ok: true, ads_management: null, reason: 'no_meta_secret' });
+    const sec = await new OnePasswordProvider(Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), opSdkFactory).resolve(integ.op_secret_ref);
+    if (!sec.ok) return json(200, { ok: true, ads_management: null, reason: `secret_${sec.reason}` });
+    const has = await checkAdsManagement(fetch, sec.value);
+    return json(200, { ok: true, ads_management: has, reason: has === null ? 'permissions_unreadable' : null });
+  }
   // Optional: list vault and item TITLES only (never field values).
   if (body?.list_titles === true) {
     const token = Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN');

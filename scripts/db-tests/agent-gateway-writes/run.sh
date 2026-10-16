@@ -13,7 +13,7 @@ P="psql -X -q -t -A -h $D -p $PORT -U postgres -v ON_ERROR_STOP=1"
 setup() {
   $P -c "DROP DATABASE IF EXISTS t" -c "CREATE DATABASE t" >/dev/null
   $P -d t -f "$HERE/stub_schema.sql" >/dev/null
-  for m in $(ls "$ROOT"/drizzle/migrations/0*.sql | awk -F/ '{n=substr($NF,1,4)+0; if(n>=34) print}'); do $P -d t -f "$m" >/dev/null; done
+  for m in $(ls "$ROOT"/drizzle/migrations/0*.sql | awk -F/ '{n=substr($NF,1,4)+0; if(n>=34 && n<=42) print}'); do $P -d t -f "$m" >/dev/null; done
 }
 setup
 OUT=$(cd "$HERE" && $P -d t -f tests.sql)

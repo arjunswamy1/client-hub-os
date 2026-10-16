@@ -18,7 +18,7 @@ INSERT INTO r SELECT 'title change by an unattributed job logged as system', EXI
 INSERT INTO r SELECT 'link change logged', EXISTS (SELECT 1 FROM creative_brief_change_log WHERE field='brand_guidelines_url' AND old_value='https://a' AND new_value='https://b');
 -- untracked column / no-op
 UPDATE creative_briefs SET updated_at=now(), title='Spring static v2' WHERE id=:B;
-INSERT INTO r SELECT 'no-op and untracked updates log nothing', (SELECT count(*) FROM creative_brief_change_log)=5;
+INSERT INTO r SELECT 'no-op and untracked updates log nothing', (SELECT count(*) FROM creative_brief_change_log)=6;
 -- comments
 INSERT INTO creative_brief_comments (id, brief_id, author_id, content) VALUES ('d0000000-0000-4000-8000-000000000001', :B, 'a0000000-0000-4000-8000-000000000002', 'Assets are in the folder');
 INSERT INTO r SELECT 'bot comment logged as bot', EXISTS (SELECT 1 FROM creative_brief_change_log WHERE field='comment_added' AND new_value='Assets are in the folder' AND actor_kind='bot' AND changed_by_id='a0000000-0000-4000-8000-000000000002');

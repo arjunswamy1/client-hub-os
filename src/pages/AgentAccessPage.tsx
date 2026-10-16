@@ -73,7 +73,7 @@ export default function AgentAccessPage() {
     const [s, ag, tk, it, gr, lg, ho, cl, sc, tm, wr, oh] = await Promise.all([
       db.from('agent_gateway_settings').select('*').eq('id', 1).maybeSingle(),
       db.from('agents').select('*').order('created_at'),
-      db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, audience, expires_at, revoked_at, last_used_at, created_at').order('created_at', { ascending: false }),
+      db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, audience, expires_at, revoked_at, last_used_at, created_at, created_by_id').order('created_at', { ascending: false }),
       db.from('integrations').select('*').order('created_at'),
       db.from('agent_grants').select('*').order('created_at'),
       db.from('agent_access_log').select('agent_id, created_at').eq('event_type', 'denied').gte('created_at', new Date(Date.now() - 86400000).toISOString()).limit(2000),
@@ -145,9 +145,11 @@ export default function AgentAccessPage() {
     } else toast.success('Denied');
     load();
   };
-  const saveWriteScope = (x: any, give: boolean) => {
-    const next = give ? [...new Set([...(x.scopes ?? []), 'write'])] : (x.scopes ?? []).filter((s: string) => s !== 'write');
-    run(db.from('agent_grants').update({ scopes: next }).eq('id', x.id), give ? 'Changes allowed (each one still needs approval)' : 'Changes no longer allowed');
+  const saveWriteScope = (x: any, give: boolean, confirmedOwnerId?: string | null) => {
+    // Giving write scope goes only through the database function, which checks the confirmed owner against the live owner.
+    if (give) return run(db.rpc('grant_agent_write_scope', { p_grant_id: x.id, p_confirmed_owner_id: confirmedOwnerId ?? null }), 'Changes allowed (each one still needs approval)');
+    const next = (x.scopes ?? []).filter((s: string) => s !== 'write');
+    run(db.from('agent_grants').update({ scopes: next }).eq('id', x.id), 'Changes no longer allowed');
   };
   const toggleWriteScope = (x: any) => {
     const review = reviewWriteGrant(x, ownerOf(x.agent_id), ownerHistory);
@@ -178,6 +180,7 @@ export default function AgentAccessPage() {
         <div>
           <h1 className="text-2xl font-semibold">Agent access</h1>
           <p className="text-sm text-muted-foreground">Decide which agents may use which shared accounts. Passwords and keys stay in 1Password; this page only holds pointers.</p>
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Who made each existing key was filled in after the fact. Before any agent is allowed to request changes, AJ must revoke its keys and make new ones.</p>
           <p className="mt-1 text-xs text-muted-foreground">Gateway address: <code className="rounded bg-muted px-1">{ENDPOINT}</code></p>
         </div>
         <label className="flex items-center gap-2 text-sm">
@@ -401,6 +404,14 @@ export default function AgentAccessPage() {
                     ))}</ul>
                   ) : <p className="text-muted-foreground">None recorded.</p>}
                 </div>
+                <div>
+                  <p className="font-medium">Active keys for this agent</p>
+                  {(() => { const ks = tokens.filter((k) => k.agent_id === grantReview.grant.agent_id && !k.revoked_at && (!k.expires_at || new Date(k.expires_at) > new Date()));
+                    return ks.length ? (
+                      <ul className="list-disc pl-5">{ks.map((k) => <li key={k.id}><code className="text-xs">{k.token_prefix}…</code> {k.label ?? ''} — made by {k.created_by_id ? memberName(k.created_by_id) : 'unknown'} on {new Date(k.created_at).toLocaleString()}</li>)}</ul>
+                    ) : <p className="text-muted-foreground">None.</p>; })()}
+                  <p className="mt-1 text-amber-600 dark:text-amber-400">Who made older keys was filled in after the fact and may not be accurate. Revoke these and have AJ make new keys before allowing changes.</p>
+                </div>
                 {grantReview.review.currentOwnerId ? (
                   <label className="flex items-center gap-2"><Checkbox checked={grantReview.confirmed} onCheckedChange={(v) => setGrantReview({ ...grantReview, confirmed: v === true })} />
                     I confirm {memberName(grantReview.review.currentOwnerId)} owns this agent and should have it request changes.</label>
@@ -410,7 +421,7 @@ export default function AgentAccessPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setGrantReview(null)}>Cancel</Button>
               <Button disabled={!grantReview || !canSaveWriteGrant(grantReview.review, grantReview.confirmed ? grantReview.review.currentOwnerId : undefined)}
-                onClick={() => { if (grantReview) { saveWriteScope(grantReview.grant, true); setGrantReview(null); } }}>Allow changes</Button>
+                onClick={() => { if (grantReview) { saveWriteScope(grantReview.grant, true, grantReview.review.currentOwnerId); setGrantReview(null); } }}>Allow changes</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

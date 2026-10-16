@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Star, AlertCircle, CheckCircle2, Clock, Film, Image as ImageIcon, Calendar } from 'lucide-react';
+import { isBriefLate } from '@/lib/briefStatus';
 import { format, formatDistanceToNow, isPast, isThisWeek } from 'date-fns';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 
@@ -92,7 +93,7 @@ export function MyWorkQueue({ onBriefClick }: Props) {
         isRevision: b.status === 'revision_requested',
         isDesign: !pp, // pure design (non-shoot) work
         dueDate,
-        isOverdue: dueDate ? isPast(dueDate) && !['approved', 'delivered'].includes(b.status) : false,
+        isOverdue: isBriefLate(b.status, dueDate),
         isDueThisWeek: dueDate ? isThisWeek(dueDate, { weekStartsOn: 1 }) : false,
       };
     });

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Play, Pause, Square, AlertTriangle, Calendar, Clock, User, ChevronLeft, ChevronRight, Check, Pencil, Trash2 } from 'lucide-react';
+import { isBriefLate } from '@/lib/briefStatus';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, addDays, isSameDay } from 'date-fns';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
@@ -563,7 +564,7 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
         )}
         {filtered.map((brief: any) => {
           const dueDate = brief.due_date ? new Date(brief.due_date) : null;
-          const isOverdue = dueDate && isPast(dueDate) && !['approved', 'delivered'].includes(brief.status);
+          const isOverdue = isBriefLate(brief.status, dueDate);
           const daysLeft = dueDate ? differenceInDays(dueDate, now) : null;
           const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
           const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;

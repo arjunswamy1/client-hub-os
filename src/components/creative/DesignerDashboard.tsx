@@ -11,6 +11,7 @@ import {
   Play, Pause, Square, Clock, Flame, Timer, Plus, Phone, Trash2, Pencil,
   TrendingUp, AlertTriangle, ChevronRight, Zap, Target
 } from 'lucide-react';
+import { isBriefLate } from '@/lib/briefStatus';
 import { format, differenceInDays, isPast, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { useCreativeBriefs, useDesignerCap, useTimeEntries } from '@/hooks/useCreativeBriefs';
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
@@ -465,7 +466,7 @@ function TaskCard({ brief, actualHours, isTimerActive, onStart, onStop, onClick,
   const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
   const _priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
   const dueDate = brief.due_date ? new Date(brief.due_date) : null;
-  const isOverdue = dueDate && isPast(dueDate) && !['approved', 'delivered'].includes(brief.status);
+  const isOverdue = isBriefLate(brief.status, dueDate);
   const daysLeft = dueDate ? differenceInDays(dueDate, new Date()) : null;
 
   const estimatedHours = brief.estimated_hours || null;

@@ -122,7 +122,7 @@ export const FUNNEL_STAGES = [
 ];
 
 export const BRIEF_STATUSES = [
-  'draft', 'submitted', 'in_design', 'ready_for_review',
+  'draft', 'on_hold', 'submitted', 'in_design', 'ready_for_review',
   'revision_requested', 'approved', 'delivered',
 ] as const;
 
@@ -130,6 +130,7 @@ export type BriefStatus = typeof BRIEF_STATUSES[number];
 
 export const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: 'Draft', color: 'bg-muted text-muted-foreground' },
+  on_hold: { label: 'On hold', color: 'bg-muted text-muted-foreground' },
   submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700' },
   in_design: { label: 'In Design', color: 'bg-yellow-100 text-yellow-700' },
   ready_for_review: { label: 'Ready for Review', color: 'bg-purple-100 text-purple-700' },

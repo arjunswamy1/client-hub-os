@@ -246,8 +246,8 @@ export function DesignerWorkspace({ onBriefClick, view = 'queue', isAdminView }:
   const filtered = briefs
     .filter((b: any) => visibleStatuses.includes(b.status))
     .sort((a: any, b: any) => {
-      const aOverdue = a.due_date && isPast(new Date(a.due_date)) ? 0 : 1;
-      const bOverdue = b.due_date && isPast(new Date(b.due_date)) ? 0 : 1;
+      const aOverdue = isBriefLate(a.status, a.due_date) ? 0 : 1;
+      const bOverdue = isBriefLate(b.status, b.due_date) ? 0 : 1;
       if (aOverdue !== bOverdue) return aOverdue - bOverdue;
       const priOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
       return (priOrder[a.priority] ?? 2) - (priOrder[b.priority] ?? 2);

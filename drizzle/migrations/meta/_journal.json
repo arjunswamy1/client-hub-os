@@ -295,6 +295,13 @@
       "when": 1792116174618,
       "tag": "0041_agent_write_key_creator_aj_exempt",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792117621512,
+      "tag": "0042_agent_gateway_key_creator_owner_confirm",
+      "breakpoints": true
     }
   ]
 }

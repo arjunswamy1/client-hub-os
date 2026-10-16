@@ -10337,6 +10337,10 @@ export type Database = {
         }[]
       }
       get_team_member_id: { Args: { check_user_id: string }; Returns: string }
+      grant_agent_write_scope: {
+        Args: { p_confirmed_owner_id: string; p_grant_id: string }
+        Returns: Json
+      }
       has_client_access: {
         Args: { check_client_id: string; check_user_id: string }
         Returns: boolean

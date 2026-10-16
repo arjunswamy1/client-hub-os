@@ -2,7 +2,7 @@
 CREATE TEMP TABLE r(name text, ok boolean);
 -- on_hold accepted by the status rule, and logged
 BEGIN; SELECT set_config('request.jwt.claim.sub','c0000000-0000-4000-8000-000000000001',true);
-UPDATE creative_briefs SET status='on_hold' WHERE id=:B; COMMIT;
+UPDATE creative_briefs SET status='on_hold', hold_reason='Client paused' WHERE id=:B; COMMIT;
 INSERT INTO r SELECT 'on_hold is an allowed status', (SELECT status FROM creative_briefs WHERE id=:B)='on_hold';
 INSERT INTO r SELECT 'status change logged with old/new and the signed-in user', EXISTS (SELECT 1 FROM creative_brief_change_log WHERE brief_id=:B AND field='status' AND old_value='draft' AND new_value='on_hold' AND actor_kind='user' AND changed_by_id='a0000000-0000-4000-8000-000000000001' AND via='hub');
 DO $$ BEGIN UPDATE creative_briefs SET status='paused' WHERE id='b0000000-0000-4000-8000-000000000001'; INSERT INTO r VALUES ('unknown status refused', false);

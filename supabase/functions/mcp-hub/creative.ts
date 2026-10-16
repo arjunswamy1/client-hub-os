@@ -25,9 +25,16 @@ export interface CreativeCaller {
 }
 export interface CreativeOut { payload: Record<string, unknown>; clientId: string | null; tables: string[]; withheld?: { metric: string; reason: string }[]; audit?: Record<string, unknown> }
 
-export const BRIEF_STATUSES = ['draft', 'submitted', 'in_design', 'ready_for_review', 'revision_requested', 'approved', 'delivered'] as const;
+export const BRIEF_STATUSES = ['draft', 'on_hold', 'submitted', 'in_design', 'ready_for_review', 'revision_requested', 'approved', 'delivered'] as const;
 export const ACTIVE_STATUSES = ['submitted', 'in_design', 'ready_for_review', 'revision_requested'];
 export const TERMINAL_STATUSES = ['approved', 'delivered'];
+/** Paused requests: never late, never in a designer's today list, never chased. */
+export const ON_HOLD_STATUSES = ['on_hold'];
+/** Days past due; always 0 while a brief is on hold or finished. */
+export function daysOverdueOf(b: { status: string | null; due_date: string | null }, today: string): number {
+  if (ON_HOLD_STATUSES.includes(b.status ?? '')) return 0;
+  return b.due_date && b.due_date < today ? daysBetween(b.due_date, today) : 0;
+}
 export const RATE_LIMIT_BRIEFS = 20;
 export const STALE_DAYS = 14;
 export const CREATIVE_WRITE_TOOLS = ['update_brief_status', 'assign_brief', 'reschedule_brief', 'add_brief_comment', 'close_out_brief', 'log_brief_review'];
@@ -69,10 +76,11 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b.slice(0, 10)}T00:00:00Z`) - Date.parse(`${a.slice(0, 10)}T00:00:00Z`)) / 86400000);
 const maxIso = (...xs: (string | null | undefined)[]) => xs.filter(Boolean).sort().at(-1) ?? null;
 
-export type Partition = 'active' | 'awaiting_closeout' | 'archive' | 'draft';
+export type Partition = 'active' | 'on_hold' | 'awaiting_closeout' | 'archive' | 'draft';
 export function partitionOf(b: { status: string | null; due_date: string | null; closed_out_at?: string | null }, today: string): Partition {
   const s = b.status ?? 'draft';
   if (ACTIVE_STATUSES.includes(s)) return 'active';
+  if (ON_HOLD_STATUSES.includes(s)) return 'on_hold';
   if (TERMINAL_STATUSES.includes(s)) return !b.closed_out_at && b.due_date && b.due_date < today ? 'awaiting_closeout' : 'archive';
   return 'draft';
 }
@@ -167,7 +175,7 @@ async function creativeQueue(db: any, caller: CreativeCaller, args: any, now: Da
   };
   for (const b of briefs) {
     const lastActivity = maxIso(last.get(b.id), b.submitted_at, b.accepted_at, b.approved_at, b.delivered_at, b.closed_out_at);
-    const daysOverdue = b.due_date && b.due_date < today ? daysBetween(b.due_date, today) : 0;
+    const daysOverdue = daysOverdueOf(b, today);
     const daysSinceActivity = lastActivity ? daysBetween(lastActivity, today) : null;
     const p = partitionOf(b, today);
     const row = {
@@ -188,6 +196,7 @@ async function creativeQueue(db: any, caller: CreativeCaller, args: any, now: Da
     active_likely_stale: parts.active.filter((r) => r.likely_stale).length,
     awaiting_closeout: parts.awaiting_closeout.length,
     archive: parts.archive.length,
+    on_hold: parts.on_hold.length,
     draft: parts.draft.length,
     waiting_on_reviewer: parts.active.filter((r) => r.waiting_on?.kind === 'reviewer').length,
     waiting_on_designer: parts.active.filter((r) => r.waiting_on?.kind === 'designer').length,
@@ -196,7 +205,7 @@ async function creativeQueue(db: any, caller: CreativeCaller, args: any, now: Da
   return {
     clientId, tables: ['creative_briefs', 'creative_brief_comments', 'creative_deliverables', 'creative_time_entries', 'creative_reviews', 'team_members', 'clients'],
     payload: {
-      summary, active: parts.active,
+      summary, active: parts.active, on_hold: parts.on_hold,
       ...(args.include_closeout ? { awaiting_closeout: parts.awaiting_closeout } : { awaiting_closeout_oldest: parts.awaiting_closeout.slice(0, 5).map((r) => ({ id: r.id, client: r.client, title: r.title, status: r.status, due_date: r.due_date })) }),
     },
   };
@@ -249,7 +258,7 @@ async function designerLoad(db: any, caller: CreativeCaller, args: any, now: Dat
   const ids = designers.map((d: any) => d.id);
   const todayEt = etParts(now).date;
   const [{ data: briefs }, { data: te }, { data: caps }, { data: cks }] = await Promise.all([
-    db.from('creative_briefs').select('id, client_id, status, assigned_to_id, deleted_at').is('deleted_at', null).in('status', ACTIVE_STATUSES),
+    db.from('creative_briefs').select('id, client_id, status, assigned_to_id, deleted_at').is('deleted_at', null).in('status', [...ACTIVE_STATUSES, ...ON_HOLD_STATUSES]),
     db.from('creative_time_entries').select('team_member_id, client_id, duration_minutes, started_at, deleted_at').gte('started_at', `${wk.month < wk.start ? wk.month : wk.start}T00:00:00Z`).range(0, 9999),
     db.from('designer_monthly_caps').select('team_member_id, month, cap_hours').eq('month', wk.month),
     db.from('designer_checkins').select('team_member_id, checkin_date, asked_at, responded_at, raw_reply, working_on, blocked_on, capacity_note, brief_ids').eq('checkin_date', todayEt),
@@ -264,7 +273,8 @@ async function designerLoad(db: any, caller: CreativeCaller, args: any, now: Dat
     const capHours = cap ? Number(cap.cap_hours) : null;
     return {
       designer: d.name, team_member_id: d.id,
-      active_briefs: (briefs ?? []).filter((b: any) => b.assigned_to_id === d.id).length,
+      active_briefs: (briefs ?? []).filter((b: any) => b.assigned_to_id === d.id && ACTIVE_STATUSES.includes(b.status)).length,
+      on_hold_briefs: (briefs ?? []).filter((b: any) => b.assigned_to_id === d.id && ON_HOLD_STATUSES.includes(b.status)).length,
       hours_this_week: hrs(wk.start, wk.end), hours_this_month: monthHours,
       monthly_cap_hours: capHours, cap_source: cap ? 'designer_monthly_caps' : 'not set (the hub screens assume 80)',
       headroom_hours: capHours === null ? null : Math.round((capHours - monthHours) * 10) / 10,

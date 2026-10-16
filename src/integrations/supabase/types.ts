@@ -4043,6 +4043,57 @@ export type Database = {
           },
         ]
       }
+      creative_brief_change_log: {
+        Row: {
+          actor_kind: string
+          brief_id: string
+          changed_by_id: string | null
+          created_at: string
+          field: string
+          id: string
+          new_value: string | null
+          old_value: string | null
+          via: string
+        }
+        Insert: {
+          actor_kind: string
+          brief_id: string
+          changed_by_id?: string | null
+          created_at?: string
+          field: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          via?: string
+        }
+        Update: {
+          actor_kind?: string
+          brief_id?: string
+          changed_by_id?: string | null
+          created_at?: string
+          field?: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          via?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_brief_change_log_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "creative_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creative_brief_change_log_changed_by_id_fkey"
+            columns: ["changed_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creative_brief_comments: {
         Row: {
           author_id: string
@@ -10284,6 +10335,10 @@ export type Database = {
           p_unit: string
         }
         Returns: number
+      }
+      creative_brief_change_actor: {
+        Args: never
+        Returns: Record<string, unknown>
       }
       decide_agent_handoff: {
         Args: { p_approve: boolean; p_note?: string; p_request_id: string }

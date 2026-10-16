@@ -75,7 +75,7 @@ Rules:
 - Where the cause is uncertain, say what to investigate instead of asserting a cause.`;
 
 const SYSTEM_MAP: Record<string, string[]> = {
-  task_digest: ['supabase/functions/post-task-digest/index.ts', 'supabase/functions/_shared/task-digest.ts', 'tasks', 'task_digest_posts'],
+  task_digest: ['supabase/functions/_shared/task-digest.ts', 'tasks', 'task_digest_posts'],
   daily_update_drafter: ['supabase/functions/draft-daily-updates/index.ts', 'client_daily_updates'],
   qa_bot: ['supabase/functions/_shared/slack-bot-app.ts', 'bot_qa_log'],
   task_gate: ['supabase/functions/_shared/task-gate.ts', 'supabase/functions/gate-task-candidates/index.ts', 'task_candidates'],

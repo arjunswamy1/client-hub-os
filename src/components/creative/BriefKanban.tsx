@@ -14,6 +14,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Image, Video, LayoutGrid, Film, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { isBriefLate } from '@/lib/briefStatus';
 import { format, differenceInDays, isPast } from 'date-fns';
 import { BRIEF_STATUSES, STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/creative';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -188,7 +189,7 @@ function BriefCard({ brief, onClick, canManage, onEdit, onDelete }: {
 
   const dueDate = brief.due_date ? new Date(brief.due_date) : null;
   const daysUntilDue = dueDate ? differenceInDays(dueDate, new Date()) : null;
-  const isOverdue = dueDate ? isPast(dueDate) && !['approved', 'delivered'].includes(brief.status) : false;
+  const isOverdue = isBriefLate(brief.status, dueDate);
   const isDueSoon = daysUntilDue !== null && daysUntilDue <= 2 && daysUntilDue >= 0;
 
   return (

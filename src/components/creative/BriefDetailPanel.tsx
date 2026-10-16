@@ -17,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { EditBriefDialog } from '@/components/creative/EditBriefDialog';
+import { BriefChangeLog } from '@/components/creative/BriefChangeLog';
 
 interface Props {
   brief: any;
@@ -218,6 +219,7 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
             <TabsTrigger value="comments">
               Comments {comments.length > 0 && `(${comments.length})`}
             </TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details" className="p-5 space-y-5">
@@ -676,6 +678,10 @@ export function BriefDetailPanel({ brief, onClose }: Props) {
                 <Send className="h-4 w-4" />
               </Button>
             </div>
+          </TabsContent>
+
+          <TabsContent value="history" className="p-5">
+            <BriefChangeLog briefId={brief.id} />
           </TabsContent>
         </Tabs>
       </div>

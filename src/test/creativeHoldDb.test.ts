@@ -1,4 +1,4 @@
-// mcp-hub creative tool handlers against a REAL Postgres (migrations 0043 + 0044,
+// mcp-hub creative tool handlers against a REAL Postgres (migrations 0043 + 0045,
 // real triggers and agent_write_creative_brief). Run via
 // scripts/db-tests/creative-brief-changes/run.sh, which sets DBTEST_PG.
 import { describe, it, expect } from "vitest";

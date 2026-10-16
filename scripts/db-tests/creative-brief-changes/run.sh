@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Real-Postgres tests for the creative request change log, on_hold and the
-# mcp-hub creative tools (migrations 0043 + 0044 applied verbatim; the access
+# mcp-hub creative tools (migrations 0043 + 0045 applied verbatim; 0044 is an accidental no-op; the access
 # functions are the live definitions, not stubs).
 set -euo pipefail
 # initdb refuses root: only the server runs as an unprivileged uid; psql and vitest run as the caller.
@@ -14,7 +14,7 @@ P="psql -X -q -t -A -h $D -p $PORT -U postgres -v ON_ERROR_STOP=1"
 setup() {
   $P -c "DROP DATABASE IF EXISTS t" -c "CREATE DATABASE t" >/dev/null
   $P -d t -f "$HERE/stub_schema.sql" >/dev/null
-  for m in 0043_creative_brief_on_hold_and_change_log 0044_creative_brief_hold_and_log_hardening; do $P -d t -f "$ROOT/drizzle/migrations/$m.sql" >/dev/null; done
+  for m in 0043_creative_brief_on_hold_and_change_log 0045_creative_brief_hold_and_log_hardening_apply; do $P -d t -f "$ROOT/drizzle/migrations/$m.sql" >/dev/null; done
 }
 OUT=""
 setup; OUT+=$(cd "$HERE" && $P -d t -f tests.sql); OUT+=$'\n'

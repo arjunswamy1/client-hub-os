@@ -183,9 +183,9 @@ DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
      'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','kc2',
      'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 1000)->>'id')::uuid;
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
-  PERFORM pg_temp.ok('key creator: AJ may approve a request on a key he made (bot now owned by Juan)', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
+  PERFORM pg_temp.ok('key creator: AJ approves request on AJ-minted key for Juan-owned bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
   PERFORM pg_temp.as_user('');
-  -- AJ-minted key on Juan's bot: AJ may approve.
+  -- Bot a is owned by Charles by now (line ~124); AJ mints its key and may approve.
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
   UPDATE agent_grants SET scopes = '{read,write}' WHERE agent_id = 'b0000000-0000-4000-8000-00000000000a';
   INSERT INTO agent_gateway_tokens (agent_id, token_hash) VALUES ('b0000000-0000-4000-8000-00000000000a', 'aj-juan');
@@ -193,9 +193,9 @@ DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
   r := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',(SELECT id FROM agent_gateway_tokens WHERE token_hash='aj-juan'),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000a'),
      'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','kc6',
      'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 1000)->>'id')::uuid;
-  PERFORM pg_temp.ok('key creator: request on Juan bot records AJ as key creator', (SELECT token_created_by_id FROM agent_write_requests WHERE id = r) = '1fdd684e-6cb7-447e-b616-7e1b9c598971');
+  PERFORM pg_temp.ok('key creator: request on Charles-owned bot records AJ as key creator', (SELECT token_created_by_id FROM agent_write_requests WHERE id = r) = '1fdd684e-6cb7-447e-b616-7e1b9c598971');
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
-  PERFORM pg_temp.ok('key creator: AJ approves request on AJ-minted key for Juan bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
+  PERFORM pg_temp.ok('key creator: AJ approves request on AJ-minted key for Charles-owned bot', decide_agent_write_request(r, true)->>'outcome' = 'write_approved');
   PERFORM pg_temp.as_user('');
   PERFORM pg_temp.ok('key snapshot: unknown key refused at create', agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',gen_random_uuid(),'action','meta.ad.pause','object_id','kc3'), 1000)->>'outcome' = 'denied_unknown_key');
   PERFORM pg_temp.ok('key snapshot: another agent''s key refused at create', agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',kd,'action','meta.ad.pause','object_id','kc4'), 1000)->>'outcome' = 'denied_unknown_key');

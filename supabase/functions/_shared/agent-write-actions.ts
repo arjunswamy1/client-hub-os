@@ -46,8 +46,8 @@ export function decisionAuthority(decider: string | null, approvers: string[], a
   if (!decider || !approvers.includes(decider)) return 'not_write_approver';
   if (!agentOwner) return 'denied_ownerless_agent';
   if (agentOwner === decider && decider !== writeOwner) return 'denied_self_approval';
-  // Whoever made the key a request arrived on may not decide it (mirrors decide_agent_write_request).
-  if (keyCreator && keyCreator === decider) return 'denied_key_creator';
+  // Whoever made the key may not decide its requests, except the write owner (mirrors decide_agent_write_request).
+  if (keyCreator && keyCreator === decider && decider !== writeOwner) return 'denied_key_creator';
   return 'ok';
 }
 

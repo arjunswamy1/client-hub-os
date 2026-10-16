@@ -604,13 +604,14 @@ Deno.test('key creator: approvers who made the key are not notified (Juan bot, C
   const db = await world({ keyCreator: CHARLES }); await call(db, meta(), budgetReq(120));
   assertEquals(notified(db), [AJ]);
 });
-Deno.test('key creator: AJ-made key on Juan bot -> Charles only', async () => {
+Deno.test('key creator: AJ-made key on Juan bot -> AJ and Charles', async () => {
   const db = await world({ keyCreator: AJ }); await call(db, meta(), budgetReq(120));
-  assertEquals(notified(db), [CHARLES]);
+  assertEquals([...notified(db)].sort(), [CHARLES, AJ].sort());
 });
 Deno.test('decisionAuthority: key creator refused, others unaffected', () => {
   assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], 'juan', undefined, CHARLES), 'denied_key_creator');
-  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, AJ), 'denied_key_creator');
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, AJ), 'ok');
+  assertEquals(decisionAuthority(AJ, [AJ, CHARLES], CHARLES, undefined, AJ), 'ok');
   assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, CHARLES), 'ok');
   assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], CHARLES, undefined, 'juan'), 'denied_self_approval');
 });

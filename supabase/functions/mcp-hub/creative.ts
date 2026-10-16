@@ -441,7 +441,7 @@ async function writeTool(name: string, db: any, caller: CreativeCaller, args: an
       const note = text(args.note);
       if (!note) throw new ToolRefusal('invalid_arguments', 'note is required', b.client_id);
       const expectedAt = needExpected(args);
-      if (!TERMINAL_STATUSES.includes(b.status)) throw new ToolRefusal('refused_not_terminal', `only approved or delivered briefs can be closed out; this one is ${b.status}`, b.client_id);
+      if (!TERMINAL_STATUSES.includes(b.status)) throw new ToolRefusal('refused_not_terminal', `only approved or delivered briefs can be closed out; this one is ${b.status}${b.status === 'on_hold' ? ' (paused — move it off hold first)' : ''}`, b.client_id);
       if (b.closed_out_at) throw new ToolRefusal('refused_noop', `already closed out on ${b.closed_out_at}`, b.client_id);
       return applyWrite(db, caller, b, { tool: name, patch: { closed_out_at: now.toISOString(), closed_out_note: note }, note, forced: false, expectedAt, comment: `Closed out by ${who} (record reconciled; status and delivery date unchanged). Note: ${note}` });
     }

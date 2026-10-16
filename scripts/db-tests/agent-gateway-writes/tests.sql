@@ -3,7 +3,7 @@
 CREATE TEMP TABLE results (name text, pass boolean);
 CREATE FUNCTION pg_temp.as_user(u text) RETURNS void LANGUAGE sql AS $$ SELECT set_config('request.jwt.claim.sub', u, false) $$;
 CREATE FUNCTION pg_temp.ok(n text, c boolean) RETURNS void LANGUAGE sql AS $$ INSERT INTO results VALUES (n, coalesce(c, false)) $$;
-CREATE FUNCTION pg_temp.raises(q text) RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN EXECUTE q; RETURN false; EXCEPTION WHEN raise_exception THEN RETURN true; END $$;
+CREATE FUNCTION pg_temp.raises(q text) RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN EXECUTE q; RETURN false; EXCEPTION WHEN raise_exception THEN RAISE NOTICE 'raised: %', SQLERRM; RETURN true; END $$;
 CREATE FUNCTION pg_temp.give_write(p_agents uuid[]) RETURNS void LANGUAGE plpgsql AS $$ DECLARE g record; BEGIN
   FOR g IN SELECT gr.id, a.owner_team_member_id o FROM agent_grants gr JOIN agents a ON a.id = gr.agent_id WHERE gr.agent_id = ANY(p_agents) LOOP
     PERFORM grant_agent_write_scope(g.id, g.o); END LOOP; END $$;

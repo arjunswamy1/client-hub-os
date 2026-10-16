@@ -261,6 +261,7 @@ DO $$ DECLARE kf uuid; gf uuid; o jsonb; BEGIN
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
   PERFORM pg_temp.ok('confirm: AJ with the current owner confirmed succeeds', NOT pg_temp.raises(format($q$SELECT grant_agent_write_scope(%L, '004cb16a-0000-4000-8000-000000000003')$q$, gf))
      AND (SELECT 'write' = ANY(scopes) FROM agent_grants WHERE id = gf));
+  RAISE NOTICE 'DBG scopes=% rev=% grants=%', (SELECT scopes FROM agent_grants WHERE id=gf),(SELECT revoked_at FROM agent_grants WHERE id=gf),(SELECT count(*) FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000f');
   PERFORM pg_temp.ok('confirm: confirmation does not linger for a later direct update', current_setting('cpm.write_grant_confirmed_owner', true) = '');
 
   -- The early key is now AJ-only to manage.

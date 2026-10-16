@@ -20,7 +20,7 @@ setup; OUT+=$(cd "$HERE" && $P -d t -f tests.sql); OUT+=$'\n'
 setup; OUT+=$(cd "$HERE" && $P -d t -f roles_tests.sql); OUT+=$'\n'
 # mcp-hub tool handlers against this database (psql-backed client).
 setup
-OUT+=$(cd "$ROOT" && DBTEST_PG="-h $D -p $PORT -U postgres -d t" node_modules/.bin/vitest run src/test/creativeHoldDb.test.ts --reporter=json --cache=false 2>/dev/null \
+OUT+=$(cd "$ROOT" && DBTEST_PG="-h $D -p $PORT -U postgres -d t" node_modules/.bin/vitest run src/test/creativeHoldDb.test.ts --reporter=json --outputFile=/tmp/dbtest-vitest.json >/tmp/dbtest-vitest.log 2>&1; cat /tmp/dbtest-vitest.json \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s.slice(s.indexOf("{")));for(const f of j.testResults)for(const t of f.assertionResults)console.log((t.status==="passed"?"PASS ":"FAIL ")+"[mcp] "+t.title+(t.status==="passed"?"":" :: "+(t.failureMessages||[]).join(" ").slice(0,300)));if(!j.numTotalTests)console.log("FAIL [mcp] no tests ran")})')
 echo "$OUT" | grep -E '^(PASS|FAIL)'
 P_=$(grep -c '^PASS' <<<"$OUT" || true); F_=$(grep -c '^FAIL' <<<"$OUT" || true)

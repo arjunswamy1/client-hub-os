@@ -7,13 +7,14 @@ import { runCreativeTool, type CreativeCaller } from "../../supabase/functions/m
 
 const CONN = process.env.DBTEST_PG;
 const A = "b0000000-0000-4000-8000-000000000001";
-const NOW = new Date("2026-10-20T15:00:00Z");
+const NOW = new Date();
+const LATER = new Date(Date.now() + 10 * 86400000); // ten days into the hold
 const bot: CreativeCaller = { memberId: "a0000000-0000-4000-8000-000000000002", memberName: "Grokbot", tokenId: null, authMethod: "agent_token", allClients: true, isService: true, clientIds: new Set() };
 
 describe.skipIf(!CONN)("creative tools on real Postgres", () => {
   const { db, sql } = pgDb(CONN ?? "");
   const updatedAt = () => sql(`SELECT to_json(updated_at) FROM creative_briefs WHERE id='${A}'`);
-  const run = (name: string, args: Record<string, unknown> = {}) => runCreativeTool(name, db, bot, args, NOW);
+  const run = (name: string, args: Record<string, unknown> = {}, now = NOW) => runCreativeTool(name, db, bot, args, now);
   const refusal = async (p: Promise<unknown>) => { try { await p; return null; } catch (e: any) { return e.code ?? e.outcome ?? e.message; } };
 
   it("update_brief_status refuses on_hold without a reason", async () => {
@@ -27,20 +28,20 @@ describe.skipIf(!CONN)("creative tools on real Postgres", () => {
     const b = sql(`SELECT row_to_json(x) FROM (SELECT status, hold_reason, hold_started_at, hold_original_due_date FROM creative_briefs WHERE id='${A}') x`);
     expect(b).toMatchObject({ status: "on_hold", hold_reason: "Client paused launch", hold_original_due_date: "2026-10-01" });
     expect(b.hold_started_at).toBeTruthy();
-    sql(`UPDATE creative_briefs SET hold_started_at = '2026-10-10T12:00:00Z' WHERE id='${A}'`);
+    // The hold start cannot be rewritten while on hold (trigger), so later reads move the clock instead.
   });
 
   it("get_creative_queue shows hold age, original due date and long hold", async () => {
-    const out = await run("get_creative_queue", { include: ["on_hold"] });
+    const out = await run("get_creative_queue", {}, LATER);
     const p: any = out.payload;
-    const row = (p.on_hold ?? []).find((r: any) => r.id === A); if (!row || row.hold_age_days !== 10) throw new Error(JSON.stringify(row ? [row.hold_started_at, row.hold_age_days, row.hold_reason] : Object.keys(p)));
+    const row = (p.on_hold ?? []).find((r: any) => r.id === A);
     expect({ hold_reason: row?.hold_reason, original_due_date: row?.original_due_date, hold_age_days: row?.hold_age_days, long_hold: row?.long_hold, days_overdue: row?.days_overdue }).toEqual({ hold_reason: "Client paused launch", original_due_date: "2026-10-01", hold_age_days: 10, long_hold: true, days_overdue: 0 });
     expect(p.summary.on_hold_long).toBe(1);
     expect((p.active ?? []).some((r: any) => r.id === A)).toBe(false);
   });
 
   it("get_designer_load lists the hold separately from active briefs", async () => {
-    const d: any = (await run("get_designer_load")).payload.designers.find((x: any) => x.designer === "Dana");
+    const d: any = (await run("get_designer_load", {}, LATER)).payload.designers.find((x: any) => x.designer === "Dana");
     expect(d.active_briefs).toBe(1); // the Beta brief, not the held one
     expect(d.on_hold_briefs).toBe(1);
     expect(d.on_hold[0]).toMatchObject({ id: A, hold_age_days: 10, original_due_date: "2026-10-01" });

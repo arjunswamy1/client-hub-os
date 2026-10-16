@@ -14,6 +14,7 @@ import { BriefDetailPanel } from '@/components/creative/BriefDetailPanel';
 import { DesignerWorkspace } from '@/components/creative/DesignerWorkspace';
 import { DesignerDashboard } from '@/components/creative/DesignerDashboard';
 import { MyWorkQueue } from '@/components/creative/MyWorkQueue';
+import { HoldReasonDialog } from '@/components/creative/HoldReasonDialog';
 import { TraffickingQueue } from '@/components/creative/TraffickingQueue';
 import { HoursDashboard } from '@/components/creative/HoursDashboard';
 import { WorkCalendar } from '@/components/creative/WorkCalendar';
@@ -70,6 +71,8 @@ export default function CreativePage() {
   const { clients } = useClient();
   const { data: briefs = [] } = useCreativeBriefs({ allClients: true });
   const { updateStatus } = useBriefMutations();
+  const [holdFor, setHoldFor] = useState<string | null>(null);
+  const changeStatus = (id: string, status: string) => status === 'on_hold' ? setHoldFor(id) : updateStatus.mutate({ id, status });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [traffickingClient, setTraffickingClient] = useState<Client | null>(null);
@@ -123,7 +126,7 @@ export default function CreativePage() {
             <BriefKanban
               briefs={briefs}
               onBriefClick={setSelectedId}
-              onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
+              onStatusChange={changeStatus}
             />
           </TabsContent>
 
@@ -171,7 +174,7 @@ export default function CreativePage() {
             <BriefKanban
               briefs={briefs}
               onBriefClick={setSelectedId}
-              onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
+              onStatusChange={changeStatus}
             />
           </TabsContent>
 

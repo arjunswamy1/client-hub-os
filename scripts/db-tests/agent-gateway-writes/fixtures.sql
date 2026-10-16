@@ -9,8 +9,10 @@ INSERT INTO agents (id, name, owner_team_member_id) VALUES
  ('b0000000-0000-4000-8000-00000000000d','AJ bot','1fdd684e-6cb7-447e-b616-7e1b9c598971'),
  ('b0000000-0000-4000-8000-00000000000e','Ownerless bot',NULL);
 INSERT INTO agent_grants (id, agent_id, integration_id) SELECT gen_random_uuid(), id, '55694453-95b2-4c49-829b-517a50952d7b' FROM agents;
--- One key per agent, made by Juan (not an approver) before any write scope exists.
+-- One key per agent, made by Juan (signed in; not an approver) before any write scope exists.
+SELECT set_config('request.jwt.claim.sub','aaaaaaaa-0000-4000-8000-000000000003',false);
 INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) SELECT id, 'h-' || id, '004cb16a-0000-4000-8000-000000000003' FROM agents;
+SELECT set_config('request.jwt.claim.sub','',false);
 CREATE FUNCTION pg_temp.tok(p_agent uuid) RETURNS uuid LANGUAGE sql AS $$ SELECT id FROM agent_gateway_tokens WHERE agent_id = p_agent ORDER BY created_at, id LIMIT 1 $$;
 CREATE FUNCTION pg_temp.req(p_agent uuid, p_obj text, p_status text DEFAULT 'pending', p_at timestamptz DEFAULT now()) RETURNS uuid LANGUAGE sql AS $$
   INSERT INTO agent_write_requests (agent_owner_team_member_id, token_id, token_created_by_id, agent_id, grant_id, integration_id, action, account_id, object_type, object_id, before, after, diff_text, decision_expires_at, status, requested_at)

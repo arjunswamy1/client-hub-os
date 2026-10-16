@@ -1,5 +1,7 @@
 # Agent Access Gateway — how the write locks are enforced
 
+> **WARNING — backfilled key creators.** `created_by_id` on keys that existed before migration 0040 was backfilled from the agent's creator, not recorded at mint time. Before giving any agent write scope, AJ must revoke its existing keys and mint new ones, so the key-creator approval rule rests on recorded facts.
+
 Applies to Meta write actions (`agent_write_requests`, migrations 0034 and 0036).
 
 ## Who can change write controls
@@ -44,3 +46,9 @@ Only the table owner / a superuser can `ALTER TABLE ... DISABLE TRIGGER` or repl
 - `agent_grants_write_alert` now also fires on DELETE (`ENABLE ALWAYS`), and un-revoking a write grant counts as giving write scope (locked) while revoking counts as removal (alerted and stamped `write_scope_removed_at` / owner then).
 - `agent_owner_history` records every owner change (all roles). The Agent access page shows the current owner and owner changes since write was last held, and needs an explicit confirmation before giving write scope.
 - Migration 0039 is an accidental no-op (`SELECT 1`); 0040 holds the substance.
+
+## Migration 0042
+
+- Keys can only be created by a signed-in team member: with no signed-in user (service role, cron, maintenance) the insert is refused, even when a creator is supplied. The creator is never changeable by any role (trigger is `ENABLE ALWAYS`, so replica sessions too).
+- A key on an agent with write access, or being moved off one, can only be rotated, moved, reactivated or extended by the write owner — including keys minted before the grant.
+- Write scope is given only through `grant_agent_write_scope(grant_id, confirmed_owner_id)`: the write-scope trigger refuses any grant gaining write unless the confirmed owner equals the agent's live owner, and refuses ownerless agents. Direct updates are refused. The confirm screen lists the agent's active keys with creator and creation time.

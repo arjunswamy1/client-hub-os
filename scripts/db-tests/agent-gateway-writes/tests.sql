@@ -4,6 +4,9 @@ CREATE TEMP TABLE results (name text, pass boolean);
 CREATE FUNCTION pg_temp.as_user(u text) RETURNS void LANGUAGE sql AS $$ SELECT set_config('request.jwt.claim.sub', u, false) $$;
 CREATE FUNCTION pg_temp.ok(n text, c boolean) RETURNS void LANGUAGE sql AS $$ INSERT INTO results VALUES (n, coalesce(c, false)) $$;
 CREATE FUNCTION pg_temp.raises(q text) RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN EXECUTE q; RETURN false; EXCEPTION WHEN raise_exception THEN RETURN true; END $$;
+CREATE FUNCTION pg_temp.give_write(p_agents uuid[]) RETURNS void LANGUAGE plpgsql AS $$ DECLARE g record; BEGIN
+  FOR g IN SELECT gr.id, a.owner_team_member_id o FROM agent_grants gr JOIN agents a ON a.id = gr.agent_id WHERE gr.agent_id = ANY(p_agents) LOOP
+    PERFORM grant_agent_write_scope(g.id, g.o); END LOOP; END $$;
 -- users: AJ ...01, Charles ...02, Juan ...03
 DO $$ DECLARE r uuid; o jsonb; BEGIN
   r := pg_temp.req('b0000000-0000-4000-8000-00000000000a', '1');
@@ -102,7 +105,7 @@ SELECT pg_temp.ok('lock: triggers fire ALWAYS', (SELECT bool_and(tgenabled = 'A'
 -- Owner snapshot + owner lock (migration 0038)
 DO $$ DECLARE rc uuid; rj uuid; BEGIN
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
-  UPDATE agent_grants SET scopes = '{read,write}' WHERE agent_id IN ('b0000000-0000-4000-8000-00000000000c', 'b0000000-0000-4000-8000-00000000000a');
+  PERFORM pg_temp.give_write(ARRAY['b0000000-0000-4000-8000-00000000000c','b0000000-0000-4000-8000-00000000000a']::uuid[]);
   PERFORM pg_temp.as_user('');
   rc := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000c','token_id',pg_temp.tok('b0000000-0000-4000-8000-00000000000c'),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000c'),
      'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','own1',
@@ -162,7 +165,7 @@ DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
   INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) VALUES ('b0000000-0000-4000-8000-00000000000d', 'charles-key', '1fdd684e-6cb7-447e-b616-7e1b9c598971') RETURNING id INTO kd;
   PERFORM pg_temp.ok('key record: Charles key records Charles even when AJ is supplied', (SELECT created_by_id FROM agent_gateway_tokens WHERE id = kd) = '014fa04a-80a5-41ce-9368-d1a81f6d2eec');
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
-  UPDATE agent_grants SET scopes = '{read,write}' WHERE agent_id = 'b0000000-0000-4000-8000-00000000000d';
+  PERFORM pg_temp.give_write(ARRAY['b0000000-0000-4000-8000-00000000000d']::uuid[]);
   PERFORM pg_temp.as_user('');
   o := agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000d','token_id',kd,'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000d'),
      'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','kc1',
@@ -187,7 +190,7 @@ DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
   PERFORM pg_temp.as_user('');
   -- Bot a is owned by Charles by now (line ~124); AJ mints its key and may approve.
   PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
-  UPDATE agent_grants SET scopes = '{read,write}' WHERE agent_id = 'b0000000-0000-4000-8000-00000000000a';
+  PERFORM pg_temp.give_write(ARRAY['b0000000-0000-4000-8000-00000000000a']::uuid[]);
   INSERT INTO agent_gateway_tokens (agent_id, token_hash) VALUES ('b0000000-0000-4000-8000-00000000000a', 'aj-juan');
   PERFORM pg_temp.as_user('');
   r := (agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000a','token_id',(SELECT id FROM agent_gateway_tokens WHERE token_hash='aj-juan'),'grant_id',(SELECT id FROM agent_grants WHERE agent_id='b0000000-0000-4000-8000-00000000000a'),
@@ -225,4 +228,68 @@ DO $$ DECLARE ka uuid; kd uuid; r uuid; o jsonb; BEGIN
 END $$;
 SELECT pg_temp.ok('0039 triggers fire ALWAYS', (SELECT count(*) FROM pg_trigger WHERE tgenabled = 'A' AND tgname IN ('agent_gateway_token_write_lock','agent_grants_write_alert','agent_owner_history_record')) = 3);
 
+
+-- Migration 0042: no caller-supplied key creator, creator immutable for every role, server-side owner confirmation,
+-- and a key minted before the write grant.
+DO $$ DECLARE kf uuid; gf uuid; o jsonb; BEGIN
+  INSERT INTO agents (id, name, owner_team_member_id) VALUES ('b0000000-0000-4000-8000-00000000000f','Late write bot','004cb16a-0000-4000-8000-000000000003');
+  INSERT INTO agent_grants (agent_id, integration_id) VALUES ('b0000000-0000-4000-8000-00000000000f','55694453-95b2-4c49-829b-517a50952d7b') RETURNING id INTO gf;
+  PERFORM pg_temp.as_user('');
+  PERFORM pg_temp.ok('creator: service role cannot insert a key even with a supplied creator (read bot)', pg_temp.raises($q$INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) VALUES ('b0000000-0000-4000-8000-00000000000f', 'y1', '1fdd684e-6cb7-447e-b616-7e1b9c598971')$q$));
+  SET LOCAL session_replication_role = replica;
+  PERFORM pg_temp.ok('creator: replica session cannot insert a key with a supplied creator', pg_temp.raises($q$INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) VALUES ('b0000000-0000-4000-8000-00000000000f', 'y2', '1fdd684e-6cb7-447e-b616-7e1b9c598971')$q$));
+  SET LOCAL session_replication_role = origin;
+  -- Juan mints a key for his read-only bot before it holds write.
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000003');
+  INSERT INTO agent_gateway_tokens (agent_id, token_hash, created_by_id) VALUES ('b0000000-0000-4000-8000-00000000000f', 'juan-early', '1fdd684e-6cb7-447e-b616-7e1b9c598971') RETURNING id INTO kf;
+  PERFORM pg_temp.ok('creator: signed-in creator recorded, supplied value ignored', (SELECT created_by_id FROM agent_gateway_tokens WHERE id = kf) = '004cb16a-0000-4000-8000-000000000003');
+  UPDATE agent_gateway_tokens SET revoked_at = now() WHERE id = kf;
+  PERFORM pg_temp.as_user('');
+  PERFORM pg_temp.ok('creator: service role cannot change a key creator', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET created_by_id = '1fdd684e-6cb7-447e-b616-7e1b9c598971' WHERE id = %L$q$, kf)));
+  SET LOCAL session_replication_role = replica;
+  PERFORM pg_temp.ok('creator: replica session cannot change a key creator', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET created_by_id = NULL WHERE id = %L$q$, kf)));
+  SET LOCAL session_replication_role = origin;
+
+  -- Owner confirmation is enforced in the database.
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  PERFORM pg_temp.ok('confirm: AJ direct scope update without confirmation refused', pg_temp.raises(format($q$UPDATE agent_grants SET scopes = '{read,write}' WHERE id = %L$q$, gf)));
+  PERFORM pg_temp.ok('confirm: AJ with the wrong confirmed owner refused', pg_temp.raises(format($q$SELECT grant_agent_write_scope(%L, '014fa04a-80a5-41ce-9368-d1a81f6d2eec')$q$, gf)));
+  PERFORM pg_temp.ok('confirm: missing confirmed owner refused', pg_temp.raises(format($q$SELECT grant_agent_write_scope(%L, NULL)$q$, gf)));
+  INSERT INTO agent_grants (agent_id, integration_id) VALUES ('b0000000-0000-4000-8000-00000000000e','55694453-95b2-4c49-829b-517a50952d7b');
+  PERFORM pg_temp.ok('confirm: ownerless bot refused even with a confirmation', pg_temp.raises($q$SELECT grant_agent_write_scope(id, '1fdd684e-6cb7-447e-b616-7e1b9c598971') FROM agent_grants WHERE agent_id = 'b0000000-0000-4000-8000-00000000000e'$q$));
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('confirm: Charles refused even with the correct owner', pg_temp.raises(format($q$SELECT grant_agent_write_scope(%L, '004cb16a-0000-4000-8000-000000000003')$q$, gf)));
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  PERFORM pg_temp.ok('confirm: AJ with the current owner confirmed succeeds', NOT pg_temp.raises(format($q$SELECT grant_agent_write_scope(%L, '004cb16a-0000-4000-8000-000000000003')$q$, gf)));
+  PERFORM pg_temp.ok('confirm: grant now holds write scope', (SELECT 'write' = ANY(scopes) AND revoked_at IS NULL FROM agent_grants WHERE id = gf));
+  PERFORM pg_temp.ok('confirm: confirmation does not linger for a later direct update', current_setting('cpm.write_grant_confirmed_owner', true) = '');
+
+  -- The early key is now AJ-only to manage.
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000003');
+  PERFORM pg_temp.ok('early key: its creator (Juan) cannot reactivate it after the grant', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = NULL WHERE id = %L$q$, kf)));
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('early key: Charles cannot rotate it', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET token_hash = 'y3' WHERE id = %L$q$, kf)));
+  PERFORM pg_temp.ok('early key: Charles cannot extend it', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET expires_at = expires_at + interval '1 day' WHERE id = %L$q$, kf)));
+  PERFORM pg_temp.ok('early key: Charles cannot move it off the write bot', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET agent_id = 'b0000000-0000-4000-8000-00000000000e' WHERE id = %L$q$, kf)));
+  PERFORM pg_temp.as_user('');
+  PERFORM pg_temp.ok('early key: service role cannot reactivate it', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = NULL WHERE id = %L$q$, kf)));
+  SET LOCAL session_replication_role = replica;
+  PERFORM pg_temp.ok('early key: replica session cannot rotate it', pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET token_hash = 'y4' WHERE id = %L$q$, kf)));
+  SET LOCAL session_replication_role = origin;
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000001');
+  PERFORM pg_temp.ok('early key: AJ may reactivate, rotate and extend it',
+    NOT pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET revoked_at = NULL WHERE id = %L$q$, kf))
+    AND NOT pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET token_hash = 'y5' WHERE id = %L$q$, kf))
+    AND NOT pg_temp.raises(format($q$UPDATE agent_gateway_tokens SET expires_at = expires_at + interval '1 day' WHERE id = %L$q$, kf)));
+  PERFORM pg_temp.ok('early key: creator still Juan after AJ managed it', (SELECT created_by_id FROM agent_gateway_tokens WHERE id = kf) = '004cb16a-0000-4000-8000-000000000003');
+  PERFORM pg_temp.as_user('');
+  o := agent_write_request_create(jsonb_build_object('agent_id','b0000000-0000-4000-8000-00000000000f','token_id',kf,'grant_id',gf,
+     'integration_id','55694453-95b2-4c49-829b-517a50952d7b','action','meta.ad.pause','account_id','111','object_type','ad','object_id','early1',
+     'before','{}'::jsonb,'after','{}'::jsonb,'diff_text','d','decision_expires_at',now()+interval '1 day'), 20);
+  PERFORM pg_temp.ok('early key: write request records Juan as the key creator', (o->>'ok')::boolean
+     AND (SELECT token_id = kf AND token_created_by_id = '004cb16a-0000-4000-8000-000000000003' FROM agent_write_requests WHERE id = (o->>'id')::uuid));
+  PERFORM pg_temp.as_user('aaaaaaaa-0000-4000-8000-000000000002');
+  PERFORM pg_temp.ok('early key: Charles (not the creator, not the owner) may approve it', decide_agent_write_request((o->>'id')::uuid, true)->>'outcome' = 'write_approved');
+  PERFORM pg_temp.as_user('');
+END $$;
 SELECT (CASE WHEN pass THEN 'PASS ' ELSE 'FAIL ' END) || name FROM results;

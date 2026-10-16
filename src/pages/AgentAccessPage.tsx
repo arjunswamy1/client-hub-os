@@ -356,7 +356,7 @@ export default function AgentAccessPage() {
           </div>
           {writeReqs.map((w) => {
             const reqOwner = w.agent_owner_team_member_id ?? null;
-            const keyMine = !!me && w.token_created_by_id === me;
+            const keyMine = !!me && w.token_created_by_id === me && me !== WRITE_OWNER;
             const ownMine = reqOwner === me && me !== WRITE_OWNER;
             const canDecide = !!me && approvers.includes(me) && !ownMine && !keyMine && !!reqOwner && !!w.token_created_by_id;
             const open = w.status === 'pending' && new Date(w.decision_expires_at) > new Date();

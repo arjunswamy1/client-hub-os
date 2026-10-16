@@ -423,7 +423,7 @@ async function writeTool(name: string, db: any, caller: CreativeCaller, args: an
       if (status === 'submitted' && !b.submitted_at) patch.submitted_at = ts;
       if (status === 'approved') patch.approved_at = ts;
       if (status === 'delivered') patch.delivered_at = ts;
-      return applyWrite(db, caller, b, { tool: name, patch, note, forced, expectedAt, comment: `Status changed by ${who}: ${b.status} → ${status}${forced ? ' (forced)' : ''}. ${status === 'on_hold' ? ` Hold reason: ${reason}.` : ''} Note: ${note}` });
+      return applyWrite(db, caller, b, { tool: name, patch, note, forced, expectedAt, comment: `Status changed by ${who}: ${b.status} → ${status}${forced ? ' (forced)' : ''}. ${status === 'on_hold' ? `Hold reason: ${reason}. ` : ''}Note: ${note}` });
     }
     case 'assign_brief': {
       const note = text(args.note); const target = text(args.team_member_id);

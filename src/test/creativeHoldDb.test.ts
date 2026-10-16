@@ -34,7 +34,7 @@ describe.skipIf(!CONN)("creative tools on real Postgres", () => {
     const out = await run("get_creative_queue", { include: ["on_hold"] });
     const p: any = out.payload;
     const row = (p.on_hold ?? []).find((r: any) => r.id === A);
-    expect(row).toMatchObject({ hold_reason: "Client paused launch", original_due_date: "2026-10-01", hold_age_days: 10, long_hold: true, days_overdue: 0 });
+    expect({ hold_reason: row?.hold_reason, original_due_date: row?.original_due_date, hold_age_days: row?.hold_age_days, long_hold: row?.long_hold, days_overdue: row?.days_overdue }).toEqual({ hold_reason: "Client paused launch", original_due_date: "2026-10-01", hold_age_days: 10, long_hold: true, days_overdue: 0 });
     expect(p.summary.on_hold_long).toBe(1);
     expect((p.active ?? []).some((r: any) => r.id === A)).toBe(false);
   });

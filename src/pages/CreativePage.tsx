@@ -242,6 +242,12 @@ export default function CreativePage() {
           <BriefDetailPanel brief={selected} onClose={() => setSelectedId(null)} />
         )}
 
+        <HoldReasonDialog
+          open={holdFor !== null}
+          onCancel={() => setHoldFor(null)}
+          onConfirm={(reason) => { if (holdFor) updateStatus.mutate({ id: holdFor, status: 'on_hold', extras: { hold_reason: reason } }); setHoldFor(null); }}
+        />
+
         <BriefSubmissionForm
           open={isCreateOpen}
           onOpenChange={(o) => { setIsCreateOpen(o); if (!o) setPrefilledClientId(undefined); }}

@@ -33,7 +33,7 @@ describe.skipIf(!CONN)("creative tools on real Postgres", () => {
   it("get_creative_queue shows hold age, original due date and long hold", async () => {
     const out = await run("get_creative_queue", { include: ["on_hold"] });
     const p: any = out.payload;
-    const row = (p.on_hold ?? []).find((r: any) => r.id === A);
+    const row = (p.on_hold ?? []).find((r: any) => r.id === A); if (!row || row.hold_age_days !== 10) throw new Error(JSON.stringify(row ?? Object.keys(p)));
     expect({ hold_reason: row?.hold_reason, original_due_date: row?.original_due_date, hold_age_days: row?.hold_age_days, long_hold: row?.long_hold, days_overdue: row?.days_overdue }).toEqual({ hold_reason: "Client paused launch", original_due_date: "2026-10-01", hold_age_days: 10, long_hold: true, days_overdue: 0 });
     expect(p.summary.on_hold_long).toBe(1);
     expect((p.active ?? []).some((r: any) => r.id === A)).toBe(false);
@@ -41,7 +41,7 @@ describe.skipIf(!CONN)("creative tools on real Postgres", () => {
 
   it("get_designer_load lists the hold separately from active briefs", async () => {
     const d: any = (await run("get_designer_load")).payload.designers.find((x: any) => x.designer === "Dana");
-    expect(d.active_briefs).toBe(0);
+    expect(d.active_briefs).toBe(1); // the Beta brief, not the held one
     expect(d.on_hold_briefs).toBe(1);
     expect(d.on_hold[0]).toMatchObject({ id: A, hold_age_days: 10, original_due_date: "2026-10-01" });
   });

@@ -17,7 +17,7 @@ describe.skipIf(!CONN)("creative tools on real Postgres", () => {
   const refusal = async (p: Promise<unknown>) => { try { await p; return null; } catch (e: any) { return e.code ?? e.outcome ?? e.message; } };
 
   it("update_brief_status refuses on_hold without a reason", async () => {
-    sql(`UPDATE creative_briefs SET status='in_design', assigned_to_id='a0000000-0000-4000-8000-000000000004' WHERE id='${A}'; SELECT 'null'::json`);
+    sql(`UPDATE creative_briefs SET status='in_design', assigned_to_id='a0000000-0000-4000-8000-000000000004' WHERE id='${A}'`);
     expect(await refusal(run("update_brief_status", { brief_id: A, status: "on_hold", note: "pause", expected_updated_at: updatedAt() }))).toBe("invalid_arguments");
     expect(sql(`SELECT to_json(status) FROM creative_briefs WHERE id='${A}'`)).toBe("in_design");
   });
@@ -27,7 +27,7 @@ describe.skipIf(!CONN)("creative tools on real Postgres", () => {
     const b = sql(`SELECT row_to_json(x) FROM (SELECT status, hold_reason, hold_started_at, hold_original_due_date FROM creative_briefs WHERE id='${A}') x`);
     expect(b).toMatchObject({ status: "on_hold", hold_reason: "Client paused launch", hold_original_due_date: "2026-10-01" });
     expect(b.hold_started_at).toBeTruthy();
-    sql(`UPDATE creative_briefs SET hold_started_at = '2026-10-10T12:00:00Z' WHERE id='${A}'`.replace(/;?$/, "; SELECT 'null'::json"));
+    sql(`UPDATE creative_briefs SET hold_started_at = '2026-10-10T12:00:00Z' WHERE id='${A}'`);
   });
 
   it("get_creative_queue shows hold age, original due date and long hold", async () => {

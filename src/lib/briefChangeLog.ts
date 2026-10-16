@@ -4,6 +4,7 @@ export interface BriefChange {
   id: string; field: string; old_value: string | null; new_value: string | null;
   actor_kind: 'user' | 'bot' | 'system'; via: string; created_at: string;
   changed_by?: { name: string | null } | null;
+  comment_author_id?: string | null;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -14,7 +15,7 @@ const FIELD_LABELS: Record<string, string> = {
   video_scripts: 'Video scripts', brand_guidelines_url: 'Brand guidelines link', reference_assets: 'Reference links',
   raw_footage_url: 'Raw footage link', final_assets_url: 'Final assets link', drive_wip_folder_id: 'Drive WIP folder',
   drive_approved_folder_id: 'Drive approved folder', deleted_at: 'Deleted', comment_added: 'Comment added',
-  comment_edited: 'Comment edited', comment_deleted: 'Comment deleted',
+  comment_edited: 'Comment edited', comment_deleted: 'Comment deleted', hold_reason: 'Hold reason',
 };
 
 export const fieldLabel = (f: string) => FIELD_LABELS[f] ?? f.replace(/_/g, ' ');
@@ -34,4 +35,10 @@ export function actorLabel(c: BriefChange): string {
   if (c.actor_kind === 'bot') return `${name ?? 'Bot'} (bot)`;
   if (c.actor_kind === 'system') return 'System';
   return name ?? 'Unknown user';
+}
+
+/** A deleted comment keeps who wrote it and when, never its text. */
+export function deletedCommentLine(c: BriefChange, memberName: (id: string) => string | undefined): string {
+  const author = c.comment_author_id ? memberName(c.comment_author_id) ?? 'Unknown person' : 'Unknown person';
+  return `Comment by ${author} deleted`;
 }

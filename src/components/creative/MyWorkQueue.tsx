@@ -78,7 +78,8 @@ export function MyWorkQueue({ onBriefClick }: Props) {
   // ----- Filter + categorize the designer's active briefs -----
   // Include 'draft' so a brief assigned to the designer never hides from My Work just because it hasn't been formally submitted yet.
   const items = useMemo(() => {
-    const active = ['draft', 'submitted', 'in_design', 'ready_for_review', 'revision_requested'];
+    // On-hold requests are listed too, marked paused: never late, never "due this week", sorted last.
+    const active = ['draft', 'on_hold', 'submitted', 'in_design', 'ready_for_review', 'revision_requested'];
     const mine = briefs.filter((b: any) =>
       b.assigned_to_id === designerId && active.includes(b.status)
     );
@@ -93,8 +94,9 @@ export function MyWorkQueue({ onBriefClick }: Props) {
         isRevision: b.status === 'revision_requested',
         isDesign: !pp, // pure design (non-shoot) work
         dueDate,
+        isPaused: b.status === 'on_hold',
         isOverdue: isBriefLate(b.status, dueDate),
-        isDueThisWeek: dueDate ? isThisWeek(dueDate, { weekStartsOn: 1 }) : false,
+        isDueThisWeek: b.status !== 'on_hold' && dueDate ? isThisWeek(dueDate, { weekStartsOn: 1 }) : false,
       };
     });
 
@@ -106,6 +108,7 @@ export function MyWorkQueue({ onBriefClick }: Props) {
 
     // Sort: overdue first, then by readiness (ready post-prod work first), then due date
     return filtered.sort((a, b) => {
+      if (a.isPaused !== b.isPaused) return a.isPaused ? 1 : -1;
       if (a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1;
       const readinessOrder = { ready: 0, partial: 1, no_footage: 2, undefined: 1 } as any;
       const ar = readinessOrder[a.postprod?.readiness ?? 'undefined'];
@@ -127,6 +130,7 @@ export function MyWorkQueue({ onBriefClick }: Props) {
       postprod: mine.filter((b: any) => postProdMap.get(b.id)).length,
       revisions: mine.filter((b: any) => b.status === 'revision_requested').length,
       due_week: mine.filter((b: any) => {
+        if (b.status === 'on_hold') return false;
         const d = b.due_date ? new Date(b.due_date) : null;
         return d ? (isThisWeek(d, { weekStartsOn: 1 }) || isPast(d)) : false;
       }).length,
@@ -151,7 +155,7 @@ export function MyWorkQueue({ onBriefClick }: Props) {
         </Card>
       ) : (
         <div className="space-y-2">
-          {items.map(({ brief, postprod, isOverdue, dueDate }) => {
+          {items.map(({ brief, postprod, isOverdue, dueDate, isPaused }) => {
             const statusConf = STATUS_CONFIG[brief.status] || STATUS_CONFIG.draft;
             const priorityConf = PRIORITY_CONFIG[brief.priority] || PRIORITY_CONFIG.medium;
 
@@ -164,7 +168,7 @@ export function MyWorkQueue({ onBriefClick }: Props) {
             return (
               <Card
                 key={brief.id}
-                className={`p-4 ${postprod ? `border-l-4 ${leftBorder}` : ''} ${brief.status === 'revision_requested' ? 'ring-1 ring-amber-300' : ''} hover:shadow-md transition-shadow cursor-pointer`}
+                className={`p-4 ${isPaused ? 'opacity-70' : ''} ${postprod ? `border-l-4 ${leftBorder}` : ''} ${brief.status === 'revision_requested' ? 'ring-1 ring-amber-300' : ''} hover:shadow-md transition-shadow cursor-pointer`}
                 onClick={() => onBriefClick(brief.id)}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -186,7 +190,14 @@ export function MyWorkQueue({ onBriefClick }: Props) {
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
                       {postprod && <span>From shoot: {postprod.shootTitle}</span>}
-                      {dueDate && (
+                      {isPaused && (
+                        <span className="font-medium">
+                          Paused{brief.hold_started_at ? ` · on hold ${formatDistanceToNow(new Date(brief.hold_started_at))}` : ''}
+                          {brief.hold_original_due_date ? ` · originally due ${format(new Date(brief.hold_original_due_date), 'MMM d')}` : ''}
+                          {brief.hold_reason ? ` · ${brief.hold_reason}` : ''}
+                        </span>
+                      )}
+                      {dueDate && !isPaused && (
                         <span className={isOverdue ? 'text-destructive font-medium' : ''}>
                           {isOverdue ? 'Overdue · ' : 'Due '}{format(dueDate, 'MMM d')}
                         </span>

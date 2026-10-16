@@ -145,6 +145,7 @@ export function useBriefMutations() {
   const updateStatus = useMutation({
     mutationFn: async ({ id, status, extras }: { id: string; status: string; extras?: Record<string, any> }) => {
       const updates: any = { status, ...extras };
+      if (status === 'on_hold' && !String(extras?.hold_reason ?? '').trim()) throw new Error('A reason is required to put a request on hold.');
       if (status === 'submitted') updates.submitted_at = new Date().toISOString();
       if (status === 'approved') updates.approved_at = new Date().toISOString();
       if (status === 'delivered') {
@@ -163,7 +164,7 @@ export function useBriefMutations() {
       queryClient.invalidateQueries({ queryKey: ['brief_notifications'] });
       toast.success('Status updated');
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: any) => toast.error(/hold_reason_required/.test(err.message) ? 'A reason is required to put a request on hold.' : err.message),
   });
 
   // Same conditional accept statement the Slack button uses (accepted_via = 'tracker').

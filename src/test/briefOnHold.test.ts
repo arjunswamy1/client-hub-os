@@ -39,3 +39,30 @@ describe('change log display', () => {
     expect(actorLabel({ actor_kind: 'system' } as any)).toBe('System');
   });
 });
+
+describe('long holds (more than 7 days)', async () => {
+  const { holdInfo, longHolds, LONG_HOLD_DAYS, checkinPrompt } = await import('../../supabase/functions/_shared/creative-followups');
+  it('threshold is 7 days', () => { expect(LONG_HOLD_DAYS).toBe(7); });
+  it('7 days on hold is not long; 8 days is', () => {
+    expect(holdInfo({ hold_started_at: '2026-10-09T15:00:00Z' }, '2026-10-16')).toMatchObject({ hold_age_days: 7, long_hold: false });
+    expect(holdInfo({ hold_started_at: '2026-10-08T15:00:00Z', hold_original_due_date: '2026-10-01' }, '2026-10-16')).toMatchObject({ hold_age_days: 8, long_hold: true, original_due_date: '2026-10-01' });
+  });
+  it('only on-hold requests are long holds', () => {
+    const rows = [{ status: 'on_hold', hold_started_at: '2026-10-01T15:00:00Z' }, { status: 'in_design', hold_started_at: '2026-10-01T15:00:00Z' }];
+    expect(longHolds(rows, '2026-10-16')).toHaveLength(1);
+  });
+  it('designer check-in lists held work as paused, not numbered for today', () => {
+    const t = checkinPrompt('Dana', [{ title: 'A', client: 'X', due_date: null }], [{ title: 'Held', client: 'X', hold_age_days: 3, original_due_date: '2026-10-01' }]);
+    expect(t).toMatch(/1\. \*A\*/);
+    expect(t).not.toMatch(/2\. /);
+    expect(t).toMatch(/Paused[\s\S]*Held \(X\) — on hold 3 days, originally due 2026-10-01/);
+  });
+});
+
+describe('deleted comments in history', async () => {
+  const { deletedCommentLine } = await import('@/lib/briefChangeLog');
+  it('shows the author but no text', () => {
+    const line = deletedCommentLine({ field: 'comment_deleted', old_value: null, new_value: null, comment_author_id: 'u1' } as any, () => 'Dana');
+    expect(line).toBe('Comment by Dana deleted');
+  });
+});

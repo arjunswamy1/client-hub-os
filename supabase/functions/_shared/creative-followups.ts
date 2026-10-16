@@ -157,6 +157,41 @@ export function evaluateFollowups(briefs: FollowupBrief[], existing: FollowupRow
   return { items, send, held: items.filter((i) => i.held), resolve, weekend };
 }
 
+// ─── holds ─────────────────────────────────────────────────────────────────
+// On-hold requests are never chased. A hold longer than LONG_HOLD_DAYS calendar
+// days is listed as a "long hold" (get_followups, Monday roll-up) — never a ping.
+
+export const LONG_HOLD_DAYS = 7;
+export interface HoldBrief { hold_reason?: string | null; hold_started_at?: string | null; hold_original_due_date?: string | null }
+/** Hold age in calendar days (ET) and whether it counts as a long hold. */
+export function holdInfo(b: HoldBrief, today: string) {
+  const start = b.hold_started_at ? etDateOf(b.hold_started_at) : null;
+  const age = start ? Math.max(0, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000)) : null;
+  return {
+    hold_reason: b.hold_reason ?? null, hold_started_at: b.hold_started_at ?? null, hold_age_days: age,
+    original_due_date: b.hold_original_due_date ?? null, long_hold: age !== null && age > LONG_HOLD_DAYS,
+  };
+}
+export function longHolds<T extends HoldBrief & { status: string }>(briefs: T[], today: string) {
+  return briefs.filter((b) => b.status === 'on_hold').map((b) => ({ ...b, ...holdInfo(b, today) })).filter((b) => b.long_hold)
+    .sort((a, z) => (z.hold_age_days ?? 0) - (a.hold_age_days ?? 0));
+}
+export async function loadLongHolds(db: any, now: Date) {
+  const today = etParts(now).date;
+  const [{ data: rows }, { data: cl }] = await Promise.all([
+    db.from('creative_briefs').select('id, client_id, title, status, due_date, assigned_to_id, hold_reason, hold_started_at, hold_original_due_date').is('deleted_at', null).eq('status', 'on_hold'),
+    db.from('clients').select('id, name'),
+  ]);
+  const cName = new Map((cl ?? []).map((c: any) => [c.id, c.name]));
+  return longHolds((rows ?? []) as any[], today).map((b: any) => ({
+    brief_id: b.id, title: b.title, client: b.client_id ? String(cName.get(b.client_id) ?? 'Unknown') : 'Internal', client_id: b.client_id ?? null,
+    assigned_to_id: b.assigned_to_id ?? null, hold_reason: b.hold_reason, hold_started_at: b.hold_started_at, hold_age_days: b.hold_age_days,
+    original_due_date: b.original_due_date, due_date: b.due_date ?? null,
+  }));
+}
+export const longHoldLine = (h: { title: string; client: string; hold_age_days: number | null; original_due_date: string | null; hold_reason: string | null }) =>
+  `• ${h.title} (${h.client}) — on hold ${h.hold_age_days} days${h.original_due_date ? `, originally due ${h.original_due_date}` : ''}${h.hold_reason ? ` — reason: ${h.hold_reason}` : ''}`;
+
 // ─── check-ins ─────────────────────────────────────────────────────────────
 
 export type CheckinState = 'not_asked' | 'no_response' | 'answered';
@@ -189,10 +224,16 @@ export function planCheckinWrite(existing: { id: string } | null, input: Checkin
     : { op: 'insert' as const, row: { team_member_id: input.team_member_id, checkin_date: input.checkin_date, source: input.source ?? 'slack_dm', ...fields } };
 }
 
-export function checkinPrompt(firstName: string, briefs: { title: string; client: string; due_date: string | null }[]) {
-  if (!briefs.length) return `Morning ${firstName} — you have no active briefs in the hub. If you're working on something that isn't there, reply and tell me what.`;
+export interface HeldForPrompt { title: string; client: string; hold_age_days: number | null; original_due_date: string | null }
+/** On-hold briefs are shown as paused, unnumbered: they are not today's work. */
+function pausedBlock(held: HeldForPrompt[]) {
+  if (!held.length) return '';
+  return `\n\nPaused (on hold — not for today):\n${held.map((h) => `• ${h.title} (${h.client}) — on hold ${h.hold_age_days ?? '?'} day${h.hold_age_days === 1 ? '' : 's'}${h.original_due_date ? `, originally due ${h.original_due_date}` : ''}`).join('\n')}`;
+}
+export function checkinPrompt(firstName: string, briefs: { title: string; client: string; due_date: string | null }[], held: HeldForPrompt[] = []) {
+  if (!briefs.length) return `Morning ${firstName} — you have no active briefs in the hub. If you're working on something that isn't there, reply and tell me what.${pausedBlock(held)}`;
   const lines = briefs.map((b, i) => `${i + 1}. *${b.title}* (${b.client}${b.due_date ? `, due ${b.due_date}` : ''})`);
-  return `Morning ${firstName} — your active briefs:\n${lines.join('\n')}\n\nWhich are you on today? Reply with the numbers, and say if anything is blocking you.`;
+  return `Morning ${firstName} — your active briefs:\n${lines.join('\n')}${pausedBlock(held)}\n\nWhich are you on today? Reply with the numbers, and say if anything is blocking you.`;
 }
 
 export function followupText(i: FollowupItem, names: { designer?: string | null; hubUrl: string }) {

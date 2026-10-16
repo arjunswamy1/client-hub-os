@@ -4,7 +4,7 @@
 // when the America/New_York clock matches the slot, so DST holds):
 //   checkin  weekdays 9:30 ET   — one DM per designer listing their active briefs
 //   sweep    weekdays 11:00 and 15:30 ET — chases per the ladder in _shared/creative-followups.ts
-//   rollup   Mondays 8:30 ET    — one DM to AJ: in vs out, moved, stuck, escalated, check-in response rates
+//   rollup   Mondays 8:30 ET    — one DM to AJ: in vs out, moved, stuck, escalated, long holds, check-in response rates
 //
 // DMs go only through postDirectMessage() (internal team members only).
 // Nothing client-facing. dry_run returns what would be sent and writes nothing.
@@ -13,7 +13,7 @@ import { postDirectMessage } from '../_shared/slack-post.ts';
 import { hubUrl } from '../_shared/brief-messages.ts';
 import {
   checkinPrompt, etParts, evaluateFollowups, FOLLOWUP_ACTIVE_STATUSES, followupText, isWorkingDay,
-  loadFollowupContext, OWNER_TEAM_MEMBER_ID, workingDaysBetween, etDateOf,
+  loadFollowupContext, OWNER_TEAM_MEMBER_ID, workingDaysBetween, etDateOf, holdInfo, loadLongHolds, longHoldLine, LONG_HOLD_DAYS,
 } from '../_shared/creative-followups.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-nonce' };
@@ -48,12 +48,14 @@ async function designers(db: any) {
 async function runCheckin(db: any, now: Date, dryRun: boolean) {
   const et = etParts(now);
   const { data: briefs } = await db.from('creative_briefs').select('id, title, client_id, due_date, assigned_to_id, closed_out_at').is('deleted_at', null).in('status', FOLLOWUP_ACTIVE_STATUSES);
+  const { data: held } = await db.from('creative_briefs').select('id, title, client_id, assigned_to_id, hold_started_at, hold_original_due_date').is('deleted_at', null).eq('status', 'on_hold');
   const { data: cl } = await db.from('clients').select('id, name');
   const cName = new Map((cl ?? []).map((c: any) => [c.id, c.name]));
   const out: any[] = [];
   for (const d of await designers(db)) {
     const mine = (briefs ?? []).filter((b: any) => b.assigned_to_id === d.id && !b.closed_out_at).sort((a: any, b: any) => String(a.due_date ?? '9').localeCompare(String(b.due_date ?? '9')));
-    const text = checkinPrompt(String(d.name).split(' ')[0], mine.map((b: any) => ({ title: b.title, client: String(cName.get(b.client_id) ?? 'Internal'), due_date: b.due_date })));
+    const paused = (held ?? []).filter((b: any) => b.assigned_to_id === d.id).map((b: any) => ({ title: b.title, client: String(cName.get(b.client_id) ?? 'Internal'), ...holdInfo(b, et.date) }));
+    const text = checkinPrompt(String(d.name).split(' ')[0], mine.map((b: any) => ({ title: b.title, client: String(cName.get(b.client_id) ?? 'Internal'), due_date: b.due_date })), paused);
     const { data: existing } = await db.from('designer_checkins').select('id, asked_at').eq('team_member_id', d.id).eq('checkin_date', et.date).maybeSingle();
     if (existing?.asked_at) { out.push({ designer: d.name, skipped: 'already_asked_today' }); continue; }
     if (!d.slack_user_id) { out.push({ designer: d.name, skipped: 'no_slack_user_id' }); continue; }
@@ -106,6 +108,7 @@ async function runSweep(db: any, now: Date, dryRun: boolean) {
     owner_stage_for_rollup: r.items.filter((i) => i.delivery === 'weekly_rollup').map((i) => ({ title: i.title, rule: i.rule, reason: i.due_reason })),
     already_sent: r.items.filter((i) => i.already_sent).map((i) => ({ title: i.title, rule: i.rule, stage: i.stage, sent_at: i.sent_at })),
     resolve: r.resolve,
+    long_holds: await loadLongHolds(db, now),
   };
 }
 
@@ -125,6 +128,7 @@ async function runRollup(db: any, now: Date, dryRun: boolean) {
   const name = new Map((tm ?? []).map((m: any) => [m.id, m.name]));
   const title = new Map((b ?? []).map((x: any) => [x.id, x.title]));
   const ctx = await loadFollowupContext(db, now);
+  const holds = await loadLongHolds(db, now);
   const submitted = (b ?? []).filter((x: any) => inWeek(x.submitted_at)).length;
   const out = (b ?? []).filter((x: any) => inWeek(x.delivered_at) || inWeek(x.approved_at)).length;
   const stuck = ctx.briefs.map((x) => ({ title: x.title, status: x.status, wd: x.status_since ? workingDaysBetween(etDateOf(x.status_since), et.date) : null })).sort((a, z) => (z.wd ?? 0) - (a.wd ?? 0));
@@ -137,6 +141,7 @@ async function runRollup(db: any, now: Date, dryRun: boolean) {
     `Stuck (${stuck.length} active):`, ...stuck.slice(0, 11).map((s) => `• ${s.title} — ${s.status.replace(/_/g, ' ')}${s.wd !== null ? ` for ${s.wd} working days` : ''}`),
     `Escalated: ${esc.length ? esc.map((f: any) => `${title.get(f.brief_id) ?? '?'} (${f.rule}, ${f.stage === 'owner' ? 'to you' : `to ${name.get(f.recipient_id) ?? '?'}`})${f.resolved_at ? ` — resolved: ${f.resolution}` : ''}`).join('; ') : 'none'}`,
     `Check-in replies: ${rates.length ? rates.join(' · ') : 'no designers'}`,
+    `Long holds (on hold more than ${LONG_HOLD_DAYS} days): ${holds.length ? '' : 'none'}`, ...holds.map(longHoldLine),
   ];
   const text = lines.join('\n');
   if (dryRun) return { text };

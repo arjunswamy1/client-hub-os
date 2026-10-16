@@ -4048,6 +4048,8 @@ export type Database = {
           actor_kind: string
           brief_id: string
           changed_by_id: string | null
+          comment_author_id: string | null
+          comment_id: string | null
           created_at: string
           field: string
           id: string
@@ -4059,6 +4061,8 @@ export type Database = {
           actor_kind: string
           brief_id: string
           changed_by_id?: string | null
+          comment_author_id?: string | null
+          comment_id?: string | null
           created_at?: string
           field: string
           id?: string
@@ -4070,6 +4074,8 @@ export type Database = {
           actor_kind?: string
           brief_id?: string
           changed_by_id?: string | null
+          comment_author_id?: string | null
+          comment_id?: string | null
           created_at?: string
           field?: string
           id?: string
@@ -4249,6 +4255,9 @@ export type Database = {
           estimated_hours: number | null
           final_assets_url: string | null
           funnel_stage: string | null
+          hold_original_due_date: string | null
+          hold_reason: string | null
+          hold_started_at: string | null
           id: string
           key_message: string | null
           notes: string | null
@@ -4299,6 +4308,9 @@ export type Database = {
           estimated_hours?: number | null
           final_assets_url?: string | null
           funnel_stage?: string | null
+          hold_original_due_date?: string | null
+          hold_reason?: string | null
+          hold_started_at?: string | null
           id?: string
           key_message?: string | null
           notes?: string | null
@@ -4349,6 +4361,9 @@ export type Database = {
           estimated_hours?: number | null
           final_assets_url?: string | null
           funnel_stage?: string | null
+          hold_original_due_date?: string | null
+          hold_reason?: string | null
+          hold_started_at?: string | null
           id?: string
           key_message?: string | null
           notes?: string | null

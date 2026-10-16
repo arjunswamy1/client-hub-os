@@ -37,6 +37,8 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
     raw_footage_url: brief.raw_footage_url || '',
     final_assets_url: brief.final_assets_url || '',
   });
+  const [holdReason, setHoldReason] = useState('');
+  const enteringHold = form.status === 'on_hold' && brief.status !== 'on_hold';
 
   // Reset form when brief changes
   useEffect(() => {
@@ -119,7 +121,9 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
 
   const update = useMutation({
     mutationFn: async () => {
+      if (enteringHold && !holdReason.trim()) throw new Error('A reason is required to put a request on hold.');
       const { error } = await supabase.from('creative_briefs').update({
+        ...(enteringHold ? { hold_reason: holdReason.trim() } : {}),
         title: form.title,
         status: form.status,
         priority: form.priority,
@@ -182,6 +186,12 @@ export function EditBriefDialog({ brief, open, onOpenChange }: Props) {
                 </SelectContent>
               </Select>
             </div>
+            {enteringHold && (
+              <div className="col-span-2">
+                <Label>Reason for hold (required)</Label>
+                <Textarea value={holdReason} onChange={(e) => setHoldReason(e.target.value)} placeholder="Why is it on hold?" />
+              </div>
+            )}
             <div>
               <Label>Priority</Label>
               <Select value={form.priority} onValueChange={(v) => setForm(f => ({ ...f, priority: v }))}>

@@ -3,12 +3,13 @@
 # mcp-hub creative tools (migrations 0043 + 0044 applied verbatim; the access
 # functions are the live definitions, not stubs).
 set -euo pipefail
-if [ "$(id -u)" = 0 ]; then exec setpriv --reuid=65534 --regid=65534 --clear-groups env HOME=/tmp PATH="$PATH" bash "$0" "$@"; fi
+# initdb refuses root: only the server runs as an unprivileged uid; psql and vitest run as the caller.
+AS=""; [ "$(id -u)" = 0 ] && AS="setpriv --reuid=65534 --regid=65534 --clear-groups env HOME=/tmp PATH=$PATH"
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(cd "$HERE/../../.." && pwd)"
-D=$(mktemp -d); PORT=${DBTEST_PORT:-55433}
-initdb -D "$D/data" -U postgres -A trust >/dev/null
-pg_ctl -D "$D/data" -o "-p $PORT -k $D -c listen_addresses=''" -l "$D/log" start >/dev/null
-trap 'pg_ctl -D "$D/data" stop -m immediate >/dev/null 2>&1; rm -rf "$D"' EXIT
+D=$(mktemp -d); PORT=${DBTEST_PORT:-55433}; [ -n "$AS" ] && chown 65534:65534 "$D"
+$AS initdb -D "$D/data" -U postgres -A trust >/dev/null
+$AS pg_ctl -D "$D/data" -o "-p $PORT -k $D -c listen_addresses=''" -l "$D/log" start >/dev/null
+trap '$AS pg_ctl -D "$D/data" stop -m immediate >/dev/null 2>&1; rm -rf "$D"' EXIT
 P="psql -X -q -t -A -h $D -p $PORT -U postgres -v ON_ERROR_STOP=1"
 setup() {
   $P -c "DROP DATABASE IF EXISTS t" -c "CREATE DATABASE t" >/dev/null

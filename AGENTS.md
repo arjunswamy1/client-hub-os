@@ -16,3 +16,4 @@
 - Some subdirectories have their own AGENTS.md; read it before changing files there.
 - Unlinked non-service team_members rows link to their auth user by email on confirmation (auth.users trigger). Why: RLS reads user_id; no staff email/password sent.
 - Universal Ads `cannaball_spend` rows are keyed by ad set + ad id (`_shared/universal-ads-rows.ts`), never names. Why: same-named ad sets merged.
+- Jacuzzi cash timing (weekly client invoices from the sheet's Billing tab, Roku monthly Net 30, hub-lead estimates for unbilled weeks) lives only in `src/lib/jacuzziCashFlow.ts`; `jacuzzi-billing-sheet` only reads the tab. Why: profit is by call date, cash is by due date.

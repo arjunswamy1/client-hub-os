@@ -13,7 +13,7 @@
 - Tasks are created only by `_shared/task-request.ts` (`createRequestedTask`), from an @CPM Bot Slack request (`slack-bot-app.ts`) or an explicit spoken request in a recording (`extract-meeting-tasks`); detection rules live only in `_shared/task-request-rules.ts`, dedupe on `type_data.source_ref`. Candidate promotion, Fathom action items, Slack client-request scanning and Henry intake are switched off (`TASKS_FROM_REQUESTS_ONLY`). Why: the tracker holds only work someone deliberately asked to track.
 - Creative chasing (follow-up ladder, daily cap, weekend rule, check-in parsing) lives only in `_shared/creative-followups.ts`; `supabase/functions/creative-followups` is the only sender, and `creative_followups` is unique on (brief, rule, stage). Why: each chase fires exactly once, and only active briefs are ever in scope.
 - Daily-update context rules (strict internal-channel test, origin split, figure check, narrative fallback, discovery) live only in `_shared/update-context.ts`; daily updates post only via `postToSlack({ internalOnly: true })`. Why: no update reaches a shared channel and no agent figure goes unchecked.
-- Some subdirectories have their own AGENTS.md; read it first.
-- Unlinked non-service team_members link to their auth user by email on confirmation (auth.users trigger). Why: RLS reads user_id.
+- Subdirectories may have their own AGENTS.md; read it first.
+- Unlinked non-service team_members link to their auth user by email on confirmation (auth trigger). Why: RLS reads user_id.
 - Universal Ads `cannaball_spend` rows key on ad set + ad id (`_shared/universal-ads-rows.ts`). Why: same-named ad sets merged.
-- Jacuzzi cash timing lives only in `src/lib/jacuzziCashFlow.ts`; `jacuzzi-billing-sheet` only reads the sheet. Why: profit is by call date, cash by due date.
+- Jacuzzi cash timing lives only in `src/lib/jacuzziCashFlow.ts`; `jacuzzi-billing-sheet` reads the sheet only. Why: profit counts call date, cash counts due date.

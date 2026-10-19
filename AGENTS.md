@@ -16,4 +16,4 @@
 - Subdirectories may have their own AGENTS.md; read it first.
 - Unlinked non-service team_members link to their auth user by email on confirmation (auth trigger). Why: RLS reads user_id.
 - Universal Ads `cannaball_spend` rows key on ad set + ad id (`_shared/universal-ads-rows.ts`). Why: same-named ad sets merged.
-- Jacuzzi cash timing lives only in `src/lib/jacuzziCashFlow.ts`; `jacuzzi-billing-sheet` reads the sheet only. Why: profit counts call date, cash counts due date.
+- Jacuzzi cash timing lives only in `src/lib/jacuzziCashFlow.ts`; `jacuzzi-billing-sheet` reads the sheet only. Why: cash moves on due dates.

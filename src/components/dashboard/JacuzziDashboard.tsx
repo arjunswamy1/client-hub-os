@@ -18,6 +18,7 @@ import {
   RefreshCw, DollarSign, Phone, QrCode, TrendingUp, Clock, Radio, Upload, Users, ShieldCheck, Send, MapPin,
 } from "lucide-react";
 import JacuzziReconciliation from "./JacuzziReconciliation";
+import JacuzziCashFlow from "./JacuzziCashFlow";
 import JacuzziHourlyAudit from "./JacuzziHourlyAudit";
 import JacuzziGeoPlacement from "./JacuzziGeoPlacement";
 import SlackReportCard from "./SlackReportCard";
@@ -421,6 +422,7 @@ export default function JacuzziDashboard() {
             <TabsTrigger value="stations" className="gap-1.5 text-xs">Stations</TabsTrigger>
             <TabsTrigger value="geo" className="gap-1.5 text-xs"><MapPin className="h-3.5 w-3.5" /> Geo &amp; placement</TabsTrigger>
             <TabsTrigger value="leads" className="gap-1.5 text-xs">Lead log</TabsTrigger>
+            <TabsTrigger value="cash" className="gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" /> Cash flow</TabsTrigger>
             <TabsTrigger value="recon" className="gap-1.5 text-xs"><ShieldCheck className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>
             <TabsTrigger value="import" className="gap-1.5 text-xs"><Upload className="h-3.5 w-3.5" /> Import</TabsTrigger>
             <TabsTrigger value="slack" className="gap-1.5 text-xs"><Send className="h-3.5 w-3.5" /> Slack brief</TabsTrigger>
@@ -655,6 +657,10 @@ export default function JacuzziDashboard() {
               </table>
             </div>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="cash">
+          <JacuzziCashFlow />
         </TabsContent>
 
         <TabsContent value="recon">

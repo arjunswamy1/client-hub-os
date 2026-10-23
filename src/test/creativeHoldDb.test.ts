@@ -41,7 +41,9 @@ describe.skipIf(!CONN)("creative tools on real Postgres", () => {
   });
 
   it("get_designer_load lists the hold separately from active briefs", async () => {
-    const d: any = (await run("get_designer_load", {}, LATER)).payload.designers.find((x: any) => x.designer === "Dana");
+    const payload = (await run("get_designer_load", {}, LATER)).payload;
+    const designers = Array.isArray(payload.designers) ? payload.designers : [];
+    const d = designers.find((x: any) => x.designer === "Dana");
     expect(d.active_briefs).toBe(1); // the Beta brief, not the held one
     expect(d.on_hold_briefs).toBe(1);
     expect(d.on_hold[0]).toMatchObject({ id: A, hold_age_days: 10, original_due_date: "2026-10-01" });

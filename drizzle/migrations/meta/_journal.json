@@ -323,6 +323,13 @@
       "when": 1792163567557,
       "tag": "0045_creative_brief_hold_and_log_hardening_apply",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792769591140,
+      "tag": "0046_agent_grants_all_accounts",
+      "breakpoints": true
     }
   ]
 }

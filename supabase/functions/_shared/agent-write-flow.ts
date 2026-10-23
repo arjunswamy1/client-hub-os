@@ -2,6 +2,7 @@
 // State: pending -> approved|denied|expired; approved -> executing -> executed|failed; approved -> expired.
 // Every transition is written to agent_access_log. No token or secret is ever stored or returned.
 import type { SecretsProvider } from './agent-secrets.ts';
+import { resolveAllAccounts, requestedAccount, alertUnmapped } from './agent-all-accounts.ts';
 import {
   WRITE_ACTIONS, META_HOST, META_PROVIDER, type WriteSettings, parseWriteParams, objectFields, snapshot, planChange,
   drift, metaGet, metaPost, checkAdsManagement, stripAct, scrub, executionCheck, BUDGET_ACTIONS, BUDGET_COOLDOWN_MS,
@@ -15,11 +16,16 @@ type Audit = (event_type: string, outcome: string, detail?: string | null, extra
 const OPEN = ['pending', 'approved', 'executing'];
 const MAX_BODY = 200_000;
 
-const logRow = (db: any, row: any, outcome: string, detail: string | null = null, extra: Record<string, unknown> = {}) =>
-  db.from('agent_access_log').insert({
+const logRow = async (db: any, row: any, outcome: string, detail: string | null = null, extra: Record<string, unknown> = {}) => {
+  const { data: grant } = await db.from('agent_grants').select('all_accounts,allowed_account_refs').eq('id', row.grant_id).maybeSingle();
+  return db.from('agent_access_log').insert({
     agent_id: row.agent_id, integration_id: row.integration_id, grant_id: row.grant_id, action: row.action, scope: 'write',
-    event_type: 'write', outcome, detail, target: row.id, ...extra,
+    event_type: 'write', outcome, detail, target: row.id,
+    grant_mode: grant?.all_accounts ? 'all_accounts' : grant?.allowed_account_refs?.length ? 'explicit' : 'legacy',
+    resolved_account_id: row.account_id ?? null, connection_id: row.integration_id ?? null,
+    account_mapping: row.account_label === 'UNMAPPED' ? 'unmapped' : grant?.all_accounts ? 'mapped' : null, ...extra,
   });
+};
 
 async function metaJson(doFetch: typeof fetch, url: string, secret: string): Promise<{ ok: boolean; status: number; data: any }> {
   try {
@@ -100,8 +106,9 @@ export interface RequestCtx extends WriteDeps {
   agent: { id: string; owner_team_member_id: string | null };
   /** Gateway key the request arrived on; the database records it and its creator on the request. */
   tokenId: string;
-  grant: { id: string; allowed_account_refs: string[] | null };
+  grant: { id: string; allowed_account_refs: string[] | null; all_accounts?: boolean; expires_at?: string | null };
   integ: { id: string; provider: string; allowed_hosts: string[]; op_secret_ref: string | null };
+  accountResolved?: (account: string, mapping: 'mapped' | 'unmapped' | null) => void;
   settings: WriteSettings; audit: Audit;
   deny: (status: number, outcome: string, detail?: string) => Promise<Res>;
 }
@@ -114,11 +121,23 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   if (!ctx.agent.owner_team_member_id) return deny(403, 'denied_ownerless_agent');
   if (ctx.integ.provider !== META_PROVIDER) return deny(403, 'denied_action_provider_mismatch');
   if (!(ctx.integ.allowed_hosts ?? []).map((h) => h.toLowerCase()).includes(META_HOST)) return deny(403, 'denied_host_not_allowed', META_HOST);
+  if (ctx.grant.all_accounts) {
+    const supplied = requestedAccount(params);
+    if (!supplied.ok) return deny(400, supplied.outcome);
+  }
   const parsed = parseWriteParams(def, params);
   if (!parsed.ok) return deny(400, parsed.outcome, parsed.detail);
   const { input } = parsed;
   const list = (ctx.grant.allowed_account_refs ?? []).map(stripAct);
-  if (!list.includes(input.account_id)) return deny(403, 'denied_account_not_allowed');
+  if (!ctx.grant.all_accounts && !list.includes(input.account_id)) return deny(403, 'denied_account_not_allowed');
+  let mapping: 'mapped' | 'unmapped' | null = null;
+  ctx.accountResolved?.(input.account_id, mapping);
+  if (ctx.grant.all_accounts) {
+    const result = await resolveAllAccounts(ctx, ctx.integ, input.account_id, ctx.secrets, ctx.integ.op_secret_ref, ctx.grant.expires_at ?? null);
+    if (!result.ok) return deny(403, result.outcome);
+    mapping = result.mapping;
+    ctx.accountResolved?.(input.account_id, mapping);
+  }
   const reason = typeof reasonRaw === 'string' ? reasonRaw.trim().slice(0, 500) : '';
   if (reason.length < 5) return deny(400, 'denied_bad_request', 'a reason of at least 5 characters is required');
 
@@ -153,12 +172,13 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
     if (kids > SYNC_COPY_MAX_CHILDREN) return deny(400, 'denied_copy_too_large', `campaign has ${kids} ad sets + ads; Meta's synchronous copy allows at most ${SYNC_COPY_MAX_CHILDREN}. Duplicate it in Ads Manager instead.`);
   }
 
+  if (mapping === 'unmapped' && !await alertUnmapped(db, ctx.agent.id, ctx.integ.id, input.account_id)) return deny(500, 'error_unmapped_alert');
   const decisionExpires = new Date(now.getTime() + settings.pending_ttl_min * 60_000).toISOString();
   const { data: created, error } = await db.rpc('agent_write_request_create', { p_per_day: settings.per_day, p_row: {
     agent_id: ctx.agent.id, token_id: ctx.tokenId, grant_id: ctx.grant.id, integration_id: ctx.integ.id, action, account_id: input.account_id,
     account_name: look.acct.name, currency: look.acct.currency, object_type: def.objectType, object_id: input.object_id,
-    object_name: look.snap.name, before: plan.before, after: plan.after, diff_text: plan.diff, reason,
-    requested_at: now.toISOString(), decision_expires_at: decisionExpires,
+    object_name: look.snap.name, before: ctx.grant.all_accounts ? { ...plan.before, grant_mode: 'all_accounts' } : plan.before, after: plan.after, diff_text: plan.diff, reason,
+    requested_at: now.toISOString(), decision_expires_at: decisionExpires, account_label: mapping === 'unmapped' ? 'UNMAPPED' : null,
   } });
   if (error || !created) return deny(500, 'error_write_request');
   if (created.ok === false && created.outcome === 'denied_unknown_key') return deny(403, 'denied_unknown_key');
@@ -171,14 +191,17 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const recipients = settings.approvers.filter((id) => decisionAuthority(id, settings.approvers, ctx.agent.owner_team_member_id, undefined, created.token_created_by_id ?? null) === 'ok');
   if (recipients.length) {
     await db.from('notifications').insert(recipients.map((recipient_id) => ({
-      recipient_id, type: 'agent_write_request', title: 'Agent change waiting for approval', message: `${plan.diff}. Reason: ${reason}`.slice(0, 1000),
+      recipient_id, type: 'agent_write_request', title: 'Agent change waiting for approval', message: `${mapping === 'unmapped' ? '[UNMAPPED] ' : ''}${plan.diff}. Reason: ${reason}`.slice(0, 1000),
     })));
   }
-  return { status: 202, body: { ok: true, outcome: 'write_pending_approval', request_id: row.id, status: 'pending', diff: plan.diff, before: plan.before, after: plan.after, decision_expires_at: decisionExpires } };
+  return { status: 202, body: { ok: true, outcome: 'write_pending_approval', request_id: row.id, status: 'pending', diff: plan.diff, before: plan.before, after: plan.after, decision_expires_at: decisionExpires,
+    ...(ctx.grant.all_accounts ? { account_mapping: mapping, account_label: mapping === 'unmapped' ? 'UNMAPPED' : null } : {}),
+  } };
 }
 
 const view = (r: any) => ({
   request_id: r.id, status: r.status, action: r.action, account_id: r.account_id, object_id: r.object_id, object_name: r.object_name,
+  account_label: r.account_label ?? null,
   diff: r.diff_text, requested_at: r.requested_at, decision_expires_at: r.decision_expires_at, decided_at: r.decided_at ?? null,
   approval_expires_at: r.approval_expires_at ?? null, executed_at: r.executed_at ?? null, result: r.result ?? null, failure_outcome: r.failure_outcome ?? null,
 });
@@ -217,11 +240,16 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
 
   const def = WRITE_ACTIONS[row.action];
   if (!def) return fail('failed_unknown_action');
-  const { data: grant } = await db.from('agent_grants').select('id, scopes, revoked_at, expires_at, allowed_account_refs').eq('id', row.grant_id).maybeSingle();
+  const { data: grant } = await db.from('agent_grants').select('id, scopes, revoked_at, expires_at, allowed_account_refs, all_accounts').eq('id', row.grant_id).maybeSingle();
   if (!grant || grant.revoked_at || (grant.expires_at && new Date(grant.expires_at) <= now) || !(grant.scopes ?? []).includes('write')
-      || !(grant.allowed_account_refs ?? []).map(stripAct).includes(row.account_id)) return fail('failed_grant_changed');
-  const { data: integ } = await db.from('integrations').select('id, enabled, op_secret_ref, provider').eq('id', row.integration_id).maybeSingle();
+      || (!grant.all_accounts && !(grant.allowed_account_refs ?? []).map(stripAct).includes(row.account_id))
+      || ((row.account_label === 'UNMAPPED' || row.before?.grant_mode === 'all_accounts') && !grant.all_accounts)) return fail('failed_grant_changed');
+  const { data: integ } = await db.from('integrations').select('id, enabled, op_secret_ref, provider, allowed_hosts').eq('id', row.integration_id).maybeSingle();
   if (!integ?.enabled || integ.provider !== META_PROVIDER) return fail('failed_integration_disabled');
+  if (grant.all_accounts) {
+    const result = await resolveAllAccounts(deps, integ, row.account_id, deps.secrets, integ.op_secret_ref, grant.expires_at);
+    if (!result.ok) return fail(result.outcome.replace(/^denied_/, 'failed_'));
+  }
   const secret = integ.op_secret_ref ? await deps.secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };
   if (!secret.ok) return fail(`failed_secret_${secret.reason}`);
   secretValue = secret.value;

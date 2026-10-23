@@ -368,6 +368,7 @@ export default function AgentAccessPage() {
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="font-medium">{agentName(w.agent_id)}</span>
                   <code className="rounded bg-muted px-1 text-xs">{w.action}</code>
+                  {w.account_label === 'UNMAPPED' && <Badge variant="destructive">UNMAPPED</Badge>}
                   <Badge variant={w.status === 'pending' ? 'secondary' : ['denied', 'failed', 'expired'].includes(w.status) ? 'destructive' : 'outline'}>{open || w.status !== 'pending' ? w.status : 'expired'}</Badge>
                   <span className="text-xs text-muted-foreground">{new Date(w.requested_at).toLocaleString()}</span>
                   {open && (canDecide ? (

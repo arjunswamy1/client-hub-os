@@ -393,8 +393,9 @@ export function parseQaRef(raw: unknown): { ok: true; value: string | null } | {
   return { ok: true, value: v };
 }
 
-export const AUTO_BUDGET_MAX_CENTS = 50_000;      // > $500/day after the change: human queue
-export const AUTO_BUDGET_MAX_INCREASE_PCT = 50;   // > +50%: human queue (the ±50% cap already refuses beyond this)
+/** 0054: |daily budget change| >= $1,000 -> human queue. Dormant while the hard caps (±50%, <=$1,000/day) hold;
+ *  the per-account +$1,000/day net cap is the effective budget gate (AJ option A, 2026-10-23). */
+export const AUTO_BUDGET_SWING_CENTS = 100_000;
 export const REACTIVATION_QUEUE_MS = 7 * 86_400_000;
 
 export interface QueueCtx {
@@ -410,7 +411,7 @@ export function queueReasons(q: QueueCtx): string[] {
   if (q.mapping === 'unmapped') out.push('unmapped_account');
   if (q.allAccountsOnly) out.push('all_accounts_only_account');
   if (q.def.kind === 'duplicate') out.push('duplicate');
-  if (q.def.kind === 'rename' && q.renameFlags.length) out.push('rename_flagged');
+  // 0054: flagged renames auto-execute; rule-scope-changing renames are denied before this point (409).
   if (q.def.kind === 'status' && q.def.to === 'ACTIVE' && q.live.status !== 'ACTIVE') {
     // Auto only when the hub itself paused it within 7 days AND Meta shows no edit older than 7 days. Unknown = queue.
     const recentHubPause = q.lastHubPauseAt && q.now.getTime() - new Date(q.lastHubPauseAt).getTime() < REACTIVATION_QUEUE_MS;
@@ -422,8 +423,7 @@ export function queueReasons(q: QueueCtx): string[] {
   if (q.def.kind === 'budget') {
     const cur = Number(q.before?.daily_budget ?? q.live.daily_budget ?? 0), next = Number(q.after?.daily_budget ?? 0);
     inc = next - cur;
-    if (cur > 0 && inc * 100 > AUTO_BUDGET_MAX_INCREASE_PCT * cur) out.push('budget_increase_over_50pct');
-    if (next > AUTO_BUDGET_MAX_CENTS) out.push('budget_over_500_per_day');
+    if (Math.abs(inc) >= AUTO_BUDGET_SWING_CENTS) out.push('budget_swing_1000_plus');
   }
   if (q.acct.changesToday + 1 > q.s.acct_changes_per_day) out.push('account_daily_change_cap');
   if (inc > 0 && q.acct.netIncreaseCentsToday + inc > Math.round(q.s.acct_net_increase_usd * 100)) out.push('account_daily_net_increase_cap');

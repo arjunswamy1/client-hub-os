@@ -17,3 +17,6 @@
 - Unlinked non-service team_members link to their auth user by email on confirmation (auth trigger). Why: RLS reads user_id.
 - Universal Ads `cannaball_spend` rows key on ad set + ad id (`_shared/universal-ads-rows.ts`). Why: same-named ad sets merged.
 - Jacuzzi cash timing lives only in `src/lib/jacuzziCashFlow.ts`; `jacuzzi-billing-sheet` reads the sheet only. Why: cash moves on due dates.
+
+## Migrations
+- New data tables: sandbox_exec no longer gets INSERT by default. If Lovable must load rows via psql, add `GRANT INSERT ON public.<table> TO sandbox_exec;` in the same migration. Never on agent_*/gateway_*/audit/allowlist/token tables (CI fingerprint enforces this).

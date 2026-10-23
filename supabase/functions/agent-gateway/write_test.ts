@@ -1,7 +1,7 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { handleGateway, sha256Hex } from './gateway.ts';
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot, executionCheck, chicagoDayStart, copyTag } from '../_shared/agent-write-actions.ts';
+import { WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot, executionCheck, chicagoDayStart, copyTag, validateNewName, nameScopedRules, namingBreak, RENAME_PER_DAY, evalNameFilter } from '../_shared/agent-write-actions.ts';
 import { executeWrite } from '../_shared/agent-write-flow.ts';
 
 const TOKEN = 'agw_write_token_abc';
@@ -81,12 +81,13 @@ async function world(o: Opts = {}) {
 }
 
 // ---------- Fake Meta ----------
-function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; perms?: string[] | null; postFails?: 'timeout' | 'lost'; children?: number | null; postStatus?: number; postBody?: unknown } = {}) {
+function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; perms?: string[] | null; postFails?: 'timeout' | 'lost'; children?: number | null; postStatus?: number; postBody?: unknown; rules?: any[] | null; renameDrops?: 'first' | 'always' } = {}) {
   const calls: { method: string; url: string; body?: string }[] = [];
   const st = {
     adset: { id: '555', name: 'FE Adset', account_id: '111', status: 'ACTIVE', daily_budget: '10000', ...state.adset },
     campaign: { id: '777', name: 'FE Campaign', account_id: '111', status: 'ACTIVE', daily_budget: '20000', ...state.campaign },
-    ad: { id: '999', name: 'FE Ad', account_id: '111', status: 'ACTIVE', ...state.ad },
+    ad: { id: '999', name: 'FE Ad', account_id: '111', status: 'ACTIVE', adset_id: '555', ...state.ad },
+    rules: state.rules === undefined ? [] as any[] : state.rules, renameDrops: state.renameDrops, renamePosts: 0,
     account: { name: 'Juan Acct', currency: 'USD', ...state.account },
     perms: state.perms === undefined ? ['ads_management', 'ads_read'] : state.perms,
     children: state.children === undefined ? 2 : state.children, postStatus: state.postStatus, postBody: state.postBody,
@@ -110,6 +111,10 @@ function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; per
       const id = url.pathname.split('/').pop()!; const p = new URLSearchParams(init.body.toString());
       const obj = [st.adset, st.campaign, st.ad].find((x) => x.id === id);
       if (p.get('status')) obj.status = p.get('status'); if (p.get('daily_budget')) obj.daily_budget = p.get('daily_budget');
+      if (p.get('name') !== null) { st.renamePosts++;
+        // renameDrops: Meta says success but the name does not stick ('first' = only the first POST, 'always' = every POST).
+        const drop = st.renameDrops === 'always' || (st.renameDrops === 'first' && st.renamePosts === 1);
+        if (!drop) obj.name = p.get('name'); }
       return j({ success: true });
     }
     if (url.pathname.endsWith('/me/permissions')) return st.perms === null ? j({ error: 'x' }, 400) : j({ data: st.perms.map((permission) => ({ permission, status: 'granted' })) });
@@ -125,6 +130,7 @@ function meta(state: { adset?: any; campaign?: any; ad?: any; account?: any; per
       const statuses: string[] = fl.find((x: any) => x.field === 'effective_status')?.value ?? ['ACTIVE', 'PAUSED'];
       return j({ data: st.copies.filter((c) => c.name.includes(v) && statuses.includes(c.effective_status ?? 'PAUSED')) });
     }
+    if (url.pathname.endsWith('/adrules_library')) return st.rules === null ? j({ error: { message: 'x' } }, 500) : j({ data: st.rules });
     if (url.pathname.includes('/act_')) return j(st.account);
     const id = url.pathname.split('/').pop();
     const obj = [st.adset, st.campaign, st.ad].find((x) => x.id === id);
@@ -149,17 +155,18 @@ const approve = (db: any, id: string, at = '2026-10-15T13:05:00Z', ttlMin = 30) 
 };
 
 // ---------- Actions ----------
-Deno.test('nine write actions, no delete/create/spend-cap/billing names', () => {
-  assertEquals(Object.keys(WRITE_ACTIONS).length, 9);
+Deno.test('twelve write actions, no delete/create/spend-cap/billing names', () => {
+  assertEquals(Object.keys(WRITE_ACTIONS).length, 12);
   assert(!Object.keys(WRITE_ACTIONS).some((k) => /delete|create|spend_cap|billing|creative/.test(k)));
 });
 for (const [name, def] of Object.entries(WRITE_ACTIONS)) {
   Deno.test(`metaPost builds ${name}`, () => {
-    const after = def.kind === 'status' ? { status: def.to } : def.kind === 'budget' ? { daily_budget: 15000 } : {};
+    const after = def.kind === 'status' ? { status: def.to } : def.kind === 'budget' ? { daily_budget: 15000 } : def.kind === 'rename' ? { name: 'New Name' } : {};
     const p = metaPost(def, '123', after, SECRET);
     assert(p.url.startsWith('https://graph.facebook.com/v21.0/123')); assert(!p.url.includes(SECRET));
     if (def.kind === 'status') assertEquals(p.body.get('status'), def.to);
     if (def.kind === 'budget') assertEquals(p.body.get('daily_budget'), '15000');
+    if (def.kind === 'rename') assertEquals([...p.body.keys()].sort(), ['access_token', 'name']);
     if (def.kind === 'duplicate') { assert(p.url.endsWith('/123/copies')); assertEquals(p.body.get('status_option'), 'PAUSED'); assertEquals(p.body.get('deep_copy'), 'true'); }
   });
 }
@@ -346,8 +353,8 @@ const reqFor = (action: string) => {
 const poll = (db: any, m: any, id: unknown, at = '2026-10-15T13:10:00Z') => call(db, m, { integration_id: IID, write: 'status', request_id: id }, new Date(at));
 const PAUSED = { status: 'PAUSED' };
 
-// 1. Non-USD refused for every action, at request time and at execution time.
-for (const action of Object.keys(WRITE_ACTIONS)) {
+// 1. Non-USD refused for every spend-affecting action (renames are exempt: QA condition 1), at request and execution time.
+for (const action of Object.keys(WRITE_ACTIONS).filter((k) => WRITE_ACTIONS[k].kind !== 'rename')) {
   Deno.test(`non-USD: ${action} refused at request time, nothing queued`, async () => {
     const def = WRITE_ACTIONS[action];
     const m = meta({ account: { currency: 'EUR' }, adset: def.to === 'ACTIVE' ? PAUSED : {}, campaign: def.to === 'ACTIVE' ? PAUSED : {}, ad: def.to === 'ACTIVE' ? PAUSED : {} });
@@ -614,4 +621,220 @@ Deno.test('decisionAuthority: key creator refused, others unaffected', () => {
   assertEquals(decisionAuthority(AJ, [AJ, CHARLES], CHARLES, undefined, AJ), 'ok');
   assertEquals(decisionAuthority(AJ, [AJ, CHARLES], 'juan', undefined, CHARLES), 'ok');
   assertEquals(decisionAuthority(CHARLES, [AJ, CHARLES], CHARLES, undefined, 'juan'), 'denied_self_approval');
+});
+
+// ---------- Rename (meta.ad.rename / meta.adset.rename / meta.campaign.rename) ----------
+const renameReq = (newName: unknown = 'Charles_H1_B2', o: Record<string, unknown> = {}, action = 'meta.ad.rename', objectId = '999') => ({
+  integration_id: IID, scope: 'write', action, reason: 'fix ad name for reporting',
+  params: { account_id: 'act_111', object_id: objectId, new_name: newName, ...o },
+});
+const renameWorld = () => meta({ ad: { name: 'Charles_H1_B1' } });
+
+Deno.test('rename: valid request queued with old and new names, no Meta POST', async () => {
+  const db = await world(); const m = renameWorld();
+  const r = await call(db, m, renameReq());
+  assertEquals(r.status, 202); assertEquals(m.posts().length, 0);
+  const w = db.tables.agent_write_requests[0];
+  assertEquals(w.before.name, 'Charles_H1_B1'); assertEquals(w.after, { name: 'Charles_H1_B2' });
+  assert(String(w.diff_text).includes('"Charles_H1_B1" → "Charles_H1_B2"'));
+});
+Deno.test('rename: no USD check (non-USD account allowed)', async () => {
+  const db = await world(); const m = meta({ ad: { name: 'Charles_H1_B1' }, account: { currency: 'EUR' } });
+  assertEquals((await call(db, m, renameReq())).status, 202);
+});
+Deno.test('rename: object in another account refused, no POST', async () => {
+  const db = await world(); const m = meta({ ad: { name: 'Charles_H1_B1', account_id: '222' } });
+  assertEquals((await call(db, m, renameReq())).body.outcome, 'denied_object_not_in_account');
+  assertEquals(db.tables.agent_write_requests.length, 0); assertEquals(m.posts().length, 0);
+});
+Deno.test('rename: object type mismatch (campaign id sent to meta.ad.rename) refused', async () => {
+  const db = await world(); const m = renameWorld();
+  const r = await call(db, m, renameReq('X_Y_Z', {}, 'meta.ad.rename', '777'));
+  assertEquals(r.body.outcome, 'denied_object_type_mismatch'); assertEquals(db.tables.agent_write_requests.length, 0);
+});
+Deno.test('rename: account not on allowlist refused (allowlist unchanged)', async () => {
+  const db = await world({ allow: ['333'] }); const m = renameWorld();
+  assertEquals((await call(db, m, renameReq())).body.outcome, 'denied_account_not_allowed');
+});
+Deno.test('rename: grant without write refused (write grant check unchanged)', async () => {
+  const db = await world({ scopes: ['read'] }); const m = renameWorld();
+  assertEquals((await call(db, m, renameReq())).body.outcome, 'denied_scope');
+});
+Deno.test('rename: unchanged name refused', async () => {
+  const db = await world(); const m = renameWorld();
+  const r = await call(db, m, renameReq('Charles_H1_B1'));
+  assertEquals(r.body.outcome, 'denied_no_change'); assertEquals(db.tables.agent_write_requests.length, 0);
+});
+Deno.test('rename: bad names refused', () => {
+  for (const bad of ['', ' lead', 'trail ', 'two\nlines', 'tab\there', 'bell\u0007', 'x'.repeat(401), 42, null]) assert(!validateNewName(bad).ok, String(bad));
+  assert(validateNewName('x'.repeat(400)).ok); assert(validateNewName('Oneshare - Click to Call - CBO Test').ok);
+});
+Deno.test('rename: extra params refused at the gateway', async () => {
+  const db = await world(); const m = renameWorld();
+  const r = await call(db, m, renameReq('Charles_H1_B2', { status: 'PAUSED' }));
+  assertEquals(r.body.outcome, 'denied_bad_params'); assertEquals(m.posts().length, 0);
+});
+Deno.test('rename: metaPost refuses extra fields in the POST body (allowlist)', () => {
+  const def = WRITE_ACTIONS['meta.ad.rename'];
+  let threw = false; try { metaPost(def, '999', { name: 'A_B_C', status: 'ACTIVE' }, SECRET); } catch { threw = true; }
+  assert(threw);
+  assertEquals([...metaPost(def, '999', { name: 'A_B_C' }, SECRET).body.keys()].sort(), ['access_token', 'name']);
+});
+Deno.test('rename: tampered approved row with extra fields fails before any POST', async () => {
+  const db = await world(); const m = renameWorld();
+  const a = await call(db, m, renameReq()); approve(db, a.body.request_id as string);
+  db.tables.agent_write_requests[0].after.daily_budget = 99999;
+  const s1 = await poll(db, m, a.body.request_id);
+  assertEquals(s1.body.status, 'failed'); assertEquals(s1.body.failure_outcome, 'failed_post_allowlist'); assertEquals(m.posts().length, 0);
+});
+Deno.test('rename: rule filtering on name -> RULE SCOPE CHANGE flag on the approval card', async () => {
+  const db = await world();
+  const m = meta({ ad: { name: 'Charles_H1_B1' }, rules: [{ id: 'r1', name: 'Pause H1 losers', status: 'ENABLED', evaluation_spec: { filters: [{ field: 'ad.name', operator: 'CONTAIN', value: 'H1' }] } }] });
+  const r = await call(db, m, renameReq());
+  assertEquals(r.status, 202);
+  const w = db.tables.agent_write_requests[0];
+  assert(String(w.diff_text).startsWith('[RULE SCOPE CHANGE]')); assertEquals(w.before.name_scoped_rules[0].id, 'r1');
+  assert(db.tables.notifications.some((n: any) => String(n.message).includes('RULE SCOPE CHANGE')));
+});
+Deno.test('rename: rules unreadable -> refused (fail closed)', async () => {
+  const db = await world(); const m = meta({ ad: { name: 'Charles_H1_B1' }, rules: null });
+  assertEquals((await call(db, m, renameReq())).body.outcome, 'denied_rules_lookup_failed');
+});
+Deno.test('rename: naming-convention break flagged', () => {
+  assertEquals(namingBreak('Charles_H1_B1', 'Charles_H1_B2'), null);
+  assert(namingBreak('Charles_H1_B1', 'Charles H1 B2')); assert(namingBreak('Charles_H1_B1', 'Charles_H1')); assert(namingBreak('Charles_H1_B1', 'Juan_H1_B1'));
+  assertEquals(nameScopedRules([{ id: '1', evaluation_spec: { filters: [{ field: 'spent' }] } }]).length, 0);
+});
+Deno.test('rename: executes once, POST body is only name, read back ok, old/new audited', async () => {
+  const db = await world(); const m = renameWorld();
+  const a = await call(db, m, renameReq()); approve(db, a.body.request_id as string);
+  const s1 = await poll(db, m, a.body.request_id);
+  assertEquals(s1.body.status, 'executed'); assertEquals(m.posts().length, 1);
+  assertEquals([...new URLSearchParams(m.posts()[0].body).keys()].sort(), ['access_token', 'name']);
+  assertEquals(m.st.ad.name, 'Charles_H1_B2');
+  assertEquals((s1.body.result as any).old_name, 'Charles_H1_B1'); assertEquals((s1.body.result as any).new_name, 'Charles_H1_B2');
+  assert(db.tables.agent_access_log.some((l: any) => l.outcome === 'write_executed' && String(l.detail).includes('"Charles_H1_B1" → "Charles_H1_B2"')));
+  assert(noLeak(s1.body)); assert(noLeak(db.tables));
+});
+Deno.test('rename: failed read-back -> old name restored, failed_readback_rolled_back', async () => {
+  const db = await world(); const m = meta({ ad: { name: 'Charles_H1_B1' }, renameDrops: 'first' });
+  const a = await call(db, m, renameReq()); approve(db, a.body.request_id as string);
+  m.st.ad.name = 'Charles_H1_B1';
+  // first POST "succeeds" but name does not stick; second POST (restore old name) applies
+  const s1 = await poll(db, m, a.body.request_id);
+  assertEquals(s1.body.failure_outcome, 'failed_readback_rolled_back'); assertEquals(m.posts().length, 2);
+  assertEquals(new URLSearchParams(m.posts()[1].body).get('name'), 'Charles_H1_B1'); assertEquals(m.st.ad.name, 'Charles_H1_B1');
+});
+Deno.test('rename: read-back mismatch and restore also fails -> failed_readback_rollback_failed', async () => {
+  const db = await world(); const m = meta({ ad: { name: 'Charles_H1_B1' } });
+  const a = await call(db, m, renameReq()); approve(db, a.body.request_id as string);
+  m.st.renameDrops = 'always' as any; m.st.ad.name = 'Charles_H1_B1';
+  // simulate Meta changing it to something else on the first write
+  const orig = m.fn; let n = 0;
+  const f = (async (u: string, init: any) => { const r = await orig(u, init); if (init?.method === 'POST' && ++n === 1) m.st.ad.name = 'Garbled'; return r; }) as any;
+  const s1 = await call(db, { ...m, fn: f }, { integration_id: IID, write: 'status', request_id: a.body.request_id }, new Date('2026-10-15T13:10:00Z'));
+  assertEquals(s1.body.failure_outcome, 'failed_readback_rollback_failed');
+});
+Deno.test('rename: 11th rename in a Chicago day refused', async () => {
+  const db = await world(); const m = renameWorld();
+  for (let i = 0; i < RENAME_PER_DAY; i++) db.tables.agent_write_requests.push({ id: `r${i}`, agent_id: 'a1', action: 'meta.ad.rename', object_id: `9${i}`, status: 'executed', requested_at: '2026-10-15T12:00:00.000Z' });
+  assertEquals((await call(db, m, renameReq())).body.outcome, 'rename_rate_limited');
+});
+Deno.test('rename: wildcard/bulk object ids refused', () => {
+  const def = WRITE_ACTIONS['meta.ad.rename'];
+  for (const id of ['*', '999,998', '99*', 'all']) assertEquals((parseWriteParams(def, { account_id: '111', object_id: id, new_name: 'A' }) as any).outcome, 'denied_bad_params');
+});
+
+// ---------- v3: rule scope evaluation, name-only drift, audited rollback ----------
+const rule = (op: string, value: unknown, o: Record<string, unknown> = {}) => ({ id: 'r9', name: 'Pause B1 losers', status: 'ENABLED',
+  evaluation_spec: { filters: [{ field: 'ad.name', operator: op, value }] }, ...o });
+const ruleCall = async (rules: any[], newName = 'Charles_H1_B2') => {
+  const db = await world(); const m = meta({ ad: { name: 'Charles_H1_B1' }, rules });
+  return { r: await call(db, m, renameReq(newName)), db, m };
+};
+Deno.test('v3 rule: ENABLED CONTAIN rule, old in / new out -> denied_rule_scope_change in→out, nothing queued', async () => {
+  const { r, db, m } = await ruleCall([rule('CONTAIN', 'B1')]);
+  assertEquals(r.body.outcome, 'denied_rule_scope_change');
+  assert(String(r.body.detail).includes('Pause B1 losers')); assert(String(r.body.detail).includes('in→out'));
+  assertEquals(db.tables.agent_write_requests.length, 0); assertEquals(m.posts().length, 0);
+});
+Deno.test('v3 rule: ENABLED EQUAL rule, old out / new in -> denied out→in', async () => {
+  const { r } = await ruleCall([rule('EQUAL', 'Charles_H1_B2')]);
+  assertEquals(r.body.outcome, 'denied_rule_scope_change'); assert(String(r.body.detail).includes('out→in'));
+});
+Deno.test('v3 rule: NOT_CONTAIN / IN / NOT_IN / STARTS_WITH scope changes refused', async () => {
+  for (const [op, v] of [['NOT_CONTAIN', 'B2'], ['IN', ['Charles_H1_B1']], ['NOT_IN', ['Charles_H1_B2']], ['STARTS_WITH', 'Charles_H1_B1']] as const) {
+    assertEquals((await ruleCall([rule(op, v)])).r.body.outcome, 'denied_rule_scope_change', op);
+  }
+});
+Deno.test('v3 rule: case-insensitive reading also counts (CONTAIN "b1")', async () => {
+  assertEquals((await ruleCall([rule('CONTAIN', 'b1')])).r.body.outcome, 'denied_rule_scope_change');
+});
+Deno.test('v3 rule: ENABLED rule whose scope is unchanged -> flag only, queued', async () => {
+  const { r, db } = await ruleCall([rule('CONTAIN', 'H1')]);
+  assertEquals(r.status, 202); assert(String(db.tables.agent_write_requests[0].diff_text).startsWith('[RULE SCOPE CHANGE]'));
+});
+Deno.test('v3 rule: DISABLED rule with a scope change -> flag only, queued', async () => {
+  const { r, db } = await ruleCall([rule('CONTAIN', 'B1', { status: 'PAUSED' })]);
+  assertEquals(r.status, 202); assert(String(db.tables.agent_write_requests[0].diff_text).includes('RULE SCOPE CHANGE'));
+});
+Deno.test('v3 rule: filter on another level (adset.name) does not block an ad rename', async () => {
+  const { r } = await ruleCall([{ ...rule('CONTAIN', 'B1'), evaluation_spec: { filters: [{ field: 'adset.name', operator: 'CONTAIN', value: 'B1' }] } }]);
+  assertEquals(r.status, 202);
+});
+Deno.test('v3 rule: plain `name` filter uses the rule entity_type', async () => {
+  const f = (et: string) => [{ id: 'r', name: 'n', status: 'ENABLED', evaluation_spec: { filters: [{ field: 'entity_type', operator: 'EQUAL', value: et }, { field: 'name', operator: 'CONTAIN', value: 'B1' }] } }];
+  assertEquals((await ruleCall(f('AD'))).r.body.outcome, 'denied_rule_scope_change');
+  assertEquals((await ruleCall(f('CAMPAIGN'))).r.status, 202);
+});
+Deno.test('v3 rule: ENABLED name filter with an unknown operator -> refused (fail closed)', async () => {
+  const { r } = await ruleCall([rule('REGEX', 'B.')]);
+  assertEquals(r.body.outcome, 'denied_rule_scope_change'); assert(String(r.body.detail).includes('cannot evaluate'));
+});
+Deno.test('v3 evalNameFilter operators', () => {
+  assertEquals(evalNameFilter('ANY', ['x', 'B1'], 'A_B1', false), true); assertEquals(evalNameFilter('ALL', ['A', 'B9'], 'A_B1', false), false);
+  assertEquals(evalNameFilter('NONE', ['Z'], 'A_B1', false), true); assertEquals(evalNameFilter('ENDS_WITH', 'b1', 'A_B1', true), true);
+  assertEquals(evalNameFilter('EQUAL', undefined, 'A', false), null); assertEquals(evalNameFilter('GREATER_THAN', 1, 'A', false), null);
+});
+const approvedRename = async (mOpts: any = {}) => {
+  const db = await world(); const m = meta({ ad: { name: 'Charles_H1_B1' }, ...mOpts });
+  const a = await call(db, m, renameReq()); approve(db, a.body.request_id as string);
+  return { db, m, id: a.body.request_id as string };
+};
+Deno.test('v3 drift: status change after approval does not block a rename', async () => {
+  const { db, m, id } = await approvedRename(); m.st.ad.status = 'PAUSED';
+  const s1 = await poll(db, m, id); assertEquals(s1.body.status, 'executed'); assertEquals(m.st.ad.name, 'Charles_H1_B2');
+});
+Deno.test('v3 drift: budget change on the parent ad set does not block a rename', async () => {
+  const { db, m, id } = await approvedRename(); m.st.adset.daily_budget = '55500';
+  assertEquals((await poll(db, m, id)).body.status, 'executed');
+});
+Deno.test('v3 drift: live name differs from approved before -> failed_drift_name, no POST', async () => {
+  const { db, m, id } = await approvedRename(); m.st.ad.name = 'Someone_Else_Renamed';
+  const s1 = await poll(db, m, id); assertEquals(s1.body.failure_outcome, 'failed_drift_name'); assertEquals(m.posts().length, 0);
+});
+Deno.test('v3 drift: object moved to another account -> failed_object_mismatch, no POST', async () => {
+  const { db, m, id } = await approvedRename(); m.st.ad.account_id = '222';
+  const s1 = await poll(db, m, id); assertEquals(s1.body.failure_outcome, 'failed_object_mismatch'); assertEquals(m.posts().length, 0);
+});
+Deno.test('v3 drift: object gone -> failed_object_lookup, no POST', async () => {
+  const { db, m, id } = await approvedRename(); m.st.ad.id = 'gone';
+  const s1 = await poll(db, m, id); assertEquals(s1.body.failure_outcome, 'failed_object_lookup'); assertEquals(m.posts().length, 0);
+});
+Deno.test('v3 rollback: restore POST is name-only (same allowlist) and audited rename_rollback_ok', async () => {
+  const { db, m, id } = await approvedRename({ renameDrops: 'first' });
+  const s1 = await poll(db, m, id);
+  assertEquals(s1.body.failure_outcome, 'failed_readback_rolled_back');
+  for (const p of m.posts()) assertEquals([...new URLSearchParams(p.body).keys()].sort(), ['access_token', 'name']);
+  const lg = db.tables.agent_access_log.find((l: any) => l.outcome === 'rename_rollback_ok');
+  assert(lg); assertEquals(lg.event_type, 'write_rollback'); assertEquals(lg.approved_by_id, AJ); assert(String(lg.detail).includes('"Charles_H1_B1"'));
+  assert(noLeak(db.tables));
+});
+Deno.test('v3 rollback: failed restore audited rename_rollback_failed', async () => {
+  const { db, m, id } = await approvedRename({ renameDrops: 'always' });
+  const orig = m.fn; let n = 0;
+  const f = (async (u: string, init: any) => { const r = await orig(u, init); if (init?.method === 'POST' && ++n === 1) m.st.ad.name = 'Garbled'; return r; }) as any;
+  const s1 = await call(db, { ...m, fn: f }, { integration_id: IID, write: 'status', request_id: id }, new Date('2026-10-15T13:10:00Z'));
+  assertEquals(s1.body.failure_outcome, 'failed_readback_rollback_failed');
+  assert(db.tables.agent_access_log.some((l: any) => l.outcome === 'rename_rollback_failed' && l.event_type === 'write_rollback'));
 });

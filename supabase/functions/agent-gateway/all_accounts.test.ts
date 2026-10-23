@@ -5,6 +5,7 @@ import { settingsFrom } from '../_shared/agent-write-actions.ts';
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
 
 const IID = '11111111-1111-4111-8111-111111111111';
+const AJ = '1fdd684e-6cb7-447e-b616-7e1b9c598971';
 const NOW = new Date('2026-10-23T15:00:00Z');
 const key = 'mock-gateway-key';
 function mockDb(tables: Record<string, any[]>) {
@@ -43,11 +44,11 @@ function mockDb(tables: Record<string, any[]>) {
     }; return q;
   };
   return { from, tables, calls, rpc: async (name: string, args: any) => {
-    if (name === 'agent_gateway_write_owner') return { data: 'aj', error: null };
+    if (name === 'agent_gateway_write_owner') return { data: AJ, error: null };
     if (name === 'agent_write_request_create') {
-      const row = { ...args.p_row, id: 'request-1', status: 'pending', token_created_by_id: 'aj' };
+      const row = { ...args.p_row, id: 'request-1', status: 'pending', token_created_by_id: AJ };
       (tables.agent_write_requests ??= []).push(row);
-      return { data: { ok: true, id: row.id, token_created_by_id: 'aj' } };
+      return { data: { ok: true, id: row.id, token_created_by_id: AJ } };
     }
     return { data: { allowed: true } };
   } };
@@ -55,7 +56,7 @@ function mockDb(tables: Record<string, any[]>) {
 async function world() {
   const tables: Record<string, any[]> = {
     agent_gateway_tokens: [{ id: 'key1', agent_id: 'agent1', token_hash: await sha256Hex(key), expires_at: '2099-01-01', audience: 'gateway' }],
-    agent_gateway_settings: [{ id: 1, gateway_enabled: true, writes_enabled: true, write_approver_team_member_ids: ['aj'] }],
+    agent_gateway_settings: [{ id: 1, gateway_enabled: true, writes_enabled: true, write_approver_team_member_ids: [AJ] }],
     agents: [{ id: 'agent1', status: 'active', kind: 'ai_agent', owner_team_member_id: 'juan' }],
     integrations: [{ id: IID, provider: 'meta_ads', enabled: true, allowed_hosts: ['graph.facebook.com'], op_secret_ref: 'op://shared/mock/key' }],
     agent_grants: [{ id: 'grant1', agent_id: 'agent1', integration_id: IID, all_accounts: true, expires_at: '2026-12-01', scopes: ['read', 'write'], allowed_account_refs: [], rate_per_minute: 30, rate_per_day: 100 }],

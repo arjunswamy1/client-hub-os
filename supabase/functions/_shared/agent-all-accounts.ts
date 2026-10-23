@@ -37,7 +37,9 @@ async function mapped(db: any, account: string): Promise<boolean | null> {
   if (ce || ie || ge) return null;
   return (connections ?? []).some((r: any) => {
     const selected = r.selected_ad_account;
-    const refs = [selected?.id, selected?.account_id, ...(r.metadata?.ad_accounts ?? []).map((a: any) => a?.account_id ?? a?.id), ...(r.metadata?.sync_account_ids ?? [])];
+    const visible = Array.isArray(r.metadata?.ad_accounts) ? r.metadata.ad_accounts : [];
+    const synced = Array.isArray(r.metadata?.sync_ad_accounts) ? r.metadata.sync_ad_accounts : [];
+    const refs = [selected?.id, selected?.account_id, ...visible.map((a: any) => a?.account_id ?? a?.id), ...synced.map((a: any) => typeof a === 'string' ? a : a?.account_id ?? a?.id)];
     return refs.some((id: unknown) => typeof id === 'string' && normalize(id) === account);
   })
     || (integrations ?? []).some((r: any) => typeof r.account_ref === 'string' && normalize(r.account_ref) === account)

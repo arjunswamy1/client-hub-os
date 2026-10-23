@@ -177,7 +177,7 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const { data: created, error } = await db.rpc('agent_write_request_create', { p_per_day: settings.per_day, p_row: {
     agent_id: ctx.agent.id, token_id: ctx.tokenId, grant_id: ctx.grant.id, integration_id: ctx.integ.id, action, account_id: input.account_id,
     account_name: look.acct.name, currency: look.acct.currency, object_type: def.objectType, object_id: input.object_id,
-    object_name: look.snap.name, before: plan.before, after: plan.after, diff_text: plan.diff, reason,
+    object_name: look.snap.name, before: ctx.grant.all_accounts ? { ...plan.before, grant_mode: 'all_accounts' } : plan.before, after: plan.after, diff_text: plan.diff, reason,
     requested_at: now.toISOString(), decision_expires_at: decisionExpires, account_label: mapping === 'unmapped' ? 'UNMAPPED' : null,
   } });
   if (error || !created) return deny(500, 'error_write_request');
@@ -243,7 +243,7 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
   const { data: grant } = await db.from('agent_grants').select('id, scopes, revoked_at, expires_at, allowed_account_refs, all_accounts').eq('id', row.grant_id).maybeSingle();
   if (!grant || grant.revoked_at || (grant.expires_at && new Date(grant.expires_at) <= now) || !(grant.scopes ?? []).includes('write')
       || (!grant.all_accounts && !(grant.allowed_account_refs ?? []).map(stripAct).includes(row.account_id))
-      || (row.account_label === 'UNMAPPED' && !grant.all_accounts)) return fail('failed_grant_changed');
+      || ((row.account_label === 'UNMAPPED' || row.before?.grant_mode === 'all_accounts') && !grant.all_accounts)) return fail('failed_grant_changed');
   const { data: integ } = await db.from('integrations').select('id, enabled, op_secret_ref, provider, allowed_hosts').eq('id', row.integration_id).maybeSingle();
   if (!integ?.enabled || integ.provider !== META_PROVIDER) return fail('failed_integration_disabled');
   if (grant.all_accounts) {

@@ -27,7 +27,7 @@ BEGIN
   passed := passed || 'owner mismatch refused'::text;
   -- 3 all-or-nothing: second grant fails after the first was granted in the same call
   EXECUTE format($f$CREATE FUNCTION pg_temp.fail_g2() RETURNS trigger LANGUAGE plpgsql AS $b$ BEGIN
-    IF NEW.id = %L AND 'write' = ANY(NEW.scopes) THEN RAISE EXCEPTION 'midloop g1_write=%%', (SELECT 'write' = ANY(scopes) FROM public.agent_grants WHERE id = %L); END IF; RETURN NEW; END $b$$f$, g2, g1);
+    IF NEW.id = %L AND 'write' = ANY(NEW.scopes) THEN RAISE EXCEPTION 'midloop g1_write=%%', (SELECT 'write' = ANY(scopes) FROM public.agent_grants WHERE id = %L); END IF; RETURN NEW; END $b$ $f$, g2, g1);
   CREATE TRIGGER zz_dbtest_fail_g2 BEFORE UPDATE ON agent_grants FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_g2();
   BEGIN PERFORM grant_agent_write_scope_all(ag, ch, 'test reason'); RAISE EXCEPTION 'NOT_REFUSED';
   EXCEPTION WHEN OTHERS THEN msg := SQLERRM; END;

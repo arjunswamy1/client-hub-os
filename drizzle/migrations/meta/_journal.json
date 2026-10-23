@@ -330,6 +330,13 @@
       "when": 1792769591140,
       "tag": "0046_agent_grants_all_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792770487009,
+      "tag": "0047_all_accounts_qa_fixes",
+      "breakpoints": true
     }
   ]
 }

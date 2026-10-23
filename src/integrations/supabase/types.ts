@@ -3103,6 +3103,41 @@ export type Database = {
           },
         ]
       }
+      client_ad_accounts: {
+        Row: {
+          account_id: string
+          client_id: string
+          created_at: string | null
+          created_by_id: string | null
+          id: string
+          platform: string
+        }
+        Insert: {
+          account_id: string
+          client_id: string
+          created_at?: string | null
+          created_by_id?: string | null
+          id?: string
+          platform?: string
+        }
+        Update: {
+          account_id?: string
+          client_id?: string
+          created_at?: string | null
+          created_by_id?: string | null
+          id?: string
+          platform?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_ad_accounts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_assignments: {
         Row: {
           assigned_at: string

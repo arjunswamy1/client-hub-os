@@ -29,21 +29,25 @@ async function tokenExpired(deps: AccountDeps, integrationId: string) {
   if (!error && data?.length) await ownerNotification(deps.db, 'agent_gateway_token_expired', 'Meta account lookup token expired', `Integration ${integrationId} requires a renewed Meta token.`);
 }
 
+// MAPPED = tied to an ACTIVE client via its Meta connection (selected / synced ad account),
+// its integration account_ref, or an explicit client_ad_accounts row. Grant account lists never map.
 async function mapped(db: any, account: string): Promise<boolean | null> {
+  const { data: clients, error: cle } = await db.from('clients').select('id').eq('status', 'active');
   // account_id on a Meta OAuth connection is a user id; selected_ad_account is the actual ad account.
   const { data: connections, error: ce } = await db.from('platform_connections').select('client_id,selected_ad_account,metadata').eq('platform', 'meta');
-  const { data: integrations, error: ie } = await db.from('integrations').select('account_ref').eq('provider', 'meta_ads');
-  const { data: grants, error: ge } = await db.from('agent_grants').select('allowed_account_refs,integration_id');
-  if (ce || ie || ge) return null;
+  const { data: integrations, error: ie } = await db.from('integrations').select('client_id,account_ref').eq('provider', 'meta_ads');
+  const { data: explicit, error: xe } = await db.from('client_ad_accounts').select('client_id').eq('platform', 'meta').eq('account_id', account);
+  if (cle || ce || ie || xe) return null;
+  const active = new Set((clients ?? []).map((c: any) => c.id));
+  const same = (id: unknown) => typeof id === 'string' && normalize(id) === account;
   return (connections ?? []).some((r: any) => {
+    if (!active.has(r.client_id)) return false;
     const selected = r.selected_ad_account;
-    const visible = Array.isArray(r.metadata?.ad_accounts) ? r.metadata.ad_accounts : [];
     const synced = Array.isArray(r.metadata?.sync_ad_accounts) ? r.metadata.sync_ad_accounts : [];
-    const refs = [selected?.id, selected?.account_id, ...visible.map((a: any) => a?.account_id ?? a?.id), ...synced.map((a: any) => typeof a === 'string' ? a : a?.account_id ?? a?.id)];
-    return refs.some((id: unknown) => typeof id === 'string' && normalize(id) === account);
+    return [selected?.id, selected?.account_id, ...synced.map((a: any) => typeof a === 'string' ? a : a?.account_id ?? a?.id)].some(same);
   })
-    || (integrations ?? []).some((r: any) => typeof r.account_ref === 'string' && normalize(r.account_ref) === account)
-    || (grants ?? []).some((r: any) => (r.allowed_account_refs ?? []).some((id: string) => normalize(id) === account));
+    || (integrations ?? []).some((r: any) => active.has(r.client_id) && same(r.account_ref))
+    || (explicit ?? []).some((r: any) => active.has(r.client_id));
 }
 
 export async function resolveAllAccounts(deps: AccountDeps, integration: { id: string; provider: string; allowed_hosts?: string[] }, account: string, secrets: SecretsProvider, secretRef: string | null, expiresAt: string | null): Promise<AccountResult> {

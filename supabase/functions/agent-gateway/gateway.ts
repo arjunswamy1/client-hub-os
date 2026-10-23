@@ -20,7 +20,7 @@ export interface GatewayDeps {
 
 export interface GatewayRequest {
   integration_id?: unknown; action?: unknown; scope?: unknown; target?: unknown; params?: unknown;
-  handoff?: unknown; write?: unknown; request_id?: unknown; reason?: unknown;
+  handoff?: unknown; write?: unknown; request_id?: unknown; reason?: unknown; qa_ref?: unknown;
 }
 export interface GatewayResult { status: number; body: Record<string, unknown> }
 
@@ -154,11 +154,11 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
     return { status: 200, body: { ok: true, outcome: 'handoff_redeemed', credential: secret.value, single_use: true } };
   }
 
-  // 6b. Write request: validated, checked live against Meta, then queued for approval.
+  // 6b. Write request: validated, checked live against Meta, then queued for approval (or executed at once in auto-execute mode).
   if (scope === 'write') {
     return requestWrite({ db, secrets, fetch: doFetch, now, agent, tokenId: tok.id, grant, integ, settings: ws, audit, deny,
       accountResolved: (account, mapping) => { log.resolved_account_id = account; log.account_mapping = mapping; },
-    }, action, req?.params, req?.reason);
+    }, action, req?.params, req?.reason, req?.qa_ref);
   }
 
   // 6c. Named read action.
@@ -202,3 +202,5 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
     ...(broad ? { account_mapping: broad.mapping, account_label: broad.mapping === 'unmapped' ? 'UNMAPPED' : null } : {}),
   } };
 }
+
+

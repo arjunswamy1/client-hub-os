@@ -7,8 +7,11 @@ import {
   WRITE_ACTIONS, META_HOST, META_PROVIDER, type WriteSettings, parseWriteParams, objectFields, snapshot, planChange,
   drift, metaGet, metaPost, checkAdsManagement, stripAct, scrub, executionCheck, BUDGET_ACTIONS, BUDGET_COOLDOWN_MS,
   POST_TIMEOUT_MS, GET_TIMEOUT_MS, copyTag, copyLookupUrl, chicagoDayStart, outcomeUnknown, childCountUrl, decisionAuthority, SYNC_COPY_MAX_CHILDREN, isCopyTooLargeError,
-  RENAME_PER_DAY, rulesUrl, nameScopedRules, namingBreak,
+  RENAME_PER_DAY, parseQaRef, queueReasons, rulesUrl, nameScopedRules, namingBreak,
 } from './agent-write-actions.ts';
+
+/** Recorded on every row this code executes; the change log flags executed rows without it (direct DB writes). */
+export const EXECUTOR_ID = 'edge:agent-write-flow';
 
 export interface WriteDeps { db: any; secrets: SecretsProvider; fetch: typeof fetch; now: Date }
 type Res = { status: number; body: Record<string, unknown> };
@@ -132,7 +135,16 @@ export interface RequestCtx extends WriteDeps {
   deny: (status: number, outcome: string, detail?: string) => Promise<Res>;
 }
 
-export async function requestWrite(ctx: RequestCtx, action: string, params: unknown, reasonRaw: unknown): Promise<Res> {
+/** Per-account usage today across all agents: changes executed or in flight, and net executed budget increase (cents). */
+async function accountDay(db: any, accountId: string, dayStart: string): Promise<{ changesToday: number; netIncreaseCentsToday: number }> {
+  const { data } = await db.from('agent_write_requests').select('status, action, before, after').eq('account_id', accountId)
+    .in('status', ['approved', 'executing', 'executed']).gte('requested_at', dayStart);
+  let net = 0;
+  for (const r of data ?? []) if (BUDGET_ACTIONS.includes(r.action) && r.status === 'executed') net += Number(r.after?.daily_budget ?? 0) - Number(r.before?.daily_budget ?? 0);
+  return { changesToday: (data ?? []).length, netIncreaseCentsToday: net };
+}
+
+export async function requestWrite(ctx: RequestCtx, action: string, params: unknown, reasonRaw: unknown, qaRefRaw?: unknown): Promise<Res> {
   const { db, deny, settings, now } = ctx;
   const def = WRITE_ACTIONS[action];
   if (!def) return deny(400, 'denied_unknown_action');
@@ -157,6 +169,8 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
     mapping = result.mapping;
     ctx.accountResolved?.(input.account_id, mapping);
   }
+  const qa = parseQaRef(qaRefRaw);
+  if (!qa.ok) return deny(400, 'denied_bad_request', qa.detail);
   const reason = typeof reasonRaw === 'string' ? reasonRaw.trim().slice(0, 500) : '';
   if (reason.length < 5) return deny(400, 'denied_bad_request', 'a reason of at least 5 characters is required');
 
@@ -209,12 +223,21 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   }
 
   if (mapping === 'unmapped' && !await alertUnmapped(db, ctx.agent.id, ctx.integ.id, input.account_id)) return deny(500, 'error_unmapped_alert');
+  let autoQueue: string[] = [];
+  if (settings.auto_execute) {
+    const acctDay = await accountDay(db, input.account_id, chicagoDayStart(now).toISOString());
+    const { data: pauses } = await db.from('agent_write_requests').select('executed_at, action').eq('object_id', input.object_id).eq('status', 'executed').in('action', Object.entries(WRITE_ACTIONS).filter(([, d]) => d.kind === 'status' && d.to === 'PAUSED').map(([k]) => k));
+    const lastHubPauseAt = (pauses ?? []).map((p: any) => p.executed_at).filter(Boolean).sort().at(-1) ?? null;
+    autoQueue = queueReasons({ def, before: plan.before, after: plan.after, live: look.snap, mapping,
+      allAccountsOnly: !!ctx.grant.all_accounts && !list.includes(input.account_id),
+      renameFlags: ((plan.before as any).rename_flags ?? []) as string[], lastHubPauseAt, acct: acctDay, s: settings, now });
+  }
   const decisionExpires = new Date(now.getTime() + settings.pending_ttl_min * 60_000).toISOString();
   const { data: created, error } = await db.rpc('agent_write_request_create', { p_per_day: settings.per_day, p_row: {
     agent_id: ctx.agent.id, token_id: ctx.tokenId, grant_id: ctx.grant.id, integration_id: ctx.integ.id, action, account_id: input.account_id,
     account_name: look.acct.name, currency: look.acct.currency, object_type: def.objectType, object_id: input.object_id,
     object_name: look.snap.name, before: ctx.grant.all_accounts ? { ...plan.before, grant_mode: 'all_accounts' } : plan.before, after: plan.after, diff_text: plan.diff, reason,
-    requested_at: now.toISOString(), decision_expires_at: decisionExpires, account_label: mapping === 'unmapped' ? 'UNMAPPED' : null,
+    requested_at: now.toISOString(), decision_expires_at: decisionExpires, qa_ref: qa.value, auto_queue_reasons: settings.auto_execute ? autoQueue : null, account_label: mapping === 'unmapped' ? 'UNMAPPED' : null,
   } });
   if (error || !created) return deny(500, 'error_write_request');
   if (created.ok === false && created.outcome === 'denied_unknown_key') return deny(403, 'denied_unknown_key');
@@ -223,14 +246,27 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const row = { id: created.id as string };
   await ctx.audit('write', 'write_requested', null, { target: row.id });
 
+  // Auto-execute: every check above has passed; the SQL function re-reads the live flag, marks the row approved
+  // by the system (decided_by_id NULL, auto_approved=true) and executeWrite re-runs grant/drift/USD/cap checks.
+  if (settings.auto_execute && autoQueue.length === 0) {
+    const { data: auto, error: autoErr } = await db.rpc('agent_write_auto_approve', { p_request_id: row.id });
+    if (!autoErr && auto?.ok === true) {
+      const done = settings.writes_enabled ? await executeWrite(ctx, row.id) : null;
+      const st = done?.status ?? 'approved';
+      return { status: st === 'executed' ? 200 : st === 'failed' ? 502 : 202, body: { ok: st !== 'failed', outcome: st === 'executed' ? 'write_executed' : st === 'failed' ? (done?.failure_outcome ?? 'write_failed') : 'write_auto_approved',
+        request_id: row.id, status: st, diff: plan.diff, before: plan.before, after: plan.after, result: done?.result ?? null, auto_executed: true } };
+    }
+    // Flag switched off, SQL re-check found a queue reason (e.g. per-account cap raced), or RPC failed: human queue.
+    if (!autoErr && Array.isArray(auto?.queue_reasons)) autoQueue = auto.queue_reasons;
+  }
   // In-hub notification to every approver allowed to decide this request.
   const recipients = settings.approvers.filter((id) => decisionAuthority(id, settings.approvers, ctx.agent.owner_team_member_id, undefined, created.token_created_by_id ?? null) === 'ok');
   if (recipients.length) {
     await db.from('notifications').insert(recipients.map((recipient_id) => ({
-      recipient_id, type: 'agent_write_request', title: 'Agent change waiting for approval', message: `${mapping === 'unmapped' ? '[UNMAPPED] ' : ''}${plan.diff}. Reason: ${reason}`.slice(0, 1000),
+      recipient_id, type: 'agent_write_request', title: autoQueue.length ? 'High-risk agent change needs approval' : 'Agent change waiting for approval', message: `${autoQueue.length ? `[${autoQueue.join(', ')}] ` : ''}${mapping === 'unmapped' ? '[UNMAPPED] ' : ''}${plan.diff}. Reason: ${reason}`.slice(0, 1000),
     })));
   }
-  return { status: 202, body: { ok: true, outcome: 'write_pending_approval', request_id: row.id, status: 'pending', diff: plan.diff, before: plan.before, after: plan.after, decision_expires_at: decisionExpires,
+  return { status: 202, body: { ok: true, outcome: 'write_pending_approval', request_id: row.id, status: 'pending', ...(autoQueue.length ? { queue_reasons: autoQueue } : {}), diff: plan.diff, before: plan.before, after: plan.after, decision_expires_at: decisionExpires,
     ...(ctx.grant.all_accounts ? { account_mapping: mapping, account_label: mapping === 'unmapped' ? 'UNMAPPED' : null } : {}),
   } };
 }
@@ -262,7 +298,7 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
   if (!r0) return null;
   const r1 = await settle(db, r0, now);
   if (r1.status !== 'approved' || !deps.settings.writes_enabled) return r1;
-  const { data: row } = await db.from('agent_write_requests').update({ status: 'executing', execution_started_at: now.toISOString(), updated_at: now.toISOString() })
+  const { data: row } = await db.from('agent_write_requests').update({ status: 'executing', execution_started_at: now.toISOString(), updated_at: now.toISOString(), executor_id: EXECUTOR_ID })
     .eq('id', r1.id).eq('status', 'approved').gt('approval_expires_at', now.toISOString()).select('*').maybeSingle();
   if (!row) { const { data } = await db.from('agent_write_requests').select('*').eq('id', r1.id).maybeSingle(); return data ?? r1; }
 

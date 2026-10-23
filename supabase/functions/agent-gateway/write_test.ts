@@ -1,7 +1,7 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { handleGateway, sha256Hex } from './gateway.ts';
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot, executionCheck, chicagoDayStart, copyTag, validateNewName, nameScopedRules, namingBreak, RENAME_PER_DAY, evalNameFilter } from '../_shared/agent-write-actions.ts';
+import { queueReasons, AUTO_BUDGET_MAX_CENTS, WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot, executionCheck, chicagoDayStart, copyTag, validateNewName, nameScopedRules, namingBreak, RENAME_PER_DAY, evalNameFilter } from '../_shared/agent-write-actions.ts';
 import { executeWrite } from '../_shared/agent-write-flow.ts';
 
 const TOKEN = 'agw_write_token_abc';
@@ -57,6 +57,13 @@ function memDb(tables: Record<string, any[]>) {
       if (!tk?.created_by_id) return { data: { ok: false, outcome: 'denied_unknown_key' }, error: null };
       W.push({ id, status: 'pending', ...p, token_created_by_id: tk.created_by_id }); return { data: { ok: true, duplicate: false, id, token_created_by_id: tk.created_by_id }, error: null };
     }
+    if (name === 'agent_write_auto_approve') {
+      const s = (tables.agent_gateway_settings ?? [])[0];
+      const r = W.find((x) => x.id === args.p_request_id);
+      if (!s?.write_auto_execute || !r || r.status !== 'pending') return { data: { ok: false, outcome: 'denied_auto_execute_off' }, error: null };
+      Object.assign(r, { status: 'approved', decided_by_id: null, auto_approved: true, decided_at: new Date().toISOString(), approval_expires_at: '2099-01-01T00:00:00Z' });
+      return { data: { ok: true }, error: null };
+    }
     if (name === 'sweep_stuck_agent_writes') {
       const cut = new Date(Date.now() - 10 * 60_000).toISOString(); let n = 0;
       for (const r of W) if (r.status === 'executing' && r.execution_started_at < cut) { r.status = 'failed'; r.failure_outcome = 'failed_stuck_executing'; n++; }
@@ -67,11 +74,11 @@ function memDb(tables: Record<string, any[]>) {
   return { from, rpc, tables };
 }
 
-interface Opts { keyCreator?: string | null; writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string | null }
+interface Opts { keyCreator?: string | null; writes?: boolean; scopes?: string[]; allow?: string[] | null; perDay?: number; owner?: string | null; auto?: boolean; acctCap?: number; acctNet?: number }
 async function world(o: Opts = {}) {
   const tables: Record<string, any[]> = {
     agent_gateway_tokens: [{ id: 't1', agent_id: 'a1', token_hash: await sha256Hex(TOKEN), expires_at: '2099-01-01', revoked_at: null, audience: 'gateway', created_by_id: 'keyCreator' in o ? o.keyCreator : 'juan' }],
-    agent_gateway_settings: [{ id: 1, gateway_enabled: true, writes_enabled: o.writes ?? true, write_approver_team_member_ids: [AJ, CHARLES], write_requests_per_day: o.perDay ?? 20 }],
+    agent_gateway_settings: [{ id: 1, gateway_enabled: true, writes_enabled: o.writes ?? true, write_approver_team_member_ids: [AJ, CHARLES], write_requests_per_day: o.perDay ?? 20, write_auto_execute: o.auto ?? false, write_account_changes_per_day: o.acctCap ?? 15, write_account_net_increase_usd: o.acctNet ?? 1000 }],
     agents: [{ id: 'a1', status: 'active', kind: 'ai_agent', owner_team_member_id: 'owner' in o ? o.owner : 'juan' }],
     integrations: [{ id: IID, provider: 'meta_ads', enabled: true, op_secret_ref: 'op://shared/meta/key', account_ref: null, allowed_hosts: ['graph.facebook.com'], client_id: null, is_browser_login: false }],
     agent_grants: [{ id: 'g1', agent_id: 'a1', integration_id: IID, scopes: o.scopes ?? ['read', 'write'], rate_per_minute: 30, rate_per_day: 2000, allowed_account_refs: o.allow === undefined ? ['111'] : o.allow }],
@@ -837,4 +844,98 @@ Deno.test('v3 rollback: failed restore audited rename_rollback_failed', async ()
   const s1 = await call(db, { ...m, fn: f }, { integration_id: IID, write: 'status', request_id: id }, new Date('2026-10-15T13:10:00Z'));
   assertEquals(s1.body.failure_outcome, 'failed_readback_rollback_failed');
   assert(db.tables.agent_access_log.some((l: any) => l.outcome === 'rename_rollback_failed' && l.event_type === 'write_rollback'));
+});
+
+// ---------- Auto-execute mode (2026-10-23) ----------
+Deno.test('auto-execute OFF (default): unchanged, queued for approval, no Meta write', async () => {
+  const db = await world(); const m = meta();
+  const r = await call(db, m, budgetReq(120));
+  assertEquals(r.body.outcome, 'write_pending_approval'); assertEquals(m.posts().length, 0);
+});
+Deno.test('auto-execute ON: valid budget change executes immediately, no approver notification, qa_ref recorded', async () => {
+  const db = await world({ auto: true }); const m = meta();
+  const r = await call(db, m, { ...budgetReq(120), qa_ref: 'juan-qa-bot#4411' });
+  assertEquals(r.status, 200); assertEquals(r.body.outcome, 'write_executed'); assertEquals(r.body.auto_executed, true);
+  assertEquals(m.posts().length, 1);
+  const row = db.tables.agent_write_requests[0];
+  assertEquals(row.status, 'executed'); assertEquals(row.executor_id, 'edge:agent-write-flow'); assertEquals(row.auto_approved, true); assertEquals(row.decided_by_id, null); assertEquals(row.qa_ref, 'juan-qa-bot#4411');
+  assertEquals(db.tables.notifications.length, 0); assert(noLeak(r.body)); assert(noLeak(db.tables));
+});
+Deno.test('auto-execute ON: caps still refuse (+51%, over $1,000), nothing posted', async () => {
+  for (const usd of [151, 1001]) {
+    const db = await world({ auto: true }); const m = meta();
+    const r = await call(db, m, budgetReq(usd));
+    assert(String(r.body.outcome).startsWith('denied_budget'), String(r.body.outcome)); assertEquals(m.posts().length, 0);
+  }
+});
+Deno.test("auto-execute ON: grant without 'write' and off-allowlist account still refused", async () => {
+  for (const o of [{ scopes: ['read'] }, { allow: ['222'] }]) {
+    const db = await world({ auto: true, ...o }); const m = meta();
+    const r = await call(db, m, budgetReq(120));
+    assertEquals(r.status, 403); assertEquals(m.posts().length, 0);
+  }
+});
+Deno.test('auto-execute ON: 21st request in a day refused', async () => {
+  const db = await world({ auto: true, perDay: 1 }); const m = meta();
+  await call(db, m, budgetReq(120));
+  const r = await call(db, m, { ...budgetReq(60), params: { account_id: 'act_111', object_id: '556', new_daily_budget_usd: 60 } });
+  assertEquals(r.status, 429);
+});
+Deno.test('auto-execute ON: Meta failure reported as failed, row failed, logged', async () => {
+  const db = await world({ auto: true }); const m = meta({ postStatus: 500, postBody: { error: { message: 'x' } } });
+  const r = await call(db, m, budgetReq(120));
+  assertEquals(r.body.ok, false); assertEquals(db.tables.agent_write_requests[0].status, 'failed');
+  assertEquals(db.tables.agent_access_log.at(-1).outcome, 'failed_upstream');
+});
+Deno.test('flag flipped off between settings read and RPC: falls back to the approval queue', async () => {
+  const db = await world({ auto: true }); const m = meta();
+  const orig = db.rpc; (db as any).rpc = async (n: string, a: any) => n === 'agent_write_auto_approve' ? { data: { ok: false, outcome: 'denied_auto_execute_off' }, error: null } : orig(n, a);
+  const r = await call(db, m, budgetReq(120));
+  assertEquals(r.body.outcome, 'write_pending_approval'); assertEquals(m.posts().length, 0);
+});
+
+// ---------- v2: high-risk writes always go to the human queue ----------
+const QS = settingsFrom({ writes_enabled: true, write_auto_execute: true });
+const NOW = new Date('2026-10-15T13:00:00Z');
+const q = (o: any = {}) => queueReasons({ def: WRITE_ACTIONS['meta.adset.update_budget'], before: { daily_budget: 10000 }, after: { daily_budget: 12000 },
+  live: snap(), mapping: 'mapped', allAccountsOnly: false, renameFlags: [], lastHubPauseAt: null, acct: { changesToday: 0, netIncreaseCentsToday: 0 }, s: QS, now: NOW, ...o });
+Deno.test('queueReasons: ordinary +20% budget change may auto-execute', () => { assertEquals(q(), []); });
+Deno.test('queueReasons: UNMAPPED and all_accounts-only accounts queue', () => {
+  assertEquals(q({ mapping: 'unmapped' }), ['unmapped_account']); assertEquals(q({ allAccountsOnly: true }), ['all_accounts_only_account']);
+});
+Deno.test('queueReasons: duplicates always queue; flagged renames queue, clean renames do not', () => {
+  assertEquals(q({ def: WRITE_ACTIONS['meta.campaign.duplicate'], before: {}, after: {} }), ['duplicate']);
+  assertEquals(q({ def: WRITE_ACTIONS['meta.ad.rename'], before: {}, after: {}, renameFlags: ['RULE SCOPE CHANGE: 1 automated rule(s)'] }), ['rename_flagged']);
+  assertEquals(q({ def: WRITE_ACTIONS['meta.ad.rename'], before: {}, after: {}, renameFlags: [] }), []);
+});
+Deno.test('queueReasons: budget >$500/day or >+50% queues; $500 exact does not', () => {
+  assertEquals(q({ before: { daily_budget: 40000 }, after: { daily_budget: AUTO_BUDGET_MAX_CENTS + 1 } }), ['budget_over_500_per_day']);
+  assertEquals(q({ before: { daily_budget: 40000 }, after: { daily_budget: AUTO_BUDGET_MAX_CENTS } }), []);
+  assertEquals(q({ before: { daily_budget: 10000 }, after: { daily_budget: 15001 } }), ['budget_increase_over_50pct']);
+});
+Deno.test('queueReasons: activation auto only if hub paused it <7d ago AND Meta edit <7d; unknown queues', () => {
+  const act = { def: WRITE_ACTIONS['meta.adset.activate'], before: {}, after: {} };
+  const recent = '2026-10-13T13:00:00Z', old = '2026-10-01T13:00:00Z';
+  assertEquals(q({ ...act, live: snap({ status: 'PAUSED', updated_time: recent }), lastHubPauseAt: recent }), []);
+  assertEquals(q({ ...act, live: snap({ status: 'PAUSED', updated_time: recent }), lastHubPauseAt: null }), ['reactivation_paused_7d_or_unknown']);
+  assertEquals(q({ ...act, live: snap({ status: 'PAUSED', updated_time: old }), lastHubPauseAt: old }), ['reactivation_paused_7d_or_unknown']);
+  assertEquals(q({ ...act, live: snap({ status: 'PAUSED' }), lastHubPauseAt: recent }), ['reactivation_paused_7d_or_unknown']);
+});
+Deno.test('queueReasons: per-account daily count cap and net-increase cap (all agents)', () => {
+  assertEquals(q({ acct: { changesToday: 15, netIncreaseCentsToday: 0 } }), ['account_daily_change_cap']);
+  assertEquals(q({ acct: { changesToday: 0, netIncreaseCentsToday: 99000 } }), ['account_daily_net_increase_cap']);
+  assertEquals(q({ before: { daily_budget: 12000 }, after: { daily_budget: 10000 }, acct: { changesToday: 0, netIncreaseCentsToday: 99000 } }), []);
+});
+Deno.test('auto-execute ON: duplicate goes to the human queue with reasons, no Meta POST', async () => {
+  const db = await world({ auto: true }); const m = meta({ campaign: { id: '777', name: 'C', account_id: '111', status: 'ACTIVE' }, children: 3 });
+  const r = await call(db, m, { integration_id: IID, scope: 'write', action: 'meta.campaign.duplicate', reason: 'test copy', params: { account_id: 'act_111', object_id: '777' } });
+  assertEquals(r.body.outcome, 'write_pending_approval'); assertEquals(r.body.queue_reasons, ['duplicate']); assertEquals(m.posts().length, 0);
+  assertEquals(db.tables.agent_write_requests[0].auto_queue_reasons, ['duplicate']);
+  assert(db.tables.notifications.every((n: any) => n.title === 'High-risk agent change needs approval'));
+});
+Deno.test('auto-execute ON: per-account cap reached by other agents -> queue', async () => {
+  const db = await world({ auto: true, acctCap: 1 }); const m = meta();
+  db.tables.agent_write_requests.push({ id: 'x1', agent_id: 'other', account_id: '111', action: 'meta.ad.pause', status: 'executed', requested_at: '2026-10-15T12:00:00Z', object_id: '9' });
+  const r = await call(db, m, budgetReq(120));
+  assertEquals(r.body.outcome, 'write_pending_approval'); assertEquals(r.body.queue_reasons, ['account_daily_change_cap']); assertEquals(m.posts().length, 0);
 });

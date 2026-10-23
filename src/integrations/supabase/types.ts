@@ -456,21 +456,25 @@ export type Database = {
       }
       agent_access_log: {
         Row: {
+          account_mapping: string | null
           action: string | null
           admin_team_member_id: string | null
           agent_id: string | null
           approved_by_id: string | null
           auth_surface: string
           client_id: string | null
+          connection_id: string | null
           created_at: string
           detail: string | null
           duration_ms: number | null
           event_type: string
           grant_id: string | null
+          grant_mode: string | null
           id: string
           integration_id: string | null
           outcome: string
           request_fingerprint: string | null
+          resolved_account_id: string | null
           scope: string | null
           subject_id: string | null
           subject_table: string | null
@@ -479,21 +483,25 @@ export type Database = {
           tool: string | null
         }
         Insert: {
+          account_mapping?: string | null
           action?: string | null
           admin_team_member_id?: string | null
           agent_id?: string | null
           approved_by_id?: string | null
           auth_surface?: string
           client_id?: string | null
+          connection_id?: string | null
           created_at?: string
           detail?: string | null
           duration_ms?: number | null
           event_type?: string
           grant_id?: string | null
+          grant_mode?: string | null
           id?: string
           integration_id?: string | null
           outcome: string
           request_fingerprint?: string | null
+          resolved_account_id?: string | null
           scope?: string | null
           subject_id?: string | null
           subject_table?: string | null
@@ -502,21 +510,25 @@ export type Database = {
           tool?: string | null
         }
         Update: {
+          account_mapping?: string | null
           action?: string | null
           admin_team_member_id?: string | null
           agent_id?: string | null
           approved_by_id?: string | null
           auth_surface?: string
           client_id?: string | null
+          connection_id?: string | null
           created_at?: string
           detail?: string | null
           duration_ms?: number | null
           event_type?: string
           grant_id?: string | null
+          grant_mode?: string | null
           id?: string
           integration_id?: string | null
           outcome?: string
           request_fingerprint?: string | null
+          resolved_account_id?: string | null
           scope?: string | null
           subject_id?: string | null
           subject_table?: string | null
@@ -718,6 +730,7 @@ export type Database = {
         Row: {
           account_ref: string | null
           agent_id: string
+          all_accounts: boolean
           allow_browser_handoff: boolean
           allowed_account_refs: string[] | null
           created_at: string
@@ -737,6 +750,7 @@ export type Database = {
         Insert: {
           account_ref?: string | null
           agent_id: string
+          all_accounts?: boolean
           allow_browser_handoff?: boolean
           allowed_account_refs?: string[] | null
           created_at?: string
@@ -756,6 +770,7 @@ export type Database = {
         Update: {
           account_ref?: string | null
           agent_id?: string
+          all_accounts?: boolean
           allow_browser_handoff?: boolean
           allowed_account_refs?: string[] | null
           created_at?: string
@@ -1077,6 +1092,7 @@ export type Database = {
       agent_write_requests: {
         Row: {
           account_id: string
+          account_label: string | null
           account_name: string | null
           action: string
           after: Json
@@ -1109,6 +1125,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          account_label?: string | null
           account_name?: string | null
           action: string
           after: Json
@@ -1141,6 +1158,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          account_label?: string | null
           account_name?: string | null
           action?: string
           after?: Json
@@ -2112,6 +2130,7 @@ export type Database = {
       }
       bot_qa_log: {
         Row: {
+          account_label: string | null
           answer: string | null
           asked_by_slack_id: string | null
           channel_id: string | null
@@ -2131,6 +2150,7 @@ export type Database = {
           tokens_out: number | null
         }
         Insert: {
+          account_label?: string | null
           answer?: string | null
           asked_by_slack_id?: string | null
           channel_id?: string | null
@@ -2150,6 +2170,7 @@ export type Database = {
           tokens_out?: number | null
         }
         Update: {
+          account_label?: string | null
           answer?: string | null
           asked_by_slack_id?: string | null
           channel_id?: string | null
@@ -5116,6 +5137,153 @@ export type Database = {
           used_at?: string | null
         }
         Relationships: []
+      }
+      gateway_account_blocklist: {
+        Row: {
+          account_id: string
+          created_at: string | null
+          created_by_id: string | null
+          id: string
+          integration_id: string | null
+          reason: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string | null
+          created_by_id?: string | null
+          id?: string
+          integration_id?: string | null
+          reason: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string | null
+          created_by_id?: string | null
+          id?: string
+          integration_id?: string | null
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gateway_account_blocklist_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gateway_cache_epoch: {
+        Row: {
+          epoch: number
+          id: number
+        }
+        Insert: {
+          epoch?: number
+          id?: number
+        }
+        Update: {
+          epoch?: number
+          id?: number
+        }
+        Relationships: []
+      }
+      gateway_grant_renewal_prompts: {
+        Row: {
+          expires_at: string
+          grant_id: string
+          prompted_at: string | null
+        }
+        Insert: {
+          expires_at: string
+          grant_id: string
+          prompted_at?: string | null
+        }
+        Update: {
+          expires_at?: string
+          grant_id?: string
+          prompted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gateway_grant_renewal_prompts_grant_id_fkey"
+            columns: ["grant_id"]
+            isOneToOne: false
+            referencedRelation: "agent_grants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gateway_token_expired_alerts: {
+        Row: {
+          alert_day: string
+          created_at: string | null
+          integration_id: string
+        }
+        Insert: {
+          alert_day: string
+          created_at?: string | null
+          integration_id: string
+        }
+        Update: {
+          alert_day?: string
+          created_at?: string | null
+          integration_id?: string
+        }
+        Relationships: []
+      }
+      gateway_unmapped_account_alerts: {
+        Row: {
+          account_id: string
+          agent_id: string
+          alerted_at: string | null
+          integration_id: string
+        }
+        Insert: {
+          account_id: string
+          agent_id: string
+          alerted_at?: string | null
+          integration_id: string
+        }
+        Update: {
+          account_id?: string
+          agent_id?: string
+          alerted_at?: string | null
+          integration_id?: string
+        }
+        Relationships: []
+      }
+      gateway_visible_accounts_cache: {
+        Row: {
+          account_ids: string[]
+          blocklist_epoch: number
+          fetched_at: string
+          integration_id: string
+          token_fingerprint: string
+        }
+        Insert: {
+          account_ids: string[]
+          blocklist_epoch: number
+          fetched_at: string
+          integration_id: string
+          token_fingerprint: string
+        }
+        Update: {
+          account_ids?: string[]
+          blocklist_epoch?: number
+          fetched_at?: string
+          integration_id?: string
+          token_fingerprint?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gateway_visible_accounts_cache_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "integrations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       improvement_proposals: {
         Row: {
@@ -10310,6 +10478,7 @@ export type Database = {
         Returns: Json
       }
       agent_gateway_write_owner: { Args: never; Returns: string }
+      agent_grant_renewal_prompts: { Args: never; Returns: number }
       agent_has_write_grant: { Args: { p_agent: string }; Returns: boolean }
       agent_hub_count_read: {
         Args: { p_agent_id: string; p_client_id: string; p_tool: string }

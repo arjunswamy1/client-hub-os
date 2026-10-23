@@ -31,7 +31,7 @@ BEGIN
   CREATE TRIGGER zz_dbtest_fail_g2 BEFORE UPDATE ON agent_grants FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_g2();
   BEGIN PERFORM grant_agent_write_scope_all(ag, ch, 'test reason'); RAISE EXCEPTION 'NOT_REFUSED';
   EXCEPTION WHEN OTHERS THEN msg := SQLERRM; END;
-  IF msg <> 'midloop g1_write=true' THEN RAISE EXCEPTION 'mid-loop setup FAILED: %', msg; END IF;
+  IF msg <> 'midloop g1_write=t' THEN RAISE EXCEPTION 'mid-loop setup FAILED: %', msg; END IF;
   IF EXISTS (SELECT 1 FROM agent_grants WHERE agent_id = ag AND 'write' = ANY(scopes)) THEN RAISE EXCEPTION 'all-or-nothing FAILED'; END IF;
   DROP TRIGGER zz_dbtest_fail_g2 ON agent_grants;
   passed := passed || 'all-or-nothing on mid-loop failure'::text;

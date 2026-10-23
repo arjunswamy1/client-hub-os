@@ -1,5 +1,13 @@
 # Agent Access Gateway — how the write locks are enforced
 
+## Opt-in all-accounts access (0046)
+
+- `all_accounts` defaults false; no grant is enabled by this release. Only AJ can enable it, with an expiry capped at 90 days. The lock fires in replica sessions and has no service-role bypass.
+- The global/integration blocklist is checked on every call before the visible-account cache, and again after lookup. The cache lasts 15 minutes, keys on the secret's SHA-256 fingerprint, and invalidates on blocklist epoch changes. No secret is stored in it.
+- Read, write request and execution share `_shared/agent-all-accounts.ts`; execution checks the grant, blocklist and visibility again. Explicit and legacy access retain their existing rules.
+- Unmapped visible accounts are allowed but labelled `UNMAPPED`; approval notifications carry `[UNMAPPED]`. The first write per agent/integration/account alerts AJ. Expired-token alerts dedupe per integration and Los Angeles calendar day.
+- Renewal reminders run once daily at 15:00 UTC for unrevoked grants expiring within seven days; each grant/expiry alerts once. This adds no Slack posting or write execution.
+
 > **WARNING — backfilled key creators.** `created_by_id` on keys that existed before migration 0040 was backfilled from the agent's creator, not recorded at mint time. Before giving any agent write scope, AJ must revoke its existing keys and mint new ones, so the key-creator approval rule rests on recorded facts.
 
 Applies to Meta write actions (`agent_write_requests`, migrations 0034 and 0036).

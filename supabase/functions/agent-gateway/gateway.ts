@@ -9,6 +9,7 @@ import type { SecretsProvider } from '../_shared/agent-secrets.ts';
 import { ACTIONS, buildRequest, resolveAccount, scrub } from './actions.ts';
 import { settingsFrom } from '../_shared/agent-write-actions.ts';
 import { requestWrite, writeStatus } from '../_shared/agent-write-flow.ts';
+import { requestedAccount, resolveAllAccounts } from '../_shared/agent-all-accounts.ts';
 
 export interface GatewayDeps {
   db: any; // service-role client
@@ -37,7 +38,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   const doFetch = deps.fetch ?? fetch;
   const now = (deps.now ?? (() => new Date()))();
   const started = Date.now();
-  const log: Record<string, unknown> = {};
+  const log: Record<string, unknown> = { grant_mode: null, resolved_account_id: null, connection_id: null, account_mapping: null };
   const audit = (event_type: string, outcome: string, detail?: string | null, extra: Record<string, unknown> = {}) =>
     db.from('agent_access_log').insert({ ...log, ...extra, event_type, outcome, detail: detail ?? null, duration_ms: Date.now() - started });
   const deny = async (status: number, outcome: string, detail?: string): Promise<GatewayResult> => {
@@ -52,6 +53,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   const integrationId = typeof req?.integration_id === 'string' && UUID.test(req.integration_id) ? req.integration_id : null;
   const target = typeof req?.target === 'string' && req.target.length <= 200 ? req.target : null;
   log.action = action; log.scope = scope; log.integration_id = integrationId;
+  log.connection_id = integrationId;
   log.request_fingerprint = req?.params === undefined ? null : await sha256Hex(JSON.stringify(req.params));
 
   // 1. Token.
@@ -88,10 +90,11 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   if (!integ.enabled) return deny(403, 'denied_integration_disabled');
   if (integ.restricted_owner_team_member_id && integ.restricted_owner_team_member_id !== agent.owner_team_member_id) return deny(403, 'denied_restricted_account');
   const { data: grant } = await db.from('agent_grants')
-    .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff, allowed_account_refs')
+    .select('id, scopes, account_ref, rate_per_minute, rate_per_day, expires_at, revoked_at, allow_browser_handoff, allowed_account_refs, all_accounts')
     .eq('agent_id', agent.id).eq('integration_id', integ.id).maybeSingle();
   if (!grant || grant.revoked_at) return deny(403, 'denied_no_grant');
   log.grant_id = grant.id;
+  log.grant_mode = grant.all_accounts ? 'all_accounts' : grant.allowed_account_refs?.length ? 'explicit' : 'legacy';
   if (grant.expires_at && new Date(grant.expires_at) <= now) return deny(403, 'denied_grant_expired');
   if (scope !== 'handoff' && scope !== 'write_status' && !(grant.scopes ?? []).includes(scope)) return deny(403, 'denied_scope');
   if (agent.kind === 'teammate_agent' && integ.client_id) {
@@ -153,16 +156,30 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
 
   // 6b. Write request: validated, checked live against Meta, then queued for approval.
   if (scope === 'write') {
-    return requestWrite({ db, secrets, fetch: doFetch, now, agent, tokenId: tok.id, grant, integ, settings: ws, audit, deny }, action, req?.params, req?.reason);
+    return requestWrite({ db, secrets, fetch: doFetch, now, agent, tokenId: tok.id, grant, integ, settings: ws, audit, deny,
+      accountResolved: (account, mapping) => { log.resolved_account_id = account; log.account_mapping = mapping; },
+    }, action, req?.params, req?.reason);
   }
 
   // 6c. Named read action.
   const def = ACTIONS[action];
   if (!def) return deny(400, 'denied_unknown_action');
+  let broad: { account: string; params: Record<string, unknown>; mapping: 'mapped' | 'unmapped' } | null = null;
+  if (grant.all_accounts) {
+    if (def.provider !== integ.provider || !def.needsAccount) return deny(403, 'denied_action_provider_mismatch');
+    const input = requestedAccount(req?.params);
+    if (!input.ok) return deny(400, input.outcome);
+    log.resolved_account_id = input.account;
+    const result = await resolveAllAccounts({ db, fetch: doFetch, now }, integ, input.account, secrets, integ.op_secret_ref, grant.expires_at);
+    if (!result.ok) return deny(403, result.outcome);
+    log.account_mapping = result.mapping;
+    broad = { account: result.account, params: input.params, mapping: result.mapping };
+  }
   const secret = integ.op_secret_ref ? await secrets.resolve(integ.op_secret_ref) : { ok: false as const, reason: 'not_configured' as const };
   if (!secret.ok) return deny(503, `secret_${secret.reason}`);
-  const acct = resolveAccount(def, grant.allowed_account_refs, grant.account_ref ?? integ.account_ref ?? null, req?.params);
+  const acct = broad ? { ok: true as const, account: broad.account, params: broad.params } : resolveAccount(def, grant.allowed_account_refs, grant.account_ref ?? integ.account_ref ?? null, req?.params);
   if (!acct.ok) return deny(acct.outcome === 'denied_account_not_allowed' ? 403 : 400, acct.outcome);
+  log.resolved_account_id = acct.account?.replace(/^act_/, '') ?? null;
   const built = buildRequest(action, def, integ, acct.account, acct.params, secret.value);
   if (!built.ok) return deny(400, built.outcome, built.detail);
 
@@ -180,5 +197,8 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
     return { status: 502, body: { ok: false, outcome: 'upstream_error', upstream_status: res.status, data } };
   }
   await db.rpc('agent_gateway_count_read', { p_agent_id: agent.id, p_integration_id: integ.id, p_action: action });
-  return { status: 200, body: { ok: true, outcome: 'ok', upstream_status: res.status, target, data } };
+  if (broad) await audit('read', 'ok');
+  return { status: 200, body: { ok: true, outcome: 'ok', upstream_status: res.status, target, data,
+    ...(broad ? { account_mapping: broad.mapping, account_label: broad.mapping === 'unmapped' ? 'UNMAPPED' : null } : {}),
+  } };
 }

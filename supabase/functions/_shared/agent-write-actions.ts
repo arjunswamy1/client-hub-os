@@ -28,6 +28,10 @@ export const WRITE_ACTIONS: Record<string, WriteDef> = {
 export interface WriteSettings {
   writes_enabled: boolean; approvers: string[]; max_pct: number; max_usd: number;
   per_day: number; pending_ttl_min: number; approval_ttl_min: number;
+  /** Auto-execute mode (migration 00xx): requests that pass every check run immediately, no human approval. Default OFF. */
+  auto_execute: boolean;
+  /** Per-account daily caps across ALL agents (America/Chicago day). Over either cap the write goes to the human queue. */
+  acct_changes_per_day: number; acct_net_increase_usd: number;
 }
 export function settingsFrom(row: any): WriteSettings {
   return {
@@ -38,6 +42,9 @@ export function settingsFrom(row: any): WriteSettings {
     per_day: Number(row?.write_requests_per_day ?? 20),
     pending_ttl_min: Number(row?.write_pending_ttl_minutes ?? 1440),
     approval_ttl_min: Number(row?.write_approval_ttl_minutes ?? 30),
+    auto_execute: row?.write_auto_execute === true,
+    acct_changes_per_day: Number(row?.write_account_changes_per_day ?? 15),
+    acct_net_increase_usd: Number(row?.write_account_net_increase_usd ?? 1000),
   };
 }
 
@@ -138,13 +145,15 @@ export function parseWriteParams(def: WriteDef, params: unknown): { ok: true; in
 }
 
 export function objectFields(t: ObjectType): string {
-  if (t === 'campaign') return 'id,name,account_id,status,effective_status,daily_budget,lifetime_budget';
-  if (t === 'adset') return 'id,name,account_id,status,effective_status,daily_budget,lifetime_budget,campaign{id,name,daily_budget,lifetime_budget}';
-  return 'id,name,account_id,status,effective_status,adset_id,campaign_id';
+  if (t === 'campaign') return 'id,name,account_id,status,effective_status,daily_budget,lifetime_budget,updated_time';
+  if (t === 'adset') return 'id,name,account_id,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign{id,name,daily_budget,lifetime_budget}';
+  return 'id,name,account_id,status,effective_status,adset_id,campaign_id,updated_time';
 }
 
 export interface Snapshot {
   account_id: string; name: string | null; status: string | null;
+  /** Meta updated_time (any edit bumps it). Used only to decide auto-execute vs queue, never to allow more. */
+  updated_time?: string | null;
   /** Object type per Meta: metadata.type when returned (metadata=1), else inferred from the parent fields. */
   object_type?: ObjectType | null;
   daily_budget: number | null; lifetime_budget: number | null; campaign_budget: number | null;
@@ -156,7 +165,7 @@ export function snapshot(obj: any): Snapshot {
   return {
     account_id: stripAct(String(obj?.account_id ?? '')), name: obj?.name ?? null, status: obj?.status ?? null,
     daily_budget: num(obj?.daily_budget), lifetime_budget: num(obj?.lifetime_budget), campaign_budget: cb,
-    object_type: objectTypeOf(obj),
+    object_type: objectTypeOf(obj), updated_time: typeof obj?.updated_time === 'string' ? obj.updated_time : null,
   };
 }
 
@@ -373,4 +382,50 @@ export function namingBreak(oldName: string | null, newName: string): string | n
   if (a.length !== b.length) return `token count ${a.length} → ${b.length}`;
   if (a[0].trim().toLowerCase() !== b[0].trim().toLowerCase()) return `prefix "${a[0]}" → "${b[0]}"`;
   return null;
+}
+
+/** Optional bot-side QA reference (which team QA bot cleared the change). Free text, 3..200 printable chars. */
+export function parseQaRef(raw: unknown): { ok: true; value: string | null } | { ok: false; detail: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, value: null };
+  if (typeof raw !== 'string') return { ok: false, detail: 'qa_ref must be a string' };
+  const v = raw.trim();
+  if (v.length < 3 || v.length > 200 || /[\u0000-\u001f\u007f]/.test(v)) return { ok: false, detail: 'qa_ref must be 3-200 printable characters' };
+  return { ok: true, value: v };
+}
+
+export const AUTO_BUDGET_MAX_CENTS = 50_000;      // > $500/day after the change: human queue
+export const AUTO_BUDGET_MAX_INCREASE_PCT = 50;   // > +50%: human queue (the ±50% cap already refuses beyond this)
+export const REACTIVATION_QUEUE_MS = 7 * 86_400_000;
+
+export interface QueueCtx {
+  def: WriteDef; before: Record<string, any>; after: Record<string, any>; live: Snapshot;
+  mapping: 'mapped' | 'unmapped' | null; allAccountsOnly: boolean; renameFlags: string[];
+  /** Latest executed hub pause of this object (ISO) or null if none known. */
+  lastHubPauseAt: string | null;
+  acct: { changesToday: number; netIncreaseCentsToday: number }; s: WriteSettings; now: Date;
+}
+/** Why this write must go to the human queue even in auto-execute mode. Empty = may auto-execute. Pure. */
+export function queueReasons(q: QueueCtx): string[] {
+  const out: string[] = [];
+  if (q.mapping === 'unmapped') out.push('unmapped_account');
+  if (q.allAccountsOnly) out.push('all_accounts_only_account');
+  if (q.def.kind === 'duplicate') out.push('duplicate');
+  if (q.def.kind === 'rename' && q.renameFlags.length) out.push('rename_flagged');
+  if (q.def.kind === 'status' && q.def.to === 'ACTIVE' && q.live.status !== 'ACTIVE') {
+    // Auto only when the hub itself paused it within 7 days AND Meta shows no edit older than 7 days. Unknown = queue.
+    const recentHubPause = q.lastHubPauseAt && q.now.getTime() - new Date(q.lastHubPauseAt).getTime() < REACTIVATION_QUEUE_MS;
+    const ut = q.live.updated_time ? new Date(q.live.updated_time).getTime() : NaN;
+    const recentEdit = Number.isFinite(ut) && q.now.getTime() - ut < REACTIVATION_QUEUE_MS;
+    if (!recentHubPause || !recentEdit) out.push('reactivation_paused_7d_or_unknown');
+  }
+  let inc = 0;
+  if (q.def.kind === 'budget') {
+    const cur = Number(q.before?.daily_budget ?? q.live.daily_budget ?? 0), next = Number(q.after?.daily_budget ?? 0);
+    inc = next - cur;
+    if (cur > 0 && inc * 100 > AUTO_BUDGET_MAX_INCREASE_PCT * cur) out.push('budget_increase_over_50pct');
+    if (next > AUTO_BUDGET_MAX_CENTS) out.push('budget_over_500_per_day');
+  }
+  if (q.acct.changesToday + 1 > q.s.acct_changes_per_day) out.push('account_daily_change_cap');
+  if (inc > 0 && q.acct.netIncreaseCentsToday + inc > Math.round(q.s.acct_net_increase_usd * 100)) out.push('account_daily_net_increase_cap');
+  return out;
 }

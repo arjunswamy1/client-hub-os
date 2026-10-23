@@ -25,7 +25,7 @@
 - [x] clients.weekend_rollup: Monday = Sat+Sun block; same-period figures test
 
 ## Agent Access Gateway
-- [ ] Add opt-in all_accounts grants, blocklist/cache/alerts, mocked tests, SQL checks and deploy; leave live grants and keys unchanged.
+- [x] Add opt-in all_accounts grants, blocklist/cache/alerts, mocked tests, SQL checks and deploy; leave live grants and keys unchanged.
 - [x] Phase 1: agents, gateway keys, accounts (1Password pointers only), permissions, insert-only audit, rate limits, gateway skeleton (off by default), admin page
 - [x] Phase 2: 1Password adapter, read-only Meta/CallGrid/Roku actions, hand-off approvals, test connection, unusual-activity flags
 - [ ] Finish setup: AJ saves OP_SERVICE_ACCOUNT_TOKEN and adds accounts with op:// references

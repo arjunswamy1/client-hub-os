@@ -35,7 +35,7 @@ describe('Allow all changes summary', () => {
     expect(summarizeWriteAll(i).blockers.length).toBe(0);
   });
   it('all_accounts targets are flagged separately', () => {
-    const i = base(); i.grants[0].all_accounts = true;
+    const i = base(); (i.grants[0] as { all_accounts?: boolean }).all_accounts = true;
     expect(summarizeWriteAll(i).allAccountsTargets.map((g) => g.id)).toEqual(['g1']);
   });
 });

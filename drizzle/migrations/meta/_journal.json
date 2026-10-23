@@ -344,6 +344,13 @@
       "when": 1792771185510,
       "tag": "0048_agent_write_scope_all",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792773569155,
+      "tag": "0049_team_write_grants",
+      "breakpoints": true
     }
   ]
 }

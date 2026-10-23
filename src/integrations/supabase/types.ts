@@ -735,6 +735,69 @@ export type Database = {
           },
         ]
       }
+      agent_grant_audit: {
+        Row: {
+          action: string
+          actor_db_role: string
+          actor_team_member_id: string | null
+          agent_id: string | null
+          allowed_refs_after: string[] | null
+          allowed_refs_before: string[] | null
+          at: string
+          confirmed_owner_id: string | null
+          detail: Json | null
+          expires_after: string | null
+          expires_before: string | null
+          grant_id: string | null
+          id: number
+          reason: string | null
+          request_id: string | null
+          scopes_after: string[] | null
+          scopes_before: string[] | null
+          subject_team_member_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_db_role?: string
+          actor_team_member_id?: string | null
+          agent_id?: string | null
+          allowed_refs_after?: string[] | null
+          allowed_refs_before?: string[] | null
+          at?: string
+          confirmed_owner_id?: string | null
+          detail?: Json | null
+          expires_after?: string | null
+          expires_before?: string | null
+          grant_id?: string | null
+          id?: never
+          reason?: string | null
+          request_id?: string | null
+          scopes_after?: string[] | null
+          scopes_before?: string[] | null
+          subject_team_member_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_db_role?: string
+          actor_team_member_id?: string | null
+          agent_id?: string | null
+          allowed_refs_after?: string[] | null
+          allowed_refs_before?: string[] | null
+          at?: string
+          confirmed_owner_id?: string | null
+          detail?: Json | null
+          expires_after?: string | null
+          expires_before?: string | null
+          grant_id?: string | null
+          id?: never
+          reason?: string | null
+          request_id?: string | null
+          scopes_after?: string[] | null
+          scopes_before?: string[] | null
+          subject_team_member_id?: string | null
+        }
+        Relationships: []
+      }
       agent_grants: {
         Row: {
           account_ref: string | null
@@ -753,6 +816,9 @@ export type Database = {
           revoked_at: string | null
           scopes: string[]
           updated_at: string
+          write_granted_at: string | null
+          write_granted_by_id: string | null
+          write_reason: string | null
           write_scope_removed_at: string | null
           write_scope_removed_owner_id: string | null
         }
@@ -773,6 +839,9 @@ export type Database = {
           revoked_at?: string | null
           scopes?: string[]
           updated_at?: string
+          write_granted_at?: string | null
+          write_granted_by_id?: string | null
+          write_reason?: string | null
           write_scope_removed_at?: string | null
           write_scope_removed_owner_id?: string | null
         }
@@ -793,6 +862,9 @@ export type Database = {
           revoked_at?: string | null
           scopes?: string[]
           updated_at?: string
+          write_granted_at?: string | null
+          write_granted_by_id?: string | null
+          write_reason?: string | null
           write_scope_removed_at?: string | null
           write_scope_removed_owner_id?: string | null
         }
@@ -816,6 +888,13 @@ export type Database = {
             columns: ["integration_id"]
             isOneToOne: false
             referencedRelation: "integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_grants_write_granted_by_id_fkey"
+            columns: ["write_granted_by_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -1093,6 +1172,42 @@ export type Database = {
             foreignKeyName: "agent_tokens_team_member_id_fkey"
             columns: ["team_member_id"]
             isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_write_granters: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          note: string | null
+          team_member_id: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          note?: string | null
+          team_member_id: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          note?: string | null
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_write_granters_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_write_granters_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: true
             referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
@@ -10528,6 +10643,10 @@ export type Database = {
         Args: { p_actor: string; p_brief_id: string; p_via: string }
         Returns: Json
       }
+      add_write_granter: {
+        Args: { p_note?: string; p_team_member_id: string }
+        Returns: Json
+      }
       agent_gateway_count_read: {
         Args: { p_action: string; p_agent_id: string; p_integration_id: string }
         Returns: undefined
@@ -10638,7 +10757,12 @@ export type Database = {
       }
       get_team_member_id: { Args: { check_user_id: string }; Returns: string }
       grant_agent_write_scope: {
-        Args: { p_confirmed_owner_id: string; p_grant_id: string }
+        Args: {
+          p_confirmed_owner_id: string
+          p_expires_at?: string
+          p_grant_id: string
+          p_reason?: string
+        }
         Returns: Json
       }
       grant_agent_write_scope_all: {
@@ -10678,6 +10802,7 @@ export type Database = {
       }
       is_account_manager: { Args: { check_user_id: string }; Returns: boolean }
       is_admin: { Args: { check_user_id: string }; Returns: boolean }
+      is_write_granter: { Args: { p_tm: string }; Returns: boolean }
       move_to_dlq: {
         Args: {
           dlq_name: string
@@ -10694,6 +10819,10 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      remove_write_granter: {
+        Args: { p_team_member_id: string }
+        Returns: Json
       }
       revoke_agent_write_scope_all: {
         Args: { p_agent_id: string; p_reason: string }

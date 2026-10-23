@@ -2,7 +2,7 @@
 // gateway itself executes it. v1 excludes deletes, ad/creative creation, spend caps,
 // lifetime budgets, bids and billing. Nothing here touches the database.
 export type ObjectType = 'campaign' | 'adset' | 'ad';
-export type WriteKind = 'status' | 'budget' | 'duplicate';
+export type WriteKind = 'status' | 'budget' | 'duplicate' | 'rename';
 export interface WriteDef { objectType: ObjectType; kind: WriteKind; to?: 'PAUSED' | 'ACTIVE' }
 
 export const META_HOST = 'graph.facebook.com';
@@ -19,6 +19,10 @@ export const WRITE_ACTIONS: Record<string, WriteDef> = {
   'meta.campaign.update_budget': { objectType: 'campaign', kind: 'budget' },
   'meta.adset.update_budget': { objectType: 'adset', kind: 'budget' },
   'meta.campaign.duplicate': { objectType: 'campaign', kind: 'duplicate' },
+  // Rename: one object per request, POST body carries only `name` (RENAME_POST_FIELDS). No USD check (no spend impact).
+  'meta.ad.rename': { objectType: 'ad', kind: 'rename' },
+  'meta.adset.rename': { objectType: 'adset', kind: 'rename' },
+  'meta.campaign.rename': { objectType: 'campaign', kind: 'rename' },
 };
 
 export interface WriteSettings {
@@ -93,11 +97,28 @@ export const stripAct = (s: string) => String(s).replace(/^act_/, '');
 const ACCOUNT_ID = /^(act_)?[0-9]{1,32}$/;
 const OBJECT_ID = /^[0-9]{1,32}$/;
 
-export type Input = { account_id: string; object_id: string; new_cents?: number };
+export type Input = { account_id: string; object_id: string; new_cents?: number; new_name?: string };
+
+/** Rename limits. QA: max 400 chars, no control chars/newlines, no leading/trailing spaces, not empty, not unchanged. */
+export const RENAME_MAX_LEN = 400;
+/** Renames per agent per America/Chicago day (one object per request; no bulk or wildcard form exists). */
+export const RENAME_PER_DAY = 10;
+/** The ONLY fields a rename POST may carry besides the access token. Enforced in metaPost. */
+export const RENAME_POST_FIELDS = ['name'] as const;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+export function validateNewName(raw: unknown): { ok: true; name: string } | { ok: false; detail: string } {
+  if (typeof raw !== 'string') return { ok: false, detail: 'new_name must be a string' };
+  if (raw.length === 0) return { ok: false, detail: 'new_name is empty' };
+  if (raw !== raw.trim()) return { ok: false, detail: 'new_name has leading or trailing spaces' };
+  if (CONTROL.test(raw)) return { ok: false, detail: 'new_name contains control characters or newlines' };
+  if (raw.length > RENAME_MAX_LEN) return { ok: false, detail: `new_name longer than ${RENAME_MAX_LEN} characters` };
+  // No wildcard/bulk form: object_id is one numeric id (OBJECT_ID); `*`/`%` in a name are literal characters.
+  return { ok: true, name: raw };
+}
 export function parseWriteParams(def: WriteDef, params: unknown): { ok: true; input: Input } | { ok: false; outcome: string; detail?: string } {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return { ok: false, outcome: 'denied_bad_params', detail: 'params object required' };
   const p = params as Record<string, unknown>;
-  const allowed = def.kind === 'budget' ? ['account_id', 'object_id', 'new_daily_budget_usd'] : ['account_id', 'object_id'];
+  const allowed = def.kind === 'budget' ? ['account_id', 'object_id', 'new_daily_budget_usd'] : def.kind === 'rename' ? ['account_id', 'object_id', 'new_name'] : ['account_id', 'object_id'];
   for (const k of Object.keys(p)) if (!allowed.includes(k)) return { ok: false, outcome: 'denied_bad_params', detail: `unknown param ${k.slice(0, 40)}` };
   if (typeof p.account_id !== 'string' || !ACCOUNT_ID.test(p.account_id)) return { ok: false, outcome: 'denied_bad_params', detail: 'invalid account_id' };
   if (typeof p.object_id !== 'string' || !OBJECT_ID.test(p.object_id)) return { ok: false, outcome: 'denied_bad_params', detail: 'invalid object_id' };
@@ -107,6 +128,11 @@ export function parseWriteParams(def: WriteDef, params: unknown): { ok: true; in
     const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d+(\.\d{1,2})?$/.test(raw) ? Number(raw) : NaN;
     if (!Number.isFinite(n) || n <= 0 || Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) return { ok: false, outcome: 'denied_bad_params', detail: 'new_daily_budget_usd must be a positive dollar amount' };
     input.new_cents = Math.round(n * 100);
+  }
+  if (def.kind === 'rename') {
+    const v = validateNewName(p.new_name);
+    if (!v.ok) return { ok: false, outcome: 'denied_bad_params', detail: v.detail };
+    input.new_name = v.name;
   }
   return { ok: true, input };
 }
@@ -119,6 +145,8 @@ export function objectFields(t: ObjectType): string {
 
 export interface Snapshot {
   account_id: string; name: string | null; status: string | null;
+  /** Object type per Meta: metadata.type when returned (metadata=1), else inferred from the parent fields. */
+  object_type?: ObjectType | null;
   daily_budget: number | null; lifetime_budget: number | null; campaign_budget: number | null;
 }
 const num = (v: unknown) => (v === undefined || v === null || v === '' ? null : Number(v));
@@ -128,9 +156,19 @@ export function snapshot(obj: any): Snapshot {
   return {
     account_id: stripAct(String(obj?.account_id ?? '')), name: obj?.name ?? null, status: obj?.status ?? null,
     daily_budget: num(obj?.daily_budget), lifetime_budget: num(obj?.lifetime_budget), campaign_budget: cb,
+    object_type: objectTypeOf(obj),
   };
 }
 
+/** 'ad' has adset_id; 'adset' has a campaign but no adset_id; 'campaign' has neither. Prefer Meta's metadata.type. */
+export function objectTypeOf(obj: any): ObjectType | null {
+  const t = obj?.metadata?.type;
+  if (t === 'ad' || t === 'adset' || t === 'campaign') return t;
+  if (!obj || typeof obj !== 'object') return null;
+  if (obj.adset_id) return 'ad';
+  if (obj.campaign || obj.campaign_id) return 'adset';
+  return 'campaign';
+}
 export const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const LABEL: Record<ObjectType, string> = { campaign: 'Campaign', adset: 'Ad set', ad: 'Ad' };
 
@@ -140,7 +178,12 @@ export type Plan = { ok: true; before: Record<string, unknown>; after: Record<st
 export function planChange(def: WriteDef, objectId: string, snap: Snapshot, acct: { name?: string | null; currency?: string | null }, input: Input, s: WriteSettings): Plan {
   const head = `Account ${acct.name ?? '?'} (act_${snap.account_id}) · ${LABEL[def.objectType]} "${snap.name ?? '?'}" (${objectId})`;
   const before = { name: snap.name, status: snap.status, daily_budget: snap.daily_budget, account_id: snap.account_id };
-  // Every write action (status, budget, duplicate) is USD-only.
+  // Rename: no spend impact, so NO currency check (QA condition 1). Old and new names are both recorded.
+  if (def.kind === 'rename') {
+    if (snap.name === input.new_name) return { ok: false, outcome: 'denied_no_change', detail: 'name unchanged' };
+    return { ok: true, before, after: { name: input.new_name }, diff: `${head}: name "${snap.name ?? ''}" → "${input.new_name}"` };
+  }
+  // Every other write action (status, budget, duplicate) is USD-only.
   if ((acct.currency ?? '').toUpperCase() !== 'USD') return { ok: false, outcome: 'denied_non_usd_account', detail: `account currency ${acct.currency ?? 'unknown'}` };
   if (def.kind === 'status') {
     if (snap.status === def.to) return { ok: false, outcome: 'denied_no_change', detail: `already ${def.to}` };
@@ -161,6 +204,7 @@ export function planChange(def: WriteDef, objectId: string, snap: Snapshot, acct
 
 /** Re-check at execution time against the LIVE object/account: USD for every action, budget caps vs the live budget. */
 export function executionCheck(def: WriteDef, after: Record<string, any>, live: Snapshot, acct: { currency?: string | null }, s: WriteSettings): string | null {
+  if (def.kind === 'rename') return validateNewName(after?.name).ok && live.name !== after.name ? null : 'failed_bad_rename';
   if ((acct.currency ?? '').toUpperCase() !== 'USD') return 'failed_non_usd_account';
   if (def.kind !== 'budget') return null;
   const cur = live.daily_budget; const next = Number(after?.daily_budget);
@@ -195,7 +239,9 @@ export function chicagoDayStart(at: Date): Date {
 }
 
 /** Fields that changed between the approved "before" and the live object. */
-export function drift(before: Record<string, any>, now: Snapshot): string[] {
+export function drift(before: Record<string, any>, now: Snapshot, def?: WriteDef): string[] {
+  // Rename: only the name matters (account, type and existence are checked separately by the flow).
+  if (def?.kind === 'rename') return (before?.name ?? null) !== (now.name ?? null) ? ['name'] : [];
   const out: string[] = [];
   for (const k of ['name', 'status', 'daily_budget', 'account_id'] as const) if ((before?.[k] ?? null) !== (now[k] ?? null)) out.push(k);
   return out;
@@ -213,9 +259,16 @@ export function metaPost(def: WriteDef, objectId: string, after: Record<string, 
   let path = objectId;
   if (def.kind === 'status') body.set('status', String(after.status));
   else if (def.kind === 'budget') body.set('daily_budget', String(after.daily_budget));
-  else { path = `${objectId}/copies`; body.set('deep_copy', 'true'); body.set('status_option', 'PAUSED');
+  else if (def.kind === 'rename') {
+    // Allowlist: refuse to build a POST if `after` carries anything but `name` (QA condition 3).
+    const extra = Object.keys(after ?? {}).filter((k) => !(RENAME_POST_FIELDS as readonly string[]).includes(k));
+    if (extra.length) throw new Error(`rename POST refused: unexpected fields ${extra.join(',').slice(0, 80)}`);
+    const v = validateNewName(after?.name); if (!v.ok) throw new Error(`rename POST refused: ${v.detail}`);
+    body.set('name', v.name);
+  } else { path = `${objectId}/copies`; body.set('deep_copy', 'true'); body.set('status_option', 'PAUSED');
     if (requestId) body.set('rename_options', JSON.stringify({ rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ` ${copyTag(requestId)}` })); }
   body.set('access_token', secret);
+  if (def.kind === 'rename' && [...body.keys()].some((k) => k !== 'name' && k !== 'access_token')) throw new Error('rename POST refused: body allowlist');
   return { url: `https://${META_HOST}/${V}/${path}`, body };
 }
 
@@ -231,4 +284,93 @@ export async function checkAdsManagement(doFetch: typeof fetch, secret: string):
     const j = await r.json().catch(() => null);
     return r.ok ? hasAdsManagement(j) : null;
   } catch { return null; }
+}
+
+// ---------- Rename safety reads (QA condition 4) ----------
+/** Automated rules on the account. Read-only; filters/specs are inspected for name-based scoping. */
+export const rulesUrl = (accountId: string, secret: string) => {
+  const u = metaGet(`act_${stripAct(accountId)}/adrules_library`, 'id,name,status,evaluation_spec,execution_spec', secret);
+  u.searchParams.set('limit', '200');
+  return u;
+};
+export interface ScopedRule {
+  id: string; name: string; status: string | null; fields: string[];
+  /** ENABLED rule whose name filter matches the old and new name differently. */
+  scope_change: null | { field: string; operator: string; direction: 'in→out' | 'out→in' };
+  /** ENABLED rule with a name filter we cannot evaluate (unknown operator/value shape): treated as a scope change. */
+  unevaluable: string | null;
+}
+const NAME_FIELD = /(^|\.|_)name$/i;
+const ENTITY_OF_FIELD = (field: string): ObjectType | null => {
+  const f = field.toLowerCase();
+  if (f === 'ad.name' || f === 'ad_name') return 'ad';
+  if (f === 'adset.name' || f === 'adset_name') return 'adset';
+  if (f === 'campaign.name' || f === 'campaign_name') return 'campaign';
+  return null; // plain `name`: the rule's own entity (entity_type filter)
+};
+const ENTITY_TYPE: Record<string, ObjectType> = { AD: 'ad', ADSET: 'adset', CAMPAIGN: 'campaign' };
+/** Operators Meta ad rules accept on string fields. Evaluated case-sensitively AND case-insensitively;
+ *  a rule counts as matching differently if EITHER reading differs (Meta does not document case handling). */
+export const RULE_NAME_OPERATORS = ['EQUAL', 'NOT_EQUAL', 'CONTAIN', 'NOT_CONTAIN', 'IN', 'NOT_IN', 'STARTS_WITH', 'ENDS_WITH', 'ANY', 'ALL', 'NONE'] as const;
+export function evalNameFilter(op: string, value: unknown, name: string, ci: boolean): boolean | null {
+  const n = ci ? name.toLowerCase() : name;
+  const norm = (v: unknown) => (ci ? String(v).toLowerCase() : String(v));
+  const list = Array.isArray(value) ? value.map(norm) : value === undefined || value === null ? null : [norm(value)];
+  if (!list || list.length === 0) return null;
+  switch (op.toUpperCase()) {
+    case 'EQUAL': return n === list[0];
+    case 'NOT_EQUAL': return n !== list[0];
+    case 'CONTAIN': return n.includes(list[0]);
+    case 'NOT_CONTAIN': return !n.includes(list[0]);
+    case 'STARTS_WITH': return n.startsWith(list[0]);
+    case 'ENDS_WITH': return n.endsWith(list[0]);
+    case 'IN': return list.includes(n);
+    case 'NOT_IN': return !list.includes(n);
+    case 'ANY': return list.some((v) => n.includes(v));
+    case 'ALL': return list.every((v) => n.includes(v));
+    case 'NONE': return !list.some((v) => n.includes(v));
+    default: return null;
+  }
+}
+/** Rules with any filter on a name field. For ENABLED rules, filters on the renamed object's level are evaluated
+ *  against old and new name; a different result is a scope change (refused by the flow). Disabled rules: flag only. */
+export function nameScopedRules(rules: any[], objectType?: ObjectType, oldName?: string | null, newName?: string): ScopedRule[] {
+  const out: ScopedRule[] = [];
+  for (const r of rules ?? []) {
+    const filters = [...(r?.evaluation_spec?.filters ?? []), ...(r?.execution_spec?.filters ?? [])];
+    const nameFilters = filters.filter((f: any) => NAME_FIELD.test(String(f?.field ?? '')));
+    if (!nameFilters.length) continue;
+    const et = filters.find((f: any) => String(f?.field ?? '').toLowerCase() === 'entity_type');
+    const ruleEntity: ObjectType | null = et ? (ENTITY_TYPE[String(Array.isArray(et.value) ? et.value[0] : et.value).toUpperCase()] ?? null) : null;
+    const row: ScopedRule = { id: String(r?.id ?? ''), name: String(r?.name ?? ''), status: r?.status ?? null,
+      fields: [...new Set(nameFilters.map((f: any) => String(f.field)))], scope_change: null, unevaluable: null };
+    if (row.status === 'ENABLED' && objectType && newName !== undefined) {
+      for (const f of nameFilters) {
+        const field = String(f.field); const level = ENTITY_OF_FIELD(field) ?? ruleEntity;
+        if (level !== null && level !== objectType) continue; // filter is on another level's name; this rename can't change it
+        const op = String(f?.operator ?? '');
+        for (const ci of [false, true]) {
+          const before = evalNameFilter(op, f?.value, oldName ?? '', ci); const after = evalNameFilter(op, f?.value, newName, ci);
+          if (before === null || after === null) { row.unevaluable ??= `${field} ${op}`; continue; }
+          if (before !== after && !row.scope_change) row.scope_change = { field, operator: op, direction: before ? 'in→out' : 'out→in' };
+        }
+      }
+    }
+    out.push(row);
+  }
+  return out;
+}
+/** Naming-convention check. What it checks (documented): the hub's reporting and Meta rules group objects by
+ *  underscore- or " - "-delimited tokens (e.g. "Charles_H1_B1", "Oneshare - Click to Call - CBO Test").
+ *  Flag when the new name changes the delimiter style, the token count, or the first token (owner/client prefix). */
+export function namingBreak(oldName: string | null, newName: string): string | null {
+  if (!oldName) return null;
+  const style = (n: string) => (n.includes(' - ') ? ' - ' : n.includes('_') ? '_' : null);
+  const so = style(oldName); if (!so) return null;
+  const sn = style(newName);
+  if (sn !== so) return `delimiter "${so}" not kept`;
+  const a = oldName.split(so), b = newName.split(so);
+  if (a.length !== b.length) return `token count ${a.length} → ${b.length}`;
+  if (a[0].trim().toLowerCase() !== b[0].trim().toLowerCase()) return `prefix "${a[0]}" → "${b[0]}"`;
+  return null;
 }

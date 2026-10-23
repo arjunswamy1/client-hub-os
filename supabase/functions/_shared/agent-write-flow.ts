@@ -7,6 +7,7 @@ import {
   WRITE_ACTIONS, META_HOST, META_PROVIDER, type WriteSettings, parseWriteParams, objectFields, snapshot, planChange,
   drift, metaGet, metaPost, checkAdsManagement, stripAct, scrub, executionCheck, BUDGET_ACTIONS, BUDGET_COOLDOWN_MS,
   POST_TIMEOUT_MS, GET_TIMEOUT_MS, copyTag, copyLookupUrl, chicagoDayStart, outcomeUnknown, childCountUrl, decisionAuthority, SYNC_COPY_MAX_CHILDREN, isCopyTooLargeError,
+  RENAME_PER_DAY, rulesUrl, nameScopedRules, namingBreak,
 } from './agent-write-actions.ts';
 
 export interface WriteDeps { db: any; secrets: SecretsProvider; fetch: typeof fetch; now: Date }
@@ -36,8 +37,10 @@ async function metaJson(doFetch: typeof fetch, url: string, secret: string): Pro
   } catch { return { ok: false, status: 0, data: null }; }
 }
 
-async function lookup(deps: WriteDeps, def: { objectType: any }, objectId: string, accountId: string, secret: string) {
-  const obj = await metaJson(deps.fetch, metaGet(objectId, objectFields(def.objectType), secret).toString(), secret);
+async function lookup(deps: WriteDeps, def: { objectType: any; kind?: string }, objectId: string, accountId: string, secret: string) {
+  const objUrl = metaGet(objectId, objectFields(def.objectType), secret);
+  if (def.kind === 'rename') objUrl.searchParams.set('metadata', '1'); // Meta returns metadata.type: confirms ad/adset/campaign
+  const obj = await metaJson(deps.fetch, objUrl.toString(), secret);
   if (!obj.ok || !obj.data) return { ok: false as const, status: obj.status };
   const acct = await metaJson(deps.fetch, metaGet(`act_${accountId}`, 'name,currency', secret).toString(), secret);
   return { ok: true as const, snap: snapshot(obj.data), acct: acct.ok && acct.data ? { name: acct.data.name ?? null, currency: acct.data.currency ?? null } : { name: null, currency: null } };
@@ -56,6 +59,22 @@ async function recentBudgetChange(db: any, objectId: string, now: Date, excludeI
     if (outcomeUnknown(r)) return { ...r, at, unknown: true };
   }
   return null;
+}
+
+/** Rename approval flags: automated rules filtering on a name field, and naming-convention breaks. null = rules unreadable. */
+async function renameFlags(deps: WriteDeps, accountId: string, objectType: any, oldName: string | null, newName: string, secret: string): Promise<{ flags: string[]; rules: any[]; blocking: any[] } | null> {
+  const r = await metaJson(deps.fetch, rulesUrl(accountId, secret).toString(), secret);
+  if (!r.ok || !r.data || !Array.isArray(r.data.data)) return null;
+  return { ...renameFlagsFrom(r.data.data, objectType, oldName, newName) };
+}
+export function renameFlagsFrom(rules: any[], objectType: any, oldName: string | null, newName: string) {
+  const scoped = nameScopedRules(rules, objectType, oldName, newName);
+  const flags: string[] = [];
+  const blocking = scoped.filter((x) => x.scope_change || x.unevaluable);
+  if (scoped.length) flags.push(`RULE SCOPE CHANGE: ${scoped.length} automated rule(s) filter on name (${scoped.map((x) => `"${x.name}" [${x.fields.join(',')}]`).join('; ').slice(0, 300)})`);
+  const nb = namingBreak(oldName, newName);
+  if (nb) flags.push(`NAMING CONVENTION: ${nb}`);
+  return { flags, rules: scoped, blocking };
 }
 
 /** Prior duplicates of this campaign whose outcome is unknown; any tagged copy (any status, archived included) blocks. */
@@ -145,6 +164,11 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const dayStart = chicagoDayStart(now).toISOString();
   const { count } = await db.from('agent_write_requests').select('id', { count: 'exact', head: true }).eq('agent_id', ctx.agent.id).gte('requested_at', dayStart);
   if ((count ?? 0) >= settings.per_day) return deny(429, 'write_rate_limited', `max ${settings.per_day} write requests per day`);
+  if (def.kind === 'rename') {
+    const renames = Object.entries(WRITE_ACTIONS).filter(([, d]) => d.kind === 'rename').map(([k]) => k);
+    const { count: rc } = await db.from('agent_write_requests').select('id', { count: 'exact', head: true }).eq('agent_id', ctx.agent.id).in('action', renames).gte('requested_at', dayStart);
+    if ((rc ?? 0) >= RENAME_PER_DAY) return deny(429, 'rename_rate_limited', `max ${RENAME_PER_DAY} renames per day`);
+  }
 
   const { data: open } = await db.from('agent_write_requests').select('id, status, diff_text, decision_expires_at')
     .eq('agent_id', ctx.agent.id).eq('action', action).eq('object_id', input.object_id).in('status', OPEN).maybeSingle();
@@ -155,8 +179,20 @@ export async function requestWrite(ctx: RequestCtx, action: string, params: unkn
   const look = await lookup(ctx, def, input.object_id, input.account_id, secret.value);
   if (!look.ok) return deny(502, 'denied_object_lookup_failed', `status ${look.status}`);
   if (look.snap.account_id !== input.account_id) return deny(403, 'denied_object_not_in_account');
+  if (def.kind === 'rename' && look.snap.object_type !== def.objectType) return deny(403, 'denied_object_type_mismatch', `object is ${look.snap.object_type ?? 'unknown'}, action is ${def.objectType}`);
   const plan = planChange(def, input.object_id, look.snap, look.acct, input, settings);
   if (!plan.ok) return deny(400, plan.outcome, plan.detail);
+  if (def.kind === 'rename') {
+    const rf = await renameFlags(ctx, input.account_id, def.objectType, look.snap.name, input.new_name!, secret.value);
+    if (!rf) return deny(502, 'denied_rules_lookup_failed', 'automated rules unreadable; rename refused');
+    if (rf.blocking.length) return deny(409, 'denied_rule_scope_change', rf.blocking.map((x: any) => x.scope_change
+      ? `rule "${x.name}" (${x.id}): ${x.scope_change.field} ${x.scope_change.operator} → ${x.scope_change.direction}`
+      : `rule "${x.name}" (${x.id}): cannot evaluate ${x.unevaluable}`).join('; ').slice(0, 900));
+    if (rf.flags.length) {
+      plan.diff = `${rf.flags.map((f) => `[${f.split(':')[0]}]`).join(' ')} ${plan.diff} — ${rf.flags.join(' | ')}`.slice(0, 2000);
+      (plan.before as any).rename_flags = rf.flags; (plan.before as any).name_scoped_rules = rf.rules;
+    }
+  }
   if (def.kind === 'budget') {
     const prior = await recentBudgetChange(db, input.object_id, now);
     if (prior) return deny(409, 'denied_budget_changed_recently', prior.unknown
@@ -260,7 +296,9 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
 
   const look = await lookup(deps, def, row.object_id, row.account_id, secret.value);
   if (!look.ok) return fail('failed_object_lookup', `status ${look.status}`);
-  const changed = drift(row.before, look.snap);
+  if (def.kind === 'rename' && (look.snap.account_id !== row.account_id || look.snap.object_type !== def.objectType)) return fail('failed_object_mismatch');
+  const changed = drift(row.before, look.snap, def);
+  if (def.kind === 'rename' && changed.length) return fail('failed_drift_name', `live name ${JSON.stringify(look.snap.name)} ≠ approved ${JSON.stringify(row.before?.name ?? null)}`, { live: { name: look.snap.name } });
   if (changed.length) return fail('failed_drift', `changed: ${changed.join(',')}`, { drift: changed, live: { name: look.snap.name, status: look.snap.status, daily_budget: look.snap.daily_budget } });
 
   // Re-check rules against the live values just read: USD for every action, caps vs live budget, 24h budget cooldown.
@@ -285,7 +323,8 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
     if (kids > SYNC_COPY_MAX_CHILDREN) return fail('failed_copy_too_large', `${kids} child objects`);
   }
 
-  const post = metaPost(def, row.object_id, row.after, secret.value, row.id);
+  let post: { url: string; body: URLSearchParams };
+  try { post = metaPost(def, row.object_id, row.after, secret.value, row.id); } catch (e) { return fail('failed_post_allowlist', String((e as any)?.message ?? '').slice(0, 200)); }
   let res: Response;
   try { res = await deps.fetch(post.url, { method: 'POST', body: post.body, headers: { Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(POST_TIMEOUT_MS) }); }
   catch (e) { return fail((e as any)?.name === 'TimeoutError' ? 'failed_upstream_timeout' : 'failed_upstream_unreachable', 'Meta outcome unknown; verify the object'); }
@@ -294,9 +333,33 @@ export async function executeWrite(deps: WriteDeps & { settings: WriteSettings }
   if (def.kind === 'duplicate' && !res.ok && isCopyTooLargeError(data)) return fail('failed_copy_too_large', `status ${res.status}`, { upstream_status: res.status, data });
   if (!res.ok || (data && typeof data === 'object' && data.success === false)) return fail('failed_upstream', `status ${res.status}`, { upstream_status: res.status, data });
 
-  const result = { upstream_status: res.status, data, ...(def.kind === 'duplicate' && data?.copied_campaign_id ? { new_campaign_id: String(data.copied_campaign_id) } : {}) };
+  if (def.kind === 'rename') {
+    // Read back (QA condition 5). On mismatch, restore the old name and verify; record old/new/live names.
+    const oldName = String(row.before?.name ?? ''); const newName = String(row.after?.name ?? '');
+    const rb = await lookup(deps, def, row.object_id, row.account_id, secret.value);
+    if (!rb.ok || rb.snap.name !== newName) {
+      const seen = rb.ok ? rb.snap.name : null;
+      let restored = false; let rbStatus: number | null = null;
+      try {
+        // Same allowlisted builder as the forward write: body is only `name` (+ token); throws on anything else.
+        const back = metaPost(def, row.object_id, { name: oldName }, secret.value, row.id);
+        const r2 = await deps.fetch(back.url, { method: 'POST', body: back.body, headers: { Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(POST_TIMEOUT_MS) });
+        await r2.text(); rbStatus = r2.status;
+        const v = await lookup(deps, def, row.object_id, row.account_id, secret.value);
+        restored = r2.ok && v.ok && v.snap.name === oldName;
+      } catch { restored = false; }
+      await logRow(db, row, restored ? 'rename_rollback_ok' : 'rename_rollback_failed',
+        `rollback to ${JSON.stringify(oldName)} after read back ${JSON.stringify(seen)} (upstream ${rbStatus ?? 'none'})`.slice(0, 900), { approved_by_id: row.decided_by_id, event_type: 'write_rollback' });
+      return fail(restored ? 'failed_readback_rolled_back' : 'failed_readback_rollback_failed',
+        `read back ${JSON.stringify(seen)}, expected ${JSON.stringify(newName)}; ${restored ? 'old name restored' : 'OLD NAME NOT RESTORED: fix by hand'}`,
+        { upstream_status: res.status, old_name: oldName, new_name: newName, read_back: seen, restored });
+    }
+  }
+  const result = { upstream_status: res.status, data, ...(def.kind === 'rename' ? { old_name: row.before?.name ?? null, new_name: row.after?.name ?? null, read_back: row.after?.name ?? null } : {}), ...(def.kind === 'duplicate' && data?.copied_campaign_id ? { new_campaign_id: String(data.copied_campaign_id) } : {}) };
   const { data: done } = await db.from('agent_write_requests').update({ status: 'executed', executed_at: now.toISOString(), result, updated_at: now.toISOString() })
     .eq('id', row.id).eq('status', 'executing').select('*').maybeSingle();
-  await logRow(db, row, 'write_executed', null, { approved_by_id: row.decided_by_id });
+  await logRow(db, row, 'write_executed', def.kind === 'rename' ? `name "${row.before?.name ?? ''}" → "${row.after?.name ?? ''}" (read back ok)`.slice(0, 900) : null, { approved_by_id: row.decided_by_id });
   return done ?? { ...row, status: 'executed', result };
 }
+
+

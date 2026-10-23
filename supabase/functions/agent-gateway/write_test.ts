@@ -1,7 +1,7 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { handleGateway, sha256Hex } from './gateway.ts';
 import type { SecretsProvider } from '../_shared/agent-secrets.ts';
-import { queueReasons, AUTO_BUDGET_MAX_CENTS, WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot, executionCheck, chicagoDayStart, copyTag, validateNewName, nameScopedRules, namingBreak, RENAME_PER_DAY, evalNameFilter } from '../_shared/agent-write-actions.ts';
+import { queueReasons, AUTO_BUDGET_SWING_CENTS, WRITE_ACTIONS, metaPost, parseWriteParams, planChange, settingsFrom, decisionAuthority, hasAdsManagement, snapshot, executionCheck, chicagoDayStart, copyTag, validateNewName, nameScopedRules, namingBreak, RENAME_PER_DAY, evalNameFilter } from '../_shared/agent-write-actions.ts';
 import { executeWrite } from '../_shared/agent-write-flow.ts';
 
 const TOKEN = 'agw_write_token_abc';
@@ -903,15 +903,17 @@ Deno.test('queueReasons: ordinary +20% budget change may auto-execute', () => { 
 Deno.test('queueReasons: UNMAPPED and all_accounts-only accounts queue', () => {
   assertEquals(q({ mapping: 'unmapped' }), ['unmapped_account']); assertEquals(q({ allAccountsOnly: true }), ['all_accounts_only_account']);
 });
-Deno.test('queueReasons: duplicates always queue; flagged renames queue, clean renames do not', () => {
+Deno.test('queueReasons (0054): duplicates always queue; renames never queue for flags', () => {
   assertEquals(q({ def: WRITE_ACTIONS['meta.campaign.duplicate'], before: {}, after: {} }), ['duplicate']);
-  assertEquals(q({ def: WRITE_ACTIONS['meta.ad.rename'], before: {}, after: {}, renameFlags: ['RULE SCOPE CHANGE: 1 automated rule(s)'] }), ['rename_flagged']);
+  assertEquals(q({ def: WRITE_ACTIONS['meta.ad.rename'], before: {}, after: {}, renameFlags: ['NAMING BREAK: x', 'RULE SCOPE CHANGE: 1 automated rule(s)'] }), []);
   assertEquals(q({ def: WRITE_ACTIONS['meta.ad.rename'], before: {}, after: {}, renameFlags: [] }), []);
 });
-Deno.test('queueReasons: budget >$500/day or >+50% queues; $500 exact does not', () => {
-  assertEquals(q({ before: { daily_budget: 40000 }, after: { daily_budget: AUTO_BUDGET_MAX_CENTS + 1 } }), ['budget_over_500_per_day']);
-  assertEquals(q({ before: { daily_budget: 40000 }, after: { daily_budget: AUTO_BUDGET_MAX_CENTS } }), []);
-  assertEquals(q({ before: { daily_budget: 10000 }, after: { daily_budget: 15001 } }), ['budget_increase_over_50pct']);
+Deno.test('queueReasons (0054): >$500/day and +50% no longer queue; |swing| >= $1,000 queues', () => {
+  assertEquals(q({ before: { daily_budget: 40000 }, after: { daily_budget: 55000 } }), []);
+  assertEquals(q({ before: { daily_budget: 10000 }, after: { daily_budget: 15000 } }), []);
+  assertEquals(q({ before: { daily_budget: 200000 }, after: { daily_budget: 200000 - AUTO_BUDGET_SWING_CENTS } }), ['budget_swing_1000_plus']);
+  assertEquals(q({ before: { daily_budget: 100000 }, after: { daily_budget: 100000 + AUTO_BUDGET_SWING_CENTS - 1 } }), []);
+  assertEquals(q({ before: { daily_budget: 100000 }, after: { daily_budget: 100000 + AUTO_BUDGET_SWING_CENTS }, acct: { changesToday: 0, netIncreaseCentsToday: 0 } }), ['budget_swing_1000_plus']);
 });
 Deno.test('queueReasons: activation auto only if hub paused it <7d ago AND Meta edit <7d; unknown queues', () => {
   const act = { def: WRITE_ACTIONS['meta.adset.activate'], before: {}, after: {} };
@@ -938,4 +940,37 @@ Deno.test('auto-execute ON: per-account cap reached by other agents -> queue', a
   db.tables.agent_write_requests.push({ id: 'x1', agent_id: 'other', account_id: '111', action: 'meta.ad.pause', status: 'executed', requested_at: '2026-10-15T12:00:00Z', object_id: '9' });
   const r = await call(db, m, budgetReq(120));
   assertEquals(r.body.outcome, 'write_pending_approval'); assertEquals(r.body.queue_reasons, ['account_daily_change_cap']); assertEquals(m.posts().length, 0);
+});
+
+// ---------- 0054 (QA conditions 3 and 4): guards that still hold with auto-execute ON ----------
+Deno.test('0054 auto-execute ON: rename that changes rule scope is still denied, nothing queued or posted', async () => {
+  const db = await world({ auto: true }); const m = meta({ ad: { name: 'Charles_H1_B1' }, rules: [rule('CONTAIN', 'B1')] });
+  const r = await call(db, m, renameReq('Charles_H1_B2'));
+  assertEquals(r.body.outcome, 'denied_rule_scope_change'); assertEquals(db.tables.agent_write_requests.length, 0); assertEquals(m.posts().length, 0);
+});
+Deno.test('0054 auto-execute ON: flagged (non-blocking) rename now auto-executes', async () => {
+  const db = await world({ auto: true }); const m = meta({ ad: { name: 'Charles_H1_B1' }, rules: [rule('CONTAIN', 'H1')] });
+  const r = await call(db, m, renameReq('Charles_H1_B2'));
+  assertEquals(r.body.outcome, 'write_executed'); assertEquals(r.body.auto_executed, true);
+});
+Deno.test('0054 auto-execute ON: 11th rename in a Chicago day still refused', async () => {
+  const db = await world({ auto: true }); const m = renameWorld();
+  for (let i = 0; i < RENAME_PER_DAY; i++) db.tables.agent_write_requests.push({ id: `r${i}`, agent_id: 'a1', account_id: '222', action: 'meta.ad.rename', object_id: `9${i}`, status: 'executed', requested_at: '2026-10-15T12:00:00.000Z' });
+  const r = await call(db, m, renameReq());
+  assertEquals(r.body.outcome, 'rename_rate_limited'); assertEquals(m.posts().length, 0);
+});
+Deno.test('0054 auto-execute ON: 15 changes/day account cap still queues (rename included)', async () => {
+  const db = await world({ auto: true }); const m = renameWorld();
+  for (let i = 0; i < 15; i++) db.tables.agent_write_requests.push({ id: `p${i}`, agent_id: 'other', account_id: '111', action: 'meta.ad.pause', object_id: `8${i}`, status: 'executed', requested_at: '2026-10-15T12:00:00Z' });
+  const r = await call(db, m, renameReq());
+  assertEquals(r.body.outcome, 'write_pending_approval'); assertEquals(r.body.queue_reasons, ['account_daily_change_cap']); assertEquals(m.posts().length, 0);
+});
+Deno.test('0054 auto-execute ON: net cap catches several small increases on different objects in one account', async () => {
+  const seed = (db: any, each: number) => { for (const o of ['901', '902', '903']) db.tables.agent_write_requests.push({ id: `b${o}`, agent_id: 'other', account_id: '111', action: 'meta.adset.update_budget', object_id: o, status: 'executed', requested_at: '2026-10-15T12:00:00Z', before: { daily_budget: 30000 }, after: { daily_budget: 30000 + each } }); };
+  { const db = await world({ auto: true }); const m = meta(); seed(db, 33000); // 3 x +$330 + this +$20 = $1,010 > $1,000
+    const r = await call(db, m, budgetReq(120));
+    assertEquals(r.body.outcome, 'write_pending_approval'); assertEquals(r.body.queue_reasons, ['account_daily_net_increase_cap']); assertEquals(m.posts().length, 0); }
+  { const db = await world({ auto: true }); const m = meta(); seed(db, 32000); // 3 x +$320 + $20 = $980 -> runs
+    const r = await call(db, m, budgetReq(120));
+    assertEquals(r.body.outcome, 'write_executed'); }
 });

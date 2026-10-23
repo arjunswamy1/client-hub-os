@@ -37,7 +37,7 @@ BEGIN
   passed := passed || 'all-or-nothing on mid-loop failure'::text;
   -- 4 pre-0040 key refused (RPC and arming)
   BEGIN
-    INSERT INTO agent_gateway_tokens(agent_id,token_hash,token_prefix,created_at) VALUES(ag,md5(random()::text),'dbtest_old',public.agent_key_lock_cutoff()-interval '1 day');
+    INSERT INTO agent_gateway_tokens(agent_id,token_hash,token_prefix,created_at) VALUES(ag,encode(sha256(random()::text::bytea),'hex'),'dbtest_old',public.agent_key_lock_cutoff()-interval '1 day');
     BEGIN PERFORM grant_agent_write_scope_all(ag, ch, 'test reason'); RAISE EXCEPTION 'NOT_REFUSED';
     EXCEPTION WHEN OTHERS THEN IF SQLERRM <> 'denied_pre_0040_key' THEN RAISE EXCEPTION 'pre-0040 RPC FAILED: %', SQLERRM; END IF; END;
     BEGIN UPDATE agents SET write_by_default = true, write_default_confirmed_owner_id = ch WHERE id = ag; RAISE EXCEPTION 'NOT_REFUSED';
@@ -47,7 +47,7 @@ BEGIN
   passed := passed || 'pre-0040 key refused'::text;
   -- 5 leaked key refused; leaked flag needs an admin session
   BEGIN
-    INSERT INTO agent_gateway_tokens(agent_id,token_hash,token_prefix) VALUES(ag,md5(random()::text),'dbtest_new') RETURNING id INTO gx;
+    INSERT INTO agent_gateway_tokens(agent_id,token_hash,token_prefix) VALUES(ag,encode(sha256(random()::text::bytea),'hex'),'dbtest_new') RETURNING id INTO gx;
     PERFORM set_config('request.jwt.claim.sub', '', true);
     BEGIN UPDATE agent_gateway_tokens SET leaked = true WHERE id = gx; RAISE EXCEPTION 'NOT_REFUSED';
     EXCEPTION WHEN OTHERS THEN IF SQLERRM <> 'denied_leaked_flag_admin' THEN RAISE EXCEPTION 'leaked flag lock FAILED: %', SQLERRM; END IF; END;

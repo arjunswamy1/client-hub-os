@@ -64,7 +64,7 @@ async function world() {
   const db = mockDb(tables);
   let secretValue = 'mock-meta-secret', visible = ['111'], fail: string | null = null;
   const network: string[] = [];
-  const secrets: SecretsProvider = { name: 'mock', resolve: async () => ({ ok: true, value: secretValue }), check: async () => ({ token_present: true }) };
+  const secrets: SecretsProvider = { name: 'mock', resolve: async () => ({ ok: true, value: secretValue }), check: async () => ({ token_present: true, reachable: true }) };
   const doFetch: typeof fetch = async (u) => {
     const path = new URL(String(u)).pathname; network.push(path);
     if (path.endsWith('/me/adaccounts')) {

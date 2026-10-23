@@ -538,6 +538,186 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_alert_outbox: {
+        Row: {
+          account_id: string | null
+          action: string | null
+          attempts: number
+          claimed_at: string | null
+          created_at: string
+          id: number
+          kind: string
+          last_error: string | null
+          new_value: string | null
+          object_id: string | null
+          object_name: string | null
+          object_type: string | null
+          old_value: string | null
+          request_id: string | null
+          sent_at: string | null
+          slack_ts: string | null
+          status: string
+        }
+        Insert: {
+          account_id?: string | null
+          action?: string | null
+          attempts?: number
+          claimed_at?: string | null
+          created_at?: string
+          id?: never
+          kind: string
+          last_error?: string | null
+          new_value?: string | null
+          object_id?: string | null
+          object_name?: string | null
+          object_type?: string | null
+          old_value?: string | null
+          request_id?: string | null
+          sent_at?: string | null
+          slack_ts?: string | null
+          status?: string
+        }
+        Update: {
+          account_id?: string | null
+          action?: string | null
+          attempts?: number
+          claimed_at?: string | null
+          created_at?: string
+          id?: never
+          kind?: string
+          last_error?: string | null
+          new_value?: string | null
+          object_id?: string | null
+          object_name?: string | null
+          object_type?: string | null
+          old_value?: string | null
+          request_id?: string | null
+          sent_at?: string | null
+          slack_ts?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      agent_change_log: {
+        Row: {
+          account_id: string | null
+          account_label: string | null
+          account_name: string | null
+          action: string | null
+          actor_team_member_id: string | null
+          after: Json | null
+          agent_id: string | null
+          agent_name: string | null
+          agent_owner_id: string | null
+          approval_mode: string | null
+          approved_by_id: string | null
+          auto_queue_reasons: string[] | null
+          before: Json | null
+          db_role: string | null
+          db_session_user: string | null
+          detail: Json | null
+          diff_text: string | null
+          event: string
+          executed_at: string | null
+          executor_id: string | null
+          failure_outcome: string | null
+          grant_id: string | null
+          grant_mode: string | null
+          id: number
+          key_created_by_id: string | null
+          logged_at: string
+          object_id: string | null
+          object_name: string | null
+          object_type: string | null
+          qa_ref: string | null
+          reason: string | null
+          request_id: string | null
+          requested_at: string | null
+          result: Json | null
+          status: string | null
+          token_id: string | null
+          token_prefix: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          account_label?: string | null
+          account_name?: string | null
+          action?: string | null
+          actor_team_member_id?: string | null
+          after?: Json | null
+          agent_id?: string | null
+          agent_name?: string | null
+          agent_owner_id?: string | null
+          approval_mode?: string | null
+          approved_by_id?: string | null
+          auto_queue_reasons?: string[] | null
+          before?: Json | null
+          db_role?: string | null
+          db_session_user?: string | null
+          detail?: Json | null
+          diff_text?: string | null
+          event: string
+          executed_at?: string | null
+          executor_id?: string | null
+          failure_outcome?: string | null
+          grant_id?: string | null
+          grant_mode?: string | null
+          id?: never
+          key_created_by_id?: string | null
+          logged_at?: string
+          object_id?: string | null
+          object_name?: string | null
+          object_type?: string | null
+          qa_ref?: string | null
+          reason?: string | null
+          request_id?: string | null
+          requested_at?: string | null
+          result?: Json | null
+          status?: string | null
+          token_id?: string | null
+          token_prefix?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          account_label?: string | null
+          account_name?: string | null
+          action?: string | null
+          actor_team_member_id?: string | null
+          after?: Json | null
+          agent_id?: string | null
+          agent_name?: string | null
+          agent_owner_id?: string | null
+          approval_mode?: string | null
+          approved_by_id?: string | null
+          auto_queue_reasons?: string[] | null
+          before?: Json | null
+          db_role?: string | null
+          db_session_user?: string | null
+          detail?: Json | null
+          diff_text?: string | null
+          event?: string
+          executed_at?: string | null
+          executor_id?: string | null
+          failure_outcome?: string | null
+          grant_id?: string | null
+          grant_mode?: string | null
+          id?: never
+          key_created_by_id?: string | null
+          logged_at?: string
+          object_id?: string | null
+          object_name?: string | null
+          object_type?: string | null
+          qa_ref?: string | null
+          reason?: string | null
+          request_id?: string | null
+          requested_at?: string | null
+          result?: Json | null
+          status?: string | null
+          token_id?: string | null
+          token_prefix?: string | null
+        }
+        Relationships: []
+      }
       agent_client_scopes: {
         Row: {
           agent_id: string
@@ -613,8 +793,13 @@ export type Database = {
           id: number
           updated_at: string
           updated_by_id: string | null
+          write_account_changes_per_day: number
+          write_account_net_increase_usd: number
           write_approval_ttl_minutes: number
           write_approver_team_member_ids: string[]
+          write_auto_execute: boolean
+          write_auto_execute_set_at: string | null
+          write_auto_execute_set_by: string | null
           write_max_budget_change_pct: number
           write_max_daily_budget_usd: number
           write_pending_ttl_minutes: number
@@ -627,8 +812,13 @@ export type Database = {
           id?: number
           updated_at?: string
           updated_by_id?: string | null
+          write_account_changes_per_day?: number
+          write_account_net_increase_usd?: number
           write_approval_ttl_minutes?: number
           write_approver_team_member_ids?: string[]
+          write_auto_execute?: boolean
+          write_auto_execute_set_at?: string | null
+          write_auto_execute_set_by?: string | null
           write_max_budget_change_pct?: number
           write_max_daily_budget_usd?: number
           write_pending_ttl_minutes?: number
@@ -641,8 +831,13 @@ export type Database = {
           id?: number
           updated_at?: string
           updated_by_id?: string | null
+          write_account_changes_per_day?: number
+          write_account_net_increase_usd?: number
           write_approval_ttl_minutes?: number
           write_approver_team_member_ids?: string[]
+          write_auto_execute?: boolean
+          write_auto_execute_set_at?: string | null
+          write_auto_execute_set_by?: string | null
           write_max_budget_change_pct?: number
           write_max_daily_budget_usd?: number
           write_pending_ttl_minutes?: number
@@ -1223,6 +1418,8 @@ export type Database = {
           agent_id: string
           agent_owner_team_member_id: string | null
           approval_expires_at: string | null
+          auto_approved: boolean
+          auto_queue_reasons: string[] | null
           before: Json
           currency: string | null
           decided_at: string | null
@@ -1232,6 +1429,7 @@ export type Database = {
           diff_text: string
           executed_at: string | null
           execution_started_at: string | null
+          executor_id: string | null
           failure_outcome: string | null
           grant_id: string
           id: string
@@ -1239,6 +1437,7 @@ export type Database = {
           object_id: string
           object_name: string | null
           object_type: string
+          qa_ref: string | null
           reason: string | null
           requested_at: string
           result: Json | null
@@ -1256,6 +1455,8 @@ export type Database = {
           agent_id: string
           agent_owner_team_member_id?: string | null
           approval_expires_at?: string | null
+          auto_approved?: boolean
+          auto_queue_reasons?: string[] | null
           before: Json
           currency?: string | null
           decided_at?: string | null
@@ -1265,6 +1466,7 @@ export type Database = {
           diff_text: string
           executed_at?: string | null
           execution_started_at?: string | null
+          executor_id?: string | null
           failure_outcome?: string | null
           grant_id: string
           id?: string
@@ -1272,6 +1474,7 @@ export type Database = {
           object_id: string
           object_name?: string | null
           object_type: string
+          qa_ref?: string | null
           reason?: string | null
           requested_at?: string
           result?: Json | null
@@ -1289,6 +1492,8 @@ export type Database = {
           agent_id?: string
           agent_owner_team_member_id?: string | null
           approval_expires_at?: string | null
+          auto_approved?: boolean
+          auto_queue_reasons?: string[] | null
           before?: Json
           currency?: string | null
           decided_at?: string | null
@@ -1298,6 +1503,7 @@ export type Database = {
           diff_text?: string
           executed_at?: string | null
           execution_started_at?: string | null
+          executor_id?: string | null
           failure_outcome?: string | null
           grant_id?: string
           id?: string
@@ -1305,6 +1511,7 @@ export type Database = {
           object_id?: string
           object_name?: string | null
           object_type?: string
+          qa_ref?: string | null
           reason?: string | null
           requested_at?: string
           result?: Json | null
@@ -10647,6 +10854,73 @@ export type Database = {
         Args: { p_note?: string; p_team_member_id: string }
         Returns: Json
       }
+      agent_alert_outbox_claim: {
+        Args: { p_per_minute?: number }
+        Returns: {
+          account_id: string | null
+          action: string | null
+          attempts: number
+          claimed_at: string | null
+          created_at: string
+          id: number
+          kind: string
+          last_error: string | null
+          new_value: string | null
+          object_id: string | null
+          object_name: string | null
+          object_type: string | null
+          old_value: string | null
+          request_id: string | null
+          sent_at: string | null
+          slack_ts: string | null
+          status: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "agent_alert_outbox"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      agent_alert_outbox_result: {
+        Args: { p_error?: string; p_id: number; p_ok: boolean; p_ts?: string }
+        Returns: string
+      }
+      agent_change_risk_report: {
+        Args: { p_day?: string }
+        Returns: {
+          account_id: string
+          account_name: string
+          action: string
+          agent_name: string
+          approval_mode: string
+          auto_queue_reasons: string[]
+          change_id: number
+          diff_text: string
+          failure_outcome: string
+          logged_at: string
+          object_id: string
+          object_name: string
+          qa_ref: string
+          risk_flags: string[]
+          risk_score: number
+          status: string
+          token_prefix: string
+        }[]
+      }
+      agent_change_risk_summary: {
+        Args: { p_day?: string }
+        Returns: {
+          dimension: string
+          direct_writes: number
+          flagged: number
+          key: string
+          label: string
+          missing_executor: number
+          no_qa_ref: number
+          writes: number
+        }[]
+      }
       agent_gateway_count_read: {
         Args: { p_action: string; p_agent_id: string; p_integration_id: string }
         Returns: undefined
@@ -10664,6 +10938,10 @@ export type Database = {
       }
       agent_key_lock_cutoff: { Args: never; Returns: string }
       agent_write_arm_blocker: { Args: { p_agent_id: string }; Returns: string }
+      agent_write_auto_approve: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
       agent_write_creative_brief: {
         Args: {
           p_actor_id: string

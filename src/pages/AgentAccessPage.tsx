@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { summarizeWriteAll } from '@/lib/agentWriteAll';
 import { reviewWriteGrant, canSaveWriteGrant, type WriteGrantReview } from '@/lib/agentWriteGrantReview';
 
 const db = supabase as any;
@@ -58,6 +59,9 @@ export default function AgentAccessPage() {
   const [writeReqs, setWriteReqs] = useState<any[]>([]);
   const [ownerHistory, setOwnerHistory] = useState<any[]>([]);
   const [grantReview, setGrantReview] = useState<{ grant: any; review: WriteGrantReview; confirmed: boolean } | null>(null);
+  const [clientAdAccounts, setClientAdAccounts] = useState<any[]>([]);
+  const [connections, setConnections] = useState<any[]>([]);
+  const [writeAll, setWriteAll] = useState<{ agent: any; reason: string; ownerOk: boolean; allOk: boolean } | null>(null);
   const [perm, setPerm] = useState<{ busy: boolean; result: any }>({ busy: false, result: null });
   const [test, setTest] = useState<{ ref: string; busy: boolean; result: any }>({ ref: '', busy: false, result: null });
   const [shown, setShown] = useState<string | null>(null);
@@ -70,10 +74,10 @@ export default function AgentAccessPage() {
   const [g, setG] = useState({ agent_id: '', integration_id: '', handoff: false, per_min: '30', per_day: '2000', days: '' });
 
   const load = async () => {
-    const [s, ag, tk, it, gr, lg, ho, cl, sc, tm, wr, oh] = await Promise.all([
+    const [s, ag, tk, it, gr, lg, ho, cl, sc, tm, wr, oh, caa, pc] = await Promise.all([
       db.from('agent_gateway_settings').select('*').eq('id', 1).maybeSingle(),
       db.from('agents').select('*').order('created_at'),
-      db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, audience, expires_at, revoked_at, last_used_at, created_at, created_by_id').order('created_at', { ascending: false }),
+      db.from('agent_gateway_tokens').select('id, agent_id, token_prefix, label, audience, expires_at, revoked_at, last_used_at, created_at, created_by_id, leaked').order('created_at', { ascending: false }),
       db.from('integrations').select('*').order('created_at'),
       db.from('agent_grants').select('*').order('created_at'),
       db.from('agent_access_log').select('agent_id, created_at').eq('event_type', 'denied').gte('created_at', new Date(Date.now() - 86400000).toISOString()).limit(2000),
@@ -83,7 +87,10 @@ export default function AgentAccessPage() {
       db.from('team_members').select('id, name, is_active').eq('is_service_account', false).order('name'),
       db.from('agent_write_requests').select('*').order('requested_at', { ascending: false }).limit(100),
       db.from('agent_owner_history').select('*').order('changed_at'),
+      db.from('client_ad_accounts').select('client_id, account_id, platform'),
+      db.from('platform_connections_safe').select('client_id, selected_ad_account_id').eq('platform', 'meta'),
     ]);
+    setClientAdAccounts(caa.data ?? []); setConnections(pc.data ?? []);
     setOwnerHistory(oh.data ?? []);
     setWs(s.data ?? null); setWriteReqs(wr.data ?? []);
     setClientsList(cl.data ?? []); setScopes(sc.data ?? []); setMembers(tm.data ?? []);
@@ -156,6 +163,25 @@ export default function AgentAccessPage() {
     // Giving write scope (first time or again) always goes through an explicit owner confirmation.
     if (review.needsConfirm) return setGrantReview({ grant: x, review, confirmed: false });
     saveWriteScope(x, false);
+  };
+  const removeAllChanges = (x: any) => {
+    const reason = window.prompt(`Remove change permission from every account for ${x.name}? Type a reason.`);
+    if (!reason) return;
+    run(db.rpc('revoke_agent_write_scope_all', { p_agent_id: x.id, p_reason: reason }), 'All change permission removed');
+  };
+  const toggleWriteDefault = (x: any, on: boolean) => {
+    if (!on) return run(db.from('agents').update({ write_by_default: false }).eq('id', x.id), 'Automatic changes off');
+    if (!x.owner_team_member_id) return toast.error('This agent has no owner');
+    if (!window.confirm(`Confirm owner: ${memberName(x.owner_team_member_id)}. New Meta permissions for ${x.name} will be able to request changes (each still needs approval).`)) return;
+    run(db.from('agents').update({ write_by_default: true, write_default_confirmed_owner_id: x.owner_team_member_id }).eq('id', x.id), 'Automatic changes on');
+  };
+  const writeAllSummary = writeAll ? summarizeWriteAll({ agent: writeAll.agent, grants, integrations, tokens, activeClientIds: clientsList.map((c) => c.id), clientAdAccounts, connections }) : null;
+  const submitWriteAll = async () => {
+    if (!writeAll) return;
+    const { data, error } = await db.rpc('grant_agent_write_scope_all', { p_agent_id: writeAll.agent.id, p_confirmed_owner_id: writeAll.agent.owner_team_member_id, p_reason: writeAll.reason, p_confirm_all_accounts: writeAll.allOk });
+    if (error) return toast.error(error.message);
+    toast.success(`Changes allowed on ${data?.granted ?? 0} permission(s); ${data?.skipped ?? 0} already had it. Each change still needs approval.`);
+    setWriteAll(null); load();
   };
   const checkPerm = async () => {
     setPerm({ busy: true, result: null });
@@ -247,6 +273,24 @@ export default function AgentAccessPage() {
                   <SelectTrigger className="h-7 w-40"><SelectValue placeholder="Add client" /></SelectTrigger>
                   <SelectContent>{clientsList.filter((c) => !scopes.some((s) => s.agent_id === x.id && s.client_id === c.id)).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
                 </Select>
+              </div>
+              <div className="flex w-full flex-wrap items-center gap-2">
+                {isOwner && <Button size="sm" variant="outline" onClick={() => setWriteAll({ agent: x, reason: '', ownerOk: false, allOk: false })}>Allow all changes</Button>}
+                <Button size="sm" variant="outline" onClick={() => removeAllChanges(x)}>Remove all changes</Button>
+                {isOwner && (
+                  <label className="flex items-center gap-2 text-xs">
+                    <Switch checked={!!x.write_by_default} onCheckedChange={(v) => toggleWriteDefault(x, v)} />
+                    New permissions get changes automatically
+                  </label>
+                )}
+                {!isOwner && x.write_by_default && <Badge variant="outline">New permissions get changes automatically</Badge>}
+                {x.write_by_default && grants.some((gr) => gr.agent_id === x.id && gr.all_accounts && !gr.revoked_at) && <Badge variant="destructive">Automatic changes + all accounts</Badge>}
+                {isOwner && x.write_by_default && (
+                  <label className="flex items-center gap-2 text-xs text-destructive">
+                    <Checkbox checked={!!x.write_default_all_accounts_confirmed} onCheckedChange={(v) => run(db.from('agents').update({ write_default_all_accounts_confirmed: !!v }).eq('id', x.id), v ? 'All-accounts permissions included' : 'All-accounts permissions excluded')} />
+                    Also for all-accounts permissions
+                  </label>
+                )}
               </div>
               <div className="ml-auto flex gap-2">
                 {x.status === 'active'
@@ -450,6 +494,44 @@ export default function AgentAccessPage() {
           <ActivityTab agents={agents} integrations={integrations} />
         </TabsContent>
       </Tabs>
+      <Dialog open={!!writeAll} onOpenChange={(o) => { if (!o) setWriteAll(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Allow all changes for {writeAll?.agent.name}</DialogTitle>
+            <DialogDescription>Every Meta permission for this agent will be able to request changes. Each change still needs approval.</DialogDescription>
+          </DialogHeader>
+          {writeAll && writeAllSummary && (
+            <div className="space-y-3 text-sm">
+              <p>Owner: <span className="font-medium">{writeAll.agent.owner_team_member_id ? memberName(writeAll.agent.owner_team_member_id) : 'none'}</span></p>
+              <p>{writeAllSummary.targets.length} permission(s) will gain changes, covering {writeAllSummary.accounts.length} listed account(s). {writeAllSummary.skipped} already have it.</p>
+              {writeAllSummary.allAccountsTargets.length > 0 && (
+                <div className="rounded border border-destructive p-2 text-destructive">
+                  <p className="font-medium">{writeAllSummary.allAccountsTargets.length} permission(s) cover all accounts the token can see.</p>
+                  {writeAllSummary.allAccountsTargets.map((g) => <p key={g.id}>{integName(g.integration_id)}</p>)}
+                  <label className="mt-1 flex items-center gap-2"><Checkbox checked={writeAll.allOk} onCheckedChange={(v) => setWriteAll({ ...writeAll, allOk: !!v })} /> I confirm changes on all-accounts permissions too</label>
+                </div>
+              )}
+              {writeAllSummary.unmapped.length > 0 && (
+                <div><p className="font-medium">Not tied to an active client (UNMAPPED):</p><p className="font-mono text-xs">{writeAllSummary.unmapped.join(', ')}</p></div>
+              )}
+              <div>
+                <p className="font-medium">Active keys</p>
+                {writeAllSummary.keys.length === 0 && <p className="text-muted-foreground">None</p>}
+                {writeAllSummary.keys.map((k) => (
+                  <p key={k.id} className={k.pre0040 || k.leaked ? 'text-destructive' : ''}>{k.token_prefix}… made by {k.created_by_id ? memberName(k.created_by_id) : 'unknown'} on {new Date(k.created_at).toLocaleDateString()}{k.pre0040 ? ' — made before creators were tracked (blocks)' : ''}{k.leaked ? ' — marked leaked (blocks)' : ''}</p>
+                ))}
+              </div>
+              {writeAllSummary.blockers.map((b) => <p key={b} className="text-destructive">{b}</p>)}
+              <Input placeholder="Reason" value={writeAll.reason} onChange={(e) => setWriteAll({ ...writeAll, reason: e.target.value })} />
+              <label className="flex items-center gap-2"><Checkbox checked={writeAll.ownerOk} onCheckedChange={(v) => setWriteAll({ ...writeAll, ownerOk: !!v })} /> I confirm the owner shown above</label>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setWriteAll(null)}>Cancel</Button>
+            <Button disabled={!writeAll || !writeAllSummary || !writeAll.ownerOk || writeAll.reason.trim().length < 3 || writeAllSummary.blockers.length > 0 || !writeAllSummary.targets.length || (writeAllSummary.allAccountsTargets.length > 0 && !writeAll.allOk)} onClick={submitWriteAll}>Allow all changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

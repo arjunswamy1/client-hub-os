@@ -60,3 +60,10 @@ Only the table owner / a superuser can `ALTER TABLE ... DISABLE TRIGGER` or repl
 - Keys can only be created by a signed-in team member: with no signed-in user (service role, cron, maintenance) the insert is refused, even when a creator is supplied. The creator is never changeable by any role (trigger is `ENABLE ALWAYS`, so replica sessions too).
 - A key on an agent with write access, or being moved off one, can only be rotated, moved, reactivated or extended by the write owner — including keys minted before the grant.
 - Write scope is given only through `grant_agent_write_scope(grant_id, confirmed_owner_id)`: the write-scope trigger refuses any grant gaining write unless the confirmed owner equals the agent's live owner, and refuses ownerless agents. Direct updates are refused. The confirm screen lists the agent's active keys with creator and creation time.
+
+## Allow all changes (migration 0048)
+- `grant_agent_write_scope_all(agent, confirmed_owner, reason, confirm_all_accounts)`: AJ only; locks the agent row; refuses ownerless, owner mismatch, inactive, any active key made before migration 0040 (`agent_key_lock_cutoff()`), or any active key flagged `leaked`; all-accounts grants need `confirm_all_accounts`; calls `grant_agent_write_scope` per grant in one transaction.
+- `revoke_agent_write_scope_all(agent, reason)`: any admin; removes write from every grant and switches off `write_by_default`.
+- `agents.write_by_default`: switched on only by AJ (`agent_write_default_lock`, ENABLE ALWAYS); any owner change clears it. New Meta grants inherit write only on INSERT under the conditions in `agent_grant_write_scope_lock`.
+- `agent_gateway_tokens.leaked`: set only by admins (`agent_gateway_token_leak_lock`, ENABLE ALWAYS).
+- Arming a real agent needs AJ's own signed-in session; it cannot be done from maintenance tooling.

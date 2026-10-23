@@ -109,3 +109,10 @@ Deno.test('mapping: account only in a grant account list is UNMAPPED', async () 
 Deno.test('mapping: account on an inactive client is UNMAPPED', async () => { const w = await world(); w.tables.platform_connections.push({ platform: 'meta', client_id: 'client_off', selected_ad_account: { id: 'act_111' } }); w.tables.client_ad_accounts.push({ platform: 'meta', account_id: '111', client_id: 'client_off' }); w.tables.integrations.push({ id: 'x', provider: 'meta_ads', client_id: 'client_off', account_ref: 'act_111' }); assertEquals((await w.call()).body.account_mapping, 'unmapped'); });
 Deno.test("mapping: account on an active client's connection is mapped", async () => { const w = await world(); w.tables.platform_connections.push({ platform: 'meta', client_id: 'client1', selected_ad_account: { account_id: '111' } }); assertEquals((await w.call()).body.account_mapping, 'mapped'); });
 Deno.test('mapping: client_ad_accounts row for an active client is mapped', async () => { const w = await world(); w.tables.client_ad_accounts.push({ platform: 'meta', account_id: '111', client_id: 'client1' }); assertEquals((await w.call()).body.account_mapping, 'mapped'); });
+Deno.test('kill switch: writes_enabled=false blocks execution of an approved write (no Meta POST)', async () => {
+  const w = await world(); await w.call(undefined, true);
+  Object.assign(w.tables.agent_write_requests[0], { status: 'approved', approval_expires_at: '2026-10-23T15:30:00Z' });
+  const before = w.network.length;
+  const r = await executeWrite({ db: w.db, secrets: w.secrets, fetch: w.doFetch, now: NOW, settings: settingsFrom({ writes_enabled: false }) }, 'request-1');
+  assertEquals(r.status, 'approved'); assertEquals(w.network.length, before);
+});

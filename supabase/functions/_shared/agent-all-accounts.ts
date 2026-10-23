@@ -31,11 +31,15 @@ async function tokenExpired(deps: AccountDeps, integrationId: string) {
 
 async function mapped(db: any, account: string): Promise<boolean | null> {
   // account_id on a Meta OAuth connection is a user id; selected_ad_account is the actual ad account.
-  const { data: connections, error: ce } = await db.from('platform_connections_safe').select('client_id,selected_ad_account_id').eq('platform', 'meta');
+  const { data: connections, error: ce } = await db.from('platform_connections').select('client_id,selected_ad_account,metadata').eq('platform', 'meta');
   const { data: integrations, error: ie } = await db.from('integrations').select('account_ref').eq('provider', 'meta_ads');
   const { data: grants, error: ge } = await db.from('agent_grants').select('allowed_account_refs,integration_id');
   if (ce || ie || ge) return null;
-  return (connections ?? []).some((r: any) => r.client_id && typeof r.selected_ad_account_id === 'string' && normalize(r.selected_ad_account_id) === account)
+  return (connections ?? []).some((r: any) => {
+    const selected = r.selected_ad_account;
+    const refs = [selected?.id, selected?.account_id, ...(r.metadata?.ad_accounts ?? []).map((a: any) => a?.account_id ?? a?.id), ...(r.metadata?.sync_account_ids ?? [])];
+    return refs.some((id: unknown) => typeof id === 'string' && normalize(id) === account);
+  })
     || (integrations ?? []).some((r: any) => typeof r.account_ref === 'string' && normalize(r.account_ref) === account)
     || (grants ?? []).some((r: any) => (r.allowed_account_refs ?? []).some((id: string) => normalize(id) === account));
 }
@@ -65,8 +69,8 @@ export async function resolveAllAccounts(deps: AccountDeps, integration: { id: s
         if (url.protocol !== 'https:' || url.host !== 'graph.facebook.com' || url.username || url.password || url.pathname !== '/v21.0/me/adaccounts') return { ok: false, outcome: 'denied_account_lookup_failed' };
         // Do not trust a token in paging.next; always use this integration's secret in a header.
         url.searchParams.delete('access_token');
-        const res = await (deps.fetch ?? fetch)(url.toString(), { headers: { Authorization: `Bearer ${secret.value}`, Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(20_000) });
-        const body = await res.json().catch(() => null);
+        const res: Response = await (deps.fetch ?? fetch)(url.toString(), { headers: { Authorization: `Bearer ${secret.value}`, Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(20_000) });
+        const body: any = await res.json().catch(() => null);
         if (body?.error?.code === 190) await tokenExpired(deps, integration.id);
         if (!res.ok || body?.error || !Array.isArray(body?.data)) return { ok: false, outcome: 'denied_account_lookup_failed' };
         for (const row of body.data) if (typeof row.account_id === 'string' && /^[0-9]{1,32}$/.test(row.account_id)) ids.push(row.account_id);

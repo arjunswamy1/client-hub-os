@@ -669,6 +669,9 @@ export type Database = {
           id: string
           label: string | null
           last_used_at: string | null
+          leaked: boolean
+          leaked_marked_at: string | null
+          leaked_marked_by: string | null
           revoked_at: string | null
           revoked_by_id: string | null
           token_hash: string
@@ -683,6 +686,9 @@ export type Database = {
           id?: string
           label?: string | null
           last_used_at?: string | null
+          leaked?: boolean
+          leaked_marked_at?: string | null
+          leaked_marked_by?: string | null
           revoked_at?: string | null
           revoked_by_id?: string | null
           token_hash: string
@@ -697,6 +703,9 @@ export type Database = {
           id?: string
           label?: string | null
           last_used_at?: string | null
+          leaked?: boolean
+          leaked_marked_at?: string | null
+          leaked_marked_by?: string | null
           revoked_at?: string | null
           revoked_by_id?: string | null
           token_hash?: string
@@ -1235,6 +1244,11 @@ export type Database = {
           status: string
           team: string | null
           updated_at: string
+          write_by_default: boolean
+          write_default_all_accounts_confirmed: boolean
+          write_default_confirmed_owner_id: string | null
+          write_default_set_at: string | null
+          write_default_set_by: string | null
         }
         Insert: {
           created_at?: string
@@ -1250,6 +1264,11 @@ export type Database = {
           status?: string
           team?: string | null
           updated_at?: string
+          write_by_default?: boolean
+          write_default_all_accounts_confirmed?: boolean
+          write_default_confirmed_owner_id?: string | null
+          write_default_set_at?: string | null
+          write_default_set_by?: string | null
         }
         Update: {
           created_at?: string
@@ -1265,6 +1284,11 @@ export type Database = {
           status?: string
           team?: string | null
           updated_at?: string
+          write_by_default?: boolean
+          write_default_all_accounts_confirmed?: boolean
+          write_default_confirmed_owner_id?: string | null
+          write_default_set_at?: string | null
+          write_default_set_by?: string | null
         }
         Relationships: [
           {
@@ -10519,6 +10543,8 @@ export type Database = {
         Args: { p_agent_id: string; p_client_id: string; p_tool: string }
         Returns: undefined
       }
+      agent_key_lock_cutoff: { Args: never; Returns: string }
+      agent_write_arm_blocker: { Args: { p_agent_id: string }; Returns: string }
       agent_write_creative_brief: {
         Args: {
           p_actor_id: string
@@ -10615,6 +10641,15 @@ export type Database = {
         Args: { p_confirmed_owner_id: string; p_grant_id: string }
         Returns: Json
       }
+      grant_agent_write_scope_all: {
+        Args: {
+          p_agent_id: string
+          p_confirm_all_accounts?: boolean
+          p_confirmed_owner_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       has_client_access: {
         Args: { check_client_id: string; check_user_id: string }
         Returns: boolean
@@ -10659,6 +10694,10 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      revoke_agent_write_scope_all: {
+        Args: { p_agent_id: string; p_reason: string }
+        Returns: Json
       }
       ringfuel_breakdown: {
         Args: { p_client_id: string; p_end: string; p_start: string }

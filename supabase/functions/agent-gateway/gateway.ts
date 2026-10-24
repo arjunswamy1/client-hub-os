@@ -21,6 +21,7 @@ export interface GatewayDeps {
 export interface GatewayRequest {
   integration_id?: unknown; action?: unknown; scope?: unknown; target?: unknown; params?: unknown;
   handoff?: unknown; write?: unknown; request_id?: unknown; reason?: unknown; qa_ref?: unknown;
+  acting_agent_id?: unknown;
 }
 export interface GatewayResult { status: number; body: Record<string, unknown> }
 
@@ -33,7 +34,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTION = /^[a-z0-9_.]{1,80}$/;
 const MAX_BODY = 2_000_000;
 
-export async function handleGateway(deps: GatewayDeps, authHeader: string | null, req: GatewayRequest | null): Promise<GatewayResult> {
+// actingAgentHeader: the X-CPM-Agent header. Person keys (migration 0055) must name the bot they act for, with no default;
+// per-agent keys may name only their own bot.
+export async function handleGateway(deps: GatewayDeps, authHeader: string | null, req: GatewayRequest | null, actingAgentHeader: string | null = null): Promise<GatewayResult> {
   const { db, secrets } = deps;
   const doFetch = deps.fetch ?? fetch;
   const now = (deps.now ?? (() => new Date()))();
@@ -60,20 +63,45 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   const m = /^Bearer\s+(\S+)$/i.exec(authHeader ?? '');
   if (!m) return deny(401, 'denied_no_token');
   const { data: tok } = await db.from('agent_gateway_tokens')
-    .select('id, agent_id, expires_at, revoked_at, audience').eq('token_hash', await sha256Hex(m[1])).maybeSingle();
+    .select('id, agent_id, expires_at, revoked_at, audience, kind, owner_team_member_id, leaked').eq('token_hash', await sha256Hex(m[1])).maybeSingle();
   if (!tok) return deny(401, 'denied_bad_token');
+  const keyKind: 'agent' | 'person' = tok.kind === 'person' ? 'person' : 'agent';
+  log.key_kind = keyKind; log.key_owner_team_member_id = keyKind === 'person' ? tok.owner_team_member_id ?? null : null;
   // Hub keys open mcp-hub only, never the account gateway.
   if (tok.audience === 'hub') { log.token_id = tok.id; log.agent_id = tok.agent_id; return deny(401, 'denied_wrong_audience'); }
   log.token_id = tok.id; log.agent_id = tok.agent_id;
   if (tok.revoked_at) return deny(401, 'denied_token_revoked');
   if (new Date(tok.expires_at) <= now) return deny(401, 'denied_token_expired');
+  // 1b. Acting agent. Header and body field must agree; a per-agent key may only name its own bot.
+  const hdr = typeof actingAgentHeader === 'string' && actingAgentHeader.trim() !== '' ? actingAgentHeader.trim() : null;
+  const bodyAgent = req?.acting_agent_id === undefined || req?.acting_agent_id === null ? null : req.acting_agent_id;
+  if ((hdr !== null && !UUID.test(hdr)) || (bodyAgent !== null && (typeof bodyAgent !== 'string' || !UUID.test(bodyAgent)))) return deny(400, 'denied_bad_request', 'X-CPM-Agent must be an agent uuid');
+  if (hdr !== null && bodyAgent !== null && hdr.toLowerCase() !== (bodyAgent as string).toLowerCase()) return deny(400, 'denied_agent_mismatch');
+  const named = (hdr ?? (bodyAgent as string | null))?.toLowerCase() ?? null;
+  if (keyKind === 'agent' && named !== null && named !== String(tok.agent_id).toLowerCase()) return deny(403, 'denied_agent_mismatch');
   await db.from('agent_gateway_tokens').update({ last_used_at: now.toISOString() }).eq('id', tok.id);
 
-  // 2. Kill switches: global, then per agent.
+  // 2. Kill switches: global, then (person keys) the person-key switch and holder, then per agent.
   const { data: settings } = await db.from('agent_gateway_settings').select('*').eq('id', 1).maybeSingle();
   if (!settings?.gateway_enabled) return deny(503, 'denied_gateway_disabled');
-  const { data: agent } = await db.from('agents').select('id, status, kind, owner_team_member_id').eq('id', tok.agent_id).maybeSingle();
+  let actingAgentId: string = tok.agent_id;
+  if (keyKind === 'person') {
+    if (settings?.person_keys_enabled !== true) return deny(403, 'denied_person_keys_disabled');
+    if (tok.leaked) return deny(401, 'denied_token_leaked');
+    if (!named) return deny(400, 'denied_agent_required', 'person keys must name the acting bot in the X-CPM-Agent header');
+    log.agent_id = named; log.acting_agent_id = named;
+    const { data: listed } = await db.from('agent_gateway_token_agents').select('agent_id').eq('token_id', tok.id).eq('agent_id', named).maybeSingle();
+    if (!listed) return deny(403, 'denied_agent_not_allowlisted');
+    const { data: holder } = await db.from('team_members').select('id, is_active, is_service_account').eq('id', tok.owner_team_member_id).maybeSingle();
+    if (!holder || holder.is_active !== true || holder.is_service_account === true) return deny(403, 'denied_key_holder_inactive');
+    actingAgentId = named;
+  } else {
+    log.acting_agent_id = tok.agent_id;
+  }
+  const { data: agent } = await db.from('agents').select('id, status, kind, owner_team_member_id').eq('id', actingAgentId).maybeSingle();
   if (!agent) return deny(403, 'denied_unknown_agent');
+  // Ownership is checked live on every request, so an owner change detaches the bot from the old holder's key at once.
+  if (keyKind === 'person' && agent.owner_team_member_id !== tok.owner_team_member_id) return deny(403, 'denied_agent_not_owned');
   if (agent.status === 'killed') return deny(403, 'denied_agent_killed');
   if (agent.status !== 'active') return deny(403, 'denied_agent_suspended');
 
@@ -119,6 +147,12 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   const { data: hit, error: hitErr } = await db.rpc('agent_gateway_hit', { p_grant_id: grant.id, p_per_minute: grant.rate_per_minute, p_per_day: grant.rate_per_day });
   if (hitErr) return deny(500, 'error_rate_limiter');
   if (!hit?.allowed) return deny(429, 'rate_limited');
+  if (keyKind === 'person') {
+    // Per-key ceiling (0055), in addition to the acting bot's per-grant limit above.
+    const { data: khit, error: khErr } = await db.rpc('agent_gateway_key_hit', { p_token_id: tok.id });
+    if (khErr) return deny(500, 'error_rate_limiter');
+    if (!khit?.allowed) return deny(429, 'key_rate_limited');
+  }
 
   // 6a. Browser hand-off: request -> admin approves in the hub -> single redeem within 15 minutes.
   if (handoff) {

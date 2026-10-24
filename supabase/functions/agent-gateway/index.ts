@@ -7,7 +7,7 @@ import { OnePasswordProvider } from '../_shared/agent-secrets.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, content-type, x-cpm-agent',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
@@ -18,10 +18,11 @@ Deno.serve(async (req) => {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
   const raw = await req.json().catch(() => null);
   try {
-    const out = await handleGateway({ db, secrets: new OnePasswordProvider(Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), opSdkFactory) }, req.headers.get('authorization'), raw);
+    const out = await handleGateway({ db, secrets: new OnePasswordProvider(Deno.env.get('OP_SERVICE_ACCOUNT_TOKEN'), opSdkFactory) }, req.headers.get('authorization'), raw, req.headers.get('x-cpm-agent'));
     return json(out.status, out.body);
   } catch {
     console.error('agent-gateway: internal error'); // deliberately no details
     return json(500, { ok: false, outcome: 'error_internal' });
   }
 });
+

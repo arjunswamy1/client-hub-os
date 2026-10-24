@@ -72,6 +72,7 @@ export async function handleGateway(deps: GatewayDeps, authHeader: string | null
   log.token_id = tok.id; log.agent_id = tok.agent_id;
   if (tok.revoked_at) return deny(401, 'denied_token_revoked');
   if (new Date(tok.expires_at) <= now) return deny(401, 'denied_token_expired');
+
   // 1b. Acting agent. Header and body field must agree; a per-agent key may only name its own bot.
   const hdr = typeof actingAgentHeader === 'string' && actingAgentHeader.trim() !== '' ? actingAgentHeader.trim() : null;
   const bodyAgent = req?.acting_agent_id === undefined || req?.acting_agent_id === null ? null : req.acting_agent_id;
